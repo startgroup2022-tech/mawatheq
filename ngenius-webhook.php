@@ -11,15 +11,23 @@ header('Content-Type: application/json');
 
 $settings = ngenius_settings($pdo);
 
-// تحقق من الترويسة السرية إن كانت مُعدّة (حماية من إشعارات مزوّرة - البوابة لا توقّع الحمولة رقمياً)
-$expectedSecret = $settings['ngenius_webhook_secret'] ?? '';
-if ($expectedSecret !== '') {
-    $received = $_SERVER['HTTP_X_WEBHOOK_TOKEN'] ?? '';
-    if (!hash_equals($expectedSecret, $received)) {
-        http_response_code(401);
-        echo json_encode(['ok' => false, 'error' => 'invalid webhook secret']);
-        exit;
-    }
+// تحقق من الترويسة السرية (حماية من إشعارات مزوّرة - البوابة لا توقّع الحمولة رقمياً).
+// N-Genius does not sign payloads, so this shared secret is the only way to prove an
+// event really came from the gateway. If it is not configured we must not trust inbound
+// events: a spoofed "CAPTURED" payload for a known order reference would otherwise mark
+// an unpaid invoice as paid. Reject when unset, or when the provided token does not match.
+$expectedSecret = (string)($settings['ngenius_webhook_secret'] ?? '');
+$received = (string)($_SERVER['HTTP_X_WEBHOOK_TOKEN'] ?? '');
+if ($expectedSecret === '') {
+    error_log('N-Genius webhook rejected: N-Genius is not fully configured (missing webhook secret).');
+    http_response_code(503);
+    echo json_encode(['ok' => false, 'error' => 'webhook secret is not configured']);
+    exit;
+}
+if (!hash_equals($expectedSecret, $received)) {
+    http_response_code(401);
+    echo json_encode(['ok' => false, 'error' => 'invalid webhook secret']);
+    exit;
 }
 
 $raw = file_get_contents('php://input');

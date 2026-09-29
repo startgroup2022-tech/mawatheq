@@ -1,5 +1,8 @@
 <?php
 require_once __DIR__ . '/config/config.php';
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && !csrf_is_valid($_POST['csrf_token'] ?? null)) {
+    http_response_code(403); exit('Invalid request');
+}
 require_once __DIR__ . '/lang/strings.php';
 require_once __DIR__ . '/includes/auth_security.php';
 $error = null;

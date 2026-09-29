@@ -10,12 +10,12 @@ header('X-Content-Type-Options: nosniff');
 header('Cache-Control: private, no-store');
 $out = fopen('php://output','w');
 fwrite($out,"\xEF\xBB\xBF");
-fputcsv($out,['Case ID','Title','Case type','Client','Status','Win probability','Description','Created at']);
+fputcsv($out,['Case ID','Title','Case type','Client','Status','Win probability','Description','Created at'],escape:'');
 $safe = static function ($value): string {
     $value = (string)$value;
     return preg_match('/^[=+\-@\t\r]/', $value) ? "'" . $value : $value;
 };
 while ($row = $stmt->fetch()) {
-    fputcsv($out,[$row['id'],$safe($row['title']),$safe($row['case_type']),$safe($row['client_name']),$row['status'],$row['win_probability'],$safe($row['description']),$row['created_at']]);
+    fputcsv($out,[$row['id'],$safe($row['title']),$safe($row['case_type']),$safe($row['client_name']),$row['status'],$row['win_probability'],$safe($row['description']),$row['created_at']],escape:'');
 }
 fclose($out);
