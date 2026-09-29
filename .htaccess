@@ -1,0 +1,33 @@
+# منصة مواثيق — إعدادات الأمان الأساسية لاستضافة cPanel
+
+# منع عرض محتويات المجلدات
+Options -Indexes
+
+# Enforce HTTPS for the production host while preserving the requested path/query.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{HTTPS} !=on
+    RewriteCond %{HTTP:X-Forwarded-Proto} !https [NC]
+    RewriteCond %{HTTP_HOST} ^(?:www\.)?mawatheq\.com$ [NC]
+    RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L,NE]
+</IfModule>
+
+# منع الوصول المباشر لملفات الإعداد وقاعدة البيانات والملفات المخفية
+<FilesMatch "(^\.|\.(sql|md|env|log|ini)$|^secrets\.php$)">
+    Require all denied
+</FilesMatch>
+
+# مجلدات المصدر والإعداد لا تحتاج استقبال طلبات HTTP مباشرة
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^(?:config|database|includes)/ - [F,L,NC]
+    RewriteRule ^uploads/.*\.(?:php[0-9]?|phtml|phar|cgi|pl|asp|aspx)$ - [F,L,NC]
+</IfModule>
+
+# توجيه أخطاء 404 (اختياري - أنشئ الملف عند الحاجة)
+# ErrorDocument 404 /404.php
+
+# تفعيل ضغط الصفحات
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/css application/javascript
+</IfModule>

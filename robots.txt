@@ -1,0 +1,17 @@
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /lawyer/
+Disallow: /api/
+Disallow: /uploads/
+Disallow: /account.php
+Disallow: /ai-assistant.php
+Disallow: /documents.php
+Disallow: /document-analysis.php
+Disallow: /consultations.php
+Disallow: /consultation-room.php
+Disallow: /case-tasks.php
+Disallow: /invoices.php
+Disallow: /draft-reviews.php
+
+Sitemap: https://mawatheq.com/sitemap.php
