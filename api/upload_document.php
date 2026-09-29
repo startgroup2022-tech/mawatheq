@@ -10,6 +10,10 @@ if (empty($_SESSION['user_id'])) {
     exit;
 }
 
+// Defense in depth: config.php also enforces CSRF for session-backed POSTs, but this
+// endpoint spends AI quota and writes files, so verify the token again before doing work.
+if (!csrf_is_valid($_POST['csrf_token'] ?? null)) { http_response_code(403); exit('Invalid request'); }
+
 // تطبيق حد الباقة الفعلي على عدد تحليلات المستندات شهرياً (إن كانت الباقة تحدد ذلك)
 $quota = check_document_upload_allowed($pdo, (int)$_SESSION['user_id']);
 if (!$quota['allowed']) {

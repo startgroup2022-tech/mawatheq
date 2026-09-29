@@ -105,11 +105,14 @@ if (!headers_sent()) {
 }
 
 // SameSite cookies plus a same-origin check block cross-site browser POSTs.
-// REST API clients and the payment provider webhooks use their own authentication, so those
-// endpoints are exempt: they are server-to-server calls that cannot carry a CSRF token.
+// The Bearer-token REST API (/api/v1/...) and the payment provider webhooks authenticate
+// requests themselves, so they are exempt: they are server-to-server calls that cannot carry
+// a CSRF token. The browser-facing /api/ helpers (ai_chat, upload_document, ...) run on the
+// PHP session cookie, so they must be protected like any other page POST.
 $requestPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 $csrfExemptPaths = ['/ngenius-webhook.php', '/sadad-webhook.php'];
-if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && strpos($requestPath, '/api/') !== 0 && !in_array($requestPath, $csrfExemptPaths, true)) {
+$isBearerApi = strpos($requestPath, '/api/v1/') === 0;
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && !$isBearerApi && !in_array($requestPath, $csrfExemptPaths, true)) {
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) { http_response_code(403); exit('Invalid request'); }
     $source = $_SERVER['HTTP_ORIGIN'] ?? ($_SERVER['HTTP_REFERER'] ?? '');
     if ($source !== '') {

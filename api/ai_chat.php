@@ -11,6 +11,14 @@ if (empty($_SESSION['user_id'])) {
     exit;
 }
 
+// Defense in depth: config.php also enforces CSRF for session-backed POSTs, but this
+// endpoint consumes the AI quota, so verify the token again before doing work.
+if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+    http_response_code(403);
+    echo json_encode(['error' => 'invalid_request']);
+    exit;
+}
+
 $conversationId = (int)($_POST['conversation_id'] ?? 0);
 $message = trim($_POST['message'] ?? '');
 
