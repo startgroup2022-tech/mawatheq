@@ -6,6 +6,9 @@ $sent = false;
 $error = null;
 $old = ['full_name' => '', 'email' => '', 'phone_dial' => '+966', 'phone_local' => '', 'message' => ''];
 
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && !csrf_is_valid($_POST['csrf_token'] ?? null)) {
+    http_response_code(403); exit('Invalid request');
+}
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $old = [
         'full_name' => trim($_POST['full_name'] ?? ''),

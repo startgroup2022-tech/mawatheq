@@ -7,6 +7,7 @@
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/../../includes/ngenius.php';
 require_once __DIR__ . '/../../includes/notifications.php';
+require_once __DIR__ . '/../../includes/finance.php';
 
 $auth = api_authenticate($pdo);
 if ($auth['type'] !== 'client') api_error('only clients can check invoice payment status', 403);
@@ -19,13 +20,12 @@ $stmt->execute([$invoiceId, $auth['id']]);
 $invoice = $stmt->fetch();
 if (!$invoice) api_error('invoice not found', 404);
 
-if ($invoice['status'] === 'paid') {
-    api_json(['ok' => true, 'status' => 'paid']);
+if (!in_array($invoice['status'], ['unpaid','partially_paid','overdue'], true) || finance_invoice_balance($invoice) <= 0) {
+    api_json(['ok' => true, 'status' => $invoice['status'], 'balance' => finance_invoice_balance($invoice)]);
 }
 if (!$invoice['gateway_order_ref']) {
-    api_json(['ok' => true, 'status' => $invoice['status']]);
+    api_json(['ok' => true, 'status' => $invoice['status'], 'balance' => finance_invoice_balance($invoice)]);
 }
-if ($invoice['status'] !== 'unpaid') api_json(['ok'=>true,'status'=>$invoice['status']]);
 
 $settings = ngenius_settings($pdo);
 $tokenResult = ngenius_get_access_token($settings['ngenius_environment'], $settings['ngenius_api_key'], $settings['ngenius_realm_name'] ?: 'ni');
@@ -35,9 +35,20 @@ $statusResult = ngenius_get_order_status($settings['ngenius_environment'], $sett
 if (!$statusResult['ok']) api_error($statusResult['error'], 502);
 
 if (ngenius_is_paid_state($statusResult['state'])) {
-    $pdo->prepare("UPDATE invoices SET status='paid', paid_at=NOW(), payment_method='ngenius' WHERE id=? AND status='unpaid' AND is_draft=0")->execute([$invoiceId]);
-    notify($pdo, 'lawyer', $invoice['lawyer_id'], 'تم استلام دفعة إلكترونية', $invoice['description'], '/lawyer/invoices.php');
-    api_json(['ok' => true, 'status' => 'paid', 'gateway_state' => $statusResult['state']]);
+    // Reconcile the amount actually charged for this order, not the full invoice total.
+    $amtStmt = $pdo->prepare("SELECT amount FROM payment_transactions WHERE gateway_order_ref=? AND event_type='ORDER_CREATED' ORDER BY id DESC LIMIT 1");
+    $amtStmt->execute([$invoice['gateway_order_ref']]);
+    $orderAmount = $amtStmt->fetchColumn();
+    $amount = ($orderAmount !== false && $orderAmount !== null) ? (float)$orderAmount : finance_invoice_balance($invoice);
+    $recorded = finance_record_payment($pdo, $invoiceId, $amount, [
+        'method' => 'ngenius', 'reference' => $invoice['gateway_order_ref'],
+        'idempotency_key' => 'ngenius:' . $invoice['gateway_order_ref'],
+        'recorded_by_type' => 'system', 'notes' => 'N-Genius status: ' . $statusResult['state'],
+    ]);
+    if (!empty($recorded['ok']) && empty($recorded['duplicate'])) {
+        notify($pdo, 'lawyer', $invoice['lawyer_id'], 'تم استلام دفعة إلكترونية', $invoice['description'], '/lawyer/invoices.php');
+    }
+    api_json(['ok' => true, 'status' => $recorded['status'] ?? 'paid', 'balance' => $recorded['balance'] ?? 0, 'gateway_state' => $statusResult['state']]);
 }
 
 api_json(['ok' => true, 'status' => $invoice['status'], 'gateway_state' => $statusResult['state']]);

@@ -3,7 +3,10 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../lang/strings.php';
 require_once __DIR__ . '/includes/lawyer_guard.php';
 require_once __DIR__ . '/../includes/csrf.php';
+require_once __DIR__ . '/../includes/tenant.php';
 $lawyerId = (int)$_SESSION['lawyer_id'];
+$firmId = tenant_write_firm_id($pdo);
+$caseScope = tenant_owner_where($pdo, 'c');
 $calendarMessage = null;
 $eventTypes = ['court_session','appeal_deadline','contract_expiry','contract_renewal','government_deadline','other'];
 
@@ -11,6 +14,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) { http_response_code(403); exit('Invalid request'); }
     $action = $_POST['action'] ?? '';
     if ($action === 'add_event') {
+        tenant_require($pdo, 'calendar.manage');
         $title = trim((string)($_POST['title'] ?? ''));
         $type = (string)($_POST['event_type'] ?? 'other');
         $rawDate = trim((string)($_POST['event_at'] ?? ''));
@@ -18,43 +22,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $caseId = (int)($_POST['case_id'] ?? 0);
         $validCase = true;
         if ($caseId > 0) {
-            $check = $pdo->prepare('SELECT id FROM cases WHERE id=? AND lawyer_id=?');
-            $check->execute([$caseId, $lawyerId]);
+            $check = $pdo->prepare('SELECT c.id FROM cases c WHERE c.id=? AND ' . $caseScope['sql']);
+            $check->execute(array_merge([$caseId], $caseScope['params']));
             $validCase = (bool)$check->fetchColumn();
         }
         if ($title === '' || !in_array($type, $eventTypes, true) || !$eventDate || $eventDate->format('Y-m-d\\TH:i') !== $rawDate || !$validCase) {
             $calendarMessage = is_rtl() ? 'تحقق من عنوان الموعد ونوعه وتاريخه والقضية المرتبطة.' : 'Check the event title, type, date, and linked case.';
         } else {
-            $pdo->prepare('INSERT INTO legal_calendar_events (lawyer_id,case_id,event_type,title,description,event_at) VALUES (?,?,?,?,?,?)')
-                ->execute([$lawyerId, $caseId ?: null, $type, $title, trim((string)($_POST['description'] ?? '')) ?: null, $eventDate->format('Y-m-d H:i:00')]);
+            $pdo->prepare('INSERT INTO legal_calendar_events (lawyer_id,firm_id,case_id,event_type,title,description,event_at) VALUES (?,?,?,?,?,?,?)')
+                ->execute([$lawyerId, $firmId, $caseId ?: null, $type, $title, trim((string)($_POST['description'] ?? '')) ?: null, $eventDate->format('Y-m-d H:i:00')]);
             header('Location: /lawyer/calendar.php?added=1'); exit;
         }
     } elseif (in_array($action, ['complete_event','cancel_event','delete_event'], true)) {
+        tenant_require($pdo, 'calendar.manage');
         $eventId = (int)($_POST['event_id'] ?? 0);
+        $evScope = tenant_owner_where($pdo, 'legal_calendar_events');
         if ($action === 'delete_event') {
-            $pdo->prepare('DELETE FROM legal_calendar_events WHERE id=? AND lawyer_id=?')->execute([$eventId,$lawyerId]);
+            $pdo->prepare('DELETE FROM legal_calendar_events WHERE id=? AND ' . $evScope['sql'])->execute(array_merge([$eventId], $evScope['params']));
         } else {
             $nextStatus = $action === 'complete_event' ? 'completed' : 'cancelled';
-            $pdo->prepare('UPDATE legal_calendar_events SET status=? WHERE id=? AND lawyer_id=?')->execute([$nextStatus,$eventId,$lawyerId]);
+            $pdo->prepare('UPDATE legal_calendar_events SET status=? WHERE id=? AND ' . $evScope['sql'])->execute(array_merge([$nextStatus, $eventId], $evScope['params']));
         }
         header('Location: /lawyer/calendar.php'); exit;
     }
 }
 
+$caseScopeC = $caseScope;
+$consultScope = tenant_owner_where($pdo, 'co');
+$calScope = tenant_owner_where($pdo, 'e');
 $sql = "SELECT event_at,event_title,case_title,case_id,event_type,event_id,event_status FROM (
     SELECT CONCAT(ct.event_date,' 00:00:00') AS event_at,ct.event AS event_title,c.title AS case_title,c.id AS case_id,'timeline' AS event_type,NULL AS event_id,'upcoming' AS event_status
-    FROM case_timeline ct JOIN cases c ON c.id=ct.case_id WHERE c.lawyer_id=?
+    FROM case_timeline ct JOIN cases c ON c.id=ct.case_id WHERE " . $caseScopeC['sql'] . "
     UNION ALL
     SELECT CONCAT(t.due_date,' 23:59:59') AS event_at,t.title AS event_title,c.title AS case_title,c.id AS case_id,'task' AS event_type,NULL AS event_id,'upcoming' AS event_status
-    FROM case_tasks t JOIN cases c ON c.id=t.case_id WHERE c.lawyer_id=? AND t.due_date IS NOT NULL AND t.status='pending'
+    FROM case_tasks t JOIN cases c ON c.id=t.case_id WHERE " . $caseScopeC['sql'] . " AND t.due_date IS NOT NULL AND t.status='pending'
     UNION ALL
     SELECT co.scheduled_at AS event_at,COALESCE(co.topic,'استشارة') AS event_title,u.full_name AS case_title,NULL AS case_id,'consultation' AS event_type,NULL AS event_id,'upcoming' AS event_status
-    FROM consultations co JOIN users u ON u.id=co.user_id WHERE co.lawyer_id=? AND co.status IN ('pending','confirmed')
+    FROM consultations co JOIN users u ON u.id=co.user_id WHERE " . $consultScope['sql'] . " AND co.status IN ('pending','confirmed')
     UNION ALL
     SELECT e.event_at AS event_at,e.title AS event_title,COALESCE(c.title,'—') AS case_title,e.case_id,e.event_type,e.id AS event_id,e.status AS event_status
-    FROM legal_calendar_events e LEFT JOIN cases c ON c.id=e.case_id WHERE e.lawyer_id=? AND e.status<>'cancelled'
+    FROM legal_calendar_events e LEFT JOIN cases c ON c.id=e.case_id WHERE " . $calScope['sql'] . " AND e.status<>'cancelled'
 ) calendar_items WHERE event_at >= DATE_SUB(NOW(),INTERVAL 30 DAY) ORDER BY event_at ASC LIMIT 500";
-$stmt = $pdo->prepare($sql); $stmt->execute([$lawyerId,$lawyerId,$lawyerId,$lawyerId]); $events = $stmt->fetchAll();
+$stmt = $pdo->prepare($sql);
+$stmt->execute(array_merge($caseScopeC['params'], $caseScopeC['params'], $consultScope['params'], $calScope['params']));
+$events = $stmt->fetchAll();
 $overdueEvents = [];
 $soonEvents = [];
 $nowTimestamp = time();
@@ -65,8 +76,8 @@ foreach ($events as $calendarEvent) {
     if ($eventTimestamp < $nowTimestamp) $overdueEvents[] = $calendarEvent;
     elseif ($eventTimestamp <= $nowTimestamp + 7 * 86400) $soonEvents[] = $calendarEvent;
 }
-$caseQuery = $pdo->prepare("SELECT id,title FROM cases WHERE lawyer_id=? AND status NOT IN ('closed_won','closed_lost','closed_settled') ORDER BY title");
-$caseQuery->execute([$lawyerId]); $cases = $caseQuery->fetchAll();
+$caseQuery = $pdo->prepare("SELECT c.id,c.title FROM cases c WHERE " . $caseScopeC['sql'] . " AND c.status NOT IN ('closed_won','closed_lost','closed_settled') ORDER BY c.title");
+$caseQuery->execute($caseScopeC['params']); $cases = $caseQuery->fetchAll();
 $activeLawyer = 'calendar';
 require_once __DIR__ . '/includes/lawyer_header.php';
 $labels = [

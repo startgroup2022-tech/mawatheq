@@ -4,27 +4,29 @@ require_once __DIR__ . '/../lang/strings.php';
 require_once __DIR__ . '/includes/lawyer_guard.php';
 require_once __DIR__ . '/../includes/ai_provider.php';
 require_once __DIR__ . '/../includes/csrf.php';
+require_once __DIR__ . '/../includes/tenant.php';
 $lawyerId = $_SESSION['lawyer_id'];
+$firmId = tenant_write_firm_id($pdo);
 $error = null; $generated = null;
-$membershipQuery = $pdo->prepare('SELECT firm_id,member_role FROM law_firm_members WHERE lawyer_id=? LIMIT 1');
-$membershipQuery->execute([(int)$lawyerId]);
-$firmMembership = $membershipQuery->fetch() ?: null;
+$firmMembership = tenant_is_firm($pdo) ? ['firm_id' => $firmId, 'member_role' => tenant_role($pdo)] : null;
+$draftScope = tenant_owner_where($pdo, 'd');
+$caseScope = tenant_owner_where($pdo, 'c');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !csrf_is_valid($_POST['csrf_token'] ?? null)) { http_response_code(403); exit('Invalid request'); }
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'submit_client_review') {
     $draftId = (int)($_POST['draft_id'] ?? 0);
-    $q = $pdo->prepare('SELECT d.id,d.case_id,c.user_id,d.title FROM draft_documents d JOIN cases c ON c.id=d.case_id WHERE d.id=? AND d.lawyer_id=? AND d.status=\'generated\'');
-    $q->execute([$draftId,$lawyerId]);
+    $q = $pdo->prepare('SELECT d.id,d.case_id,c.user_id,d.title FROM draft_documents d JOIN cases c ON c.id=d.case_id WHERE d.id=? AND ' . $draftScope['sql'] . ' AND d.status=\'generated\'');
+    $q->execute(array_merge([$draftId], $draftScope['params']));
     $draft = $q->fetch();
     $internalReady = true;
     if ($draft) {
-        $stageQuery = $pdo->prepare('SELECT approval_stage,internal_review_started_at FROM draft_documents WHERE id=? AND lawyer_id=?');
-        $stageQuery->execute([$draftId,$lawyerId]); $stageState = $stageQuery->fetch();
+        $stageQuery = $pdo->prepare('SELECT approval_stage,internal_review_started_at FROM draft_documents WHERE id=?');
+        $stageQuery->execute([$draftId]); $stageState = $stageQuery->fetch();
         $internalReady = $stageState && (empty($stageState['internal_review_started_at']) || $stageState['approval_stage'] === 'approved');
     }
     if ($draft && $internalReady) {
-        $pdo->prepare("UPDATE draft_documents SET approval_status='submitted',client_visible=1 WHERE id=? AND lawyer_id=?")
-            ->execute([$draftId,$lawyerId]);
+        $pdo->prepare("UPDATE draft_documents SET approval_status='submitted',client_visible=1 WHERE id=?")
+            ->execute([$draftId]);
         $pdo->prepare('INSERT INTO notifications (recipient_type,recipient_id,title,message,link) VALUES (?,?,?,?,?)')
             ->execute(['client',(int)$draft['user_id'],is_rtl()?'مسودة قانونية للمراجعة':'A legal draft is ready for review',$draft['title'],'/draft-reviews.php']);
         header('Location: /lawyer/drafting.php#draft-' . $draftId); exit;
@@ -40,12 +42,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
     try {
         if ($content === '') throw new RuntimeException('Draft content cannot be empty.');
         $pdo->beginTransaction();
-        $current = $pdo->prepare("SELECT approval_version FROM draft_documents WHERE id=? AND lawyer_id=? AND approval_status='changes_requested' AND status='generated' FOR UPDATE");
-        $current->execute([$draftId,$lawyerId]); $versionRow=$current->fetch();
+        $current = $pdo->prepare("SELECT approval_version FROM draft_documents WHERE id=? AND " . $draftScope['sql'] . " AND approval_status='changes_requested' AND status='generated' FOR UPDATE");
+        $current->execute(array_merge([$draftId], $draftScope['params'])); $versionRow=$current->fetch();
         if (!$versionRow) throw new RuntimeException('Draft is not available for revision.');
         $newVersion=(int)$versionRow['approval_version']+1;
-        $q = $pdo->prepare("UPDATE draft_documents SET generated_content=?,approval_status='draft',approval_stage='draft',approval_version=?,client_visible=0 WHERE id=? AND lawyer_id=?");
-        $q->execute([$content,$newVersion,$draftId,$lawyerId]);
+        $q = $pdo->prepare("UPDATE draft_documents SET generated_content=?,approval_status='draft',approval_stage='draft',approval_version=?,client_visible=0 WHERE id=?");
+        $q->execute([$content,$newVersion,$draftId]);
         $versionInsert=$pdo->prepare('INSERT INTO draft_document_versions (draft_document_id,version_number,content,saved_by_lawyer_id) VALUES (?,?,?,?)');
         $versionInsert->execute([$draftId,$newVersion,$content,$lawyerId]);
         $pdo->commit();
@@ -68,8 +70,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'submi
         if (!$hasReviewers) {
             $error = is_rtl() ? 'أضف محامياً أو شريكاً آخر للمكتب قبل بدء المراجعة.' : 'Add another lawyer or partner to the firm before starting review.';
         } else {
-            $q = $pdo->prepare("UPDATE draft_documents SET approval_stage='lawyer_review',approval_firm_id=?,internal_review_started_at=COALESCE(internal_review_started_at,NOW()),client_visible=0 WHERE id=? AND lawyer_id=? AND status='generated' AND approval_stage='draft' AND approval_status='draft'");
-            $q->execute([(int)$firmMembership['firm_id'],$draftId,$lawyerId]);
+            $q = $pdo->prepare("UPDATE draft_documents SET approval_stage='lawyer_review',approval_firm_id=?,internal_review_started_at=COALESCE(internal_review_started_at,NOW()),client_visible=0 WHERE id=? AND " . $draftScope['sql'] . " AND status='generated' AND approval_stage='draft' AND approval_status='draft'");
+            $q->execute(array_merge([(int)$firmMembership['firm_id'],$draftId], $draftScope['params']));
         }
         if (isset($q) && $q->rowCount()) {
             $notify = $pdo->prepare("INSERT INTO notifications (recipient_type,recipient_id,title,message,link) SELECT 'lawyer',lawyer_id,?,?,? FROM law_firm_members WHERE firm_id=? AND lawyer_id<>? AND member_role IN ('owner','partner','lawyer')");
@@ -81,11 +83,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'submi
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_draft') {
-    $pdo->prepare('DELETE FROM draft_documents WHERE id=? AND lawyer_id=?')->execute([(int)($_POST['draft_id'] ?? 0), $lawyerId]);
+    tenant_require($pdo, 'drafting.edit');
+    $delScope = tenant_owner_where($pdo, 'draft_documents');
+    $pdo->prepare('DELETE FROM draft_documents WHERE id=? AND ' . $delScope['sql'])->execute(array_merge([(int)($_POST['draft_id'] ?? 0)], $delScope['params']));
     header('Location: /lawyer/drafting.php'); exit;
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'generate') {
+    tenant_require($pdo, 'drafting.create');
     $docType = is_string($_POST['doc_type'] ?? null) ? trim($_POST['doc_type']) : '';
     $partyA = is_string($_POST['party_a'] ?? null) ? trim($_POST['party_a']) : '';
     $partyB = is_string($_POST['party_b'] ?? null) ? trim($_POST['party_b']) : '';
@@ -102,8 +107,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'gener
     $aiEnabled = !empty($settings['ai_provider']) && !empty($settings['ai_api_key']) && ($settings['ai_enabled'] ?? '1') !== '0';
 
     if ($caseId) {
-        $ownedCase = $pdo->prepare('SELECT id,title,case_type,description,status FROM cases WHERE id=? AND lawyer_id=?');
-        $ownedCase->execute([$caseId,$lawyerId]);
+        $ownedCase = $pdo->prepare('SELECT c.id,c.title,c.case_type,c.description,c.status FROM cases c WHERE c.id=? AND ' . $caseScope['sql']);
+        $ownedCase->execute(array_merge([$caseId], $caseScope['params']));
         $ownedCaseData = $ownedCase->fetch();
     } else {
         $ownedCaseData = null;
@@ -154,10 +159,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'gener
             }
             $draftDetails .= "\n\n" . ($language==='ar'?'سجل القضية المختار (بيانات مرجعية فقط):':'Selected case record (reference data only):') . "\n" . (string)$contextJson;
         }
-        $result = generate_legal_draft($settings['ai_provider'], $settings['ai_api_key'], $settings['ai_model'] ?? '', $docType, $partyA, $partyB, $draftDetails, $language === 'ar');
-        $stmt = $pdo->prepare('INSERT INTO draft_documents (lawyer_id, case_id, doc_type, title, party_a, party_b, details, generated_content, language, status) VALUES (?,?,?,?,?,?,?,?,?,?)');
+        require_once __DIR__ . '/../includes/ai_gateway.php';
+        $aiTenant = ai_gateway_tenant_context($pdo, 'lawyer', (int)$lawyerId);
+        $result = generate_legal_draft($settings['ai_provider'], $settings['ai_api_key'], $settings['ai_model'] ?? '', $docType, $partyA, $partyB, $draftDetails, $language === 'ar', [
+            'pdo' => $pdo, 'settings' => $settings, 'tenant' => $aiTenant,
+            'actor_id' => (int)$lawyerId, 'actor_type' => 'lawyer',
+        ]);
+        $stmt = $pdo->prepare('INSERT INTO draft_documents (lawyer_id, firm_id, case_id, doc_type, title, party_a, party_b, details, generated_content, language, status) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
         $title = $docType . ($partyA ? ' — ' . $partyA : '') . ($partyB ? ' / ' . $partyB : '');
-        $stmt->execute([$lawyerId, $caseId, $docType, $title, $partyA, $partyB, $draftDetails, $result['content'], $language, $result['ok'] ? 'generated' : 'failed']);
+        $stmt->execute([$lawyerId, $firmId, $caseId, $docType, $title, $partyA, $partyB, $draftDetails, $result['content'], $language, $result['ok'] ? 'generated' : 'failed']);
         if (!$result['ok']) { $error = $result['error']; } else {
             $generated = (int)$pdo->lastInsertId();
             $pdo->prepare('INSERT IGNORE INTO draft_document_versions (draft_document_id,version_number,content,saved_by_lawyer_id) VALUES (?,1,?,?)')->execute([$generated,$result['content'],$lawyerId]);
@@ -172,11 +182,11 @@ $docTypes = is_rtl()
     ? ['خطاب مطالبة قانونية', 'مذكرة قانونية', 'صحيفة دعوى', 'مذكرة دفاع', 'رد قانوني', 'اتفاقية عمل', 'اتفاقية سرية (NDA)', 'عقد عام', 'إشعار إنهاء عقد', 'إنذار قانوني', 'ملخص قضية', 'رأي قانوني']
     : ['Legal demand letter', 'Legal memo', 'Statement of claim', 'Defense memorandum', 'Legal response', 'Employment agreement', 'Non-disclosure agreement (NDA)', 'General contract', 'Contract termination notice', 'Legal notice', 'Case summary', 'Legal opinion'];
 
-$cases = $pdo->prepare('SELECT id, title FROM cases WHERE lawyer_id=? ORDER BY created_at DESC');
-$cases->execute([$lawyerId]); $cases = $cases->fetchAll();
+$cases = $pdo->prepare('SELECT c.id, c.title FROM cases c WHERE ' . $caseScope['sql'] . ' ORDER BY c.created_at DESC');
+$cases->execute($caseScope['params']); $cases = $cases->fetchAll();
 
-$drafts = $pdo->prepare('SELECT * FROM draft_documents WHERE lawyer_id=? ORDER BY created_at DESC LIMIT 20');
-$drafts->execute([$lawyerId]); $drafts = $drafts->fetchAll();
+$drafts = $pdo->prepare('SELECT d.* FROM draft_documents d WHERE ' . $draftScope['sql'] . ' ORDER BY d.created_at DESC LIMIT 20');
+$drafts->execute($draftScope['params']); $drafts = $drafts->fetchAll();
 ?>
 <div class="app-content">
   <div class="toolbar">

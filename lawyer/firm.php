@@ -4,10 +4,13 @@ require_once __DIR__ . '/../lang/strings.php';
 require_once __DIR__ . '/includes/lawyer_guard.php';
 require_once __DIR__ . '/../includes/csrf.php';
 require_once __DIR__ . '/../includes/audit_log.php';
+require_once __DIR__ . '/../includes/tenant.php';
 $lawyerId = (int)$_SESSION['lawyer_id'];
 $error = null; $success = null;
-$q = $pdo->prepare('SELECT f.*,m.member_role FROM law_firm_members m JOIN law_firms f ON f.id=m.firm_id WHERE m.lawyer_id=? LIMIT 1');
+$q = $pdo->prepare('SELECT f.*,m.member_role FROM law_firm_members m JOIN law_firms f ON f.id=m.firm_id WHERE m.lawyer_id=? AND m.status=\'active\' LIMIT 1');
 $q->execute([$lawyerId]); $membership = $q->fetch();
+$firmId = $membership ? (int)$membership['id'] : null;
+$isOwner = $membership && $membership['member_role'] === 'owner';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) { http_response_code(403); exit('Invalid request'); }
@@ -22,6 +25,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->prepare('INSERT INTO law_firms (name,owner_lawyer_id) VALUES (?,?)')->execute([$name,$lawyerId]);
                 $firmId = (int)$pdo->lastInsertId();
                 $pdo->prepare("INSERT INTO law_firm_members (firm_id,lawyer_id,member_role) VALUES (?,?,'owner')")->execute([$firmId,$lawyerId]);
+                // Adopt the founder's solo records into the new firm so nothing disappears.
+                tenant_adopt_lawyer_data($pdo, $firmId, $lawyerId);
                 $pdo->commit();
                 log_action($pdo,'إنشاء مساحة مكتب قانوني','law_firm',$firmId);
                 header('Location: /lawyer/firm.php'); exit;
@@ -33,7 +38,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } elseif (!$membership) {
         http_response_code(403); exit('No firm membership');
-    } elseif ($action === 'add_member' && $membership['member_role'] === 'owner') {
+    } elseif ($action === 'update_firm') {
+        tenant_require($pdo, 'firm.edit');
+        $fields = [
+            'legal_name' => trim((string)($_POST['legal_name'] ?? '')),
+            'email' => strtolower(trim((string)($_POST['email'] ?? ''))),
+            'phone' => trim((string)($_POST['phone'] ?? '')),
+            'address' => trim((string)($_POST['address'] ?? '')),
+            'city' => trim((string)($_POST['city'] ?? '')),
+            'country' => trim((string)($_POST['country'] ?? '')),
+            'commercial_register' => trim((string)($_POST['commercial_register'] ?? '')),
+            'license_number' => trim((string)($_POST['license_number'] ?? '')),
+        ];
+        $limits = ['legal_name'=>200,'email'=>150,'phone'=>30,'address'=>255,'city'=>100,'country'=>100,'commercial_register'=>80,'license_number'=>80];
+        $valid = true;
+        foreach ($fields as $key => $value) if (mb_strlen($value) > $limits[$key]) $valid = false;
+        if ($fields['email'] !== '' && !filter_var($fields['email'], FILTER_VALIDATE_EMAIL)) $valid = false;
+        if (!$valid) {
+            $error = is_rtl() ? 'تحقق من بيانات المكتب المدخلة.' : 'Check the entered firm details.';
+        } else {
+            $pdo->prepare('UPDATE law_firms SET legal_name=?,email=?,phone=?,address=?,city=?,country=?,commercial_register=?,license_number=? WHERE id=?')
+                ->execute([$fields['legal_name'] ?: null,$fields['email'] ?: null,$fields['phone'] ?: null,$fields['address'] ?: null,$fields['city'] ?: null,$fields['country'] ?: null,$fields['commercial_register'] ?: null,$fields['license_number'] ?: null,(int)$membership['id']]);
+            log_action($pdo,'تحديث بيانات المكتب','law_firm',(int)$membership['id']);
+            $success = is_rtl() ? 'تم حفظ بيانات المكتب.' : 'Firm details saved.';
+        }
+    } elseif ($action === 'add_member' && $isOwner) {
         $email = strtolower(trim($_POST['email'] ?? ''));
         $role = $_POST['member_role'] ?? 'lawyer';
         if (!filter_var($email,FILTER_VALIDATE_EMAIL) || !in_array($role,['partner','lawyer','staff'],true)) {
@@ -48,20 +77,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 else {
                     $pdo->prepare('INSERT INTO law_firm_members (firm_id,lawyer_id,member_role) VALUES (?,?,?)')->execute([(int)$membership['id'],(int)$target['id'],$role]);
                     $memberRecordId = (int)$pdo->lastInsertId();
+                    // Pull the new member's solo records into the firm so their history stays visible.
+                    tenant_adopt_lawyer_data($pdo, (int)$membership['id'], (int)$target['id']);
                     log_action($pdo,'إضافة عضو إلى المكتب بدور '.$role,'law_firm_member',$memberRecordId);
                     $success = is_rtl() ? 'تمت إضافة عضو المكتب.' : 'Firm member added.';
                 }
             }
         }
-    } elseif ($action === 'remove_member' && $membership['member_role'] === 'owner') {
+    } elseif ($action === 'remove_member' && $isOwner) {
         $memberId = (int)($_POST['member_id'] ?? 0);
         $remove = $pdo->prepare("DELETE FROM law_firm_members WHERE id=? AND firm_id=? AND member_role<>'owner'");
         $remove->execute([$memberId,(int)$membership['id']]);
         if ($remove->rowCount() > 0) log_action($pdo,'إزالة عضو من المكتب','law_firm_member',$memberId);
         $success = is_rtl() ? 'تم تحديث عضوية المكتب.' : 'Firm membership updated.';
     } elseif ($action === 'add_knowledge') {
+        tenant_require($pdo, 'firm.view');
         $title = trim($_POST['title'] ?? ''); $content = trim($_POST['content'] ?? ''); $category = trim($_POST['category'] ?? '');
         if ($title === '' || $content === '') $error = is_rtl() ? 'أدخل العنوان والمحتوى.' : 'Enter a title and content.';
+        elseif (mb_strlen($title) > 255 || mb_strlen($category) > 100) $error = is_rtl() ? 'العنوان أو التصنيف طويل جداً.' : 'The title or category is too long.';
         else {
             $pdo->prepare('INSERT INTO firm_knowledge (firm_id,author_lawyer_id,title,category,content) VALUES (?,?,?,?,?)')->execute([(int)$membership['id'],$lawyerId,$title,$category ?: null,$content]);
             log_action($pdo,'إضافة عنصر إلى قاعدة معرفة المكتب','firm_knowledge',(int)$pdo->lastInsertId());
@@ -85,7 +118,16 @@ require_once __DIR__ . '/includes/lawyer_header.php';
 <div class="dash-card"><h3><?= is_rtl()?'إنشاء مساحة مكتب':'Create a firm workspace' ?></h3><p class="field-hint"><?= is_rtl()?'يمكن للمحامي المعتمد إنشاء مكتب خاص ثم إضافة محامين معتمدين وقاعدة معرفة لا يراها إلا أعضاء المكتب.':'An approved lawyer can create a private firm workspace, add approved lawyers, and maintain knowledge visible only to its members.' ?></p><button type="button" class="btn btn-primary" onclick="openModal('createFirmModal')"><?= is_rtl()?'إنشاء مكتب':'Create firm' ?></button></div>
 <div class="modal-backdrop<?= $error ? ' is-open' : '' ?>" id="createFirmModal"><form class="modal-form" method="post"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="create_firm"><button type="button" class="modal-close" onclick="closeModal('createFirmModal')" aria-label="<?= is_rtl()?'إغلاق':'Close' ?>">✕</button><h3><?= is_rtl()?'إنشاء مساحة مكتب':'Create firm workspace' ?></h3><div class="field"><label><?= is_rtl()?'اسم المكتب':'Firm name' ?></label><input name="firm_name" maxlength="180" required></div><button class="btn btn-primary" type="submit"><?= is_rtl()?'إنشاء المكتب':'Create firm' ?></button></form></div>
 <?php else: ?>
-<div class="dash-card"><h3><?= htmlspecialchars($membership['name']) ?></h3><p><?= is_rtl()?'دورك في المكتب: ':'Your role: ' ?><?= htmlspecialchars($membership['member_role']) ?> · <?= is_rtl()?'مساحة خاصة بأعضاء المكتب':'Private to firm members' ?></p></div>
+<div class="dash-card"><div class="toolbar"><h3><?= htmlspecialchars($membership['name']) ?></h3><?php if($isOwner): ?><button type="button" class="btn btn-outline btn-sm" onclick="openModal('editFirmModal')">✎ <?= is_rtl()?'تعديل بيانات المكتب':'Edit firm details' ?></button><?php endif; ?></div><p><?= is_rtl()?'دورك في المكتب: ':'Your role: ' ?><?= htmlspecialchars($membership['member_role']) ?> · <?= is_rtl()?'مساحة خاصة بأعضاء المكتب':'Private to firm members' ?></p>
+<?php if(!empty($membership['legal_name'])||!empty($membership['email'])||!empty($membership['city'])): ?><div class="field-hint"><?= htmlspecialchars(trim(implode(' · ', array_filter([$membership['legal_name'] ?? '', $membership['email'] ?? '', $membership['phone'] ?? '', $membership['city'] ?? '', $membership['country'] ?? ''])))) ?></div><?php endif; ?>
+<?php if($isOwner): ?><div class="modal-backdrop<?= $error && ($_POST['action']??'')==='update_firm' ? ' is-open' : '' ?>" id="editFirmModal"><form class="modal-form" method="post"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="update_firm"><button type="button" class="modal-close" onclick="closeModal('editFirmModal')" aria-label="<?= is_rtl()?'إغلاق':'Close' ?>">✕</button><h3><?= is_rtl()?'تعديل بيانات المكتب':'Edit firm details' ?></h3>
+<div class="field"><label><?= is_rtl()?'الاسم القانوني':'Legal name' ?></label><input name="legal_name" maxlength="200" value="<?= htmlspecialchars($membership['legal_name'] ?? '') ?>"></div>
+<div class="field"><label><?= is_rtl()?'بريد المكتب':'Firm email' ?></label><input type="email" name="email" maxlength="150" value="<?= htmlspecialchars($membership['email'] ?? '') ?>"></div>
+<div class="field"><label><?= is_rtl()?'الهاتف':'Phone' ?></label><input name="phone" maxlength="30" value="<?= htmlspecialchars($membership['phone'] ?? '') ?>"></div>
+<div class="field"><label><?= is_rtl()?'العنوان':'Address' ?></label><input name="address" maxlength="255" value="<?= htmlspecialchars($membership['address'] ?? '') ?>"></div>
+<div class="grid-2"><div class="field"><label><?= is_rtl()?'المدينة':'City' ?></label><input name="city" maxlength="100" value="<?= htmlspecialchars($membership['city'] ?? '') ?>"></div><div class="field"><label><?= is_rtl()?'الدولة':'Country' ?></label><input name="country" maxlength="100" value="<?= htmlspecialchars($membership['country'] ?? '') ?>"></div></div>
+<div class="grid-2"><div class="field"><label><?= is_rtl()?'السجل التجاري':'Commercial register' ?></label><input name="commercial_register" maxlength="80" value="<?= htmlspecialchars($membership['commercial_register'] ?? '') ?>"></div><div class="field"><label><?= is_rtl()?'رقم الترخيص':'License number' ?></label><input name="license_number" maxlength="80" value="<?= htmlspecialchars($membership['license_number'] ?? '') ?>"></div></div>
+<button class="btn btn-primary" type="submit"><?= is_rtl()?'حفظ':'Save' ?></button></form></div><?php endif; ?></div>
 <?php
 $members = $pdo->prepare('SELECT m.id,m.member_role,m.joined_at,l.full_name,l.email,l.specialization FROM law_firm_members m JOIN lawyers l ON l.id=m.lawyer_id WHERE m.firm_id=? ORDER BY FIELD(m.member_role,\'owner\',\'partner\',\'lawyer\',\'staff\'),l.full_name');
 $members->execute([(int)$membership['id']]); $members = $members->fetchAll();

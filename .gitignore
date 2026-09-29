@@ -1,0 +1,19 @@
+# Deployment-only credentials (never commit)
+config/secrets.php
+
+# Local runtime / editor artifacts
+.agent_tmp/
+.openhands/
+*.log
+.DS_Store
+
+# Uploaded user content (runtime data, not source)
+uploads/documents/*
+uploads/evidence/*
+uploads/lawyer-photos/*
+uploads/knowledge/*
+!uploads/**/.htaccess
+
+# Dependency / build output
+node_modules/
+vendor/

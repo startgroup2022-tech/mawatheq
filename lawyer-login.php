@@ -1,5 +1,8 @@
 <?php
 require_once __DIR__ . '/config/config.php';
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && !csrf_is_valid($_POST['csrf_token'] ?? null)) {
+    http_response_code(403); exit('Invalid request');
+}
 require_once __DIR__ . '/lang/strings.php';
 require_once __DIR__ . '/includes/auth_security.php';
 $error = null;
@@ -29,6 +32,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             session_regenerate_id(true);
             $_SESSION['lawyer_id'] = $lawyer['id'];
             $_SESSION['lawyer_name'] = $lawyer['full_name'];
+            require_once __DIR__ . '/includes/tenant.php';
+            tenant_sync_session($pdo);
             header('Location: /lawyer/dashboard.php');
             exit;
         }
