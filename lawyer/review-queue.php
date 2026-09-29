@@ -3,16 +3,18 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../lang/strings.php';
 require_once __DIR__ . '/includes/lawyer_guard.php';
 require_once __DIR__ . '/../includes/csrf.php';
+require_once __DIR__ . '/../includes/tenant.php';
+require_once __DIR__ . '/../includes/audit_log.php';
 $lawyerId = (int)$_SESSION['lawyer_id'];
-$membershipQuery = $pdo->prepare('SELECT firm_id,member_role FROM law_firm_members WHERE lawyer_id=? LIMIT 1');
-$membershipQuery->execute([$lawyerId]);
-$membership = $membershipQuery->fetch() ?: null;
+$firmId = tenant_firm_id($pdo);
+$membership = tenant_is_firm($pdo) ? ['firm_id' => $firmId, 'member_role' => tenant_role($pdo)] : null;
 $message = null;
 
 if (!$membership) { http_response_code(403); exit(is_rtl()?'هذه الصفحة لأعضاء المكاتب القانونية فقط.':'This page is available to law-firm members only.'); }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) { http_response_code(403); exit('Invalid request'); }
+    tenant_require($pdo, 'drafting.review');
     $draftId = (int)($_POST['draft_id'] ?? 0);
     $decision = (string)($_POST['decision'] ?? '');
     $notes = trim((string)($_POST['notes'] ?? ''));
@@ -53,6 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $notify->execute(['lawyer',(int)$draft['lawyer_id'],$noticeTitle,$noticeText,'/lawyer/drafting.php#draft-'.$draftId]);
                 }
                 $pdo->commit();
+                log_action($pdo, 'قرار مراجعة مسودة: ' . $decision, 'draft_document', $draftId);
                 header('Location: /lawyer/review-queue.php?updated=1'); exit;
             }
         } catch (Throwable $e) {

@@ -5,12 +5,16 @@ require_once __DIR__ . '/includes/lawyer_guard.php';
 require_once __DIR__ . '/../includes/ai_provider.php';
 require_once __DIR__ . '/../includes/upload_validation.php';
 require_once __DIR__ . '/../includes/csrf.php';
+require_once __DIR__ . '/../includes/tenant.php';
+require_once __DIR__ . '/../includes/audit_log.php';
 $lawyerId = $_SESSION['lawyer_id'];
+$firmId = tenant_write_firm_id($pdo);
 $caseId = (int)($_GET['id'] ?? 0);
 $caseActionMessage = null;
 
-$stmt = $pdo->prepare('SELECT c.*, u.full_name AS client_name, u.email AS client_email, l.hourly_rate AS lawyer_hourly_rate FROM cases c JOIN users u ON u.id=c.user_id JOIN lawyers l ON l.id=c.lawyer_id WHERE c.id=? AND c.lawyer_id=?');
-$stmt->execute([$caseId, $lawyerId]);
+$caseScope = tenant_owner_where($pdo, 'c');
+$stmt = $pdo->prepare('SELECT c.*, u.full_name AS client_name, u.email AS client_email, l.hourly_rate AS lawyer_hourly_rate FROM cases c JOIN users u ON u.id=c.user_id JOIN lawyers l ON l.id=c.lawyer_id WHERE c.id=? AND ' . $caseScope['sql']);
+$stmt->execute(array_merge([$caseId], $caseScope['params']));
 $case = $stmt->fetch();
 if (!$case) {
     $activeLawyer = 'cases';
@@ -22,6 +26,7 @@ if (!$case) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !csrf_is_valid($_POST['csrf_token'] ?? null)) { http_response_code(403); exit('Invalid request'); }
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (($_POST['action'] ?? '') === 'update_case') {
+        tenant_require($pdo, 'cases.edit');
         $allowedStatuses = ['open','in_review','closed_won','closed_lost','closed_settled'];
         $probability = trim((string)($_POST['win_probability'] ?? ''));
         if (!in_array($_POST['status'] ?? '', $allowedStatuses, true) || ($probability !== '' && (!ctype_digit($probability) || (int)$probability < 0 || (int)$probability > 100))) {
@@ -29,6 +34,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
         $pdo->prepare('UPDATE cases SET status=?, win_probability=? WHERE id=?')
             ->execute([$_POST['status'], $probability !== '' ? (int)$probability : null, $caseId]);
+        if ($_POST['status'] !== $case['status']) {
+            log_action($pdo, 'تحديث حالة القضية إلى ' . $_POST['status'], 'case', $caseId);
+            notify($pdo, 'client', (int)$case['user_id'], is_rtl() ? 'تحديث حالة القضية' : 'Case status updated', $case['title'] . ' → ' . $_POST['status'], '/consultations.php');
+        }
         header('Location: /lawyer/case-detail.php?id=' . $caseId); exit;
         }
     }
@@ -115,8 +124,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (($_POST['action'] ?? '') === 'add_note') {
         $note = trim($_POST['note'] ?? '');
         if ($note === '') { $caseActionMessage = is_rtl() ? 'اكتب الملاحظة أولاً.' : 'Enter a note first.'; } else {
-        $pdo->prepare('INSERT INTO case_notes (case_id, lawyer_id, note) VALUES (?,?,?)')
-            ->execute([$caseId, $lawyerId, $note]);
+        $pdo->prepare('INSERT INTO case_notes (case_id, lawyer_id, firm_id, note) VALUES (?,?,?,?)')
+            ->execute([$caseId, $lawyerId, $firmId, $note]);
         header('Location: /lawyer/case-detail.php?id=' . $caseId . '#notes'); exit;
         }
     }
@@ -165,8 +174,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
         if (!$caseActionMessage) {
-            $pdo->prepare('INSERT INTO case_evidence (case_id, added_by_lawyer_id, related_claim_id, related_fact_id, related_law_article_id, title, evidence_type, description, original_name, stored_name) VALUES (?,?,?,?,?,?,?,?,?,?)')
-                ->execute([$caseId, $lawyerId, $relatedClaimId ?: null, $relatedFactId ?: null, $relatedLawArticleId ?: null, $title, $evidenceType, $description ?: null, $originalName, $storedName]);
+            $pdo->prepare('INSERT INTO case_evidence (case_id, added_by_lawyer_id, firm_id, related_claim_id, related_fact_id, related_law_article_id, title, evidence_type, description, original_name, stored_name) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+                ->execute([$caseId, $lawyerId, $firmId, $relatedClaimId ?: null, $relatedFactId ?: null, $relatedLawArticleId ?: null, $title, $evidenceType, $description ?: null, $originalName, $storedName]);
             $evidenceId = (int)$pdo->lastInsertId();
             if ($storedName && !empty($_POST['analyze_evidence'])) {
                 $settings=ai_load_settings($pdo);
@@ -293,8 +302,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $caseActionMessage = is_rtl() ? 'أدخل وصفاً وتاريخاً ومدة صحيحة (من دقيقة إلى 24 ساعة).' : 'Enter a description, valid date, and duration (1 minute to 24 hours).';
         } else {
             $rate = max(0,(float)($case['lawyer_hourly_rate'] ?? 0));
-            $pdo->prepare('INSERT INTO case_time_entries (case_id,lawyer_id,work_date,description,minutes,hourly_rate,billable) VALUES (?,?,?,?,?,?,?)')
-                ->execute([$caseId,$lawyerId,$workDate,$description,$minutes,$rate,!empty($_POST['billable']) ? 1 : 0]);
+            $pdo->prepare('INSERT INTO case_time_entries (case_id,lawyer_id,firm_id,work_date,description,minutes,hourly_rate,billable) VALUES (?,?,?,?,?,?,?,?)')
+                ->execute([$caseId,$lawyerId,$firmId,$workDate,$description,$minutes,$rate,!empty($_POST['billable']) ? 1 : 0]);
             header('Location: /lawyer/case-detail.php?id=' . $caseId . '#time'); exit;
         }
     }
@@ -333,8 +342,8 @@ $analyses = $pdo->prepare('SELECT * FROM case_analyses WHERE case_id=? ORDER BY 
 $analyses->execute([$caseId]); $analyses = $analyses->fetchAll();
 $risks = $pdo->prepare('SELECT * FROM case_risks WHERE case_id=? ORDER BY likelihood*impact DESC,id DESC');
 $risks->execute([$caseId]); $risks = $risks->fetchAll();
-$timeEntries = $pdo->prepare('SELECT te.*,i.is_draft AS invoice_is_draft FROM case_time_entries te LEFT JOIN invoices i ON i.id=te.invoice_id WHERE te.case_id=? AND te.lawyer_id=? ORDER BY te.work_date DESC,te.id DESC');
-$timeEntries->execute([$caseId,$lawyerId]); $timeEntries = $timeEntries->fetchAll();
+$timeEntries = $pdo->prepare('SELECT te.*,i.is_draft AS invoice_is_draft FROM case_time_entries te LEFT JOIN invoices i ON i.id=te.invoice_id WHERE te.case_id=? ORDER BY te.work_date DESC,te.id DESC');
+$timeEntries->execute([$caseId]); $timeEntries = $timeEntries->fetchAll();
 $billableMinutes = array_sum(array_map(fn($entry)=>(int)$entry['billable']?(int)$entry['minutes']:0,$timeEntries));
 $billableValue = array_sum(array_map(fn($entry)=>(int)$entry['billable']?round(((int)$entry['minutes']/60)*(float)$entry['hourly_rate'],3):0,$timeEntries));
 ?>

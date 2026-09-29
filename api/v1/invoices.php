@@ -4,6 +4,7 @@
  */
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/../../includes/invoice_time_items.php';
+require_once __DIR__ . '/../../includes/tenant.php';
 $auth = api_authenticate($pdo);
 
 if ($auth['type'] === 'client') {
@@ -15,17 +16,19 @@ if ($auth['type'] === 'client') {
         WHERE i.user_id = ? AND i.is_draft=0
         ORDER BY i.created_at DESC
     ');
+    $stmt->execute([$auth['id']]);
 } else {
+    $invScope = tenant_owner_where_for_lawyer($pdo, $auth['id'], 'i');
     $stmt = $pdo->prepare('
         SELECT i.*, u.full_name AS client_name, c.title AS case_title
         FROM invoices i
         JOIN users u ON u.id = i.user_id
         LEFT JOIN cases c ON c.id = i.case_id
-        WHERE i.lawyer_id = ?
+        WHERE ' . $invScope['sql'] . '
         ORDER BY i.created_at DESC
     ');
+    $stmt->execute($invScope['params']);
 }
-$stmt->execute([$auth['id']]);
 $invoices = $stmt->fetchAll();
 $timeItemsByInvoice=invoice_time_items($pdo,array_column($invoices,'id'));
 foreach($invoices as &$invoice){$invoice['time_items']=$timeItemsByInvoice[(int)$invoice['id']]??[];}

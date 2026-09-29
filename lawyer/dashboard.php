@@ -2,22 +2,30 @@
 $activeLawyer = 'dashboard';
 require_once __DIR__ . '/includes/lawyer_header.php';
 require_once __DIR__ . '/../includes/profile_completion.php';
+require_once __DIR__ . '/../includes/tenant.php';
 
 $lawyerId = $_SESSION['lawyer_id'];
 $lwStmt = $pdo->prepare('SELECT * FROM lawyers WHERE id=?');
 $lwStmt->execute([$lawyerId]);
 $lwProfile = $lwStmt->fetch();
 $completion = lawyer_completion_percent($lwProfile);
+$caseScope = tenant_owner_where($pdo, 'cases');
+$caseScopeC = tenant_owner_where($pdo, 'c');
+$consultScope = tenant_owner_where($pdo, 'consultations');
 $stats = [
-    'open_cases' => $pdo->prepare("SELECT COUNT(*) c FROM cases WHERE lawyer_id=? AND status IN ('open','in_review')"),
-    'total_cases' => $pdo->prepare("SELECT COUNT(*) c FROM cases WHERE lawyer_id=?"),
-    'upcoming' => $pdo->prepare("SELECT COUNT(*) c FROM consultations WHERE lawyer_id=? AND status IN ('pending','confirmed') AND scheduled_at >= NOW()"),
-    'completed' => $pdo->prepare("SELECT COUNT(*) c FROM consultations WHERE lawyer_id=? AND status='completed'"),
+    'open_cases' => $pdo->prepare("SELECT COUNT(*) c FROM cases WHERE " . $caseScope['sql'] . " AND status IN ('open','in_review')"),
+    'total_cases' => $pdo->prepare("SELECT COUNT(*) c FROM cases WHERE " . $caseScope['sql']),
+    'upcoming' => $pdo->prepare("SELECT COUNT(*) c FROM consultations WHERE " . $consultScope['sql'] . " AND status IN ('pending','confirmed') AND scheduled_at >= NOW()"),
+    'completed' => $pdo->prepare("SELECT COUNT(*) c FROM consultations WHERE " . $consultScope['sql'] . " AND status='completed'"),
 ];
-foreach ($stats as $k => $stmt) { $stmt->execute([$lawyerId]); $stats[$k] = $stmt->fetch()['c']; }
+$stats['open_cases']->execute($caseScope['params']);
+$stats['total_cases']->execute($caseScope['params']);
+$stats['upcoming']->execute($consultScope['params']);
+$stats['completed']->execute($consultScope['params']);
+foreach ($stats as $k => $stmt) { $stats[$k] = $stmt->fetch()['c']; }
 
-$recentCases = $pdo->prepare('SELECT c.*, u.full_name AS client_name FROM cases c JOIN users u ON u.id=c.user_id WHERE c.lawyer_id=? ORDER BY c.updated_at DESC LIMIT 5');
-$recentCases->execute([$lawyerId]);
+$recentCases = $pdo->prepare('SELECT c.*, u.full_name AS client_name FROM cases c JOIN users u ON u.id=c.user_id WHERE ' . $caseScopeC['sql'] . ' ORDER BY c.updated_at DESC LIMIT 5');
+$recentCases->execute($caseScopeC['params']);
 $recentCases = $recentCases->fetchAll();
 ?>
 <div class="app-content">

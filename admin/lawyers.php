@@ -125,7 +125,12 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action'] ?? '')==='delete_la
 $activeAdmin = 'lawyers';
 require_once __DIR__ . '/includes/admin_header.php';
 
-$lawyers = $pdo->query('SELECT * FROM lawyers ORDER BY id DESC')->fetchAll();
+try {
+    $lawyers = $pdo->query('SELECT l.*, f.name AS firm_name, m.member_role AS firm_role FROM lawyers l LEFT JOIN law_firm_members m ON m.lawyer_id=l.id AND m.status=\'active\' LEFT JOIN law_firms f ON f.id=m.firm_id ORDER BY l.id DESC')->fetchAll();
+} catch (PDOException $e) {
+    // Firm tables arrive with the v42 upgrade; the page must still work without them.
+    $lawyers = $pdo->query('SELECT * FROM lawyers ORDER BY id DESC')->fetchAll();
+}
 
 $totalLawyers = count($lawyers);
 $activeLawyers = 0;
@@ -906,6 +911,7 @@ body.lawyers-modal-open {
                         <th>التقييم</th>
                         <th>اكتمال الملف</th>
                         <th>المصدر</th>
+                        <th>المكتب</th>
                         <th>الحالة</th>
                         <th>الإجراءات</th>
                     </tr>
@@ -974,6 +980,14 @@ body.lawyers-modal-open {
                         </td>
 
                         <td>
+                            <?php if (!empty($lw['firm_name'])): ?>
+                                <div class="source-text"><?= htmlspecialchars($lw['firm_name']) ?><?php if (!empty($lw['firm_role'])): ?> · <?= htmlspecialchars($lw['firm_role']) ?><?php endif; ?></div>
+                            <?php else: ?>
+                                <span class="source-text">مستقل</span>
+                            <?php endif; ?>
+                        </td>
+
+                        <td>
                             <span class="status-pill <?= $statusClass ?>">
                                 <?= htmlspecialchars($status ?: 'غير محدد') ?>
                             </span>
@@ -990,7 +1004,7 @@ body.lawyers-modal-open {
 
                 <?php if (empty($lawyers)): ?>
                     <tr>
-                        <td colspan="10">
+                        <td colspan="11">
                             <div class="empty-state">
                                 <div class="empty-icon">⚖</div>
                                 <h3 class="empty-title">لا يوجد محامون بعد</h3>

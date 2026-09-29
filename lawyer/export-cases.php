@@ -1,9 +1,11 @@
 <?php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/includes/lawyer_guard.php';
-$lawyerId = (int)$_SESSION['lawyer_id'];
-$stmt = $pdo->prepare('SELECT c.id,c.title,c.case_type,c.status,c.win_probability,c.description,c.created_at,u.full_name client_name FROM cases c JOIN users u ON u.id=c.user_id WHERE c.lawyer_id=? ORDER BY c.created_at DESC');
-$stmt->execute([$lawyerId]);
+require_once __DIR__ . '/../includes/tenant.php';
+tenant_require($pdo, 'cases.export');
+$caseScope = tenant_owner_where($pdo, 'c');
+$stmt = $pdo->prepare('SELECT c.id,c.title,c.case_type,c.status,c.win_probability,c.description,c.created_at,u.full_name client_name FROM cases c JOIN users u ON u.id=c.user_id WHERE ' . $caseScope['sql'] . ' ORDER BY c.created_at DESC');
+$stmt->execute($caseScope['params']);
 header('Content-Type: text/csv; charset=UTF-8');
 header('Content-Disposition: attachment; filename="mawatheq-cases-' . date('Y-m-d') . '.csv"');
 header('X-Content-Type-Options: nosniff');

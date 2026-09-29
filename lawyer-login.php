@@ -32,6 +32,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             session_regenerate_id(true);
             $_SESSION['lawyer_id'] = $lawyer['id'];
             $_SESSION['lawyer_name'] = $lawyer['full_name'];
+            require_once __DIR__ . '/includes/tenant.php';
+            tenant_sync_session($pdo);
             header('Location: /lawyer/dashboard.php');
             exit;
         }

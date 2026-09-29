@@ -71,8 +71,19 @@ CREATE TABLE IF NOT EXISTS lawyers (
 CREATE TABLE IF NOT EXISTS law_firms (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(180) NOT NULL,
+    legal_name VARCHAR(200) DEFAULT NULL,
+    display_name VARCHAR(180) DEFAULT NULL,
+    email VARCHAR(150) DEFAULT NULL,
+    phone VARCHAR(30) DEFAULT NULL,
+    address VARCHAR(255) DEFAULT NULL,
+    city VARCHAR(100) DEFAULT NULL,
+    country VARCHAR(100) DEFAULT NULL,
+    commercial_register VARCHAR(80) DEFAULT NULL,
+    license_number VARCHAR(80) DEFAULT NULL,
+    logo_path VARCHAR(255) DEFAULT NULL,
     owner_lawyer_id INT UNSIGNED NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (owner_lawyer_id) REFERENCES lawyers(id) ON DELETE CASCADE,
     UNIQUE KEY uq_law_firm_owner (owner_lawyer_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -82,7 +93,10 @@ CREATE TABLE IF NOT EXISTS law_firm_members (
     firm_id INT UNSIGNED NOT NULL,
     lawyer_id INT UNSIGNED NOT NULL,
     member_role ENUM('owner','partner','lawyer','staff') NOT NULL DEFAULT 'lawyer',
+    status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+    permissions_json TEXT DEFAULT NULL,
     joined_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uq_law_firm_member_lawyer (lawyer_id),
     INDEX idx_law_firm_members_firm (firm_id,member_role),
     FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE CASCADE,
@@ -247,6 +261,7 @@ CREATE TABLE IF NOT EXISTS consultations (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     user_id INT UNSIGNED NOT NULL,
     lawyer_id INT UNSIGNED NOT NULL,
+    firm_id INT UNSIGNED DEFAULT NULL,
     consultation_type ENUM('text','voice','video') NOT NULL DEFAULT 'text',
     scheduled_at DATETIME NOT NULL,
     duration_minutes SMALLINT DEFAULT 30,
@@ -256,8 +271,10 @@ CREATE TABLE IF NOT EXISTS consultations (
     notes TEXT DEFAULT NULL,
     room_code VARCHAR(64) DEFAULT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_consultations_firm (firm_id),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (lawyer_id) REFERENCES lawyers(id) ON DELETE CASCADE
+    FOREIGN KEY (lawyer_id) REFERENCES lawyers(id) ON DELETE CASCADE,
+    CONSTRAINT fk_consultations_firm FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ------------------------------------------------------------
@@ -266,6 +283,7 @@ CREATE TABLE IF NOT EXISTS consultations (
 CREATE TABLE IF NOT EXISTS cases (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     lawyer_id INT UNSIGNED NOT NULL,
+    firm_id INT UNSIGNED DEFAULT NULL,
     user_id INT UNSIGNED NOT NULL,
     title VARCHAR(255) NOT NULL,
     case_type VARCHAR(100) DEFAULT NULL,
@@ -274,8 +292,10 @@ CREATE TABLE IF NOT EXISTS cases (
     status ENUM('open','in_review','closed_won','closed_lost','closed_settled') NOT NULL DEFAULT 'open',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_cases_firm (firm_id),
     FOREIGN KEY (lawyer_id) REFERENCES lawyers(id) ON DELETE CASCADE,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_cases_firm FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS case_timeline (
@@ -419,16 +439,20 @@ CREATE TABLE IF NOT EXISTS case_notes (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     case_id INT UNSIGNED NOT NULL,
     lawyer_id INT UNSIGNED NOT NULL,
+    firm_id INT UNSIGNED DEFAULT NULL,
     note TEXT NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE CASCADE,
-    FOREIGN KEY (lawyer_id) REFERENCES lawyers(id) ON DELETE CASCADE
+    FOREIGN KEY (lawyer_id) REFERENCES lawyers(id) ON DELETE CASCADE,
+    INDEX idx_case_notes_firm (firm_id),
+    CONSTRAINT fk_case_notes_firm FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS case_evidence (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     case_id INT UNSIGNED NOT NULL,
     added_by_lawyer_id INT UNSIGNED NOT NULL,
+    firm_id INT UNSIGNED DEFAULT NULL,
     related_claim_id INT UNSIGNED DEFAULT NULL,
     related_fact_id INT UNSIGNED DEFAULT NULL,
     related_law_article_id INT UNSIGNED DEFAULT NULL,
@@ -446,7 +470,9 @@ CREATE TABLE IF NOT EXISTS case_evidence (
     FOREIGN KEY (related_claim_id) REFERENCES case_claims(id) ON DELETE SET NULL,
     FOREIGN KEY (related_fact_id) REFERENCES case_facts(id) ON DELETE SET NULL,
     FOREIGN KEY (related_law_article_id) REFERENCES law_articles(id) ON DELETE SET NULL,
-    INDEX idx_case_evidence_case (case_id, created_at)
+    INDEX idx_case_evidence_case (case_id, created_at),
+    INDEX idx_case_evidence_firm (firm_id),
+    CONSTRAINT fk_case_evidence_firm FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS case_evidence_reports (
@@ -494,6 +520,7 @@ CREATE TABLE IF NOT EXISTS case_time_entries (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     case_id INT UNSIGNED NOT NULL,
     lawyer_id INT UNSIGNED NOT NULL,
+    firm_id INT UNSIGNED DEFAULT NULL,
     work_date DATE NOT NULL,
     description VARCHAR(255) NOT NULL,
     minutes SMALLINT UNSIGNED NOT NULL,
@@ -504,7 +531,9 @@ CREATE TABLE IF NOT EXISTS case_time_entries (
     FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE CASCADE,
     FOREIGN KEY (lawyer_id) REFERENCES lawyers(id) ON DELETE CASCADE,
     INDEX idx_case_time_case (case_id,work_date),
-    INDEX idx_case_time_invoice (invoice_id)
+    INDEX idx_case_time_invoice (invoice_id),
+    INDEX idx_case_time_entries_firm (firm_id),
+    CONSTRAINT fk_case_time_entries_firm FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS lawyer_availability (
@@ -534,15 +563,19 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     actor_type ENUM('admin','lawyer','system') NOT NULL DEFAULT 'admin',
     actor_id INT UNSIGNED DEFAULT NULL,
     actor_name VARCHAR(150) DEFAULT NULL,
+    firm_id INT UNSIGNED DEFAULT NULL,
     action VARCHAR(255) NOT NULL,
     target_type VARCHAR(50) DEFAULT NULL,
     target_id INT UNSIGNED DEFAULT NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_audit_logs_firm (firm_id),
+    CONSTRAINT fk_audit_logs_firm FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS draft_documents (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     lawyer_id INT UNSIGNED NOT NULL,
+    firm_id INT UNSIGNED DEFAULT NULL,
     case_id INT UNSIGNED DEFAULT NULL,
     doc_type VARCHAR(100) NOT NULL,
     title VARCHAR(255) NOT NULL,
@@ -560,8 +593,10 @@ CREATE TABLE IF NOT EXISTS draft_documents (
     client_visible TINYINT(1) NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_draft_approval_queue (approval_firm_id,approval_stage,status),
+    INDEX idx_draft_documents_firm (firm_id),
     FOREIGN KEY (lawyer_id) REFERENCES lawyers(id) ON DELETE CASCADE,
-    FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE SET NULL
+    FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE SET NULL,
+    CONSTRAINT fk_draft_documents_firm FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS contract_comparisons (
@@ -627,6 +662,7 @@ CREATE TABLE IF NOT EXISTS auth_rate_limits (
 CREATE TABLE IF NOT EXISTS invoices (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     lawyer_id INT UNSIGNED NOT NULL,
+    firm_id INT UNSIGNED DEFAULT NULL,
     user_id INT UNSIGNED NOT NULL,
     case_id INT UNSIGNED DEFAULT NULL,
     description VARCHAR(255) NOT NULL,
@@ -640,9 +676,11 @@ CREATE TABLE IF NOT EXISTS invoices (
     gateway VARCHAR(30) DEFAULT NULL,
     gateway_order_ref VARCHAR(100) DEFAULT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_invoices_firm (firm_id),
     FOREIGN KEY (lawyer_id) REFERENCES lawyers(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE SET NULL
+    FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE SET NULL,
+    CONSTRAINT fk_invoices_firm FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 SET @c := (SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA=DATABASE() AND TABLE_NAME='case_time_entries' AND CONSTRAINT_NAME='fk_case_time_invoice');
@@ -684,6 +722,7 @@ CREATE TABLE IF NOT EXISTS draft_workflow_reviews (
 CREATE TABLE IF NOT EXISTS legal_calendar_events (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     lawyer_id INT UNSIGNED NOT NULL,
+    firm_id INT UNSIGNED DEFAULT NULL,
     case_id INT UNSIGNED DEFAULT NULL,
     event_type ENUM('court_session','appeal_deadline','contract_expiry','contract_renewal','government_deadline','other') NOT NULL DEFAULT 'other',
     title VARCHAR(255) NOT NULL,
@@ -695,8 +734,10 @@ CREATE TABLE IF NOT EXISTS legal_calendar_events (
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_legal_calendar_lawyer_date (lawyer_id,event_at,status),
     INDEX idx_legal_calendar_case (case_id,event_at),
+    INDEX idx_legal_calendar_firm (firm_id),
     CONSTRAINT fk_legal_calendar_lawyer FOREIGN KEY (lawyer_id) REFERENCES lawyers(id) ON DELETE CASCADE,
-    CONSTRAINT fk_legal_calendar_case FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE SET NULL
+    CONSTRAINT fk_legal_calendar_case FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE SET NULL,
+    CONSTRAINT fk_legal_calendar_firm FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 SET FOREIGN_KEY_CHECKS = 1;

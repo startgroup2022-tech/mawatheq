@@ -22,6 +22,7 @@ $adminNavGroups = [
     ]],
     ['t' => adm('العمليات القانونية', 'Legal operations'), 'items' => [
         'lawyers' => ['i' => 'scale', 'ar' => 'المحامون', 'en' => 'Lawyers', 'href' => '/admin/lawyers.php', 'badge' => 'lawyers'],
+        'firms' => ['i' => 'building', 'ar' => 'المكاتب القانونية', 'en' => 'Law firms', 'href' => '/admin/firms.php'],
         'consultations' => ['i' => 'message', 'ar' => 'الاستشارات', 'en' => 'Consultations', 'href' => '/admin/consultations.php'],
         'documents' => ['i' => 'file', 'ar' => 'المستندات', 'en' => 'Documents', 'href' => '/admin/documents.php'],
     ]],
