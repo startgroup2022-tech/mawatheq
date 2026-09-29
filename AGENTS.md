@@ -80,14 +80,37 @@ Rules that matter:
   `MAWATHEQ_ENCRYPTION_KEY`. Secrets are stored tagged with `sadad_credentials_env`: switching
   Sandbox ↔ Live without entering new secrets clears them, so Sandbox keys can never be sent
   to Live. The admin test button never creates a real payment on Live.
-- `/sadad-webhook.php` is CSRF-exempt in `config/config.php` (server-to-server, authenticated by
-  signature). Any new webhook path must be added to `$csrfExemptPaths` there.
+- `/sadad-webhook.php` and `/ngenius-webhook.php` are CSRF-exempt in `config/config.php`
+  (server-to-server, authenticated by their own secret/signature). The Bearer-token REST API
+  under `/api/v1/` is exempt too because it authenticates with `Authorization`, not the session
+  cookie. Every other POST — including the browser-facing `/api/` helpers such as
+  `api/ai_chat.php` and `api/upload_document.php` — requires a CSRF token. Any new webhook path
+  must be added to `$csrfExemptPaths` there.
 - `invoice_payments.method` enum, the `finance_record_payment()` allow-list and the schema must
   stay in sync when adding a gateway method; `database/upgrade_v45.sql` extends the enum.
 - Admin console pages must `require_once` `config.php`, `lang/strings.php`, `admin_guard.php`
   (and `audit_log.php` if they call `log_action()`) **before** using `is_rtl()` or `log_action()`
   at the top of the file — `admin_header.php` alone is not enough ordering if you use those
   helpers above the header include.
+
+## Deployment (Apache / cPanel)
+
+The app is verified against a real `php:8.4-apache` image, not only the PHP built-in
+server — the built-in server hides production-only behaviour:
+
+- Apache/mod_php drops the `Authorization` header before PHP runs. `.htaccess` exposes it
+  via `RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]`; without that rule
+  every `/api/v1/` Bearer request returns 401 and the mobile API is dead.
+- `FilesMatch "(^\.)"` only matches a file's own name, so nested paths such as `.git/config`
+  bypass it. `.htaccess` blocks the whole `.git` directory with a rewrite rule, and also
+  blocks `config/`, `database/`, `includes/` and `tests/`.
+- `config/secrets.php` must be `600` and owned by the hosting user (not `nobody`) so other
+  shared-hosting accounts cannot read it; app files `644`, directories `755`. It is
+  git-ignored and must never be committed.
+- Roles log in through different pages: clients `/login.php`, lawyers `/lawyer-login.php`,
+  admins `/admin/login.php`. There is no `/lawyer/login.php`.
+- `admin/setup.php` is removed from the repo; a fresh install creates the first admin
+  through it before it is deleted on the server.
 
 ## Testing
 
