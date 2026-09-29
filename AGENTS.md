@@ -94,7 +94,9 @@ Rules that matter:
 CLI suites live in `tests/` and run against the configured database with
 `php tests/<name>_test.php` (each prints `N checks, M failure(s)` and exits
 non-zero on failure): `tenant_isolation_test.php`, `phase3_finance_test.php`,
-`phase3_ai_gateway_test.php`, `currency_test.php`, `sadad_gateway_test.php`.
+`phase3_ai_gateway_test.php`, `currency_test.php`, `sadad_gateway_test.php`,
+`phase5_saas_core_test.php` (tenant scoping, notification fan-out, the firm
+permission catalog and its no-escalation rule, and the audit actor extension).
 
 `sadad_gateway_test.php` starts the real fixture server `tests/fixtures/sadad_server.php`
 on an ephemeral port and exercises the live curl path — no HTTP mocking. It runs inside a
@@ -103,7 +105,8 @@ transaction and rolls back, so it leaves no residue.
 Environment (local sandbox): install with
 `sudo apt-get install -y php-cli php-curl php-mysql php-mbstring mariadb-server`, start with
 `sudo service mariadb start`, and create the `mawatheq` DB/user matching `config/secrets.php`.
-Load `database/schema.sql` then `database/upgrade_v45.sql`; the migrations are idempotent.
+Load `database/schema.sql` then every `database/upgrade_v*.sql` in order (currently
+through `upgrade_v46.sql`); the migrations are idempotent.
 
 UI work is verified with a Playwright audit that logs
 in as each role (admin needs a fresh TOTP) and renders every page at several
@@ -117,6 +120,15 @@ viewports, checking horizontal overflow, sub-11px text and undersized targets.
 - `php -l <file>` on every touched PHP file is the quick syntax gate.
 
 ## Gotchas
+
+- Tenant scoping is derived from the entity's own `firm_id`/`lawyer_id` columns.
+  Some child tables inherit their tenant instead: `case_evidence` has no
+  `lawyer_id`, so its queries must join the parent case (`JOIN cases c ON
+  c.id = e.case_id`) and scope on the case alias. Passing such a table alias to
+  `tenant_owner_where()` builds an invalid column and turns the page into a 500.
+- Notifications to a firm must skip the acting lawyer; use
+  `notify_tenant_except()` rather than `notify()` directly, and remember that
+  `notifications` also backs the in-app bell rendered in every header.
 
 - `lawyer/review-queue.php` returns 403 unless the account has a law-firm
   membership — that is the page's own guard, not a routing bug.
