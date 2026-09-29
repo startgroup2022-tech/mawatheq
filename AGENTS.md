@@ -111,6 +111,13 @@ server — the built-in server hides production-only behaviour:
   admins `/admin/login.php`. There is no `/lawyer/login.php`.
 - `admin/setup.php` is removed from the repo; a fresh install creates the first admin
   through it before it is deleted on the server.
+- After every deploy run `php tools/production_check.php` on the server. The most common
+  production failure is a database that never received the migrations: a missing column in
+  `api_tokens` (e.g. `revoked_at`, added in `upgrade_v27.sql`) makes every authenticated
+  `/api/v1/` request return a bare 500 instead of 401, which silently kills the whole mobile
+  API. The tool checks the columns/tables the code depends on and exits non-zero on drift.
+- Never deploy code ahead of the migrations it needs, and never assume a running site is on
+  the current version: probe it (e.g. `/api/v1/ai-agents.php` 404 means pre-Phase-3).
 
 ## Testing
 

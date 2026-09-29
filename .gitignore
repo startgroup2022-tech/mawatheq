@@ -17,3 +17,6 @@ uploads/knowledge/*
 # Dependency / build output
 node_modules/
 vendor/
+
+# Runtime backups (created by cron/backup.php; may contain the full database dump)
+storage/

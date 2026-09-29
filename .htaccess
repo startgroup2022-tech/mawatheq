@@ -29,7 +29,7 @@ Options -Indexes
 # مجلدات المصدر والإعداد لا تحتاج استقبال طلبات HTTP مباشرة
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    RewriteRule ^(?:config|database|includes|tests)/ - [F,L,NC]
+    RewriteRule ^(?:config|database|includes|tests|tools)/ - [F,L,NC]
     # Block the whole version-control directory: FilesMatch (^\.) only matches a file's own
     # name, so nested files like .git/config bypassed it and exposed history and remote creds.
     RewriteRule ^\.git(?:/|$) - [F,L,NC]
