@@ -20,13 +20,18 @@ $dir  = is_rtl() ? 'rtl' : 'ltr';
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/assets/css/style.css">
+<link rel="stylesheet" href="/assets/css/enterprise.css">
 </head>
 <body class="lang-<?= $lang ?>">
 
 <header class="site-header">
   <div class="container">
     <a href="/" class="brand"><img src="/assets/img/logo.webp" alt="<?= SITE_NAME_AR ?>"><span><?= is_rtl() ? SITE_NAME_AR : SITE_NAME_EN ?></span></a>
-    <nav class="main-nav">
+    <button type="button" class="nav-toggle" data-nav-toggle aria-controls="mainNav"
+            aria-expanded="false" aria-label="<?= is_rtl() ? 'فتح القائمة' : 'Open menu' ?>">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+    </button>
+    <nav class="main-nav" id="mainNav" aria-label="<?= is_rtl() ? 'القائمة الرئيسية' : 'Main navigation' ?>">
       <a href="/#about"><?= t('nav_about') ?></a>
       <a href="/#features"><?= t('nav_features') ?></a>
       <a href="/#how"><?= t('nav_how') ?></a>

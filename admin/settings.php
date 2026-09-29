@@ -115,7 +115,7 @@ $ngeniusActive = ngenius_is_enabled($ngeniusSecureSettings);
     </div>
 
     <label style="display:flex;align-items:center;gap:8px;margin:14px 0;font-weight:700;font-size:.9rem">
-      <input type="checkbox" name="ai_enabled" value="1" <?= $aiEnabledFlag ? 'checked' : '' ?> style="width:20px;height:20px">
+      <input type="checkbox" name="ai_enabled" value="1" <?= $aiEnabledFlag ? 'checked' : '' ?>>
       تفعيل التكامل (يمكنك إيقافه مؤقتاً هنا دون حذف المفتاح)
     </label>
 
@@ -321,7 +321,7 @@ $ngeniusActive = ngenius_is_enabled($ngeniusSecureSettings);
     <p style="font-size:.85rem;margin-bottom:16px">اربط حساب N-Genius الخاص بكم ليتمكن العملاء من دفع الفواتير مباشرة ببطاقتهم (مدى/فيزا/ماستركارد) من الموقع والتطبيق. بيانات الاتصال (Outlet Reference ومفتاح API) تجدونها من بوابة N-Genius: Settings ← Integrations ← Service Accounts، و Settings ← Organizational Hierarchy للـ Outlet Reference.</p>
 
     <label style="display:flex;align-items:center;gap:8px;margin:14px 0;font-weight:700;font-size:.9rem">
-      <input type="checkbox" name="ngenius_enabled" value="1" <?= ($settings['ngenius_enabled'] ?? '0') === '1' ? 'checked' : '' ?> style="width:20px;height:20px">
+      <input type="checkbox" name="ngenius_enabled" value="1" <?= ($settings['ngenius_enabled'] ?? '0') === '1' ? 'checked' : '' ?>>
       تفعيل الدفع الإلكتروني عبر N-Genius
     </label>
 

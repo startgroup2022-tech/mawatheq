@@ -71,21 +71,21 @@ $langToggleUrl = '?' . http_build_query(array_merge($_GET, ['lang' => $admLang =
 <!DOCTYPE html>
 <html lang="<?= h($admLang) ?>" dir="<?= $admDir ?>">
 <head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="icon" href="/assets/img/logo.webp">
 <title><?= h($pageTitle ? $pageTitle . ' · ' : '') ?><?= h(adm('لوحة تحكم مواثيق', 'Mawatheq Admin')) ?></title>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/assets/css/style.css">
 <link rel="stylesheet" href="/assets/css/app.css">
-<link rel="stylesheet" href="/admin/assets/admin.css">
-<?php require __DIR__ . '/admin_design_system.php'; ?>
-<link rel="stylesheet" href="/admin/assets/admin-ui.css?v=40">
+<link rel="stylesheet" href="/assets/css/enterprise.css">
+<link rel="stylesheet" href="/admin/assets/admin-ui.css?v=41">
 </head>
 <body class="adm" data-theme="light">
+<a class="skip-link" href="#adm-content"><?= h(adm('تخطَّ إلى المحتوى', 'Skip to content')) ?></a>
 <script>(function(){try{var t=localStorage.getItem('adm_theme');if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';document.body.setAttribute('data-theme',t||'light');if(localStorage.getItem('adm_sb')==='1'&&innerWidth>1024)document.body.classList.add('sb-collapsed')}catch(e){}})();</script>
 <div class="adm-shell">
   <aside class="adm-sidebar" id="admSidebar">
-    <a href="/admin/index.php" class="adm-brand"><img src="/assets/img/logo.webp" alt=""><div><b><?= h(adm('مواثيق', 'Mawatheq')) ?></b><small>LegalTech Admin</small></div></a>
+    <a href="/admin/index.php" class="adm-brand"><img src="/assets/img/logo.webp" alt="<?= h(SITE_NAME_AR) ?>"><div><b><?= h(adm('مواثيق', 'Mawatheq')) ?></b><small>LegalTech Admin</small></div></a>
     <nav class="adm-nav">
       <?php foreach ($adminNavGroups as $g):
           $vis = array_filter($g['items'], fn($it) => $canSee($it['href']));
@@ -132,4 +132,4 @@ $langToggleUrl = '?' . http_build_query(array_merge($_GET, ['lang' => $admLang =
             <form method="post" action="/admin/logout.php"><input type="hidden" name="csrf_token" value="<?= h(csrf_token()) ?>"><button class="item" type="submit"><?= adm_icon('logout') ?><?= h(adm('تسجيل الخروج', 'Sign out')) ?></button></form></div></div>
       </div>
     </header>
-    <div class="adm-content">
+    <div class="adm-content" id="adm-content">

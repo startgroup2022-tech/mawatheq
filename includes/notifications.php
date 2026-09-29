@@ -33,20 +33,28 @@ function render_notification_bell(PDO $pdo, string $recipientType, int $recipien
     $rtl = is_rtl();
     $unread = unread_notifications_count($pdo, $recipientType, $recipientId);
     $items = get_notifications($pdo, $recipientType, $recipientId, 8);
+    // Unique per instance so two bells on one page cannot clash over the id.
+    static $seq = 0;
+    $seq++;
+    $dropdownId = 'notifDropdown' . $seq;
+    $label = $rtl ? 'الإشعارات' : 'Notifications';
     ?>
-    <div class="notif-bell-wrap">
-      <button type="button" class="notif-bell-btn" onclick="document.getElementById('notifDropdown').classList.toggle('is-open')">
-        🔔<?php if ($unread > 0): ?><span class="notif-count"><?= $unread > 9 ? '9+' : $unread ?></span><?php endif; ?>
+    <div class="notif-bell-wrap" data-dropdown>
+      <button type="button" class="notif-bell-btn" data-dropdown-toggle
+              aria-haspopup="true" aria-expanded="false" aria-controls="<?= $dropdownId ?>"
+              aria-label="<?= $label ?><?= $unread > 0 ? ' — ' . $unread . ' ' . ($rtl ? 'غير مقروء' : 'unread') : '' ?>">
+        <?php if (function_exists('ui_icon')): ?><?= ui_icon('bell') ?><?php else: ?>🔔<?php endif; ?>
+        <?php if ($unread > 0): ?><span class="notif-count" aria-hidden="true"><?= $unread > 9 ? '9+' : (int)$unread ?></span><?php endif; ?>
       </button>
-      <div class="notif-dropdown" id="notifDropdown">
+      <div class="notif-dropdown" id="<?= $dropdownId ?>" data-dropdown-panel>
         <div class="notif-dropdown-head">
-          <strong><?= $rtl ? 'الإشعارات' : 'Notifications' ?></strong>
+          <strong><?= $label ?></strong>
           <?php if ($unread > 0): ?>
-            <form method="post" action="/mark-notifications-read.php" style="margin:0"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><button type="submit" style="background:none;border:0;color:var(--teal);font-size:.78rem;cursor:pointer"><?= $rtl ? 'تحديد الكل كمقروء' : 'Mark all read' ?></button></form>
+            <form method="post" action="/mark-notifications-read.php" style="margin:0"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><button type="submit" class="btn btn-ghost btn-sm"><?= $rtl ? 'تحديد الكل كمقروء' : 'Mark all read' ?></button></form>
           <?php endif; ?>
         </div>
         <?php if (empty($items)): ?>
-          <p style="padding:20px;text-align:center;color:var(--text-muted);font-size:.85rem"><?= $rtl ? 'لا توجد إشعارات بعد.' : 'No notifications yet.' ?></p>
+          <p class="muted-sm" style="padding:20px;text-align:center"><?= $rtl ? 'لا توجد إشعارات بعد.' : 'No notifications yet.' ?></p>
         <?php else: foreach ($items as $n): ?>
           <a href="<?= htmlspecialchars($n['link'] ?: '#') ?>" class="notif-item <?= $n['is_read'] ? '' : 'is-unread' ?>">
             <strong><?= htmlspecialchars($n['title']) ?></strong>
