@@ -3,6 +3,7 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../lang/strings.php';
 require_once __DIR__ . '/includes/lawyer_guard.php';
 require_once __DIR__ . '/../includes/notifications.php';
+require_once __DIR__ . '/../includes/audit_log.php';
 require_once __DIR__ . '/../includes/tenant.php';
 $lawyerId = $_SESSION['lawyer_id'];
 $firmId = tenant_write_firm_id($pdo);
@@ -19,7 +20,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'creat
     } else {
         $pdo->prepare('INSERT INTO cases (lawyer_id, firm_id, user_id, title, case_type, description) VALUES (?,?,?,?,?,?)')
             ->execute([$lawyerId, $firmId, $client['id'], $_POST['title'], $_POST['case_type'], $_POST['description']]);
+        $caseId = (int)$pdo->lastInsertId();
         notify($pdo, 'client', $client['id'], is_rtl() ? 'تم فتح قضية جديدة لك' : 'A new case was opened for you', $_POST['title'], '/consultations.php');
+        // Firm-wide assignment notice for the rest of the tenant, skipping the creator.
+        notify_tenant_except($pdo, $firmId, $lawyerId, $lawyerId, is_rtl() ? 'قضية جديدة في المكتب' : 'New case in the firm', $_POST['title'], '/lawyer/cases.php');
+        log_action($pdo, 'فتح قضية جديدة: ' . $_POST['title'], 'case', $caseId);
         header('Location: /lawyer/cases.php'); exit;
     }
 }

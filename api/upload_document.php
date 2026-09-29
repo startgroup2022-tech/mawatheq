@@ -48,6 +48,17 @@ $originalName = basename(str_replace('\\', '/', (string)$file['name']));
 $stmt->execute([$_SESSION['user_id'], $originalName, 'uploads/documents/' . $storedName, $ext, $documentType, 'processing']);
 $docId = $pdo->lastInsertId();
 
+// Audit the upload (metadata only — never the file contents) and tell the client's
+// lawyers that a new document is available for their cases.
+require_once __DIR__ . '/../includes/audit_log.php';
+require_once __DIR__ . '/../includes/notifications.php';
+log_action($pdo, 'رفع مستند: ' . $originalName, 'document', (int)$docId);
+$lawyerRecipients = $pdo->prepare('SELECT DISTINCT lawyer_id FROM cases WHERE user_id=?');
+$lawyerRecipients->execute([(int)$_SESSION['user_id']]);
+foreach ($lawyerRecipients->fetchAll(PDO::FETCH_COLUMN) as $caseLawyerId) {
+    notify($pdo, 'lawyer', (int)$caseLawyerId, is_rtl() ? 'رفع العميل مستنداً جديداً' : 'Client uploaded a new document', $originalName, '/lawyer/cases.php');
+}
+
 /**
  * ============================================================
  * تحليل المستند الفعلي: نرسل الملف نفسه (PDF أو صورة) لمزوّد الذكاء

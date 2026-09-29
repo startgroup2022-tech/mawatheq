@@ -5,8 +5,26 @@
  * لا يوجد بريد/واتساب/SMS خارجي هنا — فقط إشعارات داخلية حقيقية ومخزّنة.
  */
 function notify(PDO $pdo, string $recipientType, int $recipientId, string $title, ?string $message = null, ?string $link = null): void {
+    if ($recipientId <= 0) return;
     $pdo->prepare('INSERT INTO notifications (recipient_type, recipient_id, title, message, link) VALUES (?,?,?,?,?)')
         ->execute([$recipientType, $recipientId, $title, $message, $link]);
+}
+
+/**
+ * Notify the firm tenant of an event, skipping the lawyer who caused it (nobody needs a
+ * notification about their own action). Solo lawyers are notified directly; firm members
+ * are notified through their firm-wide feed.
+ */
+function notify_tenant_except(PDO $pdo, ?int $firmId, int $lawyerId, int $exceptLawyerId, string $title, ?string $message = null, ?string $link = null): void {
+    if ($firmId) {
+        $stmt = $pdo->prepare("SELECT lawyer_id FROM law_firm_members WHERE firm_id=? AND status='active' AND lawyer_id<>?");
+        $stmt->execute([$firmId, $exceptLawyerId]);
+        foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $memberId) {
+            notify($pdo, 'lawyer', (int)$memberId, $title, $message, $link);
+        }
+    } elseif ($lawyerId > 0 && $lawyerId !== $exceptLawyerId) {
+        notify($pdo, 'lawyer', $lawyerId, $title, $message, $link);
+    }
 }
 
 function unread_notifications_count(PDO $pdo, string $recipientType, int $recipientId): int {

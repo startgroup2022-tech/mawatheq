@@ -90,6 +90,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $remove->execute([$memberId,(int)$membership['id']]);
         if ($remove->rowCount() > 0) log_action($pdo,'إزالة عضو من المكتب','law_firm_member',$memberId);
         $success = is_rtl() ? 'تم تحديث عضوية المكتب.' : 'Firm membership updated.';
+    } elseif ($action === 'update_member_permissions') {
+        // Only a member who may manage members can edit another member's permissions, and
+        // nobody can grant a capability they do not themselves hold (no privilege escalation).
+        tenant_require($pdo, 'firm.manage_members');
+        $memberId = (int)($_POST['member_id'] ?? 0);
+        $target = $pdo->prepare("SELECT m.id,m.member_role,m.lawyer_id FROM law_firm_members m WHERE m.id=? AND m.firm_id=? LIMIT 1");
+        $target->execute([$memberId, (int)$membership['id']]); $row = $target->fetch();
+        if (!$row || $row['member_role'] === 'owner') {
+            $error = is_rtl() ? 'لا يمكن تعديل صلاحيات هذا العضو.' : 'This member\'s permissions cannot be edited.';
+        } else {
+            $requested = is_array($_POST['permissions'] ?? null) ? $_POST['permissions'] : [];
+            $valid = tenant_all_permissions();
+            $grantable = [];
+            foreach ($requested as $perm) {
+                if (!is_string($perm) || !in_array($perm, $valid, true)) continue;
+                // The actor must hold the capability to be allowed to delegate it.
+                if (tenant_can($pdo, $perm)) $grantable[] = $perm;
+            }
+            $grantable = array_values(array_unique($grantable));
+            // If the set matches the role default exactly, store NULL so role changes keep working.
+            $roleDefault = tenant_firm_capabilities($row['member_role']);
+            sort($grantable); $sortedDefault = $roleDefault; sort($sortedDefault);
+            $store = $grantable === $sortedDefault ? null : json_encode($grantable);
+            $pdo->prepare('UPDATE law_firm_members SET permissions_json=? WHERE id=? AND firm_id=?')->execute([$store, $memberId, (int)$membership['id']]);
+            log_action($pdo,'تحديث صلاحيات عضو المكتب','law_firm_member',$memberId);
+            $success = is_rtl() ? 'تم تحديث صلاحيات العضو.' : 'Member permissions updated.';
+        }
     } elseif ($action === 'add_knowledge') {
         tenant_require($pdo, 'firm.view');
         $title = trim($_POST['title'] ?? ''); $content = trim($_POST['content'] ?? ''); $category = trim($_POST['category'] ?? '');
@@ -129,11 +156,48 @@ require_once __DIR__ . '/includes/lawyer_header.php';
 <div class="grid-2"><div class="field"><label><?= is_rtl()?'السجل التجاري':'Commercial register' ?></label><input name="commercial_register" maxlength="80" value="<?= htmlspecialchars($membership['commercial_register'] ?? '') ?>"></div><div class="field"><label><?= is_rtl()?'رقم الترخيص':'License number' ?></label><input name="license_number" maxlength="80" value="<?= htmlspecialchars($membership['license_number'] ?? '') ?>"></div></div>
 <button class="btn btn-primary" type="submit"><?= is_rtl()?'حفظ':'Save' ?></button></form></div><?php endif; ?></div>
 <?php
-$members = $pdo->prepare('SELECT m.id,m.member_role,m.joined_at,l.full_name,l.email,l.specialization FROM law_firm_members m JOIN lawyers l ON l.id=m.lawyer_id WHERE m.firm_id=? ORDER BY FIELD(m.member_role,\'owner\',\'partner\',\'lawyer\',\'staff\'),l.full_name');
+$members = $pdo->prepare('SELECT m.id,m.member_role,m.joined_at,m.permissions_json,l.full_name,l.email,l.specialization FROM law_firm_members m JOIN lawyers l ON l.id=m.lawyer_id WHERE m.firm_id=? ORDER BY FIELD(m.member_role,\'owner\',\'partner\',\'lawyer\',\'staff\'),l.full_name');
 $members->execute([(int)$membership['id']]); $members = $members->fetchAll();
+$permCatalog = tenant_permission_catalog();
+$permLabels = [
+    'firm' => [is_rtl()?'المكتب':'Firm', ['firm.view'=>is_rtl()?'عرض':'View','firm.edit'=>is_rtl()?'تعديل':'Edit','firm.manage_members'=>is_rtl()?'إدارة الأعضاء':'Manage members']],
+    'clients' => [is_rtl()?'العملاء':'Clients', ['clients.view'=>is_rtl()?'عرض':'View','clients.create'=>is_rtl()?'إضافة':'Create','clients.edit'=>is_rtl()?'تعديل':'Edit','clients.delete'=>is_rtl()?'حذف':'Delete']],
+    'cases' => [is_rtl()?'القضايا':'Cases', ['cases.view'=>is_rtl()?'عرض':'View','cases.create'=>is_rtl()?'إضافة':'Create','cases.edit'=>is_rtl()?'تعديل':'Edit','cases.delete'=>is_rtl()?'حذف':'Delete','cases.assign'=>is_rtl()?'إسناد':'Assign','cases.export'=>is_rtl()?'تصدير':'Export']],
+    'documents' => [is_rtl()?'المستندات':'Documents', ['documents.view'=>is_rtl()?'عرض':'View','documents.upload'=>is_rtl()?'رفع':'Upload','documents.download'=>is_rtl()?'تنزيل':'Download','documents.delete'=>is_rtl()?'حذف':'Delete']],
+    'evidence' => [is_rtl()?'الأدلة':'Evidence', ['evidence.view'=>is_rtl()?'عرض':'View','evidence.upload'=>is_rtl()?'رفع':'Upload','evidence.download'=>is_rtl()?'تنزيل':'Download','evidence.delete'=>is_rtl()?'حذف':'Delete']],
+    'consultations' => [is_rtl()?'الاستشارات':'Consultations', ['consultations.view'=>is_rtl()?'عرض':'View','consultations.manage'=>is_rtl()?'إدارة':'Manage','consultations.respond'=>is_rtl()?'رد':'Respond']],
+    'drafting' => [is_rtl()?'الصياغة':'Drafting', ['drafting.create'=>is_rtl()?'إنشاء':'Create','drafting.edit'=>is_rtl()?'تعديل':'Edit','drafting.review'=>is_rtl()?'مراجعة':'Review','drafting.approve'=>is_rtl()?'اعتماد':'Approve','drafting.export'=>is_rtl()?'تصدير':'Export']],
+    'finance' => [is_rtl()?'المالية':'Finance', ['finance.view_invoices'=>is_rtl()?'عرض الفواتير':'View invoices','finance.create_invoices'=>is_rtl()?'إصدار فواتير':'Create invoices','finance.record_payments'=>is_rtl()?'تسجيل المدفوعات':'Record payments','finance.view_reports'=>is_rtl()?'عرض التقارير':'View reports']],
+    'calendar' => [is_rtl()?'التقويم':'Calendar', ['calendar.manage'=>is_rtl()?'إدارة المواعيد':'Manage events']],
+];
+$memberPerms = function (array $m): array {
+    $decoded = json_decode((string)($m['permissions_json'] ?? ''), true);
+    return is_array($decoded) ? $decoded : tenant_firm_capabilities($m['member_role']);
+};
 ?>
-<div class="dash-card"><h3><?= is_rtl()?'أعضاء المكتب':'Firm members' ?></h3><div class="table-wrap"><table class="admin-table"><thead><tr><th><?= is_rtl()?'الاسم':'Name' ?></th><th><?= is_rtl()?'البريد':'Email' ?></th><th><?= is_rtl()?'التخصص':'Specialization' ?></th><th><?= is_rtl()?'الدور':'Role' ?></th><?php if($membership['member_role']==='owner'): ?><th></th><?php endif; ?></tr></thead><tbody>
-<?php foreach($members as $member): ?><tr><td><?= htmlspecialchars($member['full_name']) ?></td><td><?= htmlspecialchars($member['email']) ?></td><td><?= htmlspecialchars($member['specialization'] ?? '') ?></td><td><?= htmlspecialchars($member['member_role']) ?></td><?php if($membership['member_role']==='owner'): ?><td><?php if($member['member_role']!=='owner'): ?><form method="post"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="remove_member"><input type="hidden" name="member_id" value="<?= (int)$member['id'] ?>"><button class="icon-btn danger" type="submit"><?= is_rtl()?'إزالة':'Remove' ?></button></form><?php endif; ?></td><?php endif; ?></tr><?php endforeach; ?></tbody></table></div>
+<div class="dash-card"><h3><?= is_rtl()?'أعضاء المكتب':'Firm members' ?></h3><div class="table-wrap"><table class="admin-table"><thead><tr><th><?= is_rtl()?'الاسم':'Name' ?></th><th><?= is_rtl()?'البريد':'Email' ?></th><th><?= is_rtl()?'التخصص':'Specialization' ?></th><th><?= is_rtl()?'الدور':'Role' ?></th><th><?= is_rtl()?'الصلاحيات':'Permissions' ?></th><?php if($isOwner): ?><th></th><?php endif; ?></tr></thead><tbody>
+<?php foreach($members as $member): $mPerms = $memberPerms($member); ?>
+<tr><td><?= htmlspecialchars($member['full_name']) ?></td><td><?= htmlspecialchars($member['email']) ?></td><td><?= htmlspecialchars($member['specialization'] ?? '') ?></td><td><?= htmlspecialchars($member['member_role']) ?></td>
+<td><small style="color:var(--muted)"><?= $member['member_role']==='owner' ? (is_rtl()?'كل الصلاحيات':'All permissions') : count($mPerms) . ' ' . (is_rtl()?'صلاحية':'permissions') ?></small><?php if($isOwner && $member['member_role']!=='owner'): ?> <button type="button" class="icon-btn" onclick="openModal('permModal<?= (int)$member['id'] ?>')"><?= is_rtl()?'تعديل':'Edit' ?></button><?php endif; ?></td>
+<?php if($isOwner): ?><td><?php if($member['member_role']!=='owner'): ?><form method="post"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="remove_member"><input type="hidden" name="member_id" value="<?= (int)$member['id'] ?>"><button class="icon-btn danger" type="submit"><?= is_rtl()?'إزالة':'Remove' ?></button></form><?php endif; ?></td><?php endif; ?></tr>
+<?php endforeach; ?></tbody></table></div>
+<?php if($isOwner): foreach($members as $member): if($member['member_role']==='owner') continue; $mPerms = $memberPerms($member); ?>
+<div class="modal-backdrop" id="permModal<?= (int)$member['id'] ?>"><form method="post" class="modal-form"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="update_member_permissions"><input type="hidden" name="member_id" value="<?= (int)$member['id'] ?>">
+<button type="button" class="modal-close" onclick="closeModal('permModal<?= (int)$member['id'] ?>')" aria-label="<?= is_rtl()?'إغلاق':'Close' ?>">✕</button>
+<h3><?= is_rtl()?'صلاحيات ':'Permissions for ' ?><?= htmlspecialchars($member['full_name']) ?> <small style="color:var(--muted)">(<?= htmlspecialchars($member['member_role']) ?>)</small></h3>
+<p class="field-hint"><?= is_rtl()?'لا يمكن منح صلاحية لا تملكها أنت.':'You can only grant permissions you hold yourself.' ?></p>
+<?php foreach ($permCatalog as $groupKey => $perms): [$groupLabel, $labels] = $permLabels[$groupKey]; ?>
+  <div class="field"><label><?= htmlspecialchars($groupLabel) ?></label>
+  <div style="display:flex;flex-wrap:wrap;gap:8px">
+  <?php foreach ($perms as $perm): $hasIt = tenant_can($pdo, $perm); ?>
+    <label class="chip<?= in_array($perm, $mPerms, true) ? ' on' : '' ?>" style="cursor:pointer;<?= $hasIt ? '' : 'opacity:.45' ?>" title="<?= $hasIt ? '' : htmlspecialchars(is_rtl()?'لا تملك هذه الصلاحية':'You do not hold this permission') ?>">
+      <input type="checkbox" name="permissions[]" value="<?= htmlspecialchars($perm) ?>"<?= in_array($perm, $mPerms, true) ? ' checked' : '' ?><?= $hasIt ? '' : ' disabled' ?>> <?= htmlspecialchars($labels[$perm] ?? $perm) ?>
+    </label>
+  <?php endforeach; ?>
+  </div></div>
+<?php endforeach; ?>
+<button class="btn btn-primary" type="submit"><?= is_rtl()?'حفظ الصلاحيات':'Save permissions' ?></button></form></div>
+<?php endforeach; endif; ?>
 <?php if($membership['member_role']==='owner'): ?></div><div class="modal-backdrop<?= $error && ($_POST['action']??'')==='add_member' ? ' is-open' : '' ?>" id="addFirmMemberModal"><form method="post" class="modal-form"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="add_member"><button type="button" class="modal-close" onclick="closeModal('addFirmMemberModal')" aria-label="<?= is_rtl()?'إغلاق':'Close' ?>">✕</button><h3><?= is_rtl()?'إضافة عضو للمكتب':'Add a firm member' ?></h3><?php if($error && ($_POST['action']??'')==='add_member'): ?><div class="form-alert error"><?= htmlspecialchars($error) ?></div><?php endif; ?><div class="field"><label><?= is_rtl()?'بريد المحامي المعتمد':'Approved lawyer email' ?></label><input type="email" name="email" required></div><div class="field"><label><?= is_rtl()?'الدور':'Role' ?></label><select name="member_role"><option value="lawyer">lawyer</option><option value="partner">partner</option><option value="staff">staff</option></select></div><button class="btn btn-primary" type="submit"><?= is_rtl()?'إضافة عضو':'Add member' ?></button></form></div><?php else: ?></div><?php endif; ?>
 <div class="dash-card"><div class="toolbar"><h3>📚 <?= is_rtl()?'قاعدة معرفة المكتب':'Firm knowledge base' ?></h3><button type="button" class="btn btn-outline btn-sm" onclick="openModal('addFirmKnowledgeModal')">＋ <?= is_rtl()?'إضافة عنصر':'Add item' ?></button></div><div class="modal-backdrop<?= $error && ($_POST['action']??'')==='add_knowledge' ? ' is-open' : '' ?>" id="addFirmKnowledgeModal"><form method="post" class="modal-form"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="add_knowledge"><button type="button" class="modal-close" onclick="closeModal('addFirmKnowledgeModal')" aria-label="<?= is_rtl()?'إغلاق':'Close' ?>">✕</button><h3><?= is_rtl()?'إضافة معرفة للمكتب':'Add firm knowledge' ?></h3><?php if($error && ($_POST['action']??'')==='add_knowledge'): ?><div class="form-alert error"><?= htmlspecialchars($error) ?></div><?php endif; ?><div class="field"><label><?= is_rtl()?'العنوان':'Title' ?></label><input name="title" required maxlength="255"></div><div class="field"><label><?= is_rtl()?'التصنيف':'Category' ?></label><input name="category" maxlength="100"></div><div class="field"><label><?= is_rtl()?'محتوى داخلي للمكتب':'Internal firm content' ?></label><textarea name="content" rows="6" required></textarea></div><button class="btn btn-primary" type="submit"><?= is_rtl()?'حفظ المعرفة':'Save knowledge' ?></button></form></div>
 <?php $knowledge=$pdo->prepare('SELECT k.*,l.full_name author_name FROM firm_knowledge k JOIN lawyers l ON l.id=k.author_lawyer_id WHERE k.firm_id=? ORDER BY k.updated_at DESC');$knowledge->execute([(int)$membership['id']]);foreach($knowledge->fetchAll() as $item): ?><div class="rec-item"><div style="display:flex;justify-content:space-between;gap:10px"><strong><?= htmlspecialchars($item['title']) ?></strong><small><?= htmlspecialchars($item['category'] ?? '') ?> · <?= htmlspecialchars($item['author_name']) ?></small></div><div style="white-space:pre-wrap;margin-top:8px"><?= htmlspecialchars($item['content']) ?></div><?php if($membership['member_role']==='owner'||(int)$item['author_lawyer_id']===$lawyerId): ?><form method="post" style="margin-top:8px"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="delete_knowledge"><input type="hidden" name="knowledge_id" value="<?= (int)$item['id'] ?>"><button class="icon-btn danger" type="submit"><?= is_rtl()?'حذف':'Delete' ?></button></form><?php endif; ?></div><?php endforeach; ?></div>

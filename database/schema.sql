@@ -560,7 +560,7 @@ CREATE TABLE IF NOT EXISTS notifications (
 
 CREATE TABLE IF NOT EXISTS audit_logs (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    actor_type ENUM('admin','lawyer','system') NOT NULL DEFAULT 'admin',
+    actor_type ENUM('admin','lawyer','client','system') NOT NULL DEFAULT 'admin',
     actor_id INT UNSIGNED DEFAULT NULL,
     actor_name VARCHAR(150) DEFAULT NULL,
     firm_id INT UNSIGNED DEFAULT NULL,

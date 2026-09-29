@@ -2,15 +2,17 @@
 $activePage = 'case-tasks';
 require_once __DIR__ . '/includes/app_header.php';
 require_once __DIR__ . '/includes/csrf.php';
+require_once __DIR__ . '/includes/notifications.php';
 $userId = (int)$_SESSION['user_id'];
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) { http_response_code(403); exit('Invalid request'); }
     $taskId = (int)($_POST['task_id'] ?? 0);
-    $q = $pdo->prepare("SELECT t.id,t.title,c.lawyer_id FROM case_tasks t JOIN cases c ON c.id=t.case_id WHERE t.id=? AND c.user_id=? AND t.client_visible=1 AND t.status='pending' LIMIT 1");
+    $q = $pdo->prepare("SELECT t.id,t.title,c.lawyer_id,c.firm_id FROM case_tasks t JOIN cases c ON c.id=t.case_id WHERE t.id=? AND c.user_id=? AND t.client_visible=1 AND t.status='pending' LIMIT 1");
     $q->execute([$taskId,$userId]); $task = $q->fetch();
     if ($task) {
         $pdo->prepare("UPDATE case_tasks SET status='done' WHERE id=? AND status='pending'")->execute([$taskId]);
-        $pdo->prepare('INSERT INTO notifications (recipient_type,recipient_id,title,message,link) VALUES (?,?,?,?,?)')->execute(['lawyer',(int)$task['lawyer_id'],is_rtl()?'أكمل العميل مهمة':'Client completed a task',$task['title'],'/lawyer/cases.php']);
+        // Let the whole firm know the client completed a shared task, not just the case owner.
+        notify_tenant_except($pdo, $task['firm_id'] !== null ? (int)$task['firm_id'] : null, (int)$task['lawyer_id'], 0, is_rtl()?'أكمل العميل مهمة':'Client completed a task', $task['title'], '/lawyer/cases.php');
     }
     header('Location: /case-tasks.php'); exit;
 }

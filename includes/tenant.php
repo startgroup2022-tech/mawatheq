@@ -186,7 +186,29 @@ function tenant_adopt_lawyer_data(PDO $pdo, int $firmId, int $lawyerId): void {
 }
 
 /**
- * Capability map for firm member roles. Owner and partner manage the firm's legal work;
+ * The full set of assignable tenant capabilities, grouped for the permission editor UI.
+ * Any permission a firm owner grants to a member must come from this list.
+ */
+function tenant_permission_catalog(): array {
+    return [
+        'firm'          => ['firm.view', 'firm.edit', 'firm.manage_members'],
+        'clients'       => ['clients.view', 'clients.create', 'clients.edit', 'clients.delete'],
+        'cases'         => ['cases.view', 'cases.create', 'cases.edit', 'cases.delete', 'cases.assign', 'cases.export'],
+        'documents'     => ['documents.view', 'documents.upload', 'documents.download', 'documents.delete'],
+        'evidence'      => ['evidence.view', 'evidence.upload', 'evidence.download', 'evidence.delete'],
+        'consultations' => ['consultations.view', 'consultations.manage', 'consultations.respond'],
+        'drafting'      => ['drafting.create', 'drafting.edit', 'drafting.review', 'drafting.approve', 'drafting.export'],
+        'finance'       => ['finance.view_invoices', 'finance.create_invoices', 'finance.record_payments', 'finance.view_reports'],
+        'calendar'      => ['calendar.manage'],
+    ];
+}
+
+/** Flat list of every assignable capability. */
+function tenant_all_permissions(): array {
+    return array_merge(...array_values(tenant_permission_catalog()));
+}
+
+/** Capability map for firm member roles. Owner and partner manage the firm's legal work;
  * staff is a view/upload role. Per-member permissions_json can further restrict (never widen)
  * these defaults.
  */

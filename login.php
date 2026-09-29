@@ -28,6 +28,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 session_regenerate_id(true);
                 $_SESSION['user_id'] = $user['id'];
                 $_SESSION['user_name'] = $user['full_name'];
+                require_once __DIR__ . '/includes/audit_log.php';
+                log_action($pdo, 'تسجيل دخول العميل', 'client', (int)$user['id']);
                 header('Location: /ai-assistant.php');
                 exit;
             }
