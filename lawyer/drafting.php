@@ -159,7 +159,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'gener
             }
             $draftDetails .= "\n\n" . ($language==='ar'?'سجل القضية المختار (بيانات مرجعية فقط):':'Selected case record (reference data only):') . "\n" . (string)$contextJson;
         }
-        $result = generate_legal_draft($settings['ai_provider'], $settings['ai_api_key'], $settings['ai_model'] ?? '', $docType, $partyA, $partyB, $draftDetails, $language === 'ar');
+        require_once __DIR__ . '/../includes/ai_gateway.php';
+        $aiTenant = ai_gateway_tenant_context($pdo, 'lawyer', (int)$lawyerId);
+        $result = generate_legal_draft($settings['ai_provider'], $settings['ai_api_key'], $settings['ai_model'] ?? '', $docType, $partyA, $partyB, $draftDetails, $language === 'ar', [
+            'pdo' => $pdo, 'settings' => $settings, 'tenant' => $aiTenant,
+            'actor_id' => (int)$lawyerId, 'actor_type' => 'lawyer',
+        ]);
         $stmt = $pdo->prepare('INSERT INTO draft_documents (lawyer_id, firm_id, case_id, doc_type, title, party_a, party_b, details, generated_content, language, status) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
         $title = $docType . ($partyA ? ' — ' . $partyA : '') . ($partyB ? ' / ' . $partyB : '');
         $stmt->execute([$lawyerId, $firmId, $caseId, $docType, $title, $partyA, $partyB, $draftDetails, $result['content'], $language, $result['ok'] ? 'generated' : 'failed']);

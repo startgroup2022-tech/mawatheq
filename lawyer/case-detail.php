@@ -181,7 +181,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $settings=ai_load_settings($pdo);
                 if (!empty($settings['ai_provider']) && !empty($settings['ai_api_key']) && ($settings['ai_enabled'] ?? '1') !== '0') {
                     $types = ['pdf'=>'application/pdf','png'=>'image/png','jpg'=>'image/jpeg','jpeg'=>'image/jpeg'];
-                    $ai = analyze_document_with_ai($settings['ai_provider'], $settings['ai_api_key'], $settings['ai_model'] ?? '', base64_encode(file_get_contents(EVIDENCE_UPLOAD_DIR . $storedName)), $types[$validation['extension']], is_rtl(), $evidenceType === 'contract' ? 'contract' : 'general');
+                    require_once __DIR__ . '/../includes/ai_gateway.php';
+                    $aiTenant = ai_gateway_tenant_context($pdo, 'lawyer', (int)$lawyerId);
+                    $ai = analyze_document_with_ai($settings['ai_provider'], $settings['ai_api_key'], $settings['ai_model'] ?? '', base64_encode(file_get_contents(EVIDENCE_UPLOAD_DIR . $storedName)), $types[$validation['extension']], is_rtl(), $evidenceType === 'contract' ? 'contract' : 'general', [
+                        'pdo' => $pdo, 'settings' => $settings, 'tenant' => $aiTenant,
+                        'feature' => 'document-ai', 'data_category' => 'document_text',
+                        'actor_id' => (int)$lawyerId, 'actor_type' => 'lawyer',
+                    ]);
                     if ($ai['ok']) {
                         $findings = json_encode(['risks'=>$ai['risks'],'recommendations'=>$ai['recommendations']], JSON_UNESCAPED_UNICODE);
                         $pdo->prepare('UPDATE case_evidence SET ai_summary=?,ai_findings=?,ai_analyzed_at=NOW() WHERE id=?')->execute([$ai['summary'],$findings,$evidenceId]);
@@ -212,9 +218,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ? 'أنت مساعد تحليل قانوني داخلي للمحامي. حلل الوقائع المقدمة فقط بصيغة JSON. لا تخترع وقائع أو مواد قانونية أو سوابق. أرجع JSON فقط بالمفاتيح التالية: narrative (نص التحليل السردي الكامل بنفس الأسلوب المعتاد: ما هو معلوم وما هو ناقص، حجج الطرفين، نقاط القوة والضعف، التناقضات، مخاطر المواعيد والأدلة، الخطوات التالية، مع تنبيه أن النتيجة تحتاج مراجعة المحامي)، legal_issues (مصفوفة نصوص بأبرز المسائل القانونية المستخرجة من الوقائع فقط)، burden_of_proof (نص قصير يوضح على أي طرف يقع عبء الإثبات لكل ادعاء رئيسي بناءً على الوقائع المقدمة فقط، لا قاعدة نظامية عامة إلا إذا ذُكرت صراحة في السجل)، argument_strength (كائن بمفاتيح plaintiff_score وdefendant_score من 1 إلى 5 وreasoning نص قصير يوضح أساس التقييم استناداً للوقائع والأدلة المسجلة فقط)، counterarguments (مصفوفة نصوص بأبرز الحجج المضادة المحتملة التي قد يثيرها الطرف الآخر بناءً على السجل)، risk_matrix (مصفوفة كائنات بمفاتيح risk وlikelihood وimpact بقيم low/medium/high وnote). ميّز دائماً بين الوقائع والاستنتاجات، ولا تصغ أي تقييم كحقيقة قطعية.'
                 : 'You are an internal legal analysis assistant for a lawyer. Analyze only the supplied facts, returned as JSON. Never invent facts, statutes, or precedents. Return JSON only with these keys: narrative (the full narrative analysis in the usual style: known/missing information, arguments on both sides, strengths, weaknesses, contradictions, deadline/evidence risks, next steps, with a note that lawyer review is required), legal_issues (string array of the key legal issues extracted only from the supplied facts), burden_of_proof (short text on which party bears the burden of proof for each main claim, based only on the supplied facts — no general statutory rule unless explicitly present in the record), argument_strength (object with plaintiff_score and defendant_score from 1 to 5, and reasoning explaining the basis using only the recorded facts/evidence), counterarguments (string array of likely counterarguments the opposing side could raise based on the record), risk_matrix (array of objects with risk, likelihood, impact as low/medium/high, and note). Always distinguish facts from inferences, and never phrase an assessment as definitive fact.';
             $userMessage = json_encode($caseFacts, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-            $result = $settings['ai_provider'] === 'anthropic'
-                ? call_anthropic_raw($settings['ai_api_key'], $settings['ai_model'] ?? '', $systemPrompt, $userMessage, 2600)
-                : call_openai_raw($settings['ai_api_key'], $settings['ai_model'] ?? '', $systemPrompt, $userMessage, 2600);
+            // Case record content is untrusted data: wrap it and add the standing injection guard.
+            require_once __DIR__ . '/../includes/ai_gateway.php';
+            $aiTenant = ai_gateway_tenant_context($pdo, 'lawyer', (int)$lawyerId);
+            $systemPrompt .= "\n" . ai_gateway_injection_guard(is_rtl()) . "\n";
+            $result = ai_gateway_call($pdo, $settings, $aiTenant, 'case-ai', 'case_information', (int)$lawyerId, 'lawyer', $systemPrompt, $userMessage, 2600, null, 'case_analysis');
             if (!$result['ok'] || !$result['text']) {
                 $caseActionMessage = is_rtl() ? 'تعذّر تحليل القضية حالياً. تحقق من إعدادات مزوّد الذكاء الاصطناعي.' : 'Case analysis failed. Check the AI provider settings.';
             } else {
@@ -258,7 +266,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $factsForAnalysis = $pdo->prepare('SELECT * FROM case_facts WHERE case_id=? ORDER BY id');
             $factsForAnalysis->execute([$caseId]); $factsForAnalysis = $factsForAnalysis->fetchAll();
 
-            $evidenceReport = evidence_intelligence_analyze($pdo, $settings, $case, $evidenceForAnalysis, $claimsForAnalysis, $factsForAnalysis, is_rtl());
+            $evidenceReport = evidence_intelligence_analyze($pdo, $settings, $case, $evidenceForAnalysis, $claimsForAnalysis, $factsForAnalysis, is_rtl(), [
+                'actor_id' => (int)$lawyerId, 'actor_type' => 'lawyer',
+                'tenant' => ai_gateway_tenant_context($pdo, 'lawyer', (int)$lawyerId),
+            ]);
             if (!$evidenceReport['ok']) {
                 $caseActionMessage = $evidenceReport['error'];
             } else {

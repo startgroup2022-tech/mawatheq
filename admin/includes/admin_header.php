@@ -32,6 +32,7 @@ $adminNavGroups = [
         'reports' => ['i' => 'chart', 'ar' => 'التقارير والتحليلات', 'en' => 'Reports', 'href' => '/admin/reports.php'],
     ]],
     ['t' => adm('المعرفة والذكاء الاصطناعي', 'Knowledge & AI'), 'items' => [
+        'ai-control' => ['i' => 'shield', 'ar' => 'التحكم في AI والخصوصية', 'en' => 'AI control & privacy', 'href' => '/admin/ai-control.php'],
         'ai-knowledge' => ['i' => 'spark', 'ar' => 'مركز معرفة AI', 'en' => 'AI knowledge', 'href' => '/admin/ai-knowledge.php'],
         'ai-orchestration' => ['i' => 'bot', 'ar' => 'وحدات ووكلاء AI', 'en' => 'AI agents', 'href' => '/admin/ai-orchestration.php'],
         'ai-workflows' => ['i' => 'check', 'ar' => 'سير عمل الوكلاء والموافقات', 'en' => 'Agent workflows', 'href' => '/admin/ai-workflows.php', 'badge' => 'wf'],

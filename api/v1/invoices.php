@@ -5,6 +5,7 @@
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/../../includes/invoice_time_items.php';
 require_once __DIR__ . '/../../includes/tenant.php';
+require_once __DIR__ . '/../../includes/finance.php';
 $auth = api_authenticate($pdo);
 
 if ($auth['type'] === 'client') {
@@ -36,7 +37,14 @@ unset($invoice);
 
 // نُلحق حالة "متأخرة" محسوبة لحظياً (نفس منطق الموقع)، دون تعديل الحالة المخزّنة
 foreach ($invoices as &$inv) {
-    $inv['is_overdue'] = $inv['status'] === 'unpaid' && $inv['due_date'] && strtotime($inv['due_date']) < time();
+    $inv['balance'] = finance_invoice_balance($inv);
+    $inv['is_overdue'] = finance_display_status($inv) === 'overdue';
 }
 
-api_json(['ok' => true, 'invoices' => $invoices]);
+// A lawyer also gets a tenant financial summary so the mobile app can show totals without extra calls.
+$summary = null;
+if ($auth['type'] === 'lawyer') {
+    $summary = finance_summary($pdo, tenant_owner_where_for_lawyer($pdo, $auth['id'], 'i'));
+}
+
+api_json(['ok' => true, 'invoices' => $invoices, 'summary' => $summary]);

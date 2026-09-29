@@ -6,11 +6,12 @@
  * في المشروع (Source Grounding + تنبيه صريح بضرورة المراجعة البشرية).
  */
 require_once __DIR__ . '/ai_provider.php';
+require_once __DIR__ . '/ai_gateway.php';
 
 /**
  * @return array{ok:bool, error?:string, conflicts?:array, missing?:array, summary?:string}
  */
-function evidence_intelligence_analyze(PDO $pdo, array $settings, array $case, array $evidenceRows, array $claims, array $facts, bool $isArabic): array {
+function evidence_intelligence_analyze(PDO $pdo, array $settings, array $case, array $evidenceRows, array $claims, array $facts, bool $isArabic, array $gateway = []): array {
     if (!$evidenceRows) {
         return ['ok' => false, 'error' => $isArabic ? 'لا توجد أدلة مسجلة بعد لتحليلها.' : 'No evidence recorded yet to analyze.'];
     }
@@ -47,9 +48,9 @@ function evidence_intelligence_analyze(PDO $pdo, array $settings, array $case, a
           . "\nReturn JSON only with keys: conflicts (array of {evidence_ids, description}), missing (array of {related_claim_id, related_fact_id, description}), summary (one or two sentences). Return empty arrays if nothing found. This is a preliminary, advisory analysis requiring lawyer review — do not phrase findings as definitive fact.";
 
     $userMessage = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    $response = $settings['ai_provider'] === 'anthropic'
-        ? call_anthropic_raw($settings['ai_api_key'], $settings['ai_model'] ?? '', $systemPrompt, $userMessage, 1800)
-        : call_openai_raw($settings['ai_api_key'], $settings['ai_model'] ?? '', $systemPrompt, $userMessage, 1800);
+    $systemPrompt .= "\n" . ai_gateway_injection_guard($isArabic) . "\n";
+    $tenant = $gateway['tenant'] ?? ai_gateway_tenant_context($pdo, 'lawyer', (int)($gateway['actor_id'] ?? 0));
+    $response = ai_gateway_call($pdo, $settings, $tenant, 'evidence-ai', 'case_information', (int)($gateway['actor_id'] ?? 0), $gateway['actor_type'] ?? 'lawyer', $systemPrompt, $userMessage, 1800, null, 'evidence_intelligence');
 
     if (!$response['ok'] || !$response['text']) {
         return ['ok' => false, 'error' => $isArabic ? 'تعذّر تحليل الأدلة حالياً.' : 'Evidence analysis failed.'];

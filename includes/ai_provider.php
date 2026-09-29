@@ -123,12 +123,42 @@ function test_ai_connection(string $provider, string $apiKey, string $model): ar
 }
 
 /**
+ * Run the Phase-3 AI gateway gate when a gateway context is supplied, otherwise allow
+ * (preserving direct-call behaviour for any code path not yet wired to the gateway).
+ * @return array{allowed:bool, reason:?string, mode:string}
+ */
+function ai_provider_gate(array $gateway, string $defaultFeature, string $defaultCategory): array {
+    if (empty($gateway['pdo']) || !($gateway['pdo'] instanceof PDO) || empty($gateway['tenant'])) {
+        return ['allowed' => true, 'reason' => null, 'mode' => 'ungated'];
+    }
+    require_once __DIR__ . '/ai_gateway.php';
+    $gate = ai_gateway_authorize(
+        $gateway['pdo'], $gateway['settings'] ?? [],
+        $gateway['tenant'], $gateway['feature'] ?? $defaultFeature, $gateway['data_category'] ?? $defaultCategory,
+        (int)($gateway['actor_id'] ?? 0), $gateway['actor_type'] ?? 'system', $gateway['module_id'] ?? null
+    );
+    return ['allowed' => (bool)$gate['allowed'], 'reason' => $gate['reason'] ?? null, 'mode' => $gate['mode'] ?? 'unknown'];
+}
+
+/** Record the outcome of an already-authorized multimodal call through the gateway. */
+function ai_provider_record(array $gateway, bool $ok, ?int $inTok, ?int $outTok, int $payloadBytes, ?string $error, int $durationMs): void {
+    if (empty($gateway['pdo']) || !($gateway['pdo'] instanceof PDO) || empty($gateway['tenant'])) return;
+    require_once __DIR__ . '/ai_gateway.php';
+    ai_gateway_record($gateway['pdo'], $gateway['settings'] ?? [], $gateway['tenant'],
+        $gateway['feature'] ?? 'document-ai', $gateway['data_category'] ?? 'document_text',
+        (int)($gateway['actor_id'] ?? 0), $gateway['actor_type'] ?? 'system',
+        $ok, $inTok, $outTok, $payloadBytes, $error, $durationMs, $gateway['consent_mode'] ?? 'external_allowed', $gateway['module_id'] ?? null);
+}
+
+/**
  * تحليل مستند حقيقي (PDF أو صورة) عبر إرسال الملف نفسه لنموذج الذكاء الاصطناعي
  * المفعّل (Anthropic يدعم PDF والصور، OpenAI يدعم الصور فقط عبر الرؤية).
  * @return array{ok:bool, summary:?string, risks:array, recommendations:array, entities:array, error:?string}
  */
-function analyze_document_with_ai(string $provider, string $apiKey, string $model, string $base64, string $mediaType, bool $isArabic, string $documentType = 'general'): array {
+function analyze_document_with_ai(string $provider, string $apiKey, string $model, string $base64, string $mediaType, bool $isArabic, string $documentType = 'general', array $gateway = []): array {
     $empty = ['ok' => false, 'summary' => null, 'risks' => [], 'recommendations' => [], 'entities' => ['dates'=>[],'amounts'=>[],'parties'=>[]], 'contract_analysis'=>null, 'error' => null];
+    $gate = ai_provider_gate($gateway, 'document-ai', 'document_text');
+    if (!$gate['allowed']) { $empty['error'] = ai_deny_message($gate['reason'] ?? 'external_denied'); return $empty; }
     if (!in_array($provider, ['openai','anthropic'], true) || $apiKey === '') { $empty['error'] = 'لا يوجد مزوّد ذكاء اصطناعي صالح ومفعّل.'; return $empty; }
     if (!function_exists('curl_init')) { $empty['error'] = 'امتداد cURL غير مفعّل على الخادم.'; return $empty; }
     if (!in_array($mediaType, ['application/pdf','image/png','image/jpeg'], true)) { $empty['error'] = 'نوع الملف غير مدعوم للتحليل.'; return $empty; }
@@ -144,6 +174,8 @@ function analyze_document_with_ai(string $provider, string $apiKey, string $mode
         ? 'أنت مساعد قانوني لتحليل المستندات. أرجع JSON فقط دون Markdown بالمفاتيح: summary وrisks وrecommendations وentities (تتضمن dates وamounts وparties كقوائم نصية).' . $contractSchema . ' اعتمد على النص الظاهر فقط، وصرّح إذا تعذرت قراءة جزء. استخدم قائمة فارغة أو null عند غياب المعلومة.' . $contractFocus
         : 'You are a legal document analysis assistant. Return only JSON with summary, risks, recommendations, and entities (dates, amounts, parties as string arrays).' . $contractSchema . ' Use only visible text, note unreadable portions, and use empty arrays or null when information is absent.' . $contractFocus;
     $maxTokens = $documentType === 'contract' ? 2600 : 1200;
+    $gatewayPayloadBytes = strlen($base64) + strlen($instruction);
+    $gatewayStart = microtime(true);
 
     if ($provider === 'anthropic') {
         $contentType = $mediaType === 'application/pdf' ? 'document' : 'image';
@@ -211,12 +243,12 @@ function analyze_document_with_ai(string $provider, string $apiKey, string $mode
         return $empty;
     }
 
-    if (!$text) { $empty['error'] = 'لم يرجع النموذج أي نص.'; return $empty; }
+    if (!$text) { $empty['error'] = 'لم يرجع النموذج أي نص.'; ai_provider_record($gateway, false, null, null, $gatewayPayloadBytes, $empty['error'], (int)round((microtime(true) - $gatewayStart) * 1000)); return $empty; }
 
     // تنظيف أي أسوار Markdown محتملة قبل فك الترميز
     $clean = trim(preg_replace('/^```(json)?|```$/m', '', trim($text)));
     $parsed = json_decode($clean, true);
-    if (!is_array($parsed)) { $empty['error'] = 'تعذّر تفسير رد النموذج كـ JSON.'; return $empty; }
+    if (!is_array($parsed)) { $empty['error'] = 'تعذّر تفسير رد النموذج كـ JSON.'; ai_provider_record($gateway, false, null, null, $gatewayPayloadBytes, $empty['error'], (int)round((microtime(true) - $gatewayStart) * 1000)); return $empty; }
 
     $contractResult = null;
     if ($documentType === 'contract' && is_array($parsed['contract_analysis'] ?? null)) {
@@ -264,6 +296,7 @@ function analyze_document_with_ai(string $provider, string $apiKey, string $mode
         ];
     }
 
+    ai_provider_record($gateway, true, null, null, $gatewayPayloadBytes, null, (int)round((microtime(true) - $gatewayStart) * 1000));
     return [
         'ok' => true,
         'summary' => $parsed['summary'] ?? null,
@@ -311,7 +344,7 @@ function extract_knowledge_text_with_ai(string $provider,string $apiKey,string $
  * المسودة الناتجة تحتاج دائماً مراجعة محامٍ قبل الاستخدام الفعلي — يوضَّح ذلك بالبرومبت.
  * @return array{ok:bool, content:?string, error:?string}
  */
-function generate_legal_draft(string $provider, string $apiKey, string $model, string $docType, string $partyA, string $partyB, string $details, bool $isArabic): array {
+function generate_legal_draft(string $provider, string $apiKey, string $model, string $docType, string $partyA, string $partyB, string $details, bool $isArabic, array $gateway = []): array {
     if ($apiKey === '' || $provider === '') {
         return ['ok' => false, 'content' => null, 'error' => is_rtl() ? 'لا يوجد مزوّد ذكاء اصطناعي مفعّل من الإعدادات.' : 'No AI provider is active in settings.'];
     }
@@ -343,6 +376,18 @@ function generate_legal_draft(string $provider, string $apiKey, string $model, s
     $userMessage = ($isArabic ? 'الطرف الأول: ' : 'Party A: ') . $partyA . "\n"
         . ($isArabic ? 'الطرف الثاني: ' : 'Party B: ') . $partyB . "\n"
         . ($isArabic ? 'التفاصيل: ' : 'Details: ') . $details;
+
+    if (!empty($gateway)) {
+        require_once __DIR__ . '/ai_gateway.php';
+        $systemPrompt .= "\n" . ai_gateway_injection_guard($isArabic) . "\n";
+        $tenant = $gateway['tenant'] ?? ai_gateway_tenant_context($gateway['pdo'] ?? null, 'lawyer', (int)($gateway['actor_id'] ?? 0));
+        $call = ai_gateway_call($gateway['pdo'] ?? null, $gateway['settings'] ?? [], $tenant, 'drafting', 'case_information',
+            (int)($gateway['actor_id'] ?? 0), $gateway['actor_type'] ?? 'lawyer', $systemPrompt, $userMessage, 1800, null, 'drafting');
+        if ($call['denied'] || !$call['ok']) {
+            return ['ok' => false, 'content' => null, 'error' => $call['error'] ?? (is_rtl() ? 'تعذّر إنشاء المسودة.' : 'Draft generation failed.')];
+        }
+        return ['ok' => true, 'content' => $call['text'], 'error' => null];
+    }
 
     $result = $provider === 'anthropic'
         ? call_anthropic_raw($apiKey, $model, $systemPrompt, $userMessage, 1800)
