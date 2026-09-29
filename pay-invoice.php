@@ -25,6 +25,12 @@ if (!$invoice) {
 
     if (!ngenius_is_enabled($settings)) {
         $pageError = is_rtl() ? 'الدفع الإلكتروني غير مفعّل حالياً. تواصل مع الإدارة أو المحامي لطرق دفع بديلة.' : 'Online payment is not enabled yet. Contact support or the lawyer for alternative payment methods.';
+    } elseif (!ngenius_supports_currency($settings, $invoice['currency'] ?? null)) {
+        // The outlet settles in one currency (ngenius_currency). An invoice in a different
+        // currency must not be sent as the same numeric value, which would mis-charge it.
+        $pageError = is_rtl()
+            ? 'الدفع الإلكتروني متاح حالياً للفواتير بعملة ' . currency_name(ngenius_currency($settings)) . ' فقط. تواصل مع المحامي لطرق دفع بديلة.'
+            : 'Online payment is currently available for ' . ngenius_currency($settings) . ' invoices only. Contact the lawyer for alternative payment methods.';
     } else {
         $tokenResult = ngenius_get_access_token($settings['ngenius_environment'], $settings['ngenius_api_key'], $settings['ngenius_realm_name'] ?: 'ni');
 
@@ -37,7 +43,8 @@ if (!$invoice) {
             $order = ngenius_create_order(
                 $settings['ngenius_environment'], $settings['ngenius_outlet_ref'], $tokenResult['token'],
                 $payableAmount, $invoice['email'], $invoice['full_name'],
-                $redirectUrl, $cancelUrl, 'INV-' . $invoiceId, current_lang()
+                $redirectUrl, $cancelUrl, 'INV-' . $invoiceId, current_lang(),
+                ngenius_currency($settings)
             );
 
             if (!$order['ok']) {

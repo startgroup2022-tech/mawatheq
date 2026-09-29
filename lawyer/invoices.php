@@ -111,8 +111,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'creat
         $error = is_rtl() ? 'يرجى اختيار العميل وتعبئة الوصف والمبلغ (أكبر من صفر).' : 'Please choose a client and fill description and amount (> 0).';
     } else {
         $pdo->prepare('INSERT INTO invoices (invoice_number,lawyer_id,created_by_lawyer_id,firm_id,user_id,case_id,description,amount,currency,status,issue_date,due_date) VALUES (?,?,?,?,?,?,?,?,?,?,NOW(),?)')
-            ->execute([finance_next_invoice_number($pdo, $firmId, (int)$lawyerId), $lawyerId, $lawyerId, $firmId, $userId, $caseId, $desc, $amount, FINANCE_CURRENCY, 'unpaid', $dueDate ?: null]);
-        notify($pdo, 'client', $userId, is_rtl() ? 'فاتورة جديدة' : 'New invoice', $desc . ' — ' . number_format($amount,3) . (is_rtl()?' د.ب':' BHD'), '/invoices.php');
+            ->execute([finance_next_invoice_number($pdo, $firmId, (int)$lawyerId), $lawyerId, $lawyerId, $firmId, $userId, $caseId, $desc, $amount, finance_currency(), 'unpaid', $dueDate ?: null]);
+        notify($pdo, 'client', $userId, is_rtl() ? 'فاتورة جديدة' : 'New invoice', $desc . ' — ' . money_text($amount), '/invoices.php');
         $created = true; $createdMessage=is_rtl()?'تم إصدار الفاتورة بنجاح.':'Invoice issued successfully.';
     }
 }
@@ -139,7 +139,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action'] ?? '')==='create_ti
             $lineCount=count($billableEntries);
             $description=(is_rtl()?'مسودة أتعاب وقت عمل للقضية: ':'Draft time billing for case: ').mb_substr($billingCase['title'],0,170,'UTF-8').' · '.$lineCount.' '.(is_rtl()?'سجل':'entries').' / '.round($minutes/60,3).' '.(is_rtl()?'ساعة':'hours');
             $pdo->prepare('INSERT INTO invoices (invoice_number,lawyer_id,created_by_lawyer_id,firm_id,user_id,case_id,description,amount,currency,status,is_draft,issue_date,due_date) VALUES (?,?,?,?,?,?,?,?,?,?,1,NOW(),?)')
-                ->execute([finance_next_invoice_number($pdo, $firmId, (int)$lawyerId),$lawyerId,$lawyerId,$firmId,(int)$billingCase['user_id'],$caseId,mb_substr($description,0,255,'UTF-8'),$amount,FINANCE_CURRENCY,'unpaid',$dueDate!==''?$dueDate:null]);
+                ->execute([finance_next_invoice_number($pdo, $firmId, (int)$lawyerId),$lawyerId,$lawyerId,$firmId,(int)$billingCase['user_id'],$caseId,mb_substr($description,0,255,'UTF-8'),$amount,finance_currency(),'unpaid',$dueDate!==''?$dueDate:null]);
             $invoiceId=(int)$pdo->lastInsertId();
             $ids=array_map(static fn($entry)=>(int)$entry['id'],$billableEntries);
             $placeholders=implode(',',array_fill(0,count($ids),'?'));
@@ -168,7 +168,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action'] ?? '')==='issue_tim
         $entryCount=$pdo->prepare('SELECT COUNT(*) FROM case_time_entries WHERE invoice_id=? AND ' . $timeScope['sql']); $entryCount->execute(array_merge([$invoiceId], $timeScope['params']));
         if ((int)$entryCount->fetchColumn()<1) throw new RuntimeException('Draft has no linked time.');
         $pdo->prepare("UPDATE invoices SET is_draft=0 WHERE id=? AND " . $invScope['sql'] . " AND is_draft=1")->execute(array_merge([$invoiceId], $invScope['params']));
-        notify($pdo,'client',(int)$issueData['user_id'],is_rtl()?'فاتورة أتعاب وقت جديدة':'New time billing invoice',$issueData['description'].' — '.number_format((float)$issueData['amount'],3).(is_rtl()?' د.ب':' BHD'),'/invoices.php');
+        notify($pdo,'client',(int)$issueData['user_id'],is_rtl()?'فاتورة أتعاب وقت جديدة':'New time billing invoice',$issueData['description'].' — '.money_text($issueData['amount']),'/invoices.php');
         $pdo->commit();
         log_action($pdo,'إصدار فاتورة أتعاب وقت للعميل','invoice',$invoiceId);
         $created=true; $createdMessage=is_rtl()?'تم إصدار الفاتورة وإشعار العميل.':'Invoice issued and client notified.';
@@ -210,8 +210,8 @@ foreach ($invoices as $inv) {
   <div class="toolbar"><div><h2><?= is_rtl() ? 'الفواتير' : 'Invoices' ?></h2><p class="field-hint" style="margin:6px 0 0"><?= is_rtl() ? 'تابع الفواتير والمدفوعات ومسودات أتعاب الوقت من مكان واحد.' : 'Manage issued invoices, payments, and time-billing drafts in one place.' ?></p></div><button type="button" class="btn btn-primary" onclick="openModal('addInvoiceModal')">＋ <?= is_rtl() ? 'إصدار فاتورة' : 'Issue invoice' ?></button></div>
 
   <div class="invoice-summary">
-    <div class="stat-card"><div class="num"><?= number_format($totalPaid, 3) ?></div><div class="label"><?= is_rtl() ? 'إجمالي المحصّل (د.ب)' : 'Total collected (BHD)' ?></div></div>
-    <div class="stat-card"><div class="num"><?= number_format($totalUnpaid, 3) ?></div><div class="label"><?= is_rtl() ? 'مستحق (غير مدفوع)' : 'Outstanding (unpaid)' ?></div></div>
+    <div class="stat-card"><div class="num"><?= money($totalPaid) ?></div><div class="label"><?= is_rtl() ? 'إجمالي المحصّل' : 'Total collected' ?></div></div>
+    <div class="stat-card"><div class="num"><?= money($totalUnpaid) ?></div><div class="label"><?= is_rtl() ? 'مستحق (غير مدفوع)' : 'Outstanding (unpaid)' ?></div></div>
   </div>
 
   <div class="invoice-toolbar">
@@ -221,7 +221,7 @@ foreach ($invoices as $inv) {
   <?php if ($error && ($_POST['action'] ?? '')!=='create'): ?><div class="form-alert error"><?= htmlspecialchars($error) ?></div><?php endif; ?>
 
   <?php if ($unbilledTimeCases): ?><div class="dash-card"><h3>⏱️ <?= is_rtl()?'الوقت القابل للفوترة':'Unbilled billable time' ?></h3><p class="field-hint"><?= is_rtl()?'أنشئ مسودة للمراجعة أولاً؛ لن تظهر للعميل أو تسمح بالدفع حتى تصدرها.':'Create a draft for review; it stays hidden from the client and cannot be paid until issued.' ?></p>
-    <?php foreach($unbilledTimeCases as $timeCase): ?><form method="post" class="invoice-time-row"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="create_time_invoice"><input type="hidden" name="case_id" value="<?= (int)$timeCase['case_id'] ?>"><div><strong><?= htmlspecialchars($timeCase['case_title']) ?></strong><div class="field-hint"><?= htmlspecialchars($timeCase['client_name']) ?> · <?= (int)$timeCase['entry_count'] ?> <?= is_rtl()?'سجل وقت':'time entries' ?> · <?= round((int)$timeCase['total_minutes']/60,2) ?> <?= is_rtl()?'ساعة':'hours' ?> · <?= number_format((float)$timeCase['amount'],3) ?> <?= is_rtl()?'د.ب':'BHD' ?></div></div><div class="field"><label><?= is_rtl()?'تاريخ الاستحقاق':'Due date' ?></label><input type="date" name="due_date" value="<?= htmlspecialchars(date('Y-m-d',strtotime('+14 days'))) ?>"></div><button class="btn btn-outline btn-sm" type="submit"><?= is_rtl()?'إنشاء مسودة':'Create draft' ?></button></form><?php endforeach; ?>
+    <?php foreach($unbilledTimeCases as $timeCase): ?><form method="post" class="invoice-time-row"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="create_time_invoice"><input type="hidden" name="case_id" value="<?= (int)$timeCase['case_id'] ?>"><div><strong><?= htmlspecialchars($timeCase['case_title']) ?></strong><div class="field-hint"><?= htmlspecialchars($timeCase['client_name']) ?> · <?= (int)$timeCase['entry_count'] ?> <?= is_rtl()?'سجل وقت':'time entries' ?> · <?= round((int)$timeCase['total_minutes']/60,2) ?> <?= is_rtl()?'ساعة':'hours' ?> · <?= money($timeCase['amount']) ?></div></div><div class="field"><label><?= is_rtl()?'تاريخ الاستحقاق':'Due date' ?></label><input type="date" name="due_date" value="<?= htmlspecialchars(date('Y-m-d',strtotime('+14 days'))) ?>"></div><button class="btn btn-outline btn-sm" type="submit"><?= is_rtl()?'إنشاء مسودة':'Create draft' ?></button></form><?php endforeach; ?>
   </div><?php endif; ?>
 
   <div class="modal-backdrop<?= $error && ($_POST['action'] ?? '')==='create' ? ' is-open' : '' ?>" id="addInvoiceModal">
@@ -246,7 +246,7 @@ foreach ($invoices as $inv) {
         </select></div>
       </div>
       <div class="field"><label><?= is_rtl() ? 'الوصف' : 'Description' ?></label><input type="text" name="description" maxlength="255" placeholder="<?= is_rtl() ? 'مثال: أتعاب استشارة + إعداد مذكرة' : 'e.g. Consultation fee + memo drafting' ?>" required></div>
-      <div class="field"><label><?= is_rtl() ? 'المبلغ (د.ب)' : 'Amount (BHD)' ?></label><input type="number" step="0.001" min="0" name="amount" required></div>
+      <div class="field"><label><?= is_rtl() ? 'المبلغ' : 'Amount' ?> (<?= currency_symbol() ?>)</label><input type="number" step="<?= currency_step() ?>" min="0" name="amount" required></div>
       <div class="field"><label><?= is_rtl() ? 'تاريخ الاستحقاق (اختياري)' : 'Due date (optional)' ?></label><input type="date" name="due_date"></div>
     </div>
     <button class="btn btn-primary" type="submit"><?= is_rtl() ? 'إصدار الفاتورة' : 'Issue invoice' ?></button>
@@ -270,9 +270,9 @@ foreach ($invoices as $inv) {
           <td><?= htmlspecialchars($inv['client_name']) ?></td>
           <td><?= htmlspecialchars($inv['description']) ?></td>
           <td><?php if($inv['case_id']): ?><a href="/lawyer/case-detail.php?id=<?= (int)$inv['case_id'] ?>"><?= htmlspecialchars($inv['case_title'] ?? '—') ?></a><?php else: ?><?= htmlspecialchars($inv['case_title'] ?? '—') ?><?php endif; ?></td>
-          <td><?= number_format($inv['amount'], 3) ?> <?= is_rtl() ? 'د.ب' : 'BHD' ?></td>
-          <td><?= number_format((float)$inv['amount_paid'], 3) ?></td>
-          <td><?= number_format($balance, 3) ?></td>
+          <td><?= money($inv['amount']) ?></td>
+          <td><?= money($inv['amount_paid']) ?></td>
+          <td><?= money($balance) ?></td>
           <td><?= $inv['due_date'] ? date('Y-m-d', strtotime($inv['due_date'])) : '—' ?></td>
           <td><span class="status-pill status-<?= $displayStatus === 'paid' ? 'confirmed' : (in_array($displayStatus, ['overdue','cancelled'], true) ? 'cancelled' : 'pending') ?>"><?= $statusLabels[$displayStatus] ?? $displayStatus ?></span></td>
           <td><div class="invoice-actions">
@@ -280,7 +280,7 @@ foreach ($invoices as $inv) {
               <form method="post" style="display:inline" onsubmit="return confirm('<?= is_rtl()?'تأكيد إصدار الفاتورة وإشعار العميل؟':'Issue this invoice and notify the client?' ?>')"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="issue_time_invoice"><input type="hidden" name="invoice_id" value="<?= (int)$inv['id'] ?>"><button class="icon-btn" type="submit"><?= is_rtl()?'مراجعة وإصدار':'Review & issue' ?></button></form>
               <form method="post" style="display:inline" onsubmit="return confirm('<?= is_rtl()?'حذف المسودة وإعادة الساعات إلى السجل غير المفوتر؟':'Delete draft and release its time entries?' ?>')"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="cancel_invoice"><input type="hidden" name="invoice_id" value="<?= (int)$inv['id'] ?>"><button class="icon-btn danger" type="submit"><?= is_rtl()?'حذف المسودة':'Discard draft' ?></button></form>
             <?php elseif (in_array($inv['status'], ['unpaid','partially_paid','overdue'], true)): ?>
-              <?php if ($balance > 0): ?><button type="button" class="icon-btn" onclick="openRecordPayment(<?= (int)$inv['id'] ?>, '<?= htmlspecialchars(number_format($balance,3,'.',''), ENT_QUOTES) ?>', '<?= htmlspecialchars($inv['invoice_number'] ?? '', ENT_QUOTES) ?>')"><?= is_rtl() ? 'تسجيل دفعة' : 'Record payment' ?></button><?php endif; ?>
+              <?php if ($balance > 0): ?><button type="button" class="icon-btn" onclick="openRecordPayment(<?= (int)$inv['id'] ?>, '<?= htmlspecialchars(currency_raw($balance), ENT_QUOTES) ?>', '<?= htmlspecialchars($inv['invoice_number'] ?? '', ENT_QUOTES) ?>')"><?= is_rtl() ? 'تسجيل دفعة' : 'Record payment' ?></button><?php endif; ?>
               <form method="post" onsubmit="return confirm('<?= is_rtl() ? 'تأكيد استلام كامل المبلغ المتبقي؟' : 'Confirm the full remaining amount was received?' ?>')"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="mark_paid"><input type="hidden" name="invoice_id" value="<?= (int)$inv['id'] ?>"><button class="icon-btn" type="submit"><?= is_rtl() ? 'تحديد كمدفوعة' : 'Mark paid' ?></button></form>
               <form method="post" onsubmit="return confirm('<?= is_rtl() ? 'إلغاء الفاتورة؟' : 'Cancel invoice?' ?>')"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="cancel_invoice"><input type="hidden" name="invoice_id" value="<?= (int)$inv['id'] ?>"><button class="icon-btn danger" type="submit"><?= is_rtl() ? 'إلغاء' : 'Cancel' ?></button></form>
             <?php endif; ?>
@@ -300,7 +300,7 @@ foreach ($invoices as $inv) {
     <h3 id="recordPaymentTitle" style="margin-bottom:14px"><?= is_rtl() ? 'تسجيل دفعة' : 'Record a payment' ?></h3>
     <p class="field-hint" id="recordPaymentHint" style="margin-bottom:10px"></p>
     <div class="grid-2">
-      <div class="field"><label><?= is_rtl() ? 'المبلغ (د.ب)' : 'Amount (BHD)' ?></label><input type="number" step="0.001" min="0.001" name="amount" id="recordPaymentAmount" required></div>
+      <div class="field"><label><?= is_rtl() ? 'المبلغ' : 'Amount' ?> (<?= currency_symbol() ?>)</label><input type="number" step="<?= currency_step() ?>" min="0.001" name="amount" id="recordPaymentAmount" required></div>
       <div class="field"><label><?= is_rtl() ? 'طريقة الدفع' : 'Method' ?></label><div class="select-wrap"><select name="method" class="pro-select">
         <option value="cash"><?= is_rtl()?'نقداً':'Cash' ?></option>
         <option value="bank_transfer"><?= is_rtl()?'تحويل بنكي':'Bank transfer' ?></option>

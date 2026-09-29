@@ -172,7 +172,7 @@
         <?php if ($plan['is_featured']): ?><span class="pop-tag"><?= t('pricing_popular') ?></span><?php endif; ?>
         <h3><?= htmlspecialchars($name) ?></h3>
         <div class="price-amount">
-          <?= $plan['price_monthly'] > 0 ? number_format($plan['price_monthly'], 3) . ' ' . (is_rtl() ? 'د.ب' : 'BHD') : (is_rtl() ? 'مجاناً' : 'Free') ?>
+          <?= $plan['price_monthly'] > 0 ? money($plan['price_monthly']) : (is_rtl() ? 'مجاناً' : 'Free') ?>
           <?php if ($plan['price_monthly'] > 0): ?><span><?= t('pricing_monthly') ?></span><?php endif; ?>
         </div>
         <ul class="price-feats">

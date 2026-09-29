@@ -28,6 +28,7 @@ if (!in_array($invoice['status'], ['unpaid','partially_paid','overdue'], true) |
 
 $settings = ngenius_settings($pdo);
 if (!ngenius_is_enabled($settings)) api_error('online payment is not enabled yet', 503);
+if (!ngenius_supports_currency($settings, $invoice['currency'] ?? null)) api_error('this invoice currency is not supported by the payment gateway', 409);
 
 $tokenResult = ngenius_get_access_token($settings['ngenius_environment'], $settings['ngenius_api_key'], $settings['ngenius_realm_name'] ?: 'ni');
 if (!$tokenResult['ok']) api_error($tokenResult['error'], 502);
@@ -38,7 +39,8 @@ $cancelUrl = rtrim(SITE_URL, '/') . '/invoices.php';
 $order = ngenius_create_order(
     $settings['ngenius_environment'], $settings['ngenius_outlet_ref'], $tokenResult['token'],
     finance_invoice_balance($invoice), $invoice['email'], $invoice['full_name'],
-    $redirectUrl, $cancelUrl, 'INV-' . $invoiceId, 'ar'
+    $redirectUrl, $cancelUrl, 'INV-' . $invoiceId, 'ar',
+    ngenius_currency($settings)
 );
 if (!$order['ok']) api_error($order['error'], 502);
 

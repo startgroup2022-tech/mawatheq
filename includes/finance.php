@@ -21,11 +21,20 @@
 require_once __DIR__ . '/tenant.php';
 require_once __DIR__ . '/audit_log.php';
 
-const FINANCE_CURRENCY = 'BHD';
+/** Currency invoices are denominated in — follows the admin setting (default SAR). */
+function finance_currency(): string { return currency_code(); }
+
 const FINANCE_TAX_RATE_LIMIT = 100.0;
 
-/** Round to the platform's 3-decimal BHD precision. */
-function finance_round(float $value): float { return round($value, 3); }
+/** Round to the currency the invoice itself is denominated in. */
+function finance_round(float $value, ?string $code = null): float {
+    return round($value, currency_decimals($code));
+}
+
+/** Round using an invoice row's stored currency, for operations on existing invoices. */
+function finance_round_for(array $invoice, float $value): float {
+    return round($value, currency_decimals($invoice['currency'] ?? null));
+}
 
 /** The tenant that owns the invoices of the currently signed-in lawyer. */
 function finance_owner_pair(?PDO $pdo = null): array {
@@ -151,10 +160,13 @@ function finance_record_payment(PDO $pdo, int $invoiceId, float $amount, array $
         else { $pdo->exec('ROLLBACK TO SAVEPOINT ' . $savepoint); }
     };
     try {
-        $lock = $pdo->prepare('SELECT id, amount, amount_paid, status, is_draft, firm_id, lawyer_id, user_id, description FROM invoices WHERE id=? FOR UPDATE');
+        $lock = $pdo->prepare('SELECT id, amount, amount_paid, status, is_draft, firm_id, lawyer_id, user_id, description, currency FROM invoices WHERE id=? FOR UPDATE');
         $lock->execute([$invoiceId]);
         $row = $lock->fetch();
         if (!$row) { $undo(); return ['ok' => false, 'error' => 'invoice_not_found']; }
+        // Round to the invoice own currency, not the site default: an old BHD invoice
+        // keeps its third decimal even after the site switches to a 2-decimal currency.
+        $amount = finance_round_for($row, $amount);
         if ((int)$row['is_draft'] === 1) { $undo(); return ['ok' => false, 'error' => 'invoice_is_draft']; }
         if ($row['status'] === 'cancelled') { $undo(); return ['ok' => false, 'error' => 'invoice_cancelled']; }
 
@@ -163,7 +175,7 @@ function finance_record_payment(PDO $pdo, int $invoiceId, float $amount, array $
         if ($amount > $balance + 0.0001) { $undo(); return ['ok' => false, 'error' => 'payment_exceeds_balance', 'balance' => $balance]; }
 
         $pdo->prepare('INSERT INTO invoice_payments (invoice_id,firm_id,lawyer_id,amount,currency,method,status,reference,idempotency_key,notes,paid_at,recorded_by_type,recorded_by_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')
-            ->execute([$invoiceId, $row['firm_id'], $row['lawyer_id'], $amount, FINANCE_CURRENCY, $method, 'completed', $reference, $idempotencyKey, $notes, $paidAt, $recordedByType, $recordedById]);
+            ->execute([$invoiceId, $row['firm_id'], $row['lawyer_id'], $amount, $row['currency'] ?? finance_currency(), $method, 'completed', $reference, $idempotencyKey, $notes, $paidAt, $recordedByType, $recordedById]);
         $paymentId = (int)$pdo->lastInsertId();
 
         $newPaid = finance_round((float)$row['amount_paid'] + $amount);

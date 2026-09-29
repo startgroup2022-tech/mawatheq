@@ -56,17 +56,17 @@ $j = fn($a) => h(json_encode($a, JSON_UNESCAPED_UNICODE));
 
   <div class="stat-grid">
     <div class="stat-card"><div class="num"><?= (int)$metrics['cases']['total'] ?></div><div class="label"><?= h(adm('القضايا', 'Cases')) ?> · <?= h(adm('مفتوحة', 'open')) ?> <?= (int)$metrics['cases']['open_cases'] ?> · <?= h(adm('مغلقة', 'closed')) ?> <?= (int)$metrics['cases']['closed_cases'] ?></div></div>
-    <div class="stat-card"><div class="num"><?= number_format((float)$metrics['money']['paid_amount'], 3) ?></div><div class="label"><?= h(adm('فواتير محصّلة (د.ب)', 'Collected invoices (BHD)')) ?> · <?= (int)$metrics['money']['paid_count'] ?></div></div>
-    <div class="stat-card"><div class="num"><?= number_format((float)$metrics['money']['outstanding'], 3) ?></div><div class="label"><?= h(adm('مبالغ غير محصّلة (د.ب)', 'Outstanding (BHD)')) ?> · <?= h(adm('متأخرة', 'overdue')) ?> <?= (int)$metrics['money']['overdue_count'] ?></div></div>
+    <div class="stat-card"><div class="num"><?= money($metrics['money']['paid_amount']) ?></div><div class="label"><?= h(adm('فواتير محصّلة', 'Collected invoices')) ?> · <?= (int)$metrics['money']['paid_count'] ?></div></div>
+    <div class="stat-card"><div class="num"><?= money($metrics['money']['outstanding']) ?></div><div class="label"><?= h(adm('مبالغ غير محصّلة', 'Outstanding')) ?> · <?= h(adm('متأخرة', 'overdue')) ?> <?= (int)$metrics['money']['overdue_count'] ?></div></div>
     <div class="stat-card"><div class="num"><?= (int)$metrics['consultations']['completed'] ?>/<?= (int)$metrics['consultations']['total'] ?></div><div class="label"><?= h(adm('استشارات مكتملة / إجمالي', 'Consultations completed / total')) ?></div></div>
     <div class="stat-card"><div class="num"><?= (int)$metrics['documents']['completed'] ?>/<?= (int)$metrics['documents']['total'] ?></div><div class="label"><?= h(adm('مستندات محلَّلة / إجمالي', 'Documents analyzed / total')) ?> · <?= h(adm('فشل', 'failed')) ?> <?= (int)$metrics['documents']['failed'] ?></div></div>
     <div class="stat-card"><div class="num"><?= (int)$metrics['ai'] ?></div><div class="label"><?= h(adm('استفسارات AI هذا الشهر', 'AI queries this month')) ?></div></div>
-    <div class="stat-card"><div class="num"><?= round((int)$metrics['time']['minutes'] / 60, 1) ?> <?= h(adm('ساعة', 'hrs')) ?></div><div class="label"><?= h(adm('وقت مسجَّل · قيمة قابلة للفوترة', 'Logged time · billable value')) ?> <?= number_format((float)$metrics['time']['value'], 3) ?></div></div>
+    <div class="stat-card"><div class="num"><?= round((int)$metrics['time']['minutes'] / 60, 1) ?> <?= h(adm('ساعة', 'hrs')) ?></div><div class="label"><?= h(adm('وقت مسجَّل · قيمة قابلة للفوترة', 'Logged time · billable value')) ?> <?= money_text($metrics['time']['value']) ?></div></div>
     <div class="stat-card"><div class="num"><?= $metrics['cases']['avg_probability'] !== null ? round((float)$metrics['cases']['avg_probability'], 1) . '%' : '—' ?></div><div class="label"><?= h(adm('متوسط تقدير احتمالية الفوز (يدوي)', 'Average win-probability estimate (manual)')) ?></div></div>
   </div>
 
   <div class="grid g-2" style="margin-bottom:18px">
-    <div class="card"><div class="card-h"><h3><?= h(adm('اتجاه الإيرادات', 'Revenue trend')) ?></h3><small>BHD</small></div>
+    <div class="card"><div class="card-h"><h3><?= h(adm('اتجاه الإيرادات', 'Revenue trend')) ?></h3><small><?= currency_symbol() ?></small></div>
       <div class="chart" data-chart="<?= $j(['type' => 'area', 'labels' => $mLabels, 'fmt' => 'money', 'series' => [['data' => $revTrend, 'color' => '#2547b8']]]) ?>"></div></div>
     <div class="card"><div class="card-h"><h3><?= h(adm('القضايا الجديدة شهرياً', 'New cases per month')) ?></h3></div>
       <div class="chart" data-chart="<?= $j(['type' => 'bar', 'labels' => $mLabels, 'series' => [['data' => $caseTrend, 'color' => '#c39a3e']]]) ?>"></div></div>
@@ -74,7 +74,7 @@ $j = fn($a) => h(json_encode($a, JSON_UNESCAPED_UNICODE));
 
   <div class="card"><div class="card-h"><h3><?= h(adm('أداء المحامين', 'Lawyer performance')) ?></h3></div>
     <div class="table-wrap"><table class="admin-table"><thead><tr><th><?= h(adm('المحامي', 'Lawyer')) ?></th><th><?= h(adm('التخصص', 'Specialization')) ?></th><th><?= h(adm('القضايا', 'Cases')) ?></th><th><?= h(adm('الاستشارات', 'Consultations')) ?></th><th><?= h(adm('الفواتير المحصَّلة', 'Collected invoices')) ?></th></tr></thead><tbody>
-      <?php foreach ($lawyerPerformance as $lawyer): ?><tr><td><b><?= h($lawyer['full_name']) ?></b></td><td><?= h($lawyer['specialization'] ?? '') ?></td><td><?= (int)$lawyer['cases_count'] ?></td><td><?= (int)$lawyer['consultation_count'] ?></td><td><?= number_format((float)$lawyer['paid_invoices'], 3) ?></td></tr><?php endforeach; ?>
+      <?php foreach ($lawyerPerformance as $lawyer): ?><tr><td><b><?= h($lawyer['full_name']) ?></b></td><td><?= h($lawyer['specialization'] ?? '') ?></td><td><?= (int)$lawyer['cases_count'] ?></td><td><?= (int)$lawyer['consultation_count'] ?></td><td><?= money($lawyer['paid_invoices']) ?></td></tr><?php endforeach; ?>
       <?php if (!$lawyerPerformance): ?><tr><td colspan="5" class="empty"><?= h(adm('لا توجد بيانات كافية بعد', 'Not enough data yet')) ?></td></tr><?php endif; ?>
     </tbody></table></div></div>
   <p class="field-hint" style="margin-top:16px"><?= h(adm('الأرقام إجمالية من السجلات الحالية؛ قيمة الوقت تقديرية حسب سعر الساعة المسجل لكل إدخال ولا تعني أنها فواتير مدفوعة.', 'Figures are totals from current records; time value is estimated from each entry\'s hourly rate and does not imply invoices were paid.')) ?></p>

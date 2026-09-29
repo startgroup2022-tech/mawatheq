@@ -183,10 +183,12 @@ if (!function_exists('ui_stat')) {
 }
 
 if (!function_exists('ui_money')) {
-    /** Currency display. Values are already computed by the finance core. */
-    function ui_money($amount, string $currency = 'BHD', int $decimals = 3): string {
-        $formatted = number_format((float)$amount, $decimals, '.', ',');
-        return '<span class="num-ltr">' . ui_e($formatted) . ' ' . ui_e($currency) . '</span>';
+    /**
+     * Currency display. Kept as a thin wrapper over money() so older call sites
+     * keep working while the currency and precision come from site settings.
+     */
+    function ui_money($amount, ?string $currency = null, ?int $decimals = null): string {
+        return money($amount, $currency, $decimals);
     }
 }
 

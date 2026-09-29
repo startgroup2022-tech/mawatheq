@@ -73,6 +73,7 @@ if (!empty($_SESSION['_last_activity']) && $now-(int)$_SESSION['_last_activity']
 }
 $_SESSION['_last_activity']=$now;
 require_once __DIR__ . '/../includes/csrf.php';
+require_once __DIR__ . '/../includes/currency.php';
 
 if (!headers_sent()) {
     header('X-Content-Type-Options: nosniff');

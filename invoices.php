@@ -25,7 +25,7 @@ foreach ($invoices as $inv) { if ($inv['status'] !== 'paid' && $inv['status'] !=
 
   <?php if ($totalUnpaid > 0): ?>
     <div class="form-alert error" style="font-weight:600">
-      <?= is_rtl() ? 'لديك مبلغ مستحق قدره' : 'You have an outstanding balance of' ?> <?= number_format($totalUnpaid, 3) ?> <?= is_rtl() ? 'د.ب' : 'BHD' ?>
+      <?= is_rtl() ? 'لديك مبلغ مستحق قدره' : 'You have an outstanding balance of' ?> <?= money($totalUnpaid) ?>
     </div>
   <?php endif; ?>
 
@@ -47,12 +47,12 @@ foreach ($invoices as $inv) { if ($inv['status'] !== 'paid' && $inv['status'] !=
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
         <div>
-          <span style="font-size:1.3rem;font-weight:800;color:var(--navy-dark)"><?= number_format($inv['amount'], 3) ?> <?= is_rtl() ? 'د.ب' : 'BHD' ?></span>
-          <?php if ((float)$inv['amount_paid'] > 0 && $balance > 0): ?><div class="field-hint" style="margin-top:2px"><?= is_rtl() ? 'المسدد' : 'Paid' ?>: <?= number_format((float)$inv['amount_paid'], 3) ?> · <?= is_rtl() ? 'المتبقي' : 'Balance' ?>: <?= number_format($balance, 3) ?></div><?php endif; ?>
+          <span style="font-size:1.3rem;font-weight:800;color:var(--navy-dark)"><?= money($inv['amount']) ?></span>
+          <?php if ((float)$inv['amount_paid'] > 0 && $balance > 0): ?><div class="field-hint" style="margin-top:2px"><?= is_rtl() ? 'المسدد' : 'Paid' ?>: <?= money($inv['amount_paid']) ?> · <?= is_rtl() ? 'المتبقي' : 'Balance' ?>: <?= money($balance) ?></div><?php endif; ?>
         </div>
         <span style="font-size:.82rem;color:var(--text-muted)"><?= $inv['due_date'] ? (is_rtl() ? 'الاستحقاق: ' : 'Due: ') . date('Y-m-d', strtotime($inv['due_date'])) : '' ?></span>
       </div>
-      <?php if (!empty($timeItemsByInvoice[(int)$inv['id']])): ?><details style="margin-top:12px"><summary style="cursor:pointer;color:var(--teal);font-weight:600"><?= is_rtl()?'تفصيل الوقت المفوتر':'Billable time breakdown' ?> · <?= count($timeItemsByInvoice[(int)$inv['id']]) ?></summary><div class="table-wrap" style="margin-top:8px"><table class="admin-table"><thead><tr><th><?= is_rtl()?'التاريخ':'Work date' ?></th><th><?= is_rtl()?'المدة':'Duration' ?></th><th><?= is_rtl()?'السعر بالساعة':'Hourly rate' ?></th><th><?= is_rtl()?'المبلغ':'Amount' ?></th></tr></thead><tbody><?php foreach($timeItemsByInvoice[(int)$inv['id']] as $line): ?><tr><td><?= htmlspecialchars($line['work_date']) ?></td><td><?= round((int)$line['minutes']/60,2) ?> <?= is_rtl()?'ساعة':'hours' ?></td><td><?= number_format((float)$line['hourly_rate'],3) ?> <?= is_rtl()?'د.ب':'BHD' ?></td><td><?= number_format((float)$line['line_amount'],3) ?> <?= is_rtl()?'د.ب':'BHD' ?></td></tr><?php endforeach; ?></tbody></table></div><small class="field-hint"><?= is_rtl()?'يُعرض تفصيل الوقت دون الملاحظات الداخلية لسجل العمل.':'Work-log notes are kept private; only billing details are shown.' ?></small></details><?php endif; ?>
+      <?php if (!empty($timeItemsByInvoice[(int)$inv['id']])): ?><details style="margin-top:12px"><summary style="cursor:pointer;color:var(--teal);font-weight:600"><?= is_rtl()?'تفصيل الوقت المفوتر':'Billable time breakdown' ?> · <?= count($timeItemsByInvoice[(int)$inv['id']]) ?></summary><div class="table-wrap" style="margin-top:8px"><table class="admin-table"><thead><tr><th><?= is_rtl()?'التاريخ':'Work date' ?></th><th><?= is_rtl()?'المدة':'Duration' ?></th><th><?= is_rtl()?'السعر بالساعة':'Hourly rate' ?></th><th><?= is_rtl()?'المبلغ':'Amount' ?></th></tr></thead><tbody><?php foreach($timeItemsByInvoice[(int)$inv['id']] as $line): ?><tr><td><?= htmlspecialchars($line['work_date']) ?></td><td><?= round((int)$line['minutes']/60,2) ?> <?= is_rtl()?'ساعة':'hours' ?></td><td><?= money($line['hourly_rate']) ?></td><td><?= money($line['line_amount']) ?></td></tr><?php endforeach; ?></tbody></table></div><small class="field-hint"><?= is_rtl()?'يُعرض تفصيل الوقت دون الملاحظات الداخلية لسجل العمل.':'Work-log notes are kept private; only billing details are shown.' ?></small></details><?php endif; ?>
       <?php if (in_array($inv['status'], ['unpaid','partially_paid','overdue'], true) && $balance > 0): ?>
         <a href="/pay-invoice.php?id=<?= $inv['id'] ?>" class="btn btn-primary btn-block" style="margin-top:12px">💳 <?= is_rtl() ? 'ادفع الآن (مدى / فيزا / ماستركارد)' : 'Pay now (mada / Visa / Mastercard)' ?></a>
         <p class="field-hint" style="margin-top:10px"><?= is_rtl() ? 'أو تواصل مع المحامي مباشرة لطرق دفع بديلة.' : 'Or contact the lawyer directly for alternative payment methods.' ?></p>

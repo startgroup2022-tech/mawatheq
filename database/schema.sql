@@ -749,6 +749,7 @@ SET FOREIGN_KEY_CHECKS = 1;
 INSERT INTO site_settings (setting_key, setting_value) VALUES
 ('site_name_ar', 'مواثيق'),
 ('site_name_en', 'Mawatheq'),
+('site_currency', 'SAR'),
 ('whatsapp_number', '966501453765'),
 ('contact_email', 'info@mawatheq.com'),
 ('default_lang', 'ar'),
@@ -761,6 +762,7 @@ INSERT INTO site_settings (setting_key, setting_value) VALUES
 ('ngenius_outlet_ref', ''),
 ('ngenius_api_key', ''),
 ('ngenius_realm_name', 'ni'),
+('ngenius_currency', 'SAR'),
 ('ngenius_webhook_secret', '');
 
 INSERT INTO law_categories (name_ar, name_en, icon, sort_order) VALUES
@@ -1155,7 +1157,7 @@ SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DA
 SET @s := IF(@c=0, 'ALTER TABLE invoices ADD COLUMN invoice_number VARCHAR(40) DEFAULT NULL AFTER id, ADD UNIQUE KEY uniq_invoices_number (invoice_number)', 'SELECT 1');
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='invoices' AND COLUMN_NAME='currency');
-SET @s := IF(@c=0, 'ALTER TABLE invoices ADD COLUMN currency VARCHAR(3) NOT NULL DEFAULT ''BHD'' AFTER amount', 'SELECT 1');
+SET @s := IF(@c=0, 'ALTER TABLE invoices ADD COLUMN currency VARCHAR(3) NOT NULL DEFAULT ''SAR'' AFTER amount', 'SELECT 1');
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='invoices' AND COLUMN_NAME='subtotal');
 SET @s := IF(@c=0, 'ALTER TABLE invoices ADD COLUMN subtotal DECIMAL(12,3) NOT NULL DEFAULT 0 AFTER currency', 'SELECT 1');
@@ -1202,7 +1204,7 @@ CREATE TABLE IF NOT EXISTS invoice_items (
 
 CREATE TABLE IF NOT EXISTS invoice_payments (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, invoice_id INT UNSIGNED NOT NULL, firm_id INT UNSIGNED DEFAULT NULL,
-    lawyer_id INT UNSIGNED DEFAULT NULL, amount DECIMAL(12,3) NOT NULL, currency VARCHAR(3) NOT NULL DEFAULT 'BHD',
+    lawyer_id INT UNSIGNED DEFAULT NULL, amount DECIMAL(12,3) NOT NULL, currency VARCHAR(3) NOT NULL DEFAULT 'SAR',
     method ENUM('manual','cash','bank_transfer','card','ngenius','other') NOT NULL DEFAULT 'manual',
     status ENUM('pending','completed','failed','refunded') NOT NULL DEFAULT 'completed', reference VARCHAR(120) DEFAULT NULL,
     idempotency_key VARCHAR(80) DEFAULT NULL, notes VARCHAR(500) DEFAULT NULL, paid_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

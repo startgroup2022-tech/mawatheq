@@ -16,6 +16,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'setti
     foreach (['whatsapp_number','contact_email','site_name_ar','site_name_en'] as $key) {
         save_setting($pdo, $key, $_POST[$key] ?? '');
     }
+    $newCurrency = currency_normalize($_POST['site_currency'] ?? '');
+    save_setting($pdo, 'site_currency', $newCurrency);
+    currency_forget_cache();
     log_action($pdo, 'تحديث إعدادات الموقع العامة');
     $saved = true;
 }
@@ -52,6 +55,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'ngeni
         if($webhookSecret!=='' && !secret_store_setting($pdo,'ngenius_webhook_secret',$webhookSecret))$secretError='تعذر تشفير بيانات الدفع؛ اضبط مفتاح التشفير أولاً.';
     }
     save_setting($pdo, 'ngenius_realm_name', trim($_POST['ngenius_realm_name'] ?? 'ni'));
+    $gatewayCurrency = currency_normalize($_POST['ngenius_currency'] ?? NGENIUS_DEFAULT_CURRENCY);
+    save_setting($pdo, 'ngenius_currency', $gatewayCurrency);
     save_setting($pdo, 'ngenius_enabled', isset($_POST['ngenius_enabled']) ? '1' : '0');
     log_action($pdo, 'تحديث إعدادات بوابة الدفع N-Genius (' . ($_POST['ngenius_environment'] ?? '') . ')');
     if(!$secretError)$saved = true;
@@ -97,6 +102,16 @@ $ngeniusActive = ngenius_is_enabled($ngeniusSecureSettings);
       <div class="field"><label>اسم الموقع (إنجليزي)</label><input type="text" name="site_name_en" value="<?= htmlspecialchars($settings['site_name_en'] ?? '') ?>"></div>
       <div class="field"><label>رقم واتساب (بدون +)</label><input type="text" name="whatsapp_number" value="<?= htmlspecialchars($settings['whatsapp_number'] ?? '') ?>"></div>
       <div class="field"><label>بريد التواصل</label><input type="email" name="contact_email" value="<?= htmlspecialchars($settings['contact_email'] ?? '') ?>"></div>
+      <div class="field"><label>عملة الموقع</label>
+        <select name="site_currency">
+          <?php foreach (currency_options() as $code => $meta): ?>
+            <option value="<?= htmlspecialchars($code) ?>" <?= currency_code() === $code ? 'selected' : '' ?>>
+              <?= htmlspecialchars($meta['ar'] . ' (' . $meta['symbol_ar'] . ') — ' . $code) ?>
+            </option>
+          <?php endforeach; ?>
+        </select>
+        <small class="field-hint">تُستخدم في الأسعار والفواتير وكل المبالغ المعروضة على الموقع. العملة الافتراضية: ريال سعودي (SAR).</small>
+      </div>
     </div>
     <button class="btn btn-primary" type="submit">حفظ الإعدادات</button>
   </form>
@@ -345,6 +360,15 @@ $ngeniusActive = ngenius_is_enabled($ngeniusSecureSettings);
         <label>Realm Name</label>
         <input type="text" name="ngenius_realm_name" value="<?= htmlspecialchars($settings['ngenius_realm_name'] ?? 'ni') ?>" placeholder="ni">
         <p class="field-hint">القيمة الافتراضية "ni" — إن لم تعمل، تأكد من القيمة الصحيحة مع دعم N-Genius.</p>
+      </div>
+      <div class="field">
+        <label>عملة التسوية لدى البوابة</label>
+        <div class="select-wrap"><select name="ngenius_currency" class="pro-select">
+          <?php foreach (currency_options() as $code => $opt): ?>
+            <option value="<?= htmlspecialchars($code) ?>" <?= ngenius_currency($ngeniusSecureSettings) === $code ? 'selected' : '' ?>><?= htmlspecialchars($code . ' — ' . $opt['ar']) ?></option>
+          <?php endforeach; ?>
+        </select></div>
+        <p class="field-hint">يجب أن تطابق عملة حساب التاجر/Outlet لدى N-Genius. لن تُقبل الفواتير بعملة مختلفة عبر البوابة.</p>
       </div>
     </div>
     <div class="field">

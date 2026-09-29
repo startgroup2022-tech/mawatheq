@@ -11,17 +11,12 @@ if (!$adminAccount) { $_SESSION=[]; session_destroy(); header('Location: /admin/
 $_SESSION['admin_role']=$adminAccount['role']; $_SESSION['admin_name']=$adminAccount['full_name'];
 if (!empty($adminAccount['totp_enabled']) && empty($_SESSION['admin_2fa_verified'])) { $_SESSION=[]; session_destroy(); header('Location: /admin/login.php'); exit; }
 
-// Mandatory 2FA policy: super_admin accounts must have TOTP enabled. Any admin account whose
-// role changes to super_admin without 2FA set up is forced to the enrollment screen (two-factor.php)
-// and blocked from every other admin route until enrollment is complete — this closes the gap where
-// 2FA was previously opt-in for the highest-privilege role.
-$route=basename($_SERVER['SCRIPT_NAME'] ?? ''); $role=$adminAccount['role'];
-if ($role === 'super_admin' && empty($adminAccount['totp_enabled']) && $route !== 'two-factor.php' && $route !== 'logout.php') {
-    header('Location: /admin/two-factor.php?required=1');
-    exit;
-}
+// 2FA is opt-in: admins enable it from /admin/two-factor.php. When enabled, the step above
+// requires a verified code before any admin route runs. Accounts that have not enabled it log
+// in with a password alone — there is no forced enrollment redirect.
 
 // Route-level RBAC is enforced server-side, before endpoint logic runs.
+$route=basename($_SERVER['SCRIPT_NAME'] ?? ''); $role=$adminAccount['role'];
 $routeRoles=[
     'index.php'=>['super_admin','editor','support'], 'users.php'=>['super_admin','support'],
     'client-detail.php'=>['super_admin','support'], 'lawyers.php'=>['super_admin','support'], 'firms.php'=>['super_admin','support'],

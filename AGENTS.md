@@ -28,9 +28,44 @@ workspace, plus the admin console.
 - Reuse the design tokens (`--navy`, `--teal`, `--surface`, `--r-md`,
   `--focus-ring`, spacing `--s-*`) rather than new literals.
 
+## Currency
+
+The platform is single-currency per deployment. The active currency lives in
+`site_settings.site_currency` and is chosen in `admin/settings.php`; it defaults
+to SAR. Every amount on the site must go through `includes/currency.php` — never
+hard-code a symbol, a 3-decimal assumption, or `number_format(..., 3)`.
+
+- Read it with `currency_code()` (cached per request). After an in-process write
+  to the setting, call `currency_forget_cache()`.
+- Format with `money()` (HTML, RTL-safe), `money_text()` (plain text / CSV),
+  `currency_number()` / `currency_raw()` (numbers only) and `currency_step()`
+  for `<input type="number">`.
+- Precision is per currency: SAR/AED/QAR/EGP/USD/EUR use 2 decimals, the legacy
+  BHD/KWD/OMR/JOD use 3. In `includes/finance.php`, `finance_round()` rounds to
+  the *invoice's own* currency (`finance_round_for()`), so old BHD invoices keep
+  their third decimal after the site switches to a 2-decimal currency.
+- Invoices carry a `currency` column; new rows default to the site currency via
+  `finance_currency()`. `invoice_payments` copies the invoice's currency, so a
+  payment always matches the invoice it settles.
+- N-Genius uses the Saudi gateway (`api-gateway.ksa...`). Its settlement currency is
+  configurable in `admin/settings.php` (setting `ngenius_currency`, default SAR) and must
+  match the merchant/outlet account. `ngenius_supports_currency()` gates `pay-invoice.php`
+  and `api/v1/pay-invoice.php`: an invoice in any other currency is refused rather than sent
+  as the same numeric value (which would mis-charge it). The amount is sent in minor units
+  (`ngenius_minor_units()` — halalas ×100 for SAR, fils ×1000 for 3-decimal currencies).
+- 2FA is opt-in for admins: enable it at `/admin/two-factor.php`. There is no forced
+  enrollment redirect; accounts without TOTP log in with a password alone. When TOTP is
+  enabled, `admin_guard.php` requires a verified code before any admin route runs.
+- Migration for existing databases: `database/upgrade_v44.sql`.
+
 ## Testing
 
-There is no PHPUnit suite. UI work is verified with a Playwright audit that logs
+CLI suites live in `tests/` and run against the configured database with
+`php tests/<name>_test.php` (each prints `N checks, M failure(s)` and exits
+non-zero on failure): `tenant_isolation_test.php`, `phase3_finance_test.php`,
+`phase3_ai_gateway_test.php`, `currency_test.php`.
+
+UI work is verified with a Playwright audit that logs
 in as each role (admin needs a fresh TOTP) and renders every page at several
 viewports, checking horizontal overflow, sub-11px text and undersized targets.
 

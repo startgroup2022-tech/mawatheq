@@ -1133,11 +1133,11 @@ body.lawyers-modal-open {
                     </div>
 
                     <div class="field">
-                        <label for="lawyer_rate">السعر بالساعة (د.ب)</label>
+                        <label for="lawyer_rate">السعر بالساعة (<?= currency_symbol() ?>)</label>
                         <input
                             id="lawyer_rate"
                             type="number"
-                            step="0.001"
+                            step="<?= currency_step() ?>"
                             min="0"
                             name="hourly_rate"
                             value="<?= htmlspecialchars($oldCreate['hourly_rate']) ?>"
