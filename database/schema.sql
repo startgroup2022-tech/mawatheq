@@ -692,11 +692,49 @@ CREATE TABLE IF NOT EXISTS payment_transactions (
     invoice_id INT UNSIGNED DEFAULT NULL,
     gateway VARCHAR(30) NOT NULL DEFAULT 'ngenius',
     gateway_order_ref VARCHAR(100) DEFAULT NULL,
+    gateway_transaction_id VARCHAR(120) DEFAULT NULL,
     event_type VARCHAR(50) DEFAULT NULL,
     amount DECIMAL(12,3) DEFAULT NULL,
+    currency VARCHAR(3) DEFAULT NULL,
+    status VARCHAR(20) DEFAULT NULL,
+    environment VARCHAR(20) DEFAULT NULL,
+    response_code VARCHAR(40) DEFAULT NULL,
+    response_message VARCHAR(255) DEFAULT NULL,
+    paid_at DATETIME DEFAULT NULL,
+    callback_received_at DATETIME DEFAULT NULL,
+    verified_at DATETIME DEFAULT NULL,
+    metadata TEXT DEFAULT NULL,
     raw_payload TEXT DEFAULT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS tenant_gateway_settings (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    tenant_type ENUM('firm','lawyer','platform') NOT NULL,
+    tenant_id INT UNSIGNED NOT NULL,
+    gateway VARCHAR(30) NOT NULL,
+    settings_json TEXT DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_tenant_gateway (tenant_type, tenant_id, gateway)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS gateway_webhook_events (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    gateway VARCHAR(30) NOT NULL,
+    event_id VARCHAR(120) DEFAULT NULL,
+    event_type VARCHAR(60) DEFAULT NULL,
+    reference VARCHAR(120) DEFAULT NULL,
+    payment_id INT UNSIGNED DEFAULT NULL,
+    processing_status ENUM('received','processed','ignored','duplicate','rejected') NOT NULL DEFAULT 'received',
+    message VARCHAR(255) DEFAULT NULL,
+    event_hash CHAR(64) DEFAULT NULL,
+    raw_payload TEXT DEFAULT NULL,
+    received_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    processed_at DATETIME DEFAULT NULL,
+    UNIQUE KEY uniq_gateway_event_hash (gateway, event_hash),
+    INDEX idx_gateway_events_ref (gateway, reference, received_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS site_settings (
@@ -763,7 +801,10 @@ INSERT INTO site_settings (setting_key, setting_value) VALUES
 ('ngenius_api_key', ''),
 ('ngenius_realm_name', 'ni'),
 ('ngenius_currency', 'SAR'),
-('ngenius_webhook_secret', '');
+('ngenius_webhook_secret', ''),
+('sadad_enabled', '0'),
+('sadad_environment', 'sandbox'),
+('sadad_currency', 'SAR');
 
 INSERT INTO law_categories (name_ar, name_en, icon, sort_order) VALUES
 ('نظام العمل', 'Labor Law', 'work', 1),
@@ -1205,7 +1246,7 @@ CREATE TABLE IF NOT EXISTS invoice_items (
 CREATE TABLE IF NOT EXISTS invoice_payments (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, invoice_id INT UNSIGNED NOT NULL, firm_id INT UNSIGNED DEFAULT NULL,
     lawyer_id INT UNSIGNED DEFAULT NULL, amount DECIMAL(12,3) NOT NULL, currency VARCHAR(3) NOT NULL DEFAULT 'SAR',
-    method ENUM('manual','cash','bank_transfer','card','ngenius','other') NOT NULL DEFAULT 'manual',
+    method ENUM('manual','cash','bank_transfer','card','ngenius','sadad','other') NOT NULL DEFAULT 'manual',
     status ENUM('pending','completed','failed','refunded') NOT NULL DEFAULT 'completed', reference VARCHAR(120) DEFAULT NULL,
     idempotency_key VARCHAR(80) DEFAULT NULL, notes VARCHAR(500) DEFAULT NULL, paid_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     recorded_by_type ENUM('lawyer','admin','client','system') NOT NULL DEFAULT 'system', recorded_by_id INT UNSIGNED DEFAULT NULL,

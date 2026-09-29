@@ -9,7 +9,8 @@
  * يحدث فوراً عبر ngenius-webhook.php بدون انتظار عودة المستخدم للتطبيق).
  */
 require_once __DIR__ . '/bootstrap.php';
-require_once __DIR__ . '/../../includes/ngenius.php';
+require_once __DIR__ . '/../../includes/gateway/bootstrap.php';
+require_once __DIR__ . '/../../includes/gateway/payment_service.php';
 require_once __DIR__ . '/../../includes/finance.php';
 
 $auth = api_authenticate($pdo);
@@ -26,26 +27,15 @@ $invoice = $stmt->fetch();
 if (!$invoice) api_error('invoice not found', 404);
 if (!in_array($invoice['status'], ['unpaid','partially_paid','overdue'], true) || finance_invoice_balance($invoice) <= 0) api_error('invoice is not payable', 409);
 
-$settings = ngenius_settings($pdo);
-if (!ngenius_is_enabled($settings)) api_error('online payment is not enabled yet', 503);
-if (!ngenius_supports_currency($settings, $invoice['currency'] ?? null)) api_error('this invoice currency is not supported by the payment gateway', 409);
+$gateway = gateway_for_new_payment($pdo, $invoice);
+if (!$gateway) api_error('online payment is not enabled yet', 503);
+if (!$gateway->supportsCurrency($invoice['currency'] ?? null)) api_error('this invoice currency is not supported by the payment gateway', 409);
 
-$tokenResult = ngenius_get_access_token($settings['ngenius_environment'], $settings['ngenius_api_key'], $settings['ngenius_realm_name'] ?: 'ni');
-if (!$tokenResult['ok']) api_error($tokenResult['error'], 502);
+$started = gateway_start_invoice_payment($pdo, $invoice, [
+    'customer_name' => $invoice['full_name'],
+    'customer_email' => $invoice['email'],
+    'language' => 'ar',
+]);
+if (empty($started['ok'])) api_error($started['error'] ?? 'gateway_error', 502);
 
-$redirectUrl = rtrim(SITE_URL, '/') . '/payment-return.php?invoice_id=' . $invoiceId;
-$cancelUrl = rtrim(SITE_URL, '/') . '/invoices.php';
-
-$order = ngenius_create_order(
-    $settings['ngenius_environment'], $settings['ngenius_outlet_ref'], $tokenResult['token'],
-    finance_invoice_balance($invoice), $invoice['email'], $invoice['full_name'],
-    $redirectUrl, $cancelUrl, 'INV-' . $invoiceId, 'ar',
-    ngenius_currency($settings)
-);
-if (!$order['ok']) api_error($order['error'], 502);
-
-$pdo->prepare('UPDATE invoices SET gateway=?, gateway_order_ref=? WHERE id=?')->execute(['ngenius', $order['order_reference'], $invoiceId]);
-$pdo->prepare('INSERT INTO payment_transactions (invoice_id, gateway, gateway_order_ref, event_type, amount) VALUES (?,?,?,?,?)')
-    ->execute([$invoiceId, 'ngenius', $order['order_reference'], 'ORDER_CREATED', finance_invoice_balance($invoice)]);
-
-api_json(['ok' => true, 'payment_url' => $order['payment_url'], 'order_reference' => $order['order_reference']]);
+api_json(['ok' => true, 'payment_url' => $started['redirect_url'], 'order_reference' => $started['reference'], 'gateway' => $started['gateway']]);

@@ -27,6 +27,8 @@ $routeRoles=[
     'plans.php'=>['super_admin'], 'invoices.php'=>['super_admin'], 'reports.php'=>['super_admin','editor'],
     'audit-log.php'=>['super_admin'], 'two-factor.php'=>['super_admin','editor','support'],
     'payment-test.php'=>['super_admin'], 'reindex-embeddings.php'=>['super_admin'],
+    'gateways.php'=>['super_admin'], 'gateway-transactions.php'=>['super_admin'], 'gateway-transaction.php'=>['super_admin'],
+    'sadad-test.php'=>['super_admin'],
     'crm.php'=>['super_admin','support'], 'calendar.php'=>['super_admin','editor','support'],
     'notifications.php'=>['super_admin','editor','support'], 'search.php'=>['super_admin','support'],
 ];

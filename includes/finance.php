@@ -123,7 +123,7 @@ function finance_invoice_balance(array $invoice): float {
  */
 function finance_record_payment(PDO $pdo, int $invoiceId, float $amount, array $options = []): array {
     $method = (string)($options['method'] ?? 'manual');
-    $allowedMethods = ['manual','cash','bank_transfer','card','ngenius','other'];
+    $allowedMethods = ['manual','cash','bank_transfer','card','ngenius','sadad','other'];
     if (!in_array($method, $allowedMethods, true)) $method = 'manual';
     $reference = isset($options['reference']) ? mb_substr(trim((string)$options['reference']), 0, 120, 'UTF-8') : null;
     $notes = isset($options['notes']) ? mb_substr(trim((string)$options['notes']), 0, 500, 'UTF-8') : null;

@@ -28,6 +28,8 @@ $adminNavGroups = [
     ]],
     ['t' => adm('المالية والتحليلات', 'Finance & insights'), 'items' => [
         'invoices' => ['i' => 'receipt', 'ar' => 'الفواتير والإيرادات', 'en' => 'Invoices & revenue', 'href' => '/admin/invoices.php'],
+        'gateways' => ['i' => 'card', 'ar' => 'بوابات الدفع', 'en' => 'Payment gateways', 'href' => '/admin/gateways.php'],
+        'gateway-transactions' => ['i' => 'receipt', 'ar' => 'عمليات الدفع', 'en' => 'Gateway transactions', 'href' => '/admin/gateway-transactions.php'],
         'plans' => ['i' => 'card', 'ar' => 'الباقات', 'en' => 'Plans', 'href' => '/admin/plans.php'],
         'reports' => ['i' => 'chart', 'ar' => 'التقارير والتحليلات', 'en' => 'Reports', 'href' => '/admin/reports.php'],
     ]],

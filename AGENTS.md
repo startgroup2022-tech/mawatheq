@@ -58,12 +58,52 @@ hard-code a symbol, a 3-decimal assumption, or `number_format(..., 3)`.
   enabled, `admin_guard.php` requires a verified code before any admin route runs.
 - Migration for existing databases: `database/upgrade_v44.sql`.
 
+## Payment gateways (SADAD + N-Genius)
+
+Two gateways share one adapter layer under `includes/gateway/`:
+
+- `contract.php` (interface), `bootstrap.php` (registry + `gateway_all()` / `gateway_for_new_payment()`),
+  `payment_service.php` (orchestration, `payment_transactions` logging, settle/idempotency).
+- `sadad/{config,service,gateway}.php` — config-driven SADAD client. Endpoints are entered
+  verbatim in the admin UI; the code never assumes a SADAD URL. `sadad-return.php` (browser)
+  and `sadad-webhook.php` (server-to-server) both re-verify before settling.
+- `ngenius/gateway.php` — thin wrapper over the existing `includes/ngenius.php` helpers.
+- Admin UI: `admin/gateways.php` (the only place SADAD is configured), `admin/sadad-test.php`
+  (JSON connection/test-payment probe), `admin/gateway-transactions.php` + `-transaction.php`.
+
+Rules that matter:
+
+- `payment_service.php` logs the initiation row as `event_type='ORDER_CREATED'`. This name is
+  required by `payment-return.php`, `ngenius-webhook.php` and `api/v1/payment-status.php`;
+  do not rename it.
+- Per-tenant credentials live in `tenant_gateway_settings` (`settings_json`), encrypted with
+  `MAWATHEQ_ENCRYPTION_KEY`. Secrets are stored tagged with `sadad_credentials_env`: switching
+  Sandbox ↔ Live without entering new secrets clears them, so Sandbox keys can never be sent
+  to Live. The admin test button never creates a real payment on Live.
+- `/sadad-webhook.php` is CSRF-exempt in `config/config.php` (server-to-server, authenticated by
+  signature). Any new webhook path must be added to `$csrfExemptPaths` there.
+- `invoice_payments.method` enum, the `finance_record_payment()` allow-list and the schema must
+  stay in sync when adding a gateway method; `database/upgrade_v45.sql` extends the enum.
+- Admin console pages must `require_once` `config.php`, `lang/strings.php`, `admin_guard.php`
+  (and `audit_log.php` if they call `log_action()`) **before** using `is_rtl()` or `log_action()`
+  at the top of the file — `admin_header.php` alone is not enough ordering if you use those
+  helpers above the header include.
+
 ## Testing
 
 CLI suites live in `tests/` and run against the configured database with
 `php tests/<name>_test.php` (each prints `N checks, M failure(s)` and exits
 non-zero on failure): `tenant_isolation_test.php`, `phase3_finance_test.php`,
-`phase3_ai_gateway_test.php`, `currency_test.php`.
+`phase3_ai_gateway_test.php`, `currency_test.php`, `sadad_gateway_test.php`.
+
+`sadad_gateway_test.php` starts the real fixture server `tests/fixtures/sadad_server.php`
+on an ephemeral port and exercises the live curl path — no HTTP mocking. It runs inside a
+transaction and rolls back, so it leaves no residue.
+
+Environment (local sandbox): install with
+`sudo apt-get install -y php-cli php-curl php-mysql php-mbstring mariadb-server`, start with
+`sudo service mariadb start`, and create the `mawatheq` DB/user matching `config/secrets.php`.
+Load `database/schema.sql` then `database/upgrade_v45.sql`; the migrations are idempotent.
 
 UI work is verified with a Playwright audit that logs
 in as each role (admin needs a fresh TOTP) and renders every page at several
