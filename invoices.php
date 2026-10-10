@@ -57,7 +57,7 @@ foreach ($invoices as $inv) { if ($inv['status'] !== 'paid' && $inv['status'] !=
         <a href="/pay-invoice.php?id=<?= $inv['id'] ?>" class="btn btn-primary btn-block" style="margin-top:12px">💳 <?= is_rtl() ? 'ادفع الآن (مدى / فيزا / ماستركارد)' : 'Pay now (mada / Visa / Mastercard)' ?></a>
         <p class="field-hint" style="margin-top:10px"><?= is_rtl() ? 'أو تواصل مع المحامي مباشرة لطرق دفع بديلة.' : 'Or contact the lawyer directly for alternative payment methods.' ?></p>
       <?php elseif ($inv['status'] === 'paid'): ?>
-        <p class="field-hint" style="margin-top:10px;color:var(--success)"><?= is_rtl() ? 'تم الدفع بتاريخ' : 'Paid on' ?> <?= date('Y-m-d', strtotime($inv['paid_at'])) ?></p>
+        <p class="field-hint" style="margin-top:10px;color:var(--success)"><?= $inv['paid_at'] ? ((is_rtl() ? 'تم الدفع بتاريخ ' : 'Paid on ') . date('Y-m-d', strtotime($inv['paid_at']))) : (is_rtl() ? 'مدفوعة' : 'Paid') ?></p>
       <?php endif; ?>
     </div>
   <?php endforeach; ?>

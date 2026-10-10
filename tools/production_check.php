@@ -76,6 +76,7 @@ $requiredColumns = [
     ['users', 'preferred_lang'],
     ['users', 'account_type'],
     ['lawyers', 'jurisdiction'],
+    ['law_categories', 'jurisdiction'],
     ['lawyers', 'email_verified'],
     ['audit_logs', 'actor_type'],
     ['invoices', 'firm_id'],
@@ -84,6 +85,7 @@ $requiredColumns = [
     ['payment_transactions', 'gateway_transaction_id'],
     ['payment_transactions', 'currency'],
     ['case_analyses', 'structured_json'],
+    ['documents', 'case_id'],
 ];
 echo "\nأعمدة حرجة (schema drift):\n";
 $missing = [];
@@ -111,6 +113,51 @@ foreach ($requiredTables as $table) {
     check((int)$stmt->fetchColumn() > 0, $table);
 }
 
+// 4a) CRM module tables ---------------------------------------------------
+// admin/crm.php shows a "needs a database upgrade" notice instead of a blank page
+// when any of these is missing, so they are warnings rather than critical failures.
+// upgrade_v40.sql creates the four crm_* tables; contact_leads comes from the base
+// schema (schema.sql) and must already exist.
+$crmTables = ['contact_leads', 'crm_companies', 'crm_opportunities', 'crm_activities', 'crm_tasks'];
+echo "\nجداول وحدة CRM:\n";
+$crmMissing = [];
+foreach ($crmTables as $table) {
+    $stmt = $pdo->prepare('SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=?');
+    $stmt->execute([$table]);
+    $ok = (int)$stmt->fetchColumn() > 0;
+    if (!$ok) { $crmMissing[] = $table; }
+    check($ok, $table, '', false);
+}
+if ($crmMissing) {
+    echo "  إصلاح: استورد database/upgrade_v40.sql (ينشئ جداول crm_*).\n";
+    if (in_array('contact_leads', $crmMissing, true)) {
+        echo "  contact_leads من المخطط الأساسي: استورد database/schema.sql.\n";
+    }
+}
+
+// 4b) Additive-column repair script ---------------------------------------
+// Every entry here is a purely additive column (ALTER TABLE ... ADD COLUMN) from a
+// migration, so re-creating a missing one can never overwrite data. When any is
+// absent we print the exact statements that repair it — what a cPanel install needs
+// when it was built from an older base and v12 (or similar) was never applied. The
+// script never drops or alters an existing column.
+$repairable = [
+    ['lawyers', 'jurisdiction', "VARCHAR(100) NOT NULL DEFAULT 'السعودية'"],
+    ['law_categories', 'jurisdiction', "VARCHAR(100) NOT NULL DEFAULT 'السعودية'"],
+];
+$repairSql = [];
+foreach ($repairable as [$table, $column, $definition]) {
+    if (in_array("$table.$column", $missing, true)) {
+        $repairSql[] = "ALTER TABLE `$table` ADD COLUMN `$column` $definition;";
+    }
+}
+if ($repairSql) {
+    echo "\nأعمدة قابلة للإصلاح (إضافية فقط — لا حذف ولا تعديل):\n";
+    foreach ($repairSql as $sql) {
+        echo "  " . $sql . "\n";
+    }
+}
+
 // 5) Effective environment ------------------------------------------------
 echo "\nالبيئة:\n";
 $siteUrl = defined('SITE_URL') ? SITE_URL : '';
@@ -134,6 +181,29 @@ if (is_dir($uploads)) {
     $writable = is_writable($uploads);
     check($writable, 'uploads/ قابلة للكتابة (مطلوب للرفع)', '', false);
 }
+
+// 6b) Web-readable assets. Apache serves these as a user other than the file
+// owner, so a 600/660 stylesheet or include returns 403 (CSS) or blanks the
+// page (PHP include) while every page still reports HTTP 200. Only
+// config/secrets.php is allowed to stay 600.
+echo "\nصلاحيات الملفات القابلة للقراءة عبر الويب:\n";
+$root = dirname(__DIR__);
+$unreadable = [];
+foreach (['assets/css', 'assets/js', 'admin/assets', 'includes', 'admin/includes', 'lawyer/includes'] as $rel) {
+    $dir = $root . '/' . $rel;
+    if (!is_dir($dir)) { continue; }
+    $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS));
+    foreach ($it as $file) {
+        if (!$file->isFile() || $file->getFilename() === 'secrets.php') { continue; }
+        if (($file->getPerms() & 0044) !== 0044) { $unreadable[] = $rel . '/' . $file->getFilename(); }
+    }
+}
+check(!$unreadable, 'ملفات CSS/JS/الوحدات قابلة للقراءة (644)',
+    $unreadable ? 'صلاحيات غير قابلة للقراءة: ' . implode(', ', array_slice($unreadable, 0, 8)) : 'نعم');
+if ($unreadable) {
+    echo "  إصلاح: chmod 644 على الملفات المذكورة (الصلاحية 600/660 تعني 403 لملفات CSS).\n";
+}
+
 
 // 7) First admin exists ---------------------------------------------------
 echo "\nحساب المدير:\n";

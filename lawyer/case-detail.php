@@ -7,6 +7,7 @@ require_once __DIR__ . '/../includes/upload_validation.php';
 require_once __DIR__ . '/../includes/csrf.php';
 require_once __DIR__ . '/../includes/tenant.php';
 require_once __DIR__ . '/../includes/audit_log.php';
+require_once __DIR__ . '/../includes/notifications.php';
 $lawyerId = $_SESSION['lawyer_id'];
 $firmId = tenant_write_firm_id($pdo);
 $caseId = (int)($_GET['id'] ?? 0);
@@ -36,7 +37,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ->execute([$_POST['status'], $probability !== '' ? (int)$probability : null, $caseId]);
         if ($_POST['status'] !== $case['status']) {
             log_action($pdo, 'تحديث حالة القضية إلى ' . $_POST['status'], 'case', $caseId);
-            notify($pdo, 'client', (int)$case['user_id'], is_rtl() ? 'تحديث حالة القضية' : 'Case status updated', $case['title'] . ' → ' . $_POST['status'], '/consultations.php');
+            notify($pdo, 'client', (int)$case['user_id'], is_rtl() ? 'تحديث حالة القضية' : 'Case status updated', $case['title'] . ' → ' . $_POST['status'], '/my-cases.php');
+            require_once __DIR__ . '/../includes/integrations.php';
+            integration_emit_quietly($pdo, isset($case['firm_id']) && $case['firm_id'] !== null ? (int)$case['firm_id'] : null, 'case.status_changed', [
+                'case_id' => $caseId, 'title' => (string)$case['title'],
+                'from_status' => (string)$case['status'], 'to_status' => (string)$_POST['status'],
+            ]);
         }
         header('Location: /lawyer/case-detail.php?id=' . $caseId); exit;
         }
@@ -349,6 +355,12 @@ $evidenceConflicts = $latestEvidenceReport ? (json_decode($latestEvidenceReport[
 $evidenceMissing = $latestEvidenceReport ? (json_decode($latestEvidenceReport['missing_evidence_json'] ?? '[]', true) ?: []) : [];
 $evidence = $pdo->prepare('SELECT e.*,cc.description AS related_claim,cf.description AS related_fact,la.law_name_ar AS related_law_name,la.article_number AS related_law_article_number FROM case_evidence e LEFT JOIN case_claims cc ON cc.id=e.related_claim_id LEFT JOIN case_facts cf ON cf.id=e.related_fact_id LEFT JOIN law_articles la ON la.id=e.related_law_article_id WHERE e.case_id=? ORDER BY e.created_at DESC');
 $evidence->execute([$caseId]); $evidence = $evidence->fetchAll();
+
+// Client-filed documents for this case. `documents` is the client's own library;
+// this surfaces the ones the client explicitly filed against this matter so the
+// lawyer sees the client's paperwork next to the evidence register.
+$caseDocuments = $pdo->prepare('SELECT id,original_name,stored_path,status,created_at FROM documents WHERE case_id=? ORDER BY created_at DESC');
+$caseDocuments->execute([$caseId]); $caseDocuments = $caseDocuments->fetchAll();
 $analyses = $pdo->prepare('SELECT * FROM case_analyses WHERE case_id=? ORDER BY created_at DESC LIMIT 10');
 $analyses->execute([$caseId]); $analyses = $analyses->fetchAll();
 $risks = $pdo->prepare('SELECT * FROM case_risks WHERE case_id=? ORDER BY likelihood*impact DESC,id DESC');
@@ -363,7 +375,7 @@ $billableValue = array_sum(array_map(fn($entry)=>(int)$entry['billable']?round((
   <div class="dash-card" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px">
     <div>
       <h2 style="margin-bottom:4px"><?= htmlspecialchars($case['title']) ?></h2>
-      <p style="margin:0"><?= htmlspecialchars($case['client_name']) ?> — <?= htmlspecialchars($case['client_email']) ?> · <?= htmlspecialchars($case['case_type']) ?></p>
+        <p style="margin:0"><?= htmlspecialchars($case['client_name']) ?> — <?= htmlspecialchars($case['client_email']) ?> · <?= htmlspecialchars($case['case_type'] ?? '') ?></p>
       <?php if ($case['description']): ?><p style="margin-top:10px"><?= htmlspecialchars($case['description']) ?></p><?php endif; ?>
     </div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -525,6 +537,11 @@ $billableValue = array_sum(array_map(fn($entry)=>(int)$entry['billable']?round((
       <?php if ($item['ai_summary']): ?><div class="rec-item" style="margin-top:8px"><strong><?= is_rtl()?'ملخص AI':'AI summary' ?>:</strong> <?= htmlspecialchars($item['ai_summary']) ?><?php $aiFindings=json_decode($item['ai_findings'] ?? '',true) ?: [];foreach(($aiFindings['risks'] ?? []) as $risk): ?><div style="color:var(--danger)">⚠️ <?= htmlspecialchars($risk) ?></div><?php endforeach;foreach(($aiFindings['recommendations'] ?? []) as $recommendation): ?><div>💡 <?= htmlspecialchars($recommendation) ?></div><?php endforeach; ?></div><?php endif; ?>
       <small style="display:block;color:var(--text-muted)"><?= date('Y-m-d H:i',strtotime($item['created_at'])) ?></small>
     </div><?php endforeach; ?>
+    <?php if ($caseDocuments): ?>
+    <div style="margin-top:14px"><h4 style="margin:0 0 8px">📎 <?= is_rtl() ? 'مستندات رفعها العميل لهذه القضية' : 'Documents the client filed for this case' ?></h4>
+      <?php foreach ($caseDocuments as $caseDoc): ?><div class="rec-item"><strong><?= htmlspecialchars($caseDoc['original_name']) ?></strong> <span class="status-pill status-<?= htmlspecialchars($caseDoc['status']) ?>"><?= htmlspecialchars($caseDoc['status']) ?></span> <small style="color:var(--text-muted)"><?= date('Y-m-d H:i',strtotime($caseDoc['created_at'])) ?></small></div><?php endforeach; ?>
+    </div>
+    <?php endif; ?>
     <?php if (!$evidence): ?><p style="color:var(--text-muted)"><?= is_rtl() ? 'لا توجد أدلة مسجلة بعد.' : 'No evidence recorded yet.' ?></p><?php endif; ?>
 
     <?php if (count($evidence) >= 2): ?>

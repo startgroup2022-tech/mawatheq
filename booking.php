@@ -33,6 +33,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->prepare('INSERT INTO consultations (user_id, lawyer_id, consultation_type, scheduled_at, topic, price) VALUES (?,?,?,?,?,?)')
             ->execute([$_SESSION['user_id'], $lawyerId, $type, $scheduledAt, $topic, $lawyer['hourly_rate']]);
         notify($pdo, 'lawyer', $lawyerId, is_rtl() ? 'طلب حجز استشارة جديد' : 'New consultation request', ($topic ?: '') . ' — ' . $scheduledAt, '/lawyer/consultations.php');
+        require_once __DIR__ . '/includes/integrations.php';
+        integration_emit_for_lawyer($pdo, $lawyerId, 'consultation.booked', [
+            'consultation_id' => (int)$pdo->lastInsertId(), 'lawyer_id' => (int)$lawyerId,
+            'client_id' => (int)$_SESSION['user_id'], 'consultation_type' => (string)$type, 'scheduled_at' => (string)$scheduledAt,
+        ]);
         $success = true;
     }
 }
@@ -53,7 +58,7 @@ $maxDate = date('Y-m-d', strtotime('+30 days'));
       <img src="<?= !empty($lawyer['photo_path']) ? '/' . htmlspecialchars($lawyer['photo_path']) : '/assets/img/avatar-placeholder.svg' ?>" style="width:64px;height:64px;border-radius:50%;object-fit:cover;background:#EAEFF3" onerror="this.src='/assets/img/avatar-placeholder.svg'">
       <div>
         <h2 style="margin:0"><?= htmlspecialchars($lawyer['full_name']) ?></h2>
-        <p style="margin:4px 0 0;color:var(--text-muted);font-size:.88rem"><?= htmlspecialchars($lawyer['specialization']) ?> · ⭐ <?= $lawyer['rating'] ?> · <?= currency_number($lawyer['hourly_rate']) ?> <?= currency_symbol() ?><?= is_rtl() ? '/ساعة' : '/hr' ?></p>
+        <p style="margin:4px 0 0;color:var(--text-muted);font-size:.88rem"><?= htmlspecialchars($lawyer['specialization'] ?? '') ?> · ⭐ <?= $lawyer['rating'] ?> · <?= currency_number($lawyer['hourly_rate']) ?> <?= currency_symbol() ?><?= is_rtl() ? '/ساعة' : '/hr' ?></p>
       </div>
     </div>
 

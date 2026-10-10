@@ -208,6 +208,7 @@ CREATE TABLE IF NOT EXISTS ai_messages (
 CREATE TABLE IF NOT EXISTS documents (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     user_id INT UNSIGNED NOT NULL,
+    case_id INT UNSIGNED DEFAULT NULL,
     original_name VARCHAR(255) NOT NULL,
     stored_path VARCHAR(255) NOT NULL,
     file_type VARCHAR(50) DEFAULT NULL,
@@ -216,7 +217,8 @@ CREATE TABLE IF NOT EXISTS documents (
     summary TEXT DEFAULT NULL,
     contract_analysis_json MEDIUMTEXT DEFAULT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_documents_case (case_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS document_findings (
@@ -1328,3 +1330,12 @@ WHERE NOT EXISTS (SELECT 1 FROM law_firm_members m WHERE m.lawyer_id=l.id AND m.
 INSERT IGNORE INTO ai_tenant_settings (tenant_type,tenant_id,privacy_mode,allowed_data_categories,external_features)
 VALUES ('platform', 0, 'external_allowed', 'user_prompt,legal_text,case_information,client_information,firm_knowledge,document_text', '');
 
+-- ------------------------------------------------------------
+-- Cross-module links declared after every referenced table exists.
+-- `documents` is created before `cases`, so its case link is added here.
+-- Guarded so re-running the schema on an existing database is harmless.
+-- ------------------------------------------------------------
+SET @fk := (SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'documents' AND CONSTRAINT_NAME = 'fk_documents_case');
+SET @s := IF(@fk = 0, 'ALTER TABLE documents ADD CONSTRAINT fk_documents_case FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE SET NULL', 'SELECT 1');
+PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;

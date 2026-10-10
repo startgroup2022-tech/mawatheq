@@ -120,6 +120,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <a href="?as=client" class="<?= $who === 'client' ? 'active' : '' ?>"><?= is_rtl() ? '👤 أنا عميل' : "👤 I'm a client" ?></a>
       <a href="?as=lawyer" class="<?= $who === 'lawyer' ? 'active' : '' ?>"><?= is_rtl() ? '⚖️ أنا محامٍ' : "⚖️ I'm a lawyer" ?></a>
     </div>
+    <p class="auth-role-note">
+      <?= $who === 'lawyer'
+        ? (is_rtl() ? 'تسجيل المحامين: أنشئ حسابك كمحامٍ، وأكّد بريدك، ثم ينتظر الحساب اعتماد الإدارة قبل الدخول من بوابة المحامين.' : 'Lawyer signup: create your lawyer account, confirm your email, then the account awaits admin approval before you can sign in from the lawyer portal.')
+        : (is_rtl() ? 'تسجيل العملاء: أنشئ حسابك كعميل أو شركة، وأكّد بريدك، ثم ادخل مباشرة من بوابة العملاء.' : 'Client signup: create your client or company account, confirm your email, then sign in directly from the client portal.') ?>
+    </p>
 
     <?php if ($error): ?><div class="form-alert error"><?= htmlspecialchars($error) ?></div><?php endif; ?>
     <?php if ($accountCreated && !$lawyerSuccess): ?><a class="btn btn-outline btn-block" href="/resend-verification.php?as=<?= urlencode($who) ?>"><?= is_rtl()?'إعادة إرسال رابط التفعيل':'Resend verification link' ?></a><?php endif; ?>

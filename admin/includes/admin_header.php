@@ -42,6 +42,7 @@ $adminNavGroups = [
         'laws' => ['i' => 'landmark', 'ar' => 'مكتبة الأنظمة', 'en' => 'Law library', 'href' => '/admin/laws.php'],
     ]],
     ['t' => adm('النظام', 'System'), 'items' => [
+        'integrations' => ['i' => 'external', 'ar' => 'التكاملات الخارجية', 'en' => 'External integrations', 'href' => '/admin/integrations.php'],
         'audit-log' => ['i' => 'shield', 'ar' => 'سجل التدقيق', 'en' => 'Audit log', 'href' => '/admin/audit-log.php'],
         'settings' => ['i' => 'settings', 'ar' => 'الإعدادات', 'en' => 'Settings', 'href' => '/admin/settings.php'],
     ]],
@@ -80,6 +81,7 @@ $langToggleUrl = '?' . http_build_query(array_merge($_GET, ['lang' => $admLang =
 <link rel="stylesheet" href="/assets/css/style.css">
 <link rel="stylesheet" href="/assets/css/app.css">
 <link rel="stylesheet" href="/assets/css/enterprise.css">
+<link rel="stylesheet" href="/assets/css/dashboard.css">
 <link rel="stylesheet" href="/admin/assets/admin-ui.css?v=41">
 </head>
 <body class="adm" data-theme="light">

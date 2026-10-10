@@ -25,6 +25,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'creat
         // Firm-wide assignment notice for the rest of the tenant, skipping the creator.
         notify_tenant_except($pdo, $firmId, $lawyerId, $lawyerId, is_rtl() ? 'قضية جديدة في المكتب' : 'New case in the firm', $_POST['title'], '/lawyer/cases.php');
         log_action($pdo, 'فتح قضية جديدة: ' . $_POST['title'], 'case', $caseId);
+        require_once __DIR__ . '/../includes/integrations.php';
+        integration_emit_quietly($pdo, $firmId !== null ? (int)$firmId : null, 'case.created', [
+            'case_id' => $caseId, 'title' => (string)$_POST['title'], 'case_type' => (string)($_POST['case_type'] ?? ''),
+            'client_id' => (int)$client['id'], 'lawyer_id' => (int)$lawyerId,
+        ]);
         header('Location: /lawyer/cases.php'); exit;
     }
 }
@@ -74,7 +79,7 @@ $totalPages = max(1, (int)ceil($totalCases / $perPage));
     <button class="btn btn-primary" type="submit"><?= is_rtl() ? 'إضافة القضية' : 'Add case' ?></button>
   </form></div>
 
-  <div class="table-wrap">
+  <div class="table-wrap table-cards">
     <form method="get" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
       <input type="search" name="q" value="<?= htmlspecialchars($search) ?>" placeholder="<?= is_rtl()?'بحث بالعنوان/العميل/النوع':'Search title, client, or type' ?>" style="flex:1;min-width:200px">
       <select name="status">
@@ -90,11 +95,11 @@ $totalPages = max(1, (int)ceil($totalCases / $perPage));
       <tbody>
         <?php foreach ($cases as $c): ?>
         <tr>
-          <td><?= htmlspecialchars($c['title']) ?></td>
-          <td><?= htmlspecialchars($c['client_name']) ?></td>
-          <td><?= $c['win_probability'] !== null ? $c['win_probability'] . '%' : '—' ?></td>
-          <td><span class="status-pill status-<?= str_starts_with($c['status'], 'closed') ? 'confirmed' : 'pending' ?>"><?= htmlspecialchars($c['status']) ?></span></td>
-          <td><a class="icon-btn" href="/lawyer/case-detail.php?id=<?= $c['id'] ?>"><?= is_rtl() ? 'فتح' : 'Open' ?></a></td>
+          <td data-label="<?= is_rtl() ? 'القضية' : 'Case' ?>"><?= htmlspecialchars($c['title']) ?></td>
+          <td data-label="<?= is_rtl() ? 'العميل' : 'Client' ?>"><?= htmlspecialchars($c['client_name']) ?></td>
+          <td data-label="<?= is_rtl() ? 'احتمالية الفوز' : 'Win probability' ?>"><?= $c['win_probability'] !== null ? $c['win_probability'] . '%' : '—' ?></td>
+          <td data-label="<?= is_rtl() ? 'الحالة' : 'Status' ?>"><span class="status-pill status-<?= str_starts_with($c['status'], 'closed') ? 'confirmed' : 'pending' ?>"><?= htmlspecialchars($c['status']) ?></span></td>
+          <td data-label=""><a class="icon-btn" href="/lawyer/case-detail.php?id=<?= $c['id'] ?>"><?= is_rtl() ? 'فتح' : 'Open' ?></a></td>
         </tr>
         <?php endforeach; ?>
         <?php if (empty($cases)): ?><tr><td colspan="5" style="text-align:center;color:var(--text-muted)"><?= is_rtl() ? 'لا توجد قضايا بعد' : 'No cases yet' ?></td></tr><?php endif; ?>

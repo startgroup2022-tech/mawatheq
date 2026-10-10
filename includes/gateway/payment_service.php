@@ -185,6 +185,15 @@ function gateway_verify_and_settle(PDO $pdo, array $invoice, string $gatewayId, 
                 is_rtl() ? 'تم استلام دفعة إلكترونية' : 'Online payment received',
                 (string)($invoice['description'] ?? ''), '/lawyer/invoices.php');
         }
+        // Settlement is the accounting-relevant moment: emit it once, only when the
+        // payment was actually recorded (not on a duplicate replay of the same event).
+        require_once __DIR__ . '/../integrations.php';
+        integration_emit_quietly($pdo, isset($invoice['firm_id']) && $invoice['firm_id'] !== null ? (int)$invoice['firm_id'] : null, 'invoice.paid', [
+            'invoice_id' => (int)$invoice['id'], 'amount' => $amount,
+            'currency' => (string)($invoice['currency'] ?? 'SAR'), 'gateway' => $gatewayId,
+            'reference' => $reference, 'lawyer_id' => (int)($invoice['lawyer_id'] ?? 0),
+            'client_id' => (int)($invoice['user_id'] ?? 0),
+        ]);
     }
 
     return [

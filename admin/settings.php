@@ -24,21 +24,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'setti
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'ai_settings') {
-    $provider=in_array($_POST['ai_provider'] ?? '',['','openai','anthropic'],true)?($_POST['ai_provider'] ?? ''):'';
+    $provider=in_array($_POST['ai_provider'] ?? '',['','openai','anthropic','openai_compatible'],true)?($_POST['ai_provider'] ?? ''):'';
     save_setting($pdo,'ai_provider',$provider); save_setting($pdo,'ai_model',trim($_POST['ai_model'] ?? ''));
     $newKey=trim($_POST['ai_api_key'] ?? '');
     if (isset($_POST['revoke_ai_key'])) { if(!secret_store_setting($pdo,'ai_api_key',''))$secretError='ضع مفتاح MAWATHEQ_ENCRYPTION_KEY بطول 32 حرفاً أو أكثر في config/secrets.php أولاً.'; }
     elseif($newKey!=='') { if(strlen($newKey)>500 || !secret_store_setting($pdo,'ai_api_key',$newKey))$secretError='تعذر تشفير المفتاح. اضبط MAWATHEQ_ENCRYPTION_KEY وتأكد من توفر OpenSSL.'; }
-    foreach(['ai_endpoint','ai_backup_model','ai_max_tokens','ai_temperature','ai_timeout','ai_retries','ai_rate_limit'] as $key) if(isset($_POST[$key])) save_setting($pdo,$key,trim($_POST[$key]));
+    foreach(['ai_backup_model','ai_max_tokens','ai_temperature','ai_timeout','ai_retries','ai_rate_limit'] as $key) if(isset($_POST[$key])) save_setting($pdo,$key,trim($_POST[$key]));
+    // A self-hosted OpenAI-compatible base URL is validated before it is stored, so a
+    // malformed value can never be saved and then pointed at an unintended host.
+    if(isset($_POST['ai_endpoint'])){
+        $ep=trim((string)$_POST['ai_endpoint']);
+        if($ep!=='' && ai_endpoint_normalize($ep)===null)$secretError='عنوان المزوّد المحلي غير صالح؛ يجب أن يبدأ بـ http:// أو https:// ويتضمن مضيفاً صحيحاً.';
+        else save_setting($pdo,'ai_endpoint',$ep);
+    }
     save_setting($pdo, 'ai_enabled', isset($_POST['ai_enabled']) ? '1' : '0');
     if(!$secretError){log_action($pdo,'تحديث إعدادات مزوّد الذكاء الاصطناعي (' . $provider . ')');$saved=true;}
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'embedding_settings') {
-    $embProvider = in_array($_POST['embedding_provider']??'', ['openai','disabled'], true) ? $_POST['embedding_provider'] : '';
+    $embProvider = in_array($_POST['embedding_provider']??'', ['openai','openai_compatible','disabled'], true) ? $_POST['embedding_provider'] : '';
     $embModel = trim((string)($_POST['embedding_model'] ?? 'text-embedding-3-small'));
-    if (!preg_match('/^[A-Za-z0-9._-]{1,100}$/',$embModel)) $embModel='text-embedding-3-small';
+    if (!preg_match('/^[A-Za-z0-9._:\/-]{1,100}$/',$embModel)) $embModel='text-embedding-3-small';
     save_setting($pdo,'embedding_provider',$embProvider); save_setting($pdo,'embedding_model',$embModel);
+    if(isset($_POST['embedding_endpoint'])){
+        $eep=trim((string)$_POST['embedding_endpoint']);
+        if($eep!=='' && ai_endpoint_normalize($eep)===null)$secretError='عنوان خدمة المتجهات غير صالح؛ يجب أن يبدأ بـ http:// أو https://.';
+        else save_setting($pdo,'embedding_endpoint',$eep);
+    }
     $newEmbKey=trim((string)($_POST['embedding_api_key'] ?? ''));
     if (isset($_POST['revoke_embedding_key'])) { save_setting($pdo,'embedding_provider','disabled'); if(!secret_store_setting($pdo,'embedding_api_key',''))$secretError='اضبط MAWATHEQ_ENCRYPTION_KEY في config/secrets.php أولاً.'; }
     elseif($newEmbKey!=='') { if(strlen($newEmbKey)>500 || !secret_store_setting($pdo,'embedding_api_key',$newEmbKey))$secretError='تعذر تشفير مفتاح المتجهات؛ تحقق من مفتاح التشفير وOpenSSL.'; }
@@ -77,13 +89,15 @@ $settings = [];
 foreach ($pdo->query('SELECT * FROM site_settings')->fetchAll() as $s) $settings[$s['setting_key']] = $s['setting_value'];
 $aiSecureSettings=ai_load_settings($pdo); $settings=array_merge($settings,$aiSecureSettings);
 $embSecureSettings=embedding_load_settings($pdo); $settings['embedding_provider']=$embSecureSettings['embedding_provider']; $settings['embedding_model']=$embSecureSettings['embedding_model'];
-$embKeyConfigured=($embSecureSettings['embedding_provider']==='openai'&&!empty($embSecureSettings['embedding_api_key']));
+  $embKeyConfigured=($embSecureSettings['embedding_provider']==='openai'&&!empty($embSecureSettings['embedding_api_key']));
+  $settings['embedding_endpoint']=$embSecureSettings['embedding_endpoint'] ?? ($settings['embedding_endpoint'] ?? '');
+  $embLocalConfigured=($embSecureSettings['embedding_provider']==='openai_compatible'&&ai_endpoint_normalize($settings['embedding_endpoint'])!==null);
 $embKnowledgePending=(int)$pdo->query("SELECT COUNT(*) FROM knowledge_sources WHERE status='active' AND processing_status='completed' AND embedding_status IN ('pending','not_configured','failed')")->fetchColumn();
 $embLawPending=(int)$pdo->query('SELECT COUNT(*) FROM law_articles WHERE embedding IS NULL')->fetchColumn();
 $ngeniusSecureSettings=ngenius_settings($pdo); $aiKeyConfigured=!empty($settings['ai_api_key']); $ngeniusKeyConfigured=!empty($ngeniusSecureSettings['ngenius_api_key']);
 $settings['ngenius_api_key']=''; $settings['ngenius_webhook_secret']='';
 $aiEnabledFlag = ($settings['ai_enabled'] ?? '1') !== '0';
-$aiConfigured = !empty($settings['ai_provider']) && !empty($settings['ai_api_key']);
+  $aiConfigured = ai_settings_configured($settings);
 $aiActive = $aiConfigured && $aiEnabledFlag;
 
 $ngeniusConfigured = !empty($settings['ngenius_outlet_ref']) && $ngeniusKeyConfigured;
@@ -142,8 +156,10 @@ $ngeniusActive = ngenius_is_enabled($ngeniusSecureSettings);
           <option value="" <?= empty($settings['ai_provider']) ? 'selected' : '' ?>>— اختر —</option>
           <option value="anthropic" <?= ($settings['ai_provider'] ?? '') === 'anthropic' ? 'selected' : '' ?>>Anthropic (Claude)</option>
           <option value="openai" <?= ($settings['ai_provider'] ?? '') === 'openai' ? 'selected' : '' ?>>OpenAI (GPT)</option>
+          <option value="openai_compatible" <?= ($settings['ai_provider'] ?? '') === 'openai_compatible' ? 'selected' : '' ?>>نموذج محلي / متوافق مع OpenAI (vLLM · Ollama · llama.cpp)</option>
         </select>
         </div>
+        <small class="field-hint">المزوّد المحلي لا يحتاج مفتاحاً ولا تُرسل بياناته خارج المنصة؛ يكفي ضبط عنوان الخادم أدناه.</small>
       </div>
       <div class="field">
         <label>نموذج جاهز (اختياري)</label>
@@ -172,6 +188,11 @@ $ngeniusActive = ngenius_is_enabled($ngeniusSecureSettings);
       <input type="password" name="ai_api_key" value="" autocomplete="new-password" placeholder="<?= $aiKeyConfigured ? 'مفتاح محفوظ — أدخل قيمة جديدة للتدوير' : 'أدخل مفتاح API' ?>">
       <?php if($aiKeyConfigured): ?><label><input type="checkbox" name="revoke_ai_key" value="1"> إلغاء وحذف المفتاح المحفوظ</label><?php endif; ?>
       <small>المفتاح محفوظ مشفراً ولا يُعاد عرضه. أدخل مفتاحاً جديداً لتدويره. يتطلب ذلك MAWATHEQ_ENCRYPTION_KEY في config/secrets.php.</small>
+    </div>
+    <div class="field">
+      <label>عنوان المزوّد المحلي / المتوافق مع OpenAI (اختياري)</label>
+      <input type="text" name="ai_endpoint" dir="ltr" value="<?= htmlspecialchars($settings['ai_endpoint'] ?? '') ?>" placeholder="http://127.0.0.1:11434/v1">
+      <small>يُستخدم فقط عند اختيار «نموذج محلي / متوافق مع OpenAI». أدخل العنوان الأساسي لخدمة v1 (vLLM · Ollama · llama.cpp). لا يُرسل أي مفتاح إلى خادم محلي.</small>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
       <button class="btn btn-primary" type="submit">حفظ</button>
@@ -211,6 +232,7 @@ $ngeniusActive = ngenius_is_enabled($ngeniusSecureSettings);
           <option value="disabled" <?= ($settings['embedding_provider']??'') === 'disabled' ? 'selected' : '' ?>>— إيقاف البحث الدلالي —</option>
           <option value="" <?= empty($settings['embedding_provider']) ? 'selected' : '' ?>>استخدم مفتاح دردشة OpenAI إن كان متاحاً</option>
           <option value="openai" <?= ($settings['embedding_provider'] ?? '') === 'openai' ? 'selected' : '' ?>>OpenAI</option>
+          <option value="openai_compatible" <?= ($settings['embedding_provider'] ?? '') === 'openai_compatible' ? 'selected' : '' ?>>خادم متجهات محلي / متوافق مع OpenAI</option>
 
         </select>
 
@@ -226,6 +248,11 @@ $ngeniusActive = ngenius_is_enabled($ngeniusSecureSettings);
 
       </div>
 
+    </div>
+    <div class="field">
+      <label>عنوان خدمة المتجهات المحلية (اختياري)</label>
+      <input type="text" name="embedding_endpoint" dir="ltr" value="<?= htmlspecialchars($settings['embedding_endpoint'] ?? '') ?>" placeholder="http://127.0.0.1:11434/v1">
+      <small>يُستخدم عند اختيار «خادم متجهات محلي». إن تُرك فارغاً يُستخدم عنوان المزوّد المحلي للدردشة نفسه.</small>
     </div>
 
     <div class="field">
@@ -268,6 +295,10 @@ $ngeniusActive = ngenius_is_enabled($ngeniusSecureSettings);
     var provider = document.getElementById('aiProvider').value;
     document.getElementById('grp-anthropic').style.display = provider === 'anthropic' ? '' : 'none';
     document.getElementById('grp-openai').style.display = provider === 'openai' ? '' : 'none';
+    // The local provider is named by the operator, so no preset group applies; the free
+    // text model field is the source of truth for it.
+    var preset = document.getElementById('aiModelPreset');
+    if (preset) { var local = provider === 'openai_compatible'; preset.disabled = local; if (local) preset.value = ''; }
   }
   syncModelOptions();
 

@@ -188,11 +188,11 @@ function ai_gateway_injection_guard(bool $isArabic = false): string {
  */
 function ai_gateway_authorize(?PDO $pdo, array $settings, array $tenant, string $feature, string $dataCategory, int $actorId, string $actorType, ?string $moduleId = null): array {
     if (!$pdo instanceof PDO) return ['allowed' => true, 'mode' => 'unknown', 'reason' => null];
-    if (empty($settings['ai_provider']) || empty($settings['ai_api_key']) || ($settings['ai_enabled'] ?? '1') === '0') {
+    if (!ai_settings_configured($settings)) {
         ai_gateway_log_usage($pdo, $tenant, $feature, $actorType, $actorId, $settings, false, null, null, null, false, 'provider_not_configured', null, $moduleId);
         return ['allowed' => false, 'mode' => 'none', 'reason' => 'provider_not_configured'];
     }
-    if (!in_array($settings['ai_provider'], ['openai', 'anthropic'], true)) {
+    if (!ai_provider_chat_capable((string)$settings['ai_provider'])) {
         return ['allowed' => false, 'mode' => 'none', 'reason' => 'provider_unsupported'];
     }
     $gate = ai_gateway_check($pdo, $tenant, $feature, $dataCategory, $actorId, $actorType, $settings, $moduleId);
@@ -222,12 +222,12 @@ function ai_gateway_call(?PDO $pdo, array $settings, array $tenant, string $feat
         return ['ok' => false, 'text' => null, 'denied' => true, 'reason' => $reason, 'error' => ai_deny_message($reason), 'input_tokens' => null, 'output_tokens' => null];
     };
 
-    if (empty($settings['ai_provider']) || empty($settings['ai_api_key']) || ($settings['ai_enabled'] ?? '1') === '0') {
+    if (!ai_settings_configured($settings)) {
         ai_gateway_log_usage($pdo, $tenant, $feature, $actorType, $actorId, $settings, false, null, null, null, false, 'provider_not_configured', null, $moduleId);
         return $deny('provider_not_configured');
     }
     $provider = $settings['ai_provider'];
-    if (!in_array($provider, ['openai', 'anthropic'], true)) return $deny('provider_unsupported');
+    if (!ai_provider_chat_capable((string)$provider)) return $deny('provider_unsupported');
 
     $gate = ai_gateway_check($pdo, $tenant, $feature, $dataCategory, $actorId, $actorType, $settings, $moduleId);
     if (!$gate['allowed']) {
@@ -238,9 +238,7 @@ function ai_gateway_call(?PDO $pdo, array $settings, array $tenant, string $feat
     $payloadBytes = strlen($systemPrompt) + strlen($userMessage);
     $model = (string)($settings['ai_model'] ?? '');
     $t0 = microtime(true);
-    $result = $provider === 'anthropic'
-        ? call_anthropic_raw($settings['ai_api_key'], $model, $systemPrompt, $userMessage, $maxTokens, $temperature)
-        : call_openai_raw($settings['ai_api_key'], $model, $systemPrompt, $userMessage, $maxTokens, $temperature);
+    $result = ai_provider_chat($settings, $systemPrompt, $userMessage, $maxTokens, $temperature);
     $ms = (int)round((microtime(true) - $t0) * 1000);
 
     $ok = !empty($result['ok']) && !empty($result['text']);

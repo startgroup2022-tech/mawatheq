@@ -12,5 +12,5 @@ if (empty($settings['ai_provider'])) {
     exit;
 }
 
-$result = test_ai_connection($settings['ai_provider'], $settings['ai_api_key'] ?? '', $settings['ai_model'] ?? '');
+$result = test_ai_connection($settings['ai_provider'], $settings['ai_api_key'] ?? '', $settings['ai_model'] ?? '', $settings['ai_endpoint'] ?? '');
 echo json_encode($result);

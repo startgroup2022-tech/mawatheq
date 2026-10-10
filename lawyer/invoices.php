@@ -256,7 +256,7 @@ foreach ($invoices as $inv) {
 
   <div class="invoice-filters"><input id="invoiceSearch" type="search" placeholder="<?= is_rtl()?'ابحث باسم العميل أو وصف الفاتورة أو القضية':'Search client, invoice, or case' ?>" aria-label="<?= is_rtl()?'البحث في الفواتير':'Search invoices' ?>"><select id="invoiceStatusFilter" aria-label="<?= is_rtl()?'تصفية حسب الحالة':'Filter by status' ?>"><option value="all"><?= is_rtl()?'كل الحالات':'All statuses' ?></option><option value="draft"><?= is_rtl()?'مسودات':'Drafts' ?></option><option value="unpaid"><?= is_rtl()?'غير مدفوعة':'Unpaid' ?></option><option value="paid"><?= is_rtl()?'مدفوعة':'Paid' ?></option><option value="overdue"><?= is_rtl()?'متأخرة':'Overdue' ?></option><option value="cancelled"><?= is_rtl()?'ملغاة':'Cancelled' ?></option></select></div>
 
-  <div class="table-wrap">
+  <div class="table-wrap table-cards">
     <table class="admin-table" id="invoiceTable">
       <thead><tr><th><?= is_rtl() ? 'الرقم' : 'No.' ?></th><th><?= is_rtl() ? 'العميل' : 'Client' ?></th><th><?= is_rtl() ? 'الوصف' : 'Description' ?></th><th><?= is_rtl() ? 'القضية' : 'Case' ?></th><th><?= is_rtl() ? 'المبلغ' : 'Amount' ?></th><th><?= is_rtl() ? 'المسدد' : 'Paid' ?></th><th><?= is_rtl() ? 'المتبقي' : 'Balance' ?></th><th><?= is_rtl() ? 'الاستحقاق' : 'Due' ?></th><th><?= is_rtl() ? 'الحالة' : 'Status' ?></th><th></th></tr></thead>
       <tbody>
@@ -266,16 +266,16 @@ foreach ($invoices as $inv) {
           $balance = finance_invoice_balance($inv);
         ?>
         <tr data-invoice-status="<?= htmlspecialchars($displayStatus) ?>" data-invoice-search="<?= htmlspecialchars(mb_strtolower(($inv['invoice_number']??'').' '.$inv['client_name'].' '.$inv['description'].' '.($inv['case_title']??''),'UTF-8')) ?>">
-          <td><span class="field-hint"><?= htmlspecialchars($inv['invoice_number'] ?? '—') ?></span></td>
-          <td><?= htmlspecialchars($inv['client_name']) ?></td>
-          <td><?= htmlspecialchars($inv['description']) ?></td>
-          <td><?php if($inv['case_id']): ?><a href="/lawyer/case-detail.php?id=<?= (int)$inv['case_id'] ?>"><?= htmlspecialchars($inv['case_title'] ?? '—') ?></a><?php else: ?><?= htmlspecialchars($inv['case_title'] ?? '—') ?><?php endif; ?></td>
-          <td><?= money($inv['amount']) ?></td>
-          <td><?= money($inv['amount_paid']) ?></td>
-          <td><?= money($balance) ?></td>
-          <td><?= $inv['due_date'] ? date('Y-m-d', strtotime($inv['due_date'])) : '—' ?></td>
-          <td><span class="status-pill status-<?= $displayStatus === 'paid' ? 'confirmed' : (in_array($displayStatus, ['overdue','cancelled'], true) ? 'cancelled' : 'pending') ?>"><?= $statusLabels[$displayStatus] ?? $displayStatus ?></span></td>
-          <td><div class="invoice-actions">
+          <td data-label="<?= is_rtl() ? 'الرقم' : 'No.' ?>"><span class="field-hint"><?= htmlspecialchars($inv['invoice_number'] ?? '—') ?></span></td>
+          <td data-label="<?= is_rtl() ? 'العميل' : 'Client' ?>"><?= htmlspecialchars($inv['client_name']) ?></td>
+          <td data-label="<?= is_rtl() ? 'الوصف' : 'Description' ?>"><?= htmlspecialchars($inv['description']) ?></td>
+          <td data-label="<?= is_rtl() ? 'القضية' : 'Case' ?>"><?php if($inv['case_id']): ?><a href="/lawyer/case-detail.php?id=<?= (int)$inv['case_id'] ?>"><?= htmlspecialchars($inv['case_title'] ?? '—') ?></a><?php else: ?><?= htmlspecialchars($inv['case_title'] ?? '—') ?><?php endif; ?></td>
+          <td data-label="<?= is_rtl() ? 'المبلغ' : 'Amount' ?>"><?= money($inv['amount']) ?></td>
+          <td data-label="<?= is_rtl() ? 'المسدد' : 'Paid' ?>"><?= money($inv['amount_paid']) ?></td>
+          <td data-label="<?= is_rtl() ? 'المتبقي' : 'Balance' ?>"><?= money($balance) ?></td>
+          <td data-label="<?= is_rtl() ? 'الاستحقاق' : 'Due' ?>"><?= $inv['due_date'] ? date('Y-m-d', strtotime($inv['due_date'])) : '—' ?></td>
+          <td data-label="<?= is_rtl() ? 'الحالة' : 'Status' ?>"><span class="status-pill status-<?= $displayStatus === 'paid' ? 'confirmed' : (in_array($displayStatus, ['overdue','cancelled'], true) ? 'cancelled' : 'pending') ?>"><?= $statusLabels[$displayStatus] ?? $displayStatus ?></span></td>
+          <td data-label=""><div class="invoice-actions">
             <?php if ($inv['status'] === 'unpaid' && !empty($inv['is_draft'])): ?>
               <form method="post" style="display:inline" onsubmit="return confirm('<?= is_rtl()?'تأكيد إصدار الفاتورة وإشعار العميل؟':'Issue this invoice and notify the client?' ?>')"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="issue_time_invoice"><input type="hidden" name="invoice_id" value="<?= (int)$inv['id'] ?>"><button class="icon-btn" type="submit"><?= is_rtl()?'مراجعة وإصدار':'Review & issue' ?></button></form>
               <form method="post" style="display:inline" onsubmit="return confirm('<?= is_rtl()?'حذف المسودة وإعادة الساعات إلى السجل غير المفوتر؟':'Delete draft and release its time entries?' ?>')"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="cancel_invoice"><input type="hidden" name="invoice_id" value="<?= (int)$inv['id'] ?>"><button class="icon-btn danger" type="submit"><?= is_rtl()?'حذف المسودة':'Discard draft' ?></button></form>

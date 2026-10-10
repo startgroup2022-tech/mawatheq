@@ -1,6 +1,8 @@
 <?php
-$activePage = 'case-tasks';
-require_once __DIR__ . '/includes/app_header.php';
+// The shell header flushes HTML, so the POST (and its redirect) must run before it.
+require_once __DIR__ . '/config/config.php';
+require_once __DIR__ . '/lang/strings.php';
+require_once __DIR__ . '/includes/auth_guard.php';
 require_once __DIR__ . '/includes/csrf.php';
 require_once __DIR__ . '/includes/notifications.php';
 $userId = (int)$_SESSION['user_id'];
@@ -16,6 +18,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     header('Location: /case-tasks.php'); exit;
 }
+$activePage = 'case-tasks';
+require_once __DIR__ . '/includes/app_header.php';
 $q = $pdo->prepare('SELECT t.*,c.title case_title,l.full_name lawyer_name FROM case_tasks t JOIN cases c ON c.id=t.case_id JOIN lawyers l ON l.id=c.lawyer_id WHERE c.user_id=? AND t.client_visible=1 ORDER BY (t.status=\'done\'),(t.due_date IS NULL),t.due_date,t.id');
 $q->execute([$userId]); $tasks=$q->fetchAll();
 ?>

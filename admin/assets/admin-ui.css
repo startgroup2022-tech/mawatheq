@@ -40,6 +40,7 @@ body.adm.sb-collapsed{ --sb-w:78px; }
 .adm-brand img{ width:36px; height:36px; border-radius:10px; background:#fff; padding:3px; object-fit:contain; }
 .adm-brand b{ font-family:"Cairo",sans-serif; font-size:17px; font-weight:800; line-height:1.1; display:block; }
 .adm-brand small{ color:var(--gold); font-size:12px; letter-spacing:.14em; text-transform:uppercase; font-weight:700; }
+.adm-nav{ display:flex; flex-direction:column; gap:2px; }
 .adm-nav-group{ margin-top:14px; }
 .adm-nav-title{ padding:0 12px 6px; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--sb-ink-dim); font-weight:700; white-space:nowrap; }
 .adm-nav a{ display:flex; align-items:center; gap:12px; min-height:44px; padding:10px 12px; margin:2px 0; border-radius:11px; color:var(--sb-ink); text-decoration:none; font-weight:500; font-size:13.5px; position:relative; transition:background .15s,color .15s; white-space:nowrap; }
@@ -224,6 +225,49 @@ body.adm .modal-close{ position:absolute; top:14px; inset-inline-end:14px; width
   .adm-search{ display:none; } .adm-topbar{ padding:0 16px; } .adm-content{ padding:18px 16px; } .adm-userbtn div{ display:none; }
 }
 @media (max-width:720px){ .g-4,.g-3,.g-2{ grid-template-columns:minmax(0,1fr); } body.adm .grid-2{ grid-template-columns:minmax(0,1fr); } .cal .day{ min-height:70px; } .cal .ev{ font-size:0; height:8px; padding:0; } .pg-head h1,body.adm .toolbar h2{ font-size:20px; } .adm-crumbs small{ display:none; } .bar-row{ grid-template-columns:80px 1fr 38px; } }
+
+/* Card mode for admin data tables on phones. This file pins .admin-table to
+   680px, so the override has to live here (and match its specificity) for the
+   rows to stack into readable cards instead of scrolling sideways. */
+@media (max-width:820px){
+  body.adm .table-wrap.table-cards{ border:0; box-shadow:none; background:transparent; overflow:visible; }
+  body.adm .table-cards .admin-table,
+  body.adm .table-cards .admin-table tbody,
+  body.adm .table-cards .admin-table tr,
+  body.adm .table-cards .admin-table td{ display:block; width:100%; min-width:0; }
+  body.adm .table-cards .admin-table thead{ display:none; }
+  body.adm .table-cards .admin-table tr{
+    border:1px solid var(--line); border-radius:14px; background:var(--surface);
+    padding:12px; margin-bottom:12px; box-shadow:0 1px 2px rgba(15,31,51,.05);
+  }
+  body.adm .table-cards .admin-table td{
+    display:flex; align-items:flex-start; justify-content:space-between; gap:12px;
+    padding:8px 4px; border-bottom:1px dashed var(--line-2); text-align:end;
+  }
+  body.adm .table-cards .admin-table tr td:last-child{ border-bottom:0; }
+  body.adm .table-cards .admin-table td::before{
+    content:attr(data-label); flex:none; font-size:12px; font-weight:800;
+    color:var(--muted); text-align:start; padding-inline-end:8px;
+  }
+  body.adm .table-cards .admin-table td[data-label=""]::before,
+  body.adm .table-cards .admin-table td:not([data-label])::before{ display:none; }
+}
+
+/* Phone: keep every header control on one comfortable row — tighten the gaps,
+   let the action cluster wrap instead of pushing the page sideways, and never
+   shrink an icon button below the 42px touch target. */
+@media (max-width:560px){
+  .adm-topbar{ padding:0 12px; gap:8px; }
+  .adm-actions{ gap:6px; }
+  .adm-crumbs{ flex:1; min-width:0; }
+  .adm-crumbs b{ font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .adm-iconbtn{ width:40px; height:40px; }
+  .adm-userbtn{ padding:0; }
+  .adm-userbtn div{ display:none; }
+  /* Status chips are links here: give them a comfortable tap height. */
+  .pill{ min-height:36px; padding:8px 12px; }
+  body.adm .icon-btn{ min-height:38px; padding:0 12px; }
+}
 @media print{ .adm-sidebar,.adm-topbar{ display:none; } .adm-shell{ display:block; } }
 
 /* touch fallback for kanban + misc */

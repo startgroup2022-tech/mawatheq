@@ -68,7 +68,7 @@ $csrf = '<input type="hidden" name="csrf_token" value="' . h(csrf_token()) . '">
 
   <div class="tbl-tools"><input type="search" placeholder="<?= h(adm('بحث بالعميل أو المحامي أو الوصف…', 'Search client, lawyer or description…')) ?>" data-filter="#invTable">
     <div class="chips"><a href="#" class="chip on" data-status-filter="#invTable" data-value=""><?= h(adm('الكل', 'All')) ?></a><?php foreach (['paid', 'unpaid', 'overdue', 'cancelled'] as $k): ?><a href="#" class="chip" data-status-filter="#invTable" data-value="<?= $k ?>"><?= h($statusLabels[$k]) ?></a><?php endforeach; ?></div></div>
-  <div class="table-wrap"><table class="admin-table" id="invTable">
+  <div class="table-wrap table-cards"><table class="admin-table" id="invTable">
     <thead><tr><th><?= h(adm('العميل', 'Client')) ?></th><th><?= h(adm('المحامي', 'Lawyer')) ?></th><th><?= h(adm('الوصف', 'Description')) ?></th><th><?= h(adm('المبلغ', 'Amount')) ?></th><th><?= h(adm('الاستحقاق', 'Due')) ?></th><th><?= h(adm('الحالة', 'Status')) ?></th><th></th></tr></thead>
     <tbody>
       <?php foreach ($invoices as $inv):
@@ -76,13 +76,13 @@ $csrf = '<input type="hidden" name="csrf_token" value="' . h(csrf_token()) . '">
           $displayStatus = $isOverdue ? 'overdue' : $inv['status'];
       ?>
       <tr data-status="<?= h($displayStatus) ?>">
-        <td><?= $inv['client_id'] ? '<a href="/admin/client-detail.php?id=' . (int)$inv['client_id'] . '">' . h($inv['client_name']) . '</a>' : h($inv['client_name'] ?: '—') ?></td>
-        <td><?= h($inv['lawyer_name'] ?: '—') ?></td>
-        <td><?= h($inv['description']) ?></td>
-        <td><b><?= money($inv['amount']) ?></b></td>
-        <td><?= $inv['due_date'] ? h(date('Y-m-d', strtotime($inv['due_date']))) : '—' ?></td>
-        <td><span class="status-pill status-<?= $displayStatus === 'paid' ? 'confirmed' : ($displayStatus === 'overdue' ? 'cancelled' : 'pending') ?>"><?= h($statusLabels[$displayStatus]) ?></span></td>
-        <td>
+        <td data-label="<?= h(adm('العميل', 'Client')) ?>"><?= $inv['client_id'] ? '<a href="/admin/client-detail.php?id=' . (int)$inv['client_id'] . '">' . h($inv['client_name']) . '</a>' : h($inv['client_name'] ?: '—') ?></td>
+        <td data-label="<?= h(adm('المحامي', 'Lawyer')) ?>"><?= h($inv['lawyer_name'] ?: '—') ?></td>
+        <td data-label="<?= h(adm('الوصف', 'Description')) ?>"><?= h($inv['description']) ?></td>
+        <td data-label="<?= h(adm('المبلغ', 'Amount')) ?>"><b><?= money($inv['amount']) ?></b></td>
+        <td data-label="<?= h(adm('الاستحقاق', 'Due')) ?>"><?= $inv['due_date'] ? h(date('Y-m-d', strtotime($inv['due_date']))) : '—' ?></td>
+        <td data-label="<?= h(adm('الحالة', 'Status')) ?>"><span class="status-pill status-<?= $displayStatus === 'paid' ? 'confirmed' : ($displayStatus === 'overdue' ? 'cancelled' : 'pending') ?>"><?= h($statusLabels[$displayStatus]) ?></span></td>
+        <td data-label="">
           <?php if ($inv['status'] === 'unpaid'): ?>
             <form method="post" style="display:inline" onsubmit="return confirm('<?= h(adm('تأكيد استلام الدفعة؟', 'Confirm payment received?')) ?>')"><?= $csrf ?><input type="hidden" name="action" value="mark_paid"><input type="hidden" name="invoice_id" value="<?= (int)$inv['id'] ?>"><button class="icon-btn" type="submit"><?= h(adm('تحديد كمدفوعة', 'Mark paid')) ?></button></form>
             <form method="post" style="display:inline" onsubmit="return confirm('<?= h(adm('إلغاء الفاتورة؟', 'Cancel invoice?')) ?>')"><?= $csrf ?><input type="hidden" name="action" value="cancel_invoice"><input type="hidden" name="invoice_id" value="<?= (int)$inv['id'] ?>"><button class="icon-btn danger" type="submit"><?= h(adm('إلغاء', 'Cancel')) ?></button></form>

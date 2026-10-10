@@ -14,6 +14,12 @@ require_once __DIR__ . '/notifications.php';
 require_once __DIR__ . '/ui.php';
 require_once __DIR__ . '/nav.php';
 
+// Honour the language switch before anything reads current_lang(). The public
+// site header already does this; without it the switcher in this shell was inert.
+if (isset($_GET['lang']) && in_array($_GET['lang'], ['ar', 'en'], true)) {
+    $_SESSION['lang'] = $_GET['lang'];
+}
+
 $lang = current_lang();
 $dir = is_rtl() ? 'rtl' : 'ltr';
 $activePage = $activePage ?? '';
@@ -30,6 +36,21 @@ if ($pageTitle === '') {
 $pageSubtitle = $pageSubtitle ?? '';
 $breadcrumbs = $breadcrumbs ?? [];
 $userName = $_SESSION['user_name'] ?? '';
+
+// The topbar shows the client's plan next to their name so the current entitlement
+// is always one glance away. Read through the shared helper so it cannot disagree
+// with the dashboard or the server-side gate.
+require_once __DIR__ . '/ai_services.php';
+$topbarPlanName = '';
+try {
+    $topbarUsage = ai_plan_usage($pdo, (int)$_SESSION['user_id']);
+    if ($topbarUsage['plan']) {
+        $topbarPlanName = is_rtl() ? $topbarUsage['plan']['name_ar'] : $topbarUsage['plan']['name_en'];
+    }
+} catch (Throwable $e) {
+    error_log('Client topbar plan unavailable: ' . $e->getMessage());
+}
+$topbarInitial = $userName !== '' ? mb_substr($userName, 0, 1, 'UTF-8') : '؟';
 ?>
 <!DOCTYPE html>
 <html lang="<?= ui_e($lang) ?>" dir="<?= $dir ?>">
@@ -43,6 +64,7 @@ $userName = $_SESSION['user_name'] ?? '';
 <link rel="stylesheet" href="/assets/css/style.css">
 <link rel="stylesheet" href="/assets/css/app.css">
 <link rel="stylesheet" href="/assets/css/enterprise.css">
+<link rel="stylesheet" href="/assets/css/dashboard.css">
 </head>
 <body class="app-body">
 <a class="skip-link" href="#main-content"><?= is_rtl() ? 'تخطَّ إلى المحتوى' : 'Skip to content' ?></a>
@@ -72,6 +94,19 @@ $userName = $_SESSION['user_name'] ?? '';
         <?php render_notification_bell($pdo, 'client', (int)$_SESSION['user_id']); ?>
         <a class="lang-switch" href="?lang=<?= $lang === 'ar' ? 'en' : 'ar' ?>"
            aria-label="<?= is_rtl() ? 'Switch to English' : 'التبديل إلى العربية' ?>"><?= $lang === 'ar' ? 'EN' : 'عربي' ?></a>
-        <span class="app-topbar-user"><?= is_rtl() ? 'مرحباً' : 'Hello' ?>, <?= ui_e($userName) ?></span>
+        <a href="/" target="_blank" rel="noopener" class="lang-switch site-link"><?= is_rtl() ? 'الموقع ↗' : 'Site ↗' ?></a>
+        <?php if ($topbarPlanName !== ''): ?>
+          <a class="topbar-plan" href="/subscription.php" title="<?= ui_e(is_rtl() ? 'الباقة والاستخدام' : 'Plan & usage') ?>">
+            <?= ui_icon('card') ?><span><?= ui_e($topbarPlanName) ?></span>
+          </a>
+        <?php else: ?>
+          <a class="topbar-plan is-warn" href="/contact.php?topic=plan" title="<?= ui_e(is_rtl() ? 'لا توجد باقة مفعّلة' : 'No active plan') ?>">
+            <?= ui_icon('alert') ?><span><?= is_rtl() ? 'بدون باقة' : 'No plan' ?></span>
+          </a>
+        <?php endif; ?>
+        <a class="topbar-user" href="/account.php" title="<?= ui_e(is_rtl() ? 'الملف الشخصي' : 'Profile') ?>">
+          <span class="tu-avatar" aria-hidden="true"><?= ui_e($topbarInitial) ?></span>
+          <span class="tu-name"><?= ui_e($userName) ?></span>
+        </a>
       </div>
     </header>

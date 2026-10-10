@@ -40,7 +40,7 @@ function ai_load_settings(PDO $pdo): array {
 /** Settings for semantic embeddings are separate from chat; fall back only to a saved OpenAI chat key. */
 function embedding_load_settings(PDO $pdo): array {
     $settings=[];
-    foreach($pdo->query("SELECT setting_key,setting_value FROM site_settings WHERE setting_key IN ('embedding_provider','embedding_api_key','embedding_model')")->fetchAll() as $row) $settings[$row['setting_key']]=$row['setting_value'];
+    foreach($pdo->query("SELECT setting_key,setting_value FROM site_settings WHERE setting_key IN ('embedding_provider','embedding_api_key','embedding_model','embedding_endpoint')")->fetchAll() as $row) $settings[$row['setting_key']]=$row['setting_value'];
     if(isset($settings['embedding_api_key'])) {
         $stored=$settings['embedding_api_key']; $settings['embedding_api_key']=secret_decrypt_value($stored);
         if($settings['embedding_api_key']!=='' && strpos((string)$stored,'enc:v1:')!==0 && secret_encryption_key()) secret_store_setting($pdo,'embedding_api_key',$settings['embedding_api_key']);

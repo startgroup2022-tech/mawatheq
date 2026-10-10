@@ -14,6 +14,13 @@ require_once __DIR__ . '/../../includes/notifications.php';
 require_once __DIR__ . '/../../includes/ui.php';
 require_once __DIR__ . '/../../includes/nav.php';
 
+// Honour the language switch before anything reads current_lang(). The client shell
+// (includes/app_header.php) does this too; without it the lawyer workspace could not
+// be switched to English at all — the header had no lang control and no handler.
+if (isset($_GET['lang']) && in_array($_GET['lang'], ['ar', 'en'], true)) {
+    $_SESSION['lang'] = $_GET['lang'];
+}
+
 $lang = current_lang();
 $activeLawyer = $activeLawyer ?? '';
 $nav = nav_lawyer($activeLawyer);
@@ -36,6 +43,7 @@ if ($lawyerName === '') {
         $lawyerName = (string)$nq->fetchColumn();
     } catch (Throwable $e) { $lawyerName = ''; }
 }
+$lawyerInitial = $lawyerName !== '' ? mb_substr($lawyerName, 0, 1, 'UTF-8') : '؟';
 ?>
 <!DOCTYPE html>
 <html lang="<?= ui_e($lang) ?>" dir="<?= is_rtl() ? 'rtl' : 'ltr' ?>">
@@ -49,6 +57,7 @@ if ($lawyerName === '') {
 <link rel="stylesheet" href="/assets/css/style.css">
 <link rel="stylesheet" href="/assets/css/app.css">
 <link rel="stylesheet" href="/assets/css/enterprise.css">
+<link rel="stylesheet" href="/assets/css/dashboard.css">
 </head>
 <body class="app-body">
 <a class="skip-link" href="#main-content"><?= is_rtl() ? 'تخطَّ إلى المحتوى' : 'Skip to content' ?></a>
@@ -84,7 +93,12 @@ if ($lawyerName === '') {
             error_log('Lawyer notification bell unavailable: ' . $e->getMessage());
         }
         ?>
-        <a href="/" target="_blank" rel="noopener" class="lang-switch"><?= is_rtl() ? 'عرض الموقع ↗' : 'View site ↗' ?></a>
-        <span class="app-topbar-user"><?= is_rtl() ? 'مرحباً' : 'Hello' ?>, <?= ui_e($lawyerName) ?></span>
+          <a class="lang-switch" href="?lang=<?= $lang === 'ar' ? 'en' : 'ar' ?>"
+             aria-label="<?= is_rtl() ? 'Switch to English' : 'التبديل إلى العربية' ?>"><?= $lang === 'ar' ? 'EN' : 'عربي' ?></a>
+          <a href="/" target="_blank" rel="noopener" class="lang-switch"><?= is_rtl() ? 'الموقع ↗' : 'Site ↗' ?></a>
+          <a class="topbar-user" href="/lawyer/profile.php" title="<?= ui_e(is_rtl() ? 'الملف الشخصي' : 'Profile') ?>">
+            <span class="tu-avatar" aria-hidden="true"><?= ui_e($lawyerInitial) ?></span>
+            <span class="tu-name"><?= ui_e($lawyerName) ?></span>
+          </a>
       </div>
     </header>

@@ -26,6 +26,7 @@ $routeRoles=[
     'ai_test.php'=>['super_admin','editor'], 'settings.php'=>['super_admin'],
     'plans.php'=>['super_admin'], 'invoices.php'=>['super_admin'], 'reports.php'=>['super_admin','editor'],
     'audit-log.php'=>['super_admin'], 'two-factor.php'=>['super_admin','editor','support'],
+    'integrations.php'=>['super_admin'],
     'payment-test.php'=>['super_admin'], 'reindex-embeddings.php'=>['super_admin'],
     'gateways.php'=>['super_admin'], 'gateway-transactions.php'=>['super_admin'], 'gateway-transaction.php'=>['super_admin'],
     'sadad-test.php'=>['super_admin'],

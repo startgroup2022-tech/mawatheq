@@ -17,6 +17,48 @@ workspace, plus the admin console.
 - Everything UI-facing is namespaced: client portal under `.app-*`, admin under
   `body.adm`.
 
+## Dashboards and the service model
+
+Both home screens (`dashboard.php` for clients, `lawyer/dashboard.php` for lawyers)
+are ordered by what the user needs to act on, not by database shape. Three shared
+modules back them — reuse these rather than re-deriving entitlements in a page:
+
+- `includes/ai_services.php` — one definition of every AI service, its icon,
+  description, and how a plan gates it (`ai_plan_usage()`, `ai_service_state()`,
+  `ai_service_nav_items()`). The nav, the dashboards, and `includes/plan_limits.php`
+  all read from here, so the UI cannot disagree with the server-side gate.
+- `includes/workspace.php` — the shared workspace service catalogue
+  (`ws_client_service_groups()`, `ws_lawyer_service_groups()`, `ws_render_service_groups()`).
+  Firm-only destinations are omitted for a solo lawyer, matching `nav.php`, so the
+  dashboards never render a link that answers 403.
+- `assets/css/dashboard.css` — loaded last (after style/app/enterprise) and additive.
+- `includes/dashboard_panels.php` — the shared read models for the list panels
+  (lawyer: clients, open tasks, client documents; client: their lawyers, their
+  documents, their alerts). Tenant-scoped through `tenant_owner_where()`, and the
+  balance figures come from `finance_client_balances()`, so both home screens
+  describe the same rows identically. A panel with no rows returns `[]` and the
+  page renders its empty state rather than inventing content.
+
+  Static assets must stay world-readable (`644`); only `config/secrets.php` is `600`.
+  Apache serves CSS as a different user than the file owner, so a `600`/`660`
+  stylesheet returns **403** and the dashboard loses its styling while every page
+  still reports HTTP 200. When packaging or copying the tree, preserve modes.
+
+  The language switch is handled in both shells — `includes/app_header.php` and
+  `lawyer/includes/lawyer_header.php` — each applying `?lang=` to `$_SESSION['lang']`
+  before `current_lang()` is read. The lawyer header carries its own `?lang=` control;
+  a shell without the handler makes its switch silently inert.
+
+Gating contract: `plans.ai_queries_limit` / `plans.document_analysis_limit` are
+`NULL` for unlimited, and **no plan at all means no limit is enforced** (legacy
+accounts). `check_ai_query_allowed()` / `check_document_upload_allowed()` in
+`includes/plan_limits.php` are the enforcement points; the dashboards only display
+the same numbers.
+
+`lawyer/firm.php` is reachable by every lawyer (a solo lawyer uses it to *create* a
+firm) — never gate it as firm-only. `lawyer/review-queue.php` *is* firm-member-only
+and returns 403 for a solo lawyer, so only link it when `tenant_is_firm()` is true.
+
 ## Conventions
 
 - All page CSS/JS must be CSP-safe (`script-src 'self'`): no inline handlers in
@@ -127,6 +169,26 @@ non-zero on failure): `tenant_isolation_test.php`, `phase3_finance_test.php`,
 `phase3_ai_gateway_test.php`, `currency_test.php`, `sadad_gateway_test.php`,
 `phase5_saas_core_test.php` (tenant scoping, notification fan-out, the firm
 permission catalog and its no-escalation rule, and the audit actor extension).
+`phase5_integration_test.php` (scoped API tokens, webhook signing/tamper/replay
+rejection, event fan-out, delivery idempotency, retry accounting, inactive-endpoint skip),
+`phase5_knowledge_scope_test.php` (negative access-control tests for the Knowledge Base
+scope model — global/firm/case/private — driven through the real `knowledge_retrieve()`),
+`phase5_knowledge_acl_test.php` (the additive per-source grant layer below).
+
+Knowledge Base access control is the `knowledge_sources.scope_type`/`scope_id` model,
+enforced identically by `knowledge_retrieve()` and `knowledge_semantic_search()`.
+`knowledge_source_permissions` is an *additive ACL layer* that can only narrow that scope
+model, never widen it — a grant on a source the scope model hides does not expose it.
+Activation is opt-in and behavior-preserving: call `knowledge_acl_initialize()` to seed one
+`read` grant per currently-visible source (`INSERT IGNORE`, idempotent); until any grant row
+exists (`knowledge_permissions_initialized()`), retrieval behaves exactly as the plain scope
+model. On any ACL error the code logs and falls back to the scope model rather than locking
+users out. Integration token scopes are explicit only — `integration_token_issue()` refuses a
+`'*'` wildcard so a stored token can never satisfy a scope that did not exist when it was issued.
+
+`phase5_integration_http_probe.php` is a live HTTP probe (needs the app running on
+`127.0.0.1:8080`); it issues scoped tokens and asserts the endpoint/scope matrix, the
+unknown-endpoint 403, and revoked-token 401, then cleans up its own tokens.
 
 `sadad_gateway_test.php` starts the real fixture server `tests/fixtures/sadad_server.php`
 on an ephemeral port and exercises the live curl path — no HTTP mocking. It runs inside a
@@ -136,7 +198,7 @@ Environment (local sandbox): install with
 `sudo apt-get install -y php-cli php-curl php-mysql php-mbstring mariadb-server`, start with
 `sudo service mariadb start`, and create the `mawatheq` DB/user matching `config/secrets.php`.
 Load `database/schema.sql` then every `database/upgrade_v*.sql` in order (currently
-through `upgrade_v46.sql`); the migrations are idempotent.
+through `upgrade_v49.sql`); the migrations are idempotent.
 
 UI work is verified with a Playwright audit that logs
 in as each role (admin needs a fresh TOTP) and renders every page at several
@@ -167,3 +229,109 @@ viewports, checking horizontal overflow, sub-11px text and undersized targets.
   smaller inline size, so `enterprise.css` wins on `min-height`.
 - Long tables switch to card mode on narrow viewports; a `min-width` on the
   table would defeat that.
+
+## UI hardening: survive a missing enhancement layer
+
+`enterprise.css` is the enhancement layer, but it is not guaranteed to load —
+production served it (and `enterprise.js`) as **403** because the files were
+mode `660`. Treat it as optional:
+
+- Any rule the shell cannot live without must also exist in `app.css` (client,
+  lawyer, admin) or `style.css` (public site, auth screens). Keep the fallback
+  copies byte-identical to the enterprise rule so nothing shifts when both load.
+  Covered today: mobile sidebar/nav stacking, skip-link, topbar
+  title/spacer/actions, `.notif-bell-btn`, `.lang-switch`, `.app-navtoggle`,
+  public `.nav-toggle`/`.main-nav` dropdown, and `table-cards`.
+- Auth screens (`login.php`, `register.php`, `admin/login.php`,
+  `lawyer-login.php`) load `style.css` **only** — never rely on `app.css` or
+  `enterprise.css` there.
+- Card-mode data tables: add `table-cards` to `.table-wrap` and
+  `data-label="Column"` to every `<td>` (empty label hides the `::before`).
+  Breakpoint is `820px`. The admin console also pins
+  `body.adm .admin-table { min-width:680px }` in `admin-ui.css`, so the card
+  override must live there too and match that specificity.
+- Put media queries at the **end** of the file so they win cascade ties;
+  `app.css` had its base `.admin-table` rules after the query and was silently
+  losing.
+- When auditing with the Chromium CDP tool, disable the HTTP cache
+  (`Network.setCacheDisabled`) — a stale `app.css` produces false overflow
+  results. Simulate the production failure with
+  `--block "*enterprise.css"`.
+
+## Auth portals: client vs lawyer vs admin (verified 2026-09-30)
+
+Three separate, non-interchangeable entry points. Each keeps its own session key
+and its own guard; none accepts a role from request input.
+
+| Portal | Page | Session key | Guard | Post-login |
+|---|---|---|---|---|
+| Client | `/login.php` | `$_SESSION['user_id']` | client pages | `/ai-assistant.php` |
+| Lawyer | `/lawyer-login.php` | `$_SESSION['lawyer_id']` | `lawyer/includes/lawyer_guard.php` | `/lawyer/dashboard.php` |
+| Admin | `/admin/login.php` | admin session | `admin/includes/admin_guard.php` | `/admin/index.php` |
+
+- A lawyer with a **correct password** can still be refused, and that is not a
+  bug. `lawyer_guard.php` requires `email_verified = 1` **and**
+  `status = 'approved'`. The login page must therefore report these as
+  *notices*, not as "wrong password":
+  - unverified -> "activate your email" + link to `/resend-verification.php`
+  - verified but not approved -> "under review by admin"
+  - suspended -> "contact support"
+  Keep the wrong-credential message generic ("incorrect email or password") so
+  the form does not confirm which emails exist.
+- On success always `session_regenerate_id(true)` and audit-log the event.
+  Failed POSTs must pass through `auth_rate_limit_failure()`; the limiter keys
+  on IP and on the account, and after 5 tries returns the 15-minute message.
+- CSRF: every auth POST validates `csrf_is_valid()` and returns 403 on a miss.
+
+### Why a page can render "empty" in the browser but 200 in curl
+
+An uncaught `Throwable` in a page body (e.g. a bad column alias in a new query)
+aborts the include **after** `header.php` has already printed `<head>` + sidebar
++ topbar. HTTP stays 200, the byte count is plausible, and the content area is
+blank. Always diff the rendered size against a known-good run and grep for
+`fatal error|uncaught` - `php -l` will not catch it. Column aliases matter:
+`tenant_owner_where($pdo, 'co')` must be built for the alias actually used in
+the query, not the bare table name.
+
+## POST-redirect pages must handle POST before rendering the shell
+
+`includes/app_header.php` prints the whole `<head>`, sidebar and topbar immediately,
+and there is no output buffering (`ob_start` is never called). A page that includes
+the shell and *then* calls `header('Location: ...')` gets "headers already sent": the
+redirect is dropped and the form action silently does nothing. Keep the POST handler,
+its `header()` redirect and `exit` **above** the `require_once includes/app_header.php`
+line. `case-tasks.php` and `draft-reviews.php` were both bitten by this; the two
+symptoms were "clicking Mark complete / Submit review appears to work but nothing
+changes".
+
+## Client documents and case evidence are two different tables
+
+`documents` is the client's own upload library (keyed by `user_id`); `case_evidence`
+is the lawyer's per-case register (keyed by `case_id`, `added_by_lawyer_id`). They are
+not the same store. `documents.case_id` (added in `upgrade_v47.sql`) is the optional
+link that surfaces a client-filed document inside the case file. When storing a
+`case_id` from a client form, always verify the case belongs to that client first —
+otherwise a forged id attaches a document to another tenant's matter.
+
+## `/admin/crm.php` looks empty on a fresh database — it is not broken
+
+`admin/crm.php` guards itself with a probe over `crm_opportunities`, `crm_tasks`,
+`crm_activities`, `crm_companies` and `contact_leads`; if any is missing it renders
+a friendly "tables not ready" shell. On a *seeded but empty* install every probe
+passes and the page renders 200 with the correct empty states ("لا توجد فرص بعد"),
+so it reads as blank while being fully functional. Diagnose by row count, not by
+HTTP status:
+
+```bash
+for t in crm_opportunities crm_companies contact_leads crm_tasks crm_activities; do
+  printf '%-20s %s\n' "$t" "$(mariadb -N -B mawatheq -e "SELECT COUNT(*) FROM $t;")"
+done
+```
+
+Enums to respect when seeding (`lead_type`: contact|join_lawyer|corporate;
+`contact_leads.status`: new|contacted|closed; `crm_opportunities.stage`:
+new|qualified|proposal|negotiation|won|lost; `crm_tasks.task_type`: task|follow_up;
+`crm_tasks.status`: open|done; `crm_activities.activity_type`:
+call|email|meeting|whatsapp|note|stage_change). On an opportunity card the `<small>`
+under the title is the linked **user's** name (`users.full_name`), not the company —
+that is by design, not a bad join.

@@ -103,15 +103,184 @@ function call_openai(string $apiKey, string $model, string $systemPrompt, string
     return $r['ok'] ? $r['text'] : null;
 }
 
+/* ============================================================================
+ * Self-hosted / OpenAI-compatible provider support (Phase 5)
+ * ----------------------------------------------------------------------------
+ * A local inference server (vLLM, Ollama, llama.cpp server, LM Studio, …) exposes
+ * the same /v1/chat/completions shape as OpenAI. Rather than hard-coding another
+ * vendor URL, the admin points `ai_endpoint` at that base URL and Mawatheq talks
+ * to it through the exact same code path, so business logic never depends on
+ * which model is serving. No credentials are required for a purely local server,
+ * so an empty key is valid here (unlike the hosted providers).
+ * ========================================================================== */
+
+/** True when a provider id is a chat-capable provider this codebase can call. */
+function ai_provider_chat_capable(string $provider): bool {
+    return in_array($provider, ['openai', 'anthropic', 'openai_compatible'], true);
+}
+
+/** All chat-capable provider ids, for admin selects and validation. */
+function ai_provider_ids(): array { return ['openai', 'anthropic', 'openai_compatible']; }
+
+/**
+ * Validate and normalise an OpenAI-compatible base URL.
+ * Only http/https are accepted; anything malformed returns null so the caller
+ * refuses the call instead of issuing a request to an unintended host.
+ */
+function ai_endpoint_normalize(?string $base): ?string {
+    $base = trim((string)$base);
+    if ($base === '' || mb_strlen($base, 'UTF-8') > 300) return null;
+    $parts = parse_url($base);
+    if (!is_array($parts) || empty($parts['host'])) return null;
+    if (!in_array(strtolower($parts['scheme'] ?? ''), ['http', 'https'], true)) return null;
+    return rtrim($base, '/');
+}
+
+/** Join a validated base URL with an API path, or null when the base is invalid. */
+function ai_openai_endpoint_url(?string $base, string $path): ?string {
+    $base = ai_endpoint_normalize($base);
+    return $base === null ? null : $base . '/' . ltrim($path, '/');
+}
+
+/**
+ * Call an OpenAI-compatible chat endpoint. Works for any server implementing the
+ * OpenAI schema; token usage is read from `usage` when present and left null when
+ * the server does not report it (never fabricated).
+ * @return array{ok:bool, text:?string, http_code:int, error:?string}
+ */
+function call_openai_compatible_raw(string $baseUrl, string $apiKey, string $model, string $systemPrompt, string $userMessage, int $maxTokens = 700, ?float $temperature = null): array {
+    $empty = ['ok' => false, 'text' => null, 'http_code' => 0, 'error' => null];
+    $url = ai_openai_endpoint_url($baseUrl, 'chat/completions');
+    if ($url === null) { $empty['error'] = 'عنوان مزوّد الذكاء الاصطناعي المحلي غير صالح؛ يجب أن يبدأ بـ http أو https.'; return $empty; }
+    if (!function_exists('curl_init')) { $empty['error'] = 'cURL غير مفعّل على السيرفر (يلزم تفعيله من إعدادات PHP بالاستضافة).'; return $empty; }
+    $model = $model ?: 'local-model';
+    $headers = ['Content-Type: application/json'];
+    if ($apiKey !== '') $headers[] = 'Authorization: Bearer ' . $apiKey;
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_TIMEOUT => 90,
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_POSTFIELDS => json_encode([
+            'model' => $model,
+            'max_tokens' => $maxTokens,
+            'temperature' => $temperature === null ? 0.2 : max(0.0, min(1.0, $temperature)),
+            'messages' => [
+                ['role' => 'system', 'content' => $systemPrompt],
+                ['role' => 'user', 'content' => $userMessage],
+            ],
+        ]),
+    ]);
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($response === false) { $empty['error'] = 'تعذّر الاتصال بمزوّد الذكاء الاصطناعي المحلي: ' . $curlError; return $empty; }
+    $data = json_decode($response, true);
+    if ($httpCode !== 200) { $empty['error'] = $data['error']['message'] ?? ('خطأ HTTP ' . $httpCode . ' من المزوّد المحلي.'); $empty['http_code'] = $httpCode; return $empty; }
+    return ['ok' => true, 'text' => $data['choices'][0]['message']['content'] ?? null, 'http_code' => 200, 'error' => null,
+        'input_tokens' => (int)($data['usage']['prompt_tokens'] ?? 0), 'output_tokens' => (int)($data['usage']['completion_tokens'] ?? 0)];
+}
+
+/**
+ * Embeddings from an OpenAI-compatible endpoint (e.g. a local embedding server).
+ * @return array{ok:bool, vectors:array, model:?string, error:?string}
+ */
+function call_openai_compatible_embeddings(string $baseUrl, string $apiKey, string $model, array $texts): array {
+    $empty = ['ok' => false, 'vectors' => [], 'model' => null, 'error' => null];
+    $url = ai_openai_endpoint_url($baseUrl, 'embeddings');
+    if ($url === null) { $empty['error'] = 'No valid embedding endpoint is configured.'; return $empty; }
+    if (!$texts) { $empty['ok'] = true; return $empty; }
+    if (!function_exists('curl_init')) { $empty['error'] = 'cURL is unavailable.'; return $empty; }
+    $safe = array_map(function ($t) { $t = trim((string)$t); return $t === '' ? ' ' : mb_substr($t, 0, 8000, 'UTF-8'); }, $texts);
+    $headers = ['Content-Type: application/json'];
+    if ($apiKey !== '') $headers[] = 'Authorization: Bearer ' . $apiKey;
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_CONNECTTIMEOUT => 10, CURLOPT_TIMEOUT => 60,
+        CURLOPT_HTTPHEADER => $headers, CURLOPT_POSTFIELDS => json_encode(['model' => $model ?: 'local-embedding', 'input' => $safe])]);
+    $response = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); $curlError = curl_error($ch); curl_close($ch);
+    if ($response === false) { $empty['error'] = 'Embedding request failed: ' . $curlError; return $empty; }
+    $data = json_decode($response, true);
+    if ($code !== 200) { $empty['error'] = $data['error']['message'] ?? ('HTTP ' . $code); return $empty; }
+    $rows = $data['data'] ?? [];
+    if (!is_array($rows) || count($rows) !== count($safe)) { $empty['error'] = 'Unexpected embeddings response.'; return $empty; }
+    usort($rows, function ($a, $b) { return ($a['index'] ?? 0) <=> ($b['index'] ?? 0); });
+    $vectors = array_map(function ($r) { return array_map('floatval', $r['embedding'] ?? []); }, $rows);
+    if (count(array_filter($vectors, function ($v) { return !$v; }))) { $empty['error'] = 'Empty vector in embeddings response.'; return $empty; }
+    return ['ok' => true, 'vectors' => $vectors, 'model' => $model ?: 'local-embedding', 'error' => null];
+}
+
+/**
+ * Single dispatch point for a chat completion across every supported provider.
+ * Call sites (and the gateway) use this instead of branching on the provider id,
+ * so adding a provider never touches business logic.
+ * @return array{ok:bool, text:?string, http_code:int, error:?string}
+ */
+function ai_provider_chat(array $settings, string $systemPrompt, string $userMessage, int $maxTokens = 900, ?float $temperature = null): array {
+    $provider = (string)($settings['ai_provider'] ?? '');
+    $key = (string)($settings['ai_api_key'] ?? '');
+    $model = (string)($settings['ai_model'] ?? '');
+    if ($provider === 'anthropic') return call_anthropic_raw($key, $model, $systemPrompt, $userMessage, $maxTokens, $temperature);
+    if ($provider === 'openai_compatible') return call_openai_compatible_raw((string)($settings['ai_endpoint'] ?? ''), $key, $model, $systemPrompt, $userMessage, $maxTokens, $temperature);
+    return call_openai_raw($key, $model, $systemPrompt, $userMessage, $maxTokens, $temperature);
+}
+
+/**
+ * Single dispatch point for embeddings (hosted OpenAI or a local compatible server).
+ * @return array{ok:bool, vectors:array, model:?string, error:?string}
+ */
+function ai_provider_embeddings(array $settings, array $texts): array {
+    $provider = (string)($settings['embedding_provider'] ?? '');
+    if ($provider === 'openai_compatible') {
+        $base = (string)($settings['embedding_endpoint'] ?? '') ?: (string)($settings['ai_endpoint'] ?? '');
+        return call_openai_compatible_embeddings($base, (string)($settings['embedding_api_key'] ?? ''), (string)($settings['embedding_model'] ?? ''), $texts);
+    }
+    return call_openai_embeddings((string)($settings['embedding_api_key'] ?? ''), (string)($settings['embedding_model'] ?? ''), $texts);
+}
+
+/** True when an embedding provider is usable for indexing/search. */
+function embedding_provider_configured(array $settings): bool {
+    $provider = (string)($settings['embedding_provider'] ?? '');
+    if ($provider === 'openai_compatible') return ai_endpoint_normalize((string)($settings['embedding_endpoint'] ?? '') ?: (string)($settings['ai_endpoint'] ?? '')) !== null;
+    return $provider === 'openai' && !empty($settings['embedding_api_key']);
+}
+
+/**
+ * True when the configured chat provider is usable. A hosted provider needs an API
+ * key; a self-hosted OpenAI-compatible server needs only a valid endpoint, because a
+ * local model has no credential to send. This is the single definition the gateway
+ * and the admin UI both use, so "configured" never disagrees between them.
+ */
+function ai_settings_configured(array $settings): bool {
+    if (($settings['ai_enabled'] ?? '1') === '0') return false;
+    $provider = (string)($settings['ai_provider'] ?? '');
+    if (!ai_provider_chat_capable($provider)) return false;
+    if ($provider === 'openai_compatible') return ai_endpoint_normalize((string)($settings['ai_endpoint'] ?? '')) !== null;
+    return !empty($settings['ai_api_key']);
+}
+
 /**
  * اختبار اتصال حقيقي بمزوّد الذكاء الاصطناعي المحفوظ — يُستخدم من لوحة التحكم
  * (زر "اختبار الاتصال"). يرسل رسالة تجريبية قصيرة جداً فعلاً ويرجع نتيجة حقيقية.
  */
-function test_ai_connection(string $provider, string $apiKey, string $model): array {
+function test_ai_connection(string $provider, string $apiKey, string $model, string $endpoint = ''): array {
+    $prompt = is_rtl() ? 'أجب بكلمة واحدة فقط: تم' : 'Reply with one word only: OK';
+    if ($provider === 'openai_compatible') {
+        // A self-hosted server has no credential to check; the endpoint is what must be valid.
+        if (ai_endpoint_normalize($endpoint) === null) {
+            return ['ok' => false, 'message' => is_rtl() ? 'أدخل عنوان المزوّد المحلي (يبدأ بـ http أو https) ثم أعد الاختبار.' : 'Enter a valid self-hosted endpoint (http/https) and retry.'];
+        }
+        $result = call_openai_compatible_raw($endpoint, $apiKey, $model, 'You are a connection test.', $prompt, 10);
+        return $result['ok']
+            ? ['ok' => true, 'message' => is_rtl() ? 'الاتصال ناجح — الخادم المحلي والنموذج يعملان.' : 'Connection successful — local server and model are working.']
+            : ['ok' => false, 'message' => $result['error'] ?? (is_rtl() ? 'فشل الاتصال.' : 'Connection failed.')];
+    }
     if ($apiKey === '') {
         return ['ok' => false, 'message' => 'لم يتم إدخال مفتاح API.'];
     }
-    $prompt = is_rtl() ? 'أجب بكلمة واحدة فقط: تم' : 'Reply with one word only: OK';
     $result = $provider === 'anthropic'
         ? call_anthropic_raw($apiKey, $model, 'You are a connection test.', $prompt, 10)
         : call_openai_raw($apiKey, $model, 'You are a connection test.', $prompt, 10);
@@ -159,7 +328,8 @@ function analyze_document_with_ai(string $provider, string $apiKey, string $mode
     $empty = ['ok' => false, 'summary' => null, 'risks' => [], 'recommendations' => [], 'entities' => ['dates'=>[],'amounts'=>[],'parties'=>[]], 'contract_analysis'=>null, 'error' => null];
     $gate = ai_provider_gate($gateway, 'document-ai', 'document_text');
     if (!$gate['allowed']) { $empty['error'] = ai_deny_message($gate['reason'] ?? 'external_denied'); return $empty; }
-    if (!in_array($provider, ['openai','anthropic'], true) || $apiKey === '') { $empty['error'] = 'لا يوجد مزوّد ذكاء اصطناعي صالح ومفعّل.'; return $empty; }
+    if (!in_array($provider, ['openai','anthropic'], true)) { $empty['error'] = 'تحليل المستندات بالرؤية (PDF/صور) متاح لمزوّدي OpenAI وAnthropic فقط؛ المزوّد المحلي لا يُستخدم لهذا المسار.'; return $empty; }
+    if ($apiKey === '') { $empty['error'] = 'لا يوجد مزوّد ذكاء اصطناعي صالح ومفعّل.'; return $empty; }
     if (!function_exists('curl_init')) { $empty['error'] = 'امتداد cURL غير مفعّل على الخادم.'; return $empty; }
     if (!in_array($mediaType, ['application/pdf','image/png','image/jpeg'], true)) { $empty['error'] = 'نوع الملف غير مدعوم للتحليل.'; return $empty; }
     if (!in_array($documentType, ['general','contract'], true)) $documentType = 'general';

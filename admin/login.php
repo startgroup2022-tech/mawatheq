@@ -69,7 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <?php else: ?>
       <div class="field"><label>البريد الإلكتروني</label><input type="email" name="email" autocomplete="username" required></div>
       <div class="field"><label>كلمة المرور</label><div class="password-input"><input type="password" name="password" id="adminLoginPassword" autocomplete="current-password" required><button type="button" class="password-toggle" data-password-toggle="adminLoginPassword">إظهار</button></div></div>
-      <div style="text-align:end;margin:-10px 0 16px"><a href="/forgot-password.php?as=admin" style="font-size:.82rem;color:var(--teal)">نسيت كلمة المرور؟</a></div>
+      <div class="auth-inline-link"><a href="/forgot-password.php?as=admin">نسيت كلمة المرور؟</a></div>
       <button class="btn btn-primary btn-block" type="submit">دخول</button>
       <?php endif; ?>
     </form>

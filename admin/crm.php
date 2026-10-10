@@ -11,7 +11,12 @@ $LEAD_ST = ['new' => '#c39a3e', 'contacted' => '#2547b8', 'closed' => '#12805c']
 $ENT = ['lead', 'client', 'company', 'opportunity'];
 $clean = fn($k, $max = 255) => mb_substr(trim((string)($_POST[$k] ?? '')), 0, $max, 'UTF-8');
 $tablesReady = true;
-try { $pdo->query('SELECT 1 FROM crm_opportunities LIMIT 1'); $pdo->query('SELECT 1 FROM crm_tasks LIMIT 1'); } catch (Throwable $e) { $tablesReady = false; }
+// Probe every table this page reads. A guard that only checks the crm_* tables
+// still throws on contact_leads/crm_companies and produces a blank 500 page, so
+// the check has to cover the full set of dependencies.
+foreach (['crm_opportunities', 'crm_tasks', 'crm_activities', 'crm_companies', 'contact_leads'] as $crmTable) {
+    try { $pdo->query("SELECT 1 FROM `$crmTable` LIMIT 1"); } catch (Throwable $e) { $tablesReady = false; break; }
+}
 
 function crm_json(array $d): void { header('Content-Type: application/json; charset=UTF-8'); echo json_encode($d); exit; }
 function crm_activity(PDO $pdo, string $type, int $id, string $kind, string $summary, int $adminId): void {
@@ -87,7 +92,7 @@ $activeAdmin = 'crm';
 require_once __DIR__ . '/includes/admin_header.php';
 
 if (!$tablesReady) {
-    echo '<div class="app-content"><div class="card"><h3>' . h(adm('وحدة CRM تحتاج ترقية قاعدة البيانات', 'CRM needs a database upgrade')) . '</h3><p>' . h(adm('شغّل الملف database/upgrade_v40.sql على قاعدة البيانات (phpMyAdmin ← Import) ثم أعد تحميل الصفحة. لا يتم حذف أو تعديل أي بيانات حالية.', 'Run database/upgrade_v40.sql on your database (phpMyAdmin → Import) and reload. No existing data is modified or removed.')) . '</p></div></div>';
+          echo '<div class="app-content"><div class="card"><h3>' . h(adm('وحدة CRM تحتاج ترقية قاعدة البيانات', 'CRM needs a database upgrade')) . '</h3><p>' . h(adm('شغّل database/upgrade_v40.sql على قاعدة البيانات (phpMyAdmin ← Import) ثم أعد تحميل الصفحة. إن استمرت الرسالة فقاعدة البيانات ناقصة جدول contact_leads من المخطط الأساسي (database/schema.sql). لا يتم حذف أو تعديل أي بيانات حالية.', 'Run database/upgrade_v40.sql on your database (phpMyAdmin → Import) and reload. If this persists, the database is missing the contact_leads table from the base schema (database/schema.sql). No existing data is modified or removed.')) . '</p></div></div>';
     require __DIR__ . '/includes/admin_footer.php'; exit;
 }
 

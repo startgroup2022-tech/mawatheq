@@ -75,6 +75,13 @@ $_SESSION['_last_activity']=$now;
 require_once __DIR__ . '/../includes/csrf.php';
 require_once __DIR__ . '/../includes/currency.php';
 
+// The client document library links to a case via `documents.case_id` (upgrade_v47).
+// A cPanel install can run this code against a database that predates that migration;
+// the guard self-heals the additive column so the client and admin document views
+// never die with an unexplained 500. Same pattern as the jurisdiction column.
+require_once __DIR__ . '/../includes/schema_guard.php';
+schema_ensure_column($pdo, 'documents', 'case_id', 'INT UNSIGNED DEFAULT NULL');
+
 if (!headers_sent()) {
     header('X-Content-Type-Options: nosniff');
     header('X-Frame-Options: SAMEORIGIN');

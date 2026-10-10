@@ -10,6 +10,23 @@ require_once __DIR__ . '/../../includes/plan_limits.php';
 require_once __DIR__ . '/../../includes/upload_validation.php';
 
 $auth = api_authenticate($pdo);
+if (($auth['type'] ?? '') === 'integration') {
+    // Firm documents are reached through the cases that belong to the firm. A token
+    // scoped to a single firm never sees another firm's documents.
+    $firmId = $auth['firm_id'];
+    $firmClause = $firmId === null ? '1=1' : 'c.firm_id = ?';
+    $docId = (int)($_GET['id'] ?? 0);
+    if ($docId) {
+        $stmt = $pdo->prepare('SELECT d.id,d.original_name,d.file_type,d.document_type,d.status,d.summary,d.created_at FROM documents d JOIN cases c ON c.id=d.case_id WHERE d.id=? AND ' . $firmClause);
+        $stmt->execute(array_merge([$docId], $firmId === null ? [] : [$firmId]));
+        $doc = $stmt->fetch();
+        if (!$doc) api_error('document not found', 404);
+        api_json(['ok' => true, 'document' => $doc]);
+    }
+    $stmt = $pdo->prepare('SELECT d.id,d.original_name,d.file_type,d.document_type,d.status,d.summary,d.created_at FROM documents d JOIN cases c ON c.id=d.case_id WHERE ' . $firmClause . ' ORDER BY d.created_at DESC');
+    $stmt->execute($firmId === null ? [] : [$firmId]);
+    api_json(['ok' => true, 'documents' => $stmt->fetchAll()]);
+}
 if ($auth['type'] !== 'client') api_error('only clients can manage documents here', 403);
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {

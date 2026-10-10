@@ -47,9 +47,19 @@ if (!move_uploaded_file($file['tmp_name'], $destination)) {
     exit;
 }
 
-$stmt = $pdo->prepare('INSERT INTO documents (user_id, original_name, stored_path, file_type, document_type, status) VALUES (?,?,?,?,?,?)');
+// Optional case filing. The client may only file against a case they own, so an
+// arbitrary case_id in the form cannot attach a document to someone else's matter
+// (same scope as my-cases.php).
+$caseId = (int)($_POST['case_id'] ?? 0);
+if ($caseId) {
+    $caseCheck = $pdo->prepare('SELECT id FROM cases WHERE id=? AND user_id=?');
+    $caseCheck->execute([$caseId, (int)$_SESSION['user_id']]);
+    if (!$caseCheck->fetch()) { $caseId = 0; }
+}
+
+$stmt = $pdo->prepare('INSERT INTO documents (user_id, case_id, original_name, stored_path, file_type, document_type, status) VALUES (?,?,?,?,?,?,?)');
 $originalName = basename(str_replace('\\', '/', (string)$file['name']));
-$stmt->execute([$_SESSION['user_id'], $originalName, 'uploads/documents/' . $storedName, $ext, $documentType, 'processing']);
+$stmt->execute([$_SESSION['user_id'], $caseId ?: null, $originalName, 'uploads/documents/' . $storedName, $ext, $documentType, 'processing']);
 $docId = $pdo->lastInsertId();
 
 // Audit the upload (metadata only — never the file contents) and tell the client's
