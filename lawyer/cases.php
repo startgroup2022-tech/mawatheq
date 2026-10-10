@@ -43,8 +43,16 @@ $page = max(1, (int)($_GET['page'] ?? 1));
 $perPage = 20;
 $offset = ($page - 1) * $perPage;
 $scope = tenant_owner_where($pdo, 'c');
-$where = [$scope['sql']];
-$params = $scope['params'];
+  $where = [$scope['sql']];
+  $params = $scope['params'];
+  // Branch isolation narrows the firm scope further: a member restricted to a branch does
+  // not see records filed at another branch unless explicitly shared (branch_access_sql).
+  require_once __DIR__ . '/../includes/branch_access.php';
+  [$branchSql, $branchParams] = branch_access_sql($pdo, 'c.branch_id', 'case', 'c.id');
+  if ($branchSql !== '') {
+      $where[] = ltrim($branchSql, ' AND');
+      $params = array_merge($params, $branchParams);
+  }
 if ($search !== '') {
     $where[] = '(c.title LIKE ? OR u.full_name LIKE ? OR c.case_type LIKE ?)';
     $like = '%' . $search . '%';

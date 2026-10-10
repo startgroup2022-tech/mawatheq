@@ -237,8 +237,12 @@ function ai_gateway_call(?PDO $pdo, array $settings, array $tenant, string $feat
 
     $payloadBytes = strlen($systemPrompt) + strlen($userMessage);
     $model = (string)($settings['ai_model'] ?? '');
+    // Timeout is a runtime knob (ai_timeout_seconds); when unset, the provider keeps its
+    // built-in default. Clamped so a bad setting cannot hang or instantly time out.
+    $timeout = (isset($settings['ai_timeout_seconds']) && is_numeric($settings['ai_timeout_seconds']))
+        ? max(5, min(120, (int)$settings['ai_timeout_seconds'])) : null;
     $t0 = microtime(true);
-    $result = ai_provider_chat($settings, $systemPrompt, $userMessage, $maxTokens, $temperature);
+    $result = ai_provider_chat($settings, $systemPrompt, $userMessage, $maxTokens, $temperature, $timeout);
     $ms = (int)round((microtime(true) - $t0) * 1000);
 
     $ok = !empty($result['ok']) && !empty($result['text']);

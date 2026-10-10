@@ -80,6 +80,7 @@ if ($cases) {
               <span class="badge badge-info"><?= is_rtl() ? 'تقدير الفوز' : 'Win estimate' ?> <?= (int)$c['win_probability'] ?>%</span>
             <?php endif; ?>
             <a class="btn btn-outline btn-sm" href="/case-tasks.php"><?= is_rtl() ? 'عرض المهام' : 'View tasks' ?></a>
+              <a class="btn btn-outline btn-sm" href="/case-summary.php?case=<?= (int)$c['id'] ?>"><?= is_rtl() ? 'الملخص' : 'Summary' ?></a>
           </div>
 
           <?php if (!empty($c['description'])): ?>

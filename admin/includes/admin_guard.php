@@ -22,7 +22,7 @@ $routeRoles=[
     'client-detail.php'=>['super_admin','support'], 'lawyers.php'=>['super_admin','support'], 'firms.php'=>['super_admin','support'],
     'consultations.php'=>['super_admin','support'], 'documents.php'=>['super_admin','support'],
     'leads.php'=>['super_admin','support'], 'articles.php'=>['super_admin','editor'],
-    'laws.php'=>['super_admin','editor'], 'ai-knowledge.php'=>['super_admin','editor'], 'ai-orchestration.php'=>['super_admin'], 'ai-workflows.php'=>['super_admin'],
+    'laws.php'=>['super_admin','editor'], 'ai-knowledge.php'=>['super_admin','editor'], 'ai-orchestration.php'=>['super_admin'], 'ai-operations.php'=>['super_admin'], 'ai-workflows.php'=>['super_admin'],
     'ai_test.php'=>['super_admin','editor'], 'settings.php'=>['super_admin'],
     'plans.php'=>['super_admin'], 'invoices.php'=>['super_admin'], 'reports.php'=>['super_admin','editor'],
     'audit-log.php'=>['super_admin'], 'two-factor.php'=>['super_admin','editor','support'],

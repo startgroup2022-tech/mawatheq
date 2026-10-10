@@ -369,3 +369,95 @@ token` (git and REST alike). The token embedded in `origin`'s URL is often stale
 `git push --dry-run`. Note the repo is **stacked**: PR #2 (`phase-4-enterprise-ui`) targets
 `phase-3-finance-ai-integrations`, not `main`; do not open a second PR per branch.
 
+## Executive 08: legal AI, conflict engine, HR, branch access, custom domains (v51)
+
+Migration is `database/upgrade_v51.sql` (additive, idempotent) and is mirrored into
+`database/schema.sql`; a clean install lands at **98 tables**, identical to the working DB
+(verified table-by-table and column-by-column). Rollback SQL is in
+`MAWATHEQ_EXECUTION_08_RELEASE_REPORT.md`.
+
+### Branch-level access isolation (`includes/branch_access.php`)
+
+Multi-branch firms file records at a branch and restrict a member to a subset of branches.
+
+- **The model is opt-in.** A member with no `law_firm_members.branch_id` and no
+  `member_branch_access` rows is **firm-wide** — never silently locked out. `owner`/`partner`
+  are always firm-wide regardless of their home branch. Restriction only begins once someone
+  explicitly assigns a member.
+- `branch_access_context($pdo)` returns the resolved context; the cache lives in
+  `$GLOBALS['__branch_access_cache']`, keyed by PDO object id + lawyer id.
+- **`branch_access_flush_cache()` must be called after any membership/grant change** — the
+  cache is per-request, so without the flush the rest of a request keeps acting on the
+  pre-change access set. The management helpers
+  (`branch_access_set_member_branch`, `branch_access_grant`, `branch_access_revoke`) call it
+  for you; if you write the tables directly, call it yourself.
+- **Scoping a list query:** `[$sql, $params] = branch_access_sql($pdo, 'c.branch_id', 'case', 'c.id')`
+  returns `('', [])` for a firm-wide user (append nothing), otherwise a predicate that also
+  admits rows shared via `branch_record_shares` (not revoked). `lawyer/cases.php` is the
+  reference integration.
+- A cross-branch **share** is granted *to* a branch (`branch_record_shares.branch_id` is the
+  recipient), and only widens visibility while `revoked_at IS NULL`. `entity_type` is one of
+  case|document|evidence|consultation|invoice.
+
+### Conflict of interest (`includes/conflict_engine.php`)
+
+- Register the parties the firm already knows (`conflict_parties`), then screen a new matter;
+  a match opens a `conflict_reviews` row for a human decision.
+- **AI may only flag, never decide.** Screening may attach an AI suggestion
+  (`ai_assisted=1`, `ai_rationale`, `ai_confidence`), but `conflict_review_decide()` is a
+  human action and each decision is written to `conflict_audit_trail` (append-only).
+- Clearing a real conflict requires `cleared_with_override` **plus** a written
+  `override_reason` **and** an `override_approved_by` who is an owner/partner of *that* firm —
+  enforced server-side (`override_reason_required`, `approver_not_authorized`).
+- Cross-firm review reads return `null`: `conflict_review_get()` scopes on firm id.
+
+### HR (`includes/hr.php`)
+
+Employees, attendance (manual + self check-in/out), leave requests and balances, schedules,
+and monthly absence / lawyer-workload reports. **No salary or payroll data is collected.**
+Every write resolves the firm from the session and enforces branch visibility. Self-service
+attendance requires an `hr_employees.lawyer_id` link to the signed-in lawyer.
+
+### Custom domains (`includes/firm_domains.php`)
+
+Owner/partner add a hostname, publish the TXT token at `_mawatheq.<domain>`, press check,
+activate. `firm_domain_verify()` performs a real DNS TXT lookup — a domain is never marked
+verified because someone clicked a button. **HTTPS is a manual server step; there is no
+automatic certificate issuance**, and the UI says so. An unverified domain does not serve.
+Writes are firm-scoped; firm B cannot delete firm A's domain.
+
+### AI resilience and copilot (`includes/ai_resilience.php`, `includes/ai_copilot.php`)
+
+- `ai_resilient_gateway_call()` wraps `ai_gateway_call` with retry + exponential backoff for
+  **transient** errors only — a policy denial is final and never retried. Provider health
+  lands in `ai_provider_health`; rate limiting in `ai_usage_events`.
+- Runtime knobs are the site_settings keys `ai_timeout_seconds`, `ai_max_retries`,
+  `ai_rate_limit_per_hour`, read by `ai_request_timeout()`, `ai_max_retries()`,
+  `ai_rate_limit_per_hour()`. The `ai_timeout_seconds` value is threaded through
+  `ai_gateway_call` into `ai_provider`'s `call_anthropic_raw()` / `call_openai_raw()`
+  (`?int $timeoutSeconds`), so raising it here takes effect with no redeploy.
+- **The copilot is grounded, and the two halves must stay visually separate.** Verified
+  columns are deterministic DB reads; the AI proposal is labelled and stored with
+  `requires_review=1` and `status='pending_review'` until a lawyer approves it. Citation
+  integrity is checked against the retrieved sources (`citation_integrity_ok`); unverified
+  citations are surfaced, never silently dropped.
+- **The privacy gate is re-entered on every attempt inside the retry loop** — a tenant in
+  `local_only`/`external_disabled` never reaches an external provider, on any attempt.
+- **A client may only ever see `status='approved'` copilot runs.** `case-summary.php` filters
+  on that in SQL, so a template mistake cannot leak a draft.
+
+### Where the new surfaces live
+
+| Surface | Page(s) |
+| --- | --- |
+| Lawyer | `lawyer/conflicts.php`, `lawyer/hr.php`, `lawyer/branches.php`, `lawyer/domains.php`, `lawyer/ai-copilot.php` |
+| Admin (super_admin) | `admin/ai-operations.php` (route RBAC in `admin/includes/admin_guard.php`) |
+| Client | `case-summary.php` (linked from `my-cases.php`) |
+
+### Tests
+
+- `tests/executive08_test.php` — 145 DB-level checks across all six modules.
+- `tests/executive08_http_probe.php` — 51 live-HTTP checks (auth gate, CSRF enforcement,
+  cross-tenant isolation, domain lifecycle, copilot persistence). Needs the dev server on
+  `127.0.0.1:12000`; it mutates firm 1 and restores afterwards.
+- Baseline suite stays green: 544 PHP checks + 51 HTTP checks, 0 failures.

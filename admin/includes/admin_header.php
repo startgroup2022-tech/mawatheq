@@ -37,6 +37,7 @@ $adminNavGroups = [
         'ai-control' => ['i' => 'shield', 'ar' => 'التحكم في AI والخصوصية', 'en' => 'AI control & privacy', 'href' => '/admin/ai-control.php'],
         'ai-knowledge' => ['i' => 'spark', 'ar' => 'مركز معرفة AI', 'en' => 'AI knowledge', 'href' => '/admin/ai-knowledge.php'],
         'ai-orchestration' => ['i' => 'bot', 'ar' => 'وحدات ووكلاء AI', 'en' => 'AI agents', 'href' => '/admin/ai-orchestration.php'],
+          'ai-operations' => ['i' => 'settings', 'ar' => 'عمليات وحكامة AI', 'en' => 'AI operations', 'href' => '/admin/ai-operations.php'],
         'ai-workflows' => ['i' => 'check', 'ar' => 'سير عمل الوكلاء والموافقات', 'en' => 'Agent workflows', 'href' => '/admin/ai-workflows.php', 'badge' => 'wf'],
         'articles' => ['i' => 'book', 'ar' => 'مركز المعرفة', 'en' => 'Articles', 'href' => '/admin/articles.php'],
         'laws' => ['i' => 'landmark', 'ar' => 'مكتبة الأنظمة', 'en' => 'Law library', 'href' => '/admin/laws.php'],

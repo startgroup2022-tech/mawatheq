@@ -112,6 +112,7 @@ if (!function_exists('nav_lawyer')) {
                 'title' => $rtl ? 'الصياغة والذكاء الاصطناعي' : 'Drafting & AI',
                 'items' => [
                     'drafting'     => ['icon' => 'edit', 'label' => $rtl ? 'الصياغة الذكية' : 'AI drafting', 'href' => '/lawyer/drafting.php'],
+                      'ai-copilot'   => ['icon' => 'spark', 'label' => $rtl ? 'مساعد القضية' : 'Case copilot', 'href' => '/lawyer/ai-copilot.php'],
                     'availability' => ['icon' => 'clock', 'label' => $rtl ? 'أوقات الدوام' : 'Availability', 'href' => '/lawyer/availability.php'],
                 ],
             ],
@@ -132,6 +133,11 @@ if (!function_exists('nav_lawyer')) {
         if ($isFirm) {
             $firmItems['firm-site'] = ['icon' => 'external', 'label' => $rtl ? 'موقع المكتب الإلكتروني' : 'Firm website', 'href' => '/lawyer/firm-site.php'];
             $firmItems['reviews'] = ['icon' => 'check-circle', 'label' => $rtl ? 'مراجعة المسودات' : 'Draft reviews', 'href' => '/lawyer/review-queue.php'];
+            // Office operations: conflicts, people, branches and domains are all firm-scoped.
+            $firmItems['conflicts'] = ['icon' => 'shield', 'label' => $rtl ? 'التعارض في المصالح' : 'Conflicts', 'href' => '/lawyer/conflicts.php'];
+            $firmItems['hr'] = ['icon' => 'users', 'label' => $rtl ? 'الموارد البشرية' : 'HR & attendance', 'href' => '/lawyer/hr.php'];
+            $firmItems['branches'] = ['icon' => 'landmark', 'label' => $rtl ? 'الفروع والصلاحيات' : 'Branches & access', 'href' => '/lawyer/branches.php'];
+            $firmItems['domains'] = ['icon' => 'external', 'label' => $rtl ? 'النطاقات المخصصة' : 'Custom domains', 'href' => '/lawyer/domains.php'];
         }
         $groups[] = [
             'title' => $rtl ? 'المكتب القانوني' : 'Law firm',

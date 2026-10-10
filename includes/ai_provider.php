@@ -10,7 +10,7 @@ require_once __DIR__ . '/secret_crypto.php';
  * استدعاء Anthropic (Claude) الفعلي.
  * @return array{ok:bool, text:?string, http_code:int, error:?string}
  */
-function call_anthropic_raw(string $apiKey, string $model, string $systemPrompt, string $userMessage, int $maxTokens = 700, ?float $temperature = null): array {
+function call_anthropic_raw(string $apiKey, string $model, string $systemPrompt, string $userMessage, int $maxTokens = 700, ?float $temperature = null, ?int $timeoutSeconds = null): array {
     if (!function_exists('curl_init')) {
         return ['ok' => false, 'text' => null, 'http_code' => 0, 'error' => 'cURL غير مفعّل على السيرفر (يلزم تفعيله من إعدادات PHP بالاستضافة).'];
     }
@@ -19,7 +19,7 @@ function call_anthropic_raw(string $apiKey, string $model, string $systemPrompt,
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST => true,
-        CURLOPT_TIMEOUT => 25,
+        CURLOPT_TIMEOUT => $timeoutSeconds ?? 25,
         CURLOPT_HTTPHEADER => [
             'Content-Type: application/json',
             'x-api-key: ' . $apiKey,
@@ -53,7 +53,7 @@ function call_anthropic_raw(string $apiKey, string $model, string $systemPrompt,
  * استدعاء OpenAI (GPT) الفعلي.
  * @return array{ok:bool, text:?string, http_code:int, error:?string}
  */
-function call_openai_raw(string $apiKey, string $model, string $systemPrompt, string $userMessage, int $maxTokens = 700, ?float $temperature = null): array {
+function call_openai_raw(string $apiKey, string $model, string $systemPrompt, string $userMessage, int $maxTokens = 700, ?float $temperature = null, ?int $timeoutSeconds = null): array {
     if (!function_exists('curl_init')) {
         return ['ok' => false, 'text' => null, 'http_code' => 0, 'error' => 'cURL غير مفعّل على السيرفر (يلزم تفعيله من إعدادات PHP بالاستضافة).'];
     }
@@ -62,7 +62,7 @@ function call_openai_raw(string $apiKey, string $model, string $systemPrompt, st
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST => true,
-        CURLOPT_TIMEOUT => 25,
+        CURLOPT_TIMEOUT => $timeoutSeconds ?? 25,
         CURLOPT_HTTPHEADER => [
             'Content-Type: application/json',
             'Authorization: Bearer ' . $apiKey,
@@ -148,7 +148,7 @@ function ai_openai_endpoint_url(?string $base, string $path): ?string {
  * the server does not report it (never fabricated).
  * @return array{ok:bool, text:?string, http_code:int, error:?string}
  */
-function call_openai_compatible_raw(string $baseUrl, string $apiKey, string $model, string $systemPrompt, string $userMessage, int $maxTokens = 700, ?float $temperature = null): array {
+function call_openai_compatible_raw(string $baseUrl, string $apiKey, string $model, string $systemPrompt, string $userMessage, int $maxTokens = 700, ?float $temperature = null, ?int $timeoutSeconds = null): array {
     $empty = ['ok' => false, 'text' => null, 'http_code' => 0, 'error' => null];
     $url = ai_openai_endpoint_url($baseUrl, 'chat/completions');
     if ($url === null) { $empty['error'] = 'عنوان مزوّد الذكاء الاصطناعي المحلي غير صالح؛ يجب أن يبدأ بـ http أو https.'; return $empty; }
@@ -161,7 +161,7 @@ function call_openai_compatible_raw(string $baseUrl, string $apiKey, string $mod
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST => true,
         CURLOPT_CONNECTTIMEOUT => 10,
-        CURLOPT_TIMEOUT => 90,
+        CURLOPT_TIMEOUT => $timeoutSeconds ?? 90,
         CURLOPT_HTTPHEADER => $headers,
         CURLOPT_POSTFIELDS => json_encode([
             'model' => $model,
@@ -219,13 +219,13 @@ function call_openai_compatible_embeddings(string $baseUrl, string $apiKey, stri
  * so adding a provider never touches business logic.
  * @return array{ok:bool, text:?string, http_code:int, error:?string}
  */
-function ai_provider_chat(array $settings, string $systemPrompt, string $userMessage, int $maxTokens = 900, ?float $temperature = null): array {
+function ai_provider_chat(array $settings, string $systemPrompt, string $userMessage, int $maxTokens = 900, ?float $temperature = null, ?int $timeoutSeconds = null): array {
     $provider = (string)($settings['ai_provider'] ?? '');
     $key = (string)($settings['ai_api_key'] ?? '');
     $model = (string)($settings['ai_model'] ?? '');
-    if ($provider === 'anthropic') return call_anthropic_raw($key, $model, $systemPrompt, $userMessage, $maxTokens, $temperature);
-    if ($provider === 'openai_compatible') return call_openai_compatible_raw((string)($settings['ai_endpoint'] ?? ''), $key, $model, $systemPrompt, $userMessage, $maxTokens, $temperature);
-    return call_openai_raw($key, $model, $systemPrompt, $userMessage, $maxTokens, $temperature);
+    if ($provider === 'anthropic') return call_anthropic_raw($key, $model, $systemPrompt, $userMessage, $maxTokens, $temperature, $timeoutSeconds);
+    if ($provider === 'openai_compatible') return call_openai_compatible_raw((string)($settings['ai_endpoint'] ?? ''), $key, $model, $systemPrompt, $userMessage, $maxTokens, $temperature, $timeoutSeconds);
+    return call_openai_raw($key, $model, $systemPrompt, $userMessage, $maxTokens, $temperature, $timeoutSeconds);
 }
 
 /**
