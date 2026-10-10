@@ -133,11 +133,13 @@ if (!function_exists('nav_lawyer')) {
         if ($isFirm) {
             $firmItems['firm-site'] = ['icon' => 'external', 'label' => $rtl ? 'موقع المكتب الإلكتروني' : 'Firm website', 'href' => '/lawyer/firm-site.php'];
             $firmItems['reviews'] = ['icon' => 'check-circle', 'label' => $rtl ? 'مراجعة المسودات' : 'Draft reviews', 'href' => '/lawyer/review-queue.php'];
+            $firmItems['court-orders'] = ['icon' => 'file-text', 'label' => $rtl ? 'الأوامر القضائية' : 'Court orders', 'href' => '/lawyer/court-orders.php'];
             // Office operations: conflicts, people, branches and domains are all firm-scoped.
             $firmItems['conflicts'] = ['icon' => 'shield', 'label' => $rtl ? 'التعارض في المصالح' : 'Conflicts', 'href' => '/lawyer/conflicts.php'];
             $firmItems['hr'] = ['icon' => 'users', 'label' => $rtl ? 'الموارد البشرية' : 'HR & attendance', 'href' => '/lawyer/hr.php'];
             $firmItems['branches'] = ['icon' => 'landmark', 'label' => $rtl ? 'الفروع والصلاحيات' : 'Branches & access', 'href' => '/lawyer/branches.php'];
             $firmItems['domains'] = ['icon' => 'external', 'label' => $rtl ? 'النطاقات المخصصة' : 'Custom domains', 'href' => '/lawyer/domains.php'];
+            $firmItems['sso'] = ['icon' => 'shield', 'label' => $rtl ? 'الدخول الموحّد' : 'Single sign-on', 'href' => '/lawyer/sso.php'];
         }
         $groups[] = [
             'title' => $rtl ? 'المكتب القانوني' : 'Law firm',

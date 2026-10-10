@@ -74,6 +74,10 @@ if (!empty($_SESSION['_last_activity']) && $now-(int)$_SESSION['_last_activity']
 $_SESSION['_last_activity']=$now;
 require_once __DIR__ . '/../includes/csrf.php';
 require_once __DIR__ . '/../includes/currency.php';
+// Composer autoloader: optional, because a deployment that never enables SAML SSO does not
+// need vendor/. Code that depends on it checks class_exists() rather than assuming it loaded.
+$mawatheqAutoload = __DIR__ . '/../vendor/autoload.php';
+if (is_file($mawatheqAutoload)) require_once $mawatheqAutoload;
 
 // The client document library links to a case via `documents.case_id` (upgrade_v47).
 // A cPanel install can run this code against a database that predates that migration;
@@ -117,7 +121,11 @@ if (!headers_sent()) {
 // a CSRF token. The browser-facing /api/ helpers (ai_chat, upload_document, ...) run on the
 // PHP session cookie, so they must be protected like any other page POST.
 $requestPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
-$csrfExemptPaths = ['/ngenius-webhook.php', '/sadad-webhook.php'];
+  // SAML endpoints are exempt because the IdP POSTs to them from its own origin and cannot
+  // carry our CSRF token. Authenticity there is the XML signature (verified in sso/acs.php),
+  // not a session token — the same reasoning as the payment webhooks above.
+  $csrfExemptPaths = ['/ngenius-webhook.php', '/sadad-webhook.php', '/sso/acs.php', '/sso/sls.php'];
+
 $isBearerApi = strpos($requestPath, '/api/v1/') === 0;
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && !$isBearerApi && !in_array($requestPath, $csrfExemptPaths, true)) {
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) { http_response_code(403); exit('Invalid request'); }

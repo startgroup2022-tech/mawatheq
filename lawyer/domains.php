@@ -11,6 +11,7 @@ require_once __DIR__ . '/includes/lawyer_guard.php';
 require_once __DIR__ . '/../includes/csrf.php';
 require_once __DIR__ . '/../includes/tenant.php';
 require_once __DIR__ . '/../includes/firm_domains.php';
+require_once __DIR__ . '/../includes/domain_ssl.php';
 
 $lawyerId = (int)$_SESSION['lawyer_id'];
 $firmId = (int)(tenant_current($pdo)['firm_id'] ?? 0);
@@ -44,7 +45,16 @@ if ($firmId && $_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif ($action === 'activate') {
                 $r = firm_domain_activate($pdo, (int)$_POST['domain_id']);
                 if (empty($r['ok'])) throw new RuntimeException(is_rtl() ? 'يجب التحقق من النطاق قبل التفعيل.' : 'Verify the domain before activating.');
-                $success = is_rtl() ? 'تم تفعيل النطاق. شهادة SSL خطوة يدوية على السيرفر.' : 'Domain activated. TLS is a manual server step.';
+                $q = domain_ssl_queue($pdo, (int)$_POST['domain_id']);
+                $success = !empty($q['ok'])
+                    ? (is_rtl() ? 'تم تفعيل النطاق، وأُضيفت مهمة شهادة SSL.' : 'Domain activated and a TLS job was queued.')
+                    : (is_rtl() ? 'تم تفعيل النطاق، لكن لم تُضَف مهمة SSL.' : 'Domain activated, but the TLS job could not be queued.');
+            } elseif ($action === 'recheck_ssl') {
+                $q = domain_ssl_queue($pdo, (int)$_POST['domain_id']);
+                $run = domain_ssl_run($pdo, 1);
+                $success = $run['issued'] > 0
+                    ? (is_rtl() ? 'تم التحقق من الشهادة: تعمل حالياً.' : 'Certificate verified: HTTPS is live.')
+                    : (is_rtl() ? 'لم تُصدر الشهادة تلقائياً؛ التثبيت خطوة على السيرفر.' : 'The certificate was not issued automatically; installation is a server step.');
             } elseif ($action === 'primary') {
                 firm_domain_set_primary($pdo, (int)$_POST['domain_id']);
                 $success = is_rtl() ? 'تم تعيين النطاق الأساسي.' : 'Primary domain set.';
@@ -89,7 +99,11 @@ $domains = firm_domain_list($pdo);
             <tr>
               <td><?= ui_e($d['domain']) ?> <?= !empty($d['is_primary']) ? '<span class="badge">' . (is_rtl() ? 'أساسي' : 'primary') . '</span>' : '' ?></td>
               <td><?= ui_badge(in_array($d['status'], ['verified', 'active'], true) ? 'success' : ($d['status'] === 'failed' ? 'danger' : 'neutral'), firm_domain_status_label((string)$d['status'], is_rtl())) ?></td>
-              <td><?= ui_e((string)$d['ssl_status']) ?></td>
+              <td>
+                <?php $sslJob = domain_ssl_latest($pdo, (int)$d['id']); ?>
+                <?= ui_e((string)($sslJob['status'] ?? $d['ssl_status'])) ?>
+                <?php if ($sslJob && !empty($sslJob['detail'])): ?><div class="muted"><?= ui_e((string)$sslJob['detail']) ?></div><?php endif; ?>
+              </td>
               <td>
                 <?php if (in_array($d['status'], ['verification_pending', 'failed'], true)): ?>
                   <code><?= ui_e($rec['host']) ?> TXT <?= ui_e($rec['value']) ?></code>
@@ -106,6 +120,9 @@ $domains = firm_domain_list($pdo);
                   <?php if ($d['status'] === 'active' && empty($d['is_primary'])): ?>
                     <form method="post" class="inline-form"><input type="hidden" name="csrf_token" value="<?= ui_e(csrf_token()) ?>"><input type="hidden" name="action" value="primary"><input type="hidden" name="domain_id" value="<?= (int)$d['id'] ?>"><button class="btn btn-outline btn-sm" type="submit"><?= is_rtl() ? 'تعيين أساسي' : 'Set primary' ?></button></form>
                     <form method="post" class="inline-form"><input type="hidden" name="csrf_token" value="<?= ui_e(csrf_token()) ?>"><input type="hidden" name="action" value="disable"><input type="hidden" name="domain_id" value="<?= (int)$d['id'] ?>"><button class="btn btn-outline btn-sm" type="submit"><?= is_rtl() ? 'تعطيل' : 'Disable' ?></button></form>
+                  <?php endif; ?>
+                  <?php if (in_array($d['status'], ['verified', 'active'], true)): ?>
+                    <form method="post" class="inline-form"><input type="hidden" name="csrf_token" value="<?= ui_e(csrf_token()) ?>"><input type="hidden" name="action" value="recheck_ssl"><input type="hidden" name="domain_id" value="<?= (int)$d['id'] ?>"><button class="btn btn-outline btn-sm" type="submit"><?= is_rtl() ? 'فحص SSL' : 'Check SSL' ?></button></form>
                   <?php endif; ?>
                   <form method="post" class="inline-form"><input type="hidden" name="csrf_token" value="<?= ui_e(csrf_token()) ?>"><input type="hidden" name="action" value="delete"><input type="hidden" name="domain_id" value="<?= (int)$d['id'] ?>"><button class="btn btn-danger btn-sm" type="submit"><?= is_rtl() ? 'حذف' : 'Delete' ?></button></form>
                 <?php endif; ?>

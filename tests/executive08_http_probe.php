@@ -83,6 +83,19 @@ check('owner A logs in', str_contains($locA, 'lawyer'));
 [$_x2, $locB] = http_login($base, '/lawyer-login.php', 'owner-b@example.com', $pass, $jarB);
 check('owner B logs in', str_contains($locB, 'lawyer'));
 
+// Resolve the firm ids from the seeded owners instead of hardcoding 1: a fresh database starts
+// AUTO_INCREMENT at 1, but a re-seeded or migrated one can hand out any id, and the probe must
+// assert against the firm the logged-in owner actually belongs to.
+$firmA = 0; $firmB = 0;
+try {
+    $st = $pdo->prepare('SELECT m.firm_id FROM law_firm_members m JOIN lawyers l ON l.id=m.lawyer_id WHERE l.email=? LIMIT 1');
+    $st->execute(['owner-a@example.com']); $firmA = (int)($st->fetchColumn() ?: 0);
+    $st->execute(['owner-b@example.com']); $firmB = (int)($st->fetchColumn() ?: 0);
+} catch (Throwable $e) {}
+check('resolved firm A from owner A', $firmA > 0);
+check('resolved firm B from owner B', $firmB > 0 && $firmB !== $firmA);
+
+
 foreach (['/lawyer/conflicts.php' => 'conflict', '/lawyer/hr.php' => 'HR', '/lawyer/branches.php' => 'branch', '/lawyer/domains.php' => 'domain', '/lawyer/ai-copilot.php' => 'copilot'] as $p => $label) {
     [$code, $body] = http_get($base . $p, $jarA);
     check("$label page loads 200 for owner A", $code === 200);
@@ -114,7 +127,7 @@ echo "\n== 4. Cross-tenant HTTP isolation ==\n";
 $reviewId = 0;
 try {
     $st = $pdo->prepare("SELECT id FROM conflict_reviews WHERE firm_id=? ORDER BY id DESC LIMIT 1");
-    $st->execute([1]);
+    $st->execute([$firmA]);
     $reviewId = (int)($st->fetchColumn() ?: 0);
 } catch (Throwable $e) {}
 if ($reviewId) {
@@ -190,7 +203,7 @@ echo "\n== 7. Copilot over HTTP ==\n";
 $caseId = 0;
 try {
     $st = $pdo->prepare('SELECT id FROM cases WHERE firm_id=? ORDER BY id DESC LIMIT 1');
-    $st->execute([1]);
+    $st->execute([$firmA]);
     $caseId = (int)($st->fetchColumn() ?: 0);
 } catch (Throwable $e) {}
 if ($caseId) {
@@ -201,7 +214,7 @@ if ($caseId) {
     check('copilot page separates verified from suggested output', str_contains($bc, 'من ملف القضية') || str_contains($bc, 'From the case file'));
     // Copilot run persisted with requires_review
     $st = $pdo->prepare('SELECT COUNT(*) FROM ai_copilot_runs WHERE case_id=? AND firm_id=?');
-    $st->execute([$caseId, 1]);
+    $st->execute([$caseId, $firmA]);
     check('copilot run persisted', (int)$st->fetchColumn() >= 1);
 }
 
@@ -264,8 +277,8 @@ try {
     }
     if ($domId) $pdo->prepare('DELETE FROM firm_domains WHERE id=?')->execute([$domId]);
     $pdo->prepare('DELETE FROM conflict_parties WHERE name_ar=? OR name_ar LIKE ?')->execute([$partyName, 'بدون رمز %']);
-    $pdo->prepare('DELETE FROM conflict_reviews WHERE firm_id=1 AND subject_party_id NOT IN (SELECT id FROM conflict_parties)')->execute();
-    $pdo->prepare('DELETE FROM conflict_alerts WHERE firm_id=1 AND review_id NOT IN (SELECT id FROM conflict_reviews)')->execute();
+    $pdo->prepare('DELETE FROM conflict_reviews WHERE firm_id=? AND subject_party_id NOT IN (SELECT id FROM conflict_parties)')->execute([$firmA]);
+    $pdo->prepare('DELETE FROM conflict_alerts WHERE firm_id=? AND review_id NOT IN (SELECT id FROM conflict_reviews)')->execute([$firmA]);
     $pdo->prepare('DELETE FROM ai_copilot_runs WHERE case_id=?')->execute([$caseId]);
     check('cleanup executed', true);
 } catch (Throwable $e) {

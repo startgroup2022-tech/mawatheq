@@ -460,4 +460,61 @@ Writes are firm-scoped; firm B cannot delete firm A's domain.
 - `tests/executive08_http_probe.php` — 51 live-HTTP checks (auth gate, CSRF enforcement,
   cross-tenant isolation, domain lifecycle, copilot persistence). Needs the dev server on
   `127.0.0.1:12000`; it mutates firm 1 and restores afterwards.
-- Baseline suite stays green: 544 PHP checks + 51 HTTP checks, 0 failures.
+  - Baseline suite stays green: 544 PHP checks + 51 HTTP checks, 0 failures.
+
+  ## Executive 09 — enterprise SSO, TLS jobs, court-order extraction, legacy migration
+
+  ### Enterprise SAML SSO (SP side)
+
+  | Piece | File |
+  | --- | --- |
+  | Endpoints | `sso/login.php`, `sso/acs.php`, `sso/metadata.php`, `sso/sls.php` |
+  | Firm settings | `lawyer/sso.php` (firm-scoped, owner/partner) |
+  | Library | `includes/sso.php` (SP key material via `includes/secret_crypto.php`) |
+  | Tables | `sso_configs`, `sso_login_attempts` (v52) |
+
+  - The ACS endpoint **fails closed**: an unverified or tampered assertion is refused and
+    recorded in `sso_login_attempts`; the audit trail never stores a raw assertion, only a
+    reason and a `name_id_hash`/`ip_hash`.
+  - When building a test Response with `php-saml`, pass the **IdP certificate** to
+    `OneLogin\Saml2\Utils::addSign()`. Passing `null` emits an empty `ds:X509Data`, which fails
+    the saml-schema XSD with "Missing child element(s)".
+  - Sign the assertion **standalone**, strip its XML declaration, then embed it. `addSign()`
+    signs the root element only, and a second XML declaration inside the Response is invalid.
+  - SAML schema order inside `Assertion` is `Issuer` **then** `Signature`; the reverse fails the
+    XSD.
+  - SAML endpoints are exempt from the global CSRF guard in `config/config.php` (alongside
+    webhooks) — the IdP cannot supply a CSRF token.
+
+  ### Other Executive 09 surfaces
+
+  | Surface | File(s) |
+  | --- | --- |
+  | Court-order extraction | `includes/court_order_extraction.php`, `lawyer/court-orders.php` |
+  | Document text extraction | `includes/document_text.php` |
+  | Domain TLS jobs | `includes/domain_ssl.php`, `cron/domain-ssl.php` |
+  | Legacy chat migration | `includes/legacy_chat_migration.php`, `cron/migrate-legacy-chat.php` |
+
+  - **AI output is never authoritative.** `court_order_extractions` keeps the deterministic
+    reading (`verified_json`, each field carrying the snippet it came from) separate from the
+    model reading (`suggested_json`, always a suggestion). Nothing reaches a client until a
+    lawyer sets `status='approved'`.
+  - **TLS jobs never claim a certificate that was not issued.** `domain_ssl_run()` marks a job
+    `issued` only when a real TLS handshake presented a certificate valid for the host;
+    otherwise it stays `pending_dns` or `manual_required`.
+  - **Legacy chat migration preserves the original owner.** `ai_chat_archives.user_id` is carried
+    over unchanged; `firm_id` is derived only from an existing case/consultation/invoice, so a
+    migration cannot widen who can read an old conversation. Re-runs are no-ops.
+  - **`documents` has no `firm_id`.** A document's firm is derived through
+    `LEFT JOIN cases c ON c.id = d.case_id`. Do not assume `documents.firm_id` exists.
+  - **`firm_domains.ssl_status` is an enum without an `issued` value** — use `ready` for a live
+    certificate (`unknown|manual_required|ready|failed`).
+
+  ### Tests
+
+  - `tests/executive09_sso_test.php` — 13 checks: real signed assertion accepted, tampered
+    assertion refused, disallowed domain refused, non-member refused, each with an audit row.
+  - `tests/executive09_features_test.php` — 33 checks across `.doc` extraction, court-order
+    extraction + review gate, legacy chat migration, and domain TLS jobs. Re-runnable and
+    self-cleaning.
+

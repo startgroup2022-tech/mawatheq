@@ -81,6 +81,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <div class="auth-inline-link"><a href="/forgot-password.php?as=lawyer"><?= is_rtl() ? 'نسيت كلمة المرور؟' : 'Forgot password?' ?></a></div>
       <button class="btn btn-primary btn-block" type="submit"><?= is_rtl() ? 'دخول' : 'Login' ?></button>
     </form>
+    <?php
+    // Shown only when at least one firm has actually enabled SSO, so the link never leads to a
+    // dead end. The email field is forwarded so the firm can be resolved by its domain.
+    $ssoFirms = 0;
+    try { $ssoFirms = (int)$pdo->query("SELECT COUNT(*) FROM sso_configs WHERE enabled=1")->fetchColumn(); } catch (Throwable $e) { $ssoFirms = 0; }
+    if ($ssoFirms > 0):
+    ?>
+      <a id="ssoEntry" class="btn btn-outline btn-block" href="/sso/login.php"><?= is_rtl() ? 'الدخول عبر مزوّد هوية المؤسسة (SSO)' : 'Sign in with your organisation (SSO)' ?></a>
+      <script>document.getElementById('ssoEntry').addEventListener('click',function(e){var f=document.querySelector('input[name=email]');if(f&&f.value){e.preventDefault();location.href='/sso/login.php?email='+encodeURIComponent(f.value);}});</script>
+    <?php endif; ?>
     <div class="muted-link"><?= is_rtl() ? 'حساب المحامي يُنشأ من قِبل إدارة مواثيق. للانضمام كمحامٍ جديد،' : 'Lawyer accounts are created by the Mawatheq team. To join as a new lawyer,' ?> <a href="/join-lawyer.php" style="color:var(--teal);font-weight:700"><?= t('lawyers_cta') ?></a></div>
     <div class="auth-switch">
       <span><?= is_rtl() ? 'هل أنت عميل؟' : 'Are you a client?' ?></span>
