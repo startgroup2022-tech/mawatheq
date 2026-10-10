@@ -335,3 +335,37 @@ new|qualified|proposal|negotiation|won|lost; `crm_tasks.task_type`: task|follow_
 call|email|meeting|whatsapp|note|stage_change). On an opportunity card the `<small>`
 under the title is the linked **user's** name (`users.full_name`), not the company —
 that is by design, not a bad join.
+
+## Per-firm public websites (v50)
+
+Each law firm can publish a public website served from the platform, distinct from the
+platform's own marketing site. The read side lives in `includes/firm_site.php`; nothing
+public reads client/case/document tables.
+
+- **Entry point is always `firm_site_public_firm($pdo, $slug)`** — it returns `null` unless
+  the row has `is_public = 1` and a matching `public_slug`. Public pages (`firm.php`,
+  `firm-page.php`, `firm-team.php`, `firm-articles.php`) call `firm_not_found()` on `null`;
+  never render partial content for a draft firm.
+- **Writes are gated by `firm_site_can_manage($pdo, $firmId, $lawyerId)`** — true only for
+  `owner`/`partner` members of that firm. `lawyer/firm-site.php` shows a read-only view to
+  everyone else; a non-manager POST gets 403.
+- **Scope every write by the session's firm, not a request parameter.** The dashboard uses
+  `WHERE id = ? AND firm_id = ?` on every UPDATE/DELETE, so a manager of firm A cannot touch
+  firm B's page/branch/department/announcement even with a guessed id.
+- Public team (`firm-team.php`) exposes only name, title, specialisation and bio — no email,
+  phone or any client data. Unapproved (`status <> 'approved'`) lawyers are excluded.
+- `articles.firm_id` marks firm-owned posts; `firm_site_articles()` filters on it, so the
+  platform blog and firm blogs never cross.
+- Migration is `database/upgrade_v50.sql` (additive, idempotent) and is mirrored into
+  `database/schema.sql`; a clean install lands at 82 tables. Rollback SQL is in
+  `MAWATHEQ_LAW_FIRM_MANAGEMENT_REPORT.md`.
+
+**Credential gotcha (2026-09-29).** Only `GITHUB_TOKEN` is push-capable here; the
+fine-grained `GITHUB_PERSONAL_ACCESS_TOKEN` authenticates and reports `push: true` on the
+repo API but every actual write returns `403 Resource not accessible by personal access
+token` (git and REST alike). The token embedded in `origin`'s URL is often stale, so push with
+`https://x-access-token:$GITHUB_TOKEN@github.com/startgroup2022-tech/mawatheq.git`, or
+`git remote set-url origin` to the same. Confirm non-destructively first with
+`git push --dry-run`. Note the repo is **stacked**: PR #2 (`phase-4-enterprise-ui`) targets
+`phase-3-finance-ai-integrations`, not `main`; do not open a second PR per branch.
+
