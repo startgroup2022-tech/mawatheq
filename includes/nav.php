@@ -130,6 +130,7 @@ if (!function_exists('nav_lawyer')) {
             'firm' => ['icon' => 'landmark', 'label' => $isFirm ? ($rtl ? 'المكتب وقاعدة المعرفة' : 'Firm & knowledge base') : ($rtl ? 'إنشاء مكتب قانوني' : 'Create a law firm'), 'href' => '/lawyer/firm.php'],
         ];
         if ($isFirm) {
+            $firmItems['firm-site'] = ['icon' => 'external', 'label' => $rtl ? 'موقع المكتب الإلكتروني' : 'Firm website', 'href' => '/lawyer/firm-site.php'];
             $firmItems['reviews'] = ['icon' => 'check-circle', 'label' => $rtl ? 'مراجعة المسودات' : 'Draft reviews', 'href' => '/lawyer/review-queue.php'];
         }
         $groups[] = [

@@ -20,3 +20,7 @@ vendor/
 
 # Runtime backups (created by cron/backup.php; may contain the full database dump)
 storage/
+
+# Delivery build artifacts
+MAWATHEQ_COMPLETE_FINAL.zip
+MAWATHEQ_COMPLETE_FINAL.sha256

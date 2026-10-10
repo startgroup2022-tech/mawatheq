@@ -1339,3 +1339,89 @@ SET @fk := (SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'documents' AND CONSTRAINT_NAME = 'fk_documents_case');
 SET @s := IF(@fk = 0, 'ALTER TABLE documents ADD CONSTRAINT fk_documents_case FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE SET NULL', 'SELECT 1');
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+
+-- ------------------------------------------------------------
+-- v50 — law firm public website + office structure
+-- Mirrors database/upgrade_v50.sql so a fresh install is complete. Additive and
+-- guarded (IF NOT EXISTS) so re-running the schema on an existing database is harmless.
+-- ------------------------------------------------------------
+ALTER TABLE law_firms ADD COLUMN IF NOT EXISTS public_slug VARCHAR(190) DEFAULT NULL;
+ALTER TABLE law_firms ADD COLUMN IF NOT EXISTS is_public TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE law_firms ADD COLUMN IF NOT EXISTS tagline_ar VARCHAR(300) DEFAULT NULL;
+ALTER TABLE law_firms ADD COLUMN IF NOT EXISTS tagline_en VARCHAR(300) DEFAULT NULL;
+ALTER TABLE law_firms ADD COLUMN IF NOT EXISTS about_ar MEDIUMTEXT DEFAULT NULL;
+ALTER TABLE law_firms ADD COLUMN IF NOT EXISTS about_en MEDIUMTEXT DEFAULT NULL;
+ALTER TABLE law_firms ADD COLUMN IF NOT EXISTS practice_areas VARCHAR(1000) DEFAULT NULL;
+ALTER TABLE law_firms ADD COLUMN IF NOT EXISTS working_hours VARCHAR(500) DEFAULT NULL;
+ALTER TABLE law_firms ADD COLUMN IF NOT EXISTS website_url VARCHAR(255) DEFAULT NULL;
+ALTER TABLE law_firms ADD COLUMN IF NOT EXISTS social_json VARCHAR(1000) DEFAULT NULL;
+ALTER TABLE law_firms ADD COLUMN IF NOT EXISTS meta_title_ar VARCHAR(200) DEFAULT NULL;
+ALTER TABLE law_firms ADD COLUMN IF NOT EXISTS meta_title_en VARCHAR(200) DEFAULT NULL;
+ALTER TABLE law_firms ADD COLUMN IF NOT EXISTS meta_description_ar VARCHAR(400) DEFAULT NULL;
+ALTER TABLE law_firms ADD COLUMN IF NOT EXISTS meta_description_en VARCHAR(400) DEFAULT NULL;
+ALTER TABLE law_firms ADD UNIQUE KEY IF NOT EXISTS uq_firm_public_slug (public_slug);
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS firm_id INT UNSIGNED DEFAULT NULL;
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS author_lawyer_id INT UNSIGNED DEFAULT NULL;
+ALTER TABLE articles ADD INDEX IF NOT EXISTS idx_articles_firm (firm_id, status);
+
+CREATE TABLE IF NOT EXISTS firm_pages (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    firm_id INT UNSIGNED NOT NULL,
+    slug VARCHAR(190) NOT NULL,
+    page_type ENUM('about','services','practice_areas','privacy','custom') NOT NULL DEFAULT 'custom',
+    title_ar VARCHAR(255) NOT NULL,
+    title_en VARCHAR(255) DEFAULT NULL,
+    content_ar MEDIUMTEXT,
+    content_en MEDIUMTEXT,
+    status ENUM('draft','published') NOT NULL DEFAULT 'draft',
+    sort_order INT NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_firm_page_slug (firm_id, slug),
+    INDEX idx_firm_page_pub (firm_id, status),
+    FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS firm_branches (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    firm_id INT UNSIGNED NOT NULL,
+    name_ar VARCHAR(180) NOT NULL,
+    name_en VARCHAR(180) DEFAULT NULL,
+    city VARCHAR(100) DEFAULT NULL,
+    address VARCHAR(255) DEFAULT NULL,
+    phone VARCHAR(30) DEFAULT NULL,
+    working_hours VARCHAR(500) DEFAULT NULL,
+    is_primary TINYINT(1) NOT NULL DEFAULT 0,
+    status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_firm_branch_firm (firm_id, status),
+    FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS firm_departments (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    firm_id INT UNSIGNED NOT NULL,
+    name_ar VARCHAR(180) NOT NULL,
+    name_en VARCHAR(180) DEFAULT NULL,
+    description VARCHAR(500) DEFAULT NULL,
+    manager_lawyer_id INT UNSIGNED DEFAULT NULL,
+    status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_firm_dept_firm (firm_id, status),
+    FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS firm_announcements (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    firm_id INT UNSIGNED NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    body MEDIUMTEXT,
+    audience ENUM('all','lawyers','staff') NOT NULL DEFAULT 'all',
+    status ENUM('draft','published') NOT NULL DEFAULT 'published',
+    created_by_lawyer_id INT UNSIGNED DEFAULT NULL,
+    published_at DATETIME DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_firm_ann_firm (firm_id, status),
+    FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+

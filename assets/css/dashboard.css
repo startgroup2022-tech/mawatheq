@@ -420,3 +420,22 @@ html[dir=ltr] .topbar-user{ padding:3px 10px 3px 4px; }
 @media (prefers-reduced-motion:reduce){
   .kpi, .service-card, .quick-action, .list-row, .meter-fill{ transition:none; }
 }
+
+/* =============================================================================
+   Firm website & office structure dashboard (v50) — additive
+   Small helpers used by lawyer/firm-site.php. Reuses the existing tokens and
+   dashboard card/table classes; adds only what those did not already provide.
+   ============================================================================= */
+.stack-form{ display:flex; flex-direction:column; gap:14px; margin-top:12px; }
+.stack-form .field{ margin:0; }
+.inline-form{ display:inline; margin:0; }
+.check-label{ flex-direction:row; align-items:center; gap:8px; font-weight:600; }
+.firm-subhead{ margin:20px 0 8px; font-size:1rem; color:var(--navy); }
+.firm-more{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:8px 0 18px; }
+.firm-url{ background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:6px 10px; font-size:.82rem; color:var(--text-muted); }
+.firm-ann-list{ display:flex; flex-direction:column; gap:12px; margin-top:12px; }
+.firm-ann{ background:var(--surface); border:1.5px solid var(--border); border-radius:var(--radius); padding:14px 16px; }
+.firm-ann header{ display:flex; justify-content:space-between; gap:10px; align-items:baseline; flex-wrap:wrap; }
+.firm-ann header strong{ color:var(--navy); }
+.firm-ann p{ margin:8px 0 0; color:var(--text-muted); font-size:.9rem; }
+
