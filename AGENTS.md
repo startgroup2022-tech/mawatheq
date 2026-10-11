@@ -198,7 +198,9 @@ Environment (local sandbox): install with
 `sudo apt-get install -y php-cli php-curl php-mysql php-mbstring mariadb-server`, start with
 `sudo service mariadb start`, and create the `mawatheq` DB/user matching `config/secrets.php`.
 Load `database/schema.sql` then every `database/upgrade_v*.sql` in order (currently
-through `upgrade_v49.sql`); the migrations are idempotent.
+through `upgrade_v52.sql`); the migrations are idempotent. `schema.sql` folds v50–v52, so a
+clean install lands at **106 tables**, identical to a fully migrated database (verified
+table-by-table). Replaying the upgrades over `schema.sql` is harmless.
 
 UI work is verified with a Playwright audit that logs
 in as each role (admin needs a fresh TOTP) and renders every page at several
@@ -357,7 +359,7 @@ public reads client/case/document tables.
 - `articles.firm_id` marks firm-owned posts; `firm_site_articles()` filters on it, so the
   platform blog and firm blogs never cross.
 - Migration is `database/upgrade_v50.sql` (additive, idempotent) and is mirrored into
-  `database/schema.sql`; a clean install lands at 82 tables. Rollback SQL is in
+  `database/schema.sql`; a clean install lands at 106 tables once v52 is folded in. Rollback SQL is in
   `MAWATHEQ_LAW_FIRM_MANAGEMENT_REPORT.md`.
 
 **Credential gotcha (2026-09-29).** Only `GITHUB_TOKEN` is push-capable here; the
@@ -565,4 +567,35 @@ Writes are firm-scoped; firm B cannot delete firm A's domain.
   `node_modules/`, `vendor/`, `storage/` (it holds a full DB dump), `config/secrets.php`, and
   build archives; keep `tests/`. Name the artifact `MAWATHEQ_EXECUTION_NN_COMPLETE.zip` with a
   `.sha256` sidecar.
-- Never commit an access token. One was previously embedded in `package.json`'s `repository.url`.
+  - Never commit an access token. One was previously embedded in `package.json`'s `repository.url`.
+  - **Preserve deploy permissions in the archive.** The container umask leaves files group-writable
+    (`664`/`660`) and directories `775`, and `zipfile` copies whatever mode is on disk. An archive
+    built straight from the checkout therefore ships static assets as `660`, which a shared host
+    serves as `403`. Before packaging, normalise the tree (`find … -type d -exec chmod 755` and
+    `-type f -exec chmod 644`, with `config/secrets.php` at `600`), then verify with
+    `php tools/production_check.php` (its "CSS/JS/module files readable (644)" check must be OK).
+    Git already records these as `100644`, so this is purely an on-disk/packaging concern.
+
+  ## Execution 11 — security audit, production readiness, PR review
+
+  - `database/schema.sql` had folded v50/v51 but **not v52**, so a fresh install was missing all
+    eight Executive 09 tables (`sso_configs`, `sso_login_attempts`, `domain_ssl_jobs`,
+    `court_order_extractions`, `document_text`, `ai_chat_archives`, `ai_chat_archive_messages`,
+    `legacy_chat_migration_log`). The fresh-install path in `DEPLOY_CPANEL_AR.md` imports only
+    `schema.sql`, so the SSO endpoints and court-order extraction would 500 on a new host. v52 is
+    now folded in (pure `CREATE TABLE IF NOT EXISTS`, no FKs, safe to replay); a clean import lands
+    at 106 tables, matching a fully migrated database.
+  - Local verification needs more than the DB: `executive09_sso_test.php` POSTs a real signed
+    assertion to a **live server on `127.0.0.1:12000`**, while `phase5_integration_http_probe.php`
+    and `phase_firm_site_http_probe.php` expect **`127.0.0.1:8080`**. Start both
+    (`php -S 127.0.0.1:12000 -t .` and `… :8080 …`) before the HTTP suites, or they fail for
+    reasons unrelated to the code. `executive09_features_test.php` also needs `antiword` (or
+    `catdoc`) installed, and the probes need `tests/seed_phase6.php`, `seed_phase6_business.php`
+    and `seed_crm_demo.php` run first. With all of that, all 13 suites and 3 probes pass
+    (590 checks + 68 probe checks).
+  - The security posture is sound and worth re-confirming rather than rebuilding: CSRF uses
+    `hash_equals` and is enforced centrally in `auth_guard.php`; sessions set `use_strict_mode`,
+    `use_only_cookies`, `HttpOnly`, `SameSite=Lax`, conditional `Secure`, and rotate on a 30-minute
+    idle timeout; deployment secrets are AES-256-GCM encrypted at rest via
+    `includes/secret_crypto.php`; `config/config.php` sends `nosniff`, `SAMEORIGIN`,
+    `Referrer-Policy` and a CSP. No real credential exists in the working tree or in git history.
