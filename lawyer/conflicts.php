@@ -271,7 +271,7 @@ $firmCases = $firmCaseStmt->fetchAll();
   <section class="dash-card">
     <h2><?= is_rtl() ? 'سجل الأطراف' : 'Party register' ?></h2>
     <form method="get" class="inline-form">
-      <input type="text" name="pq" value="<?= ui_e($_GET['pq'] ?? '') ?>" placeholder="<?= is_rtl() ? 'بحث بالاسم' : 'Search by name' ?>">
+      <input type="text" name="pq" value="<?= ui_e($_GET['pq'] ?? '') ?>" placeholder="<?= is_rtl() ? 'بحث بالاسم' : 'Search by name' ?>" aria-label="<?= is_rtl() ? 'بحث في سجل الأطراف' : 'Search the party register' ?>">
       <button type="submit" class="btn btn-secondary btn-sm"><?= is_rtl() ? 'بحث' : 'Search' ?></button>
     </form>
     <?php if ($parties): ?>

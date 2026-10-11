@@ -60,8 +60,8 @@ if (!$token || !$account) {
 <body>
 <div class="auth-wrap">
   <div class="auth-card">
-    <a href="/" class="brand"><img src="/assets/img/logo.webp" style="height:38px"></a>
-    <h2 style="text-align:center;font-size:1.4rem;margin-top:10px"><?= is_rtl() ? 'إعادة تعيين كلمة المرور' : 'Reset your password' ?></h2>
+    <a href="/" class="brand"><img src="/assets/img/logo.webp" alt="<?= htmlspecialchars(is_rtl() ? SITE_NAME_AR : SITE_NAME_EN) ?>" style="height:38px"></a>
+    <h1 style="text-align:center;font-size:1.4rem;margin-top:10px"><?= is_rtl() ? 'إعادة تعيين كلمة المرور' : 'Reset your password' ?></h1>
 
     <?php if ($error): ?>
       <div class="form-alert error"><?= htmlspecialchars($error) ?></div>

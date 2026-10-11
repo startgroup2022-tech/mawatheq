@@ -238,19 +238,19 @@ check('admin AI operations page loads 200 for super_admin', $codeAd === 200);
 check('admin AI operations page is not a PHP error', !str_contains($bodyAd, 'Fatal error') && !str_contains($bodyAd, 'Parse error') && !str_contains($bodyAd, 'Warning:'));
 check('admin AI operations shows the resilience knobs', str_contains($bodyAd, 'ai_timeout_seconds') || str_contains($bodyAd, 'ai_max_retries'));
 
-[$_x4, $locC1] = http_login($base, '/login.php', 'client-firm1@example.com', $pass, $jarC1);
-check('client 1 (firm 1) logs in', $locC1 !== '');
+[$_x4, $locC1] = http_login($base, '/login.php', "client-firm{$firmA}@example.com", $pass, $jarC1);
+check('client 1 (firm A) logs in', $locC1 !== '');
 $clientCaseId = 0;
 try {
     $st = $pdo->prepare('SELECT id FROM cases WHERE user_id=(SELECT id FROM users WHERE email=?) ORDER BY id DESC LIMIT 1');
-    $st->execute(['client-firm1@example.com']);
+    $st->execute(["client-firm{$firmA}@example.com"]);
     $clientCaseId = (int)($st->fetchColumn() ?: 0);
 } catch (Throwable $e) {}
 if ($clientCaseId) {
     // Approved output is visible; the same run while pending is not.
     $approvedText = 'ملخص معتمد للاختبار ' . $sfx;
-    $mk = $pdo->prepare("INSERT INTO ai_copilot_runs (firm_id,case_id,kind,status,requires_review,verified_json,suggested_json,created_at) VALUES (1,?, 'summary','approved',0,'[]',?,NOW())");
-    $mk->execute([$clientCaseId, json_encode(['text' => $approvedText], JSON_UNESCAPED_UNICODE)]);
+    $mk = $pdo->prepare("INSERT INTO ai_copilot_runs (firm_id,case_id,kind,status,requires_review,verified_json,suggested_json,created_at) VALUES (?,?, 'summary','approved',0,'[]',?,NOW())");
+    $mk->execute([$firmA, $clientCaseId, json_encode(['text' => $approvedText], JSON_UNESCAPED_UNICODE)]);
     $runId = (int)$pdo->lastInsertId();
     [$codeCl, $bodyCl] = http_get($base . '/case-summary.php?case=' . $clientCaseId, $jarC1);
     check('client summary page loads 200', $codeCl === 200);
@@ -259,8 +259,8 @@ if ($clientCaseId) {
     [$codeCl2, $bodyCl2] = http_get($base . '/case-summary.php?case=' . $clientCaseId, $jarC1);
     check('client does NOT see the same run while pending review', $codeCl2 === 200 && !str_contains($bodyCl2, $approvedText));
     // Another client must not reach this case at all.
-    [$_x5, $locC2] = http_login($base, '/login.php', 'client-firm2@example.com', $pass, $jarC2);
-    check('client 2 (firm 2) logs in', $locC2 !== '');
+    [$_x5, $locC2] = http_login($base, '/login.php', "client-firm{$firmB}@example.com", $pass, $jarC2);
+    check('client 2 (firm B) logs in', $locC2 !== '');
     [$codeC2, $bodyC2] = http_get($base . '/case-summary.php?case=' . $clientCaseId, $jarC2);
     check('another client cannot read this case summary', $codeC2 === 200 && !str_contains($bodyC2, $approvedText));
     $pdo->prepare('DELETE FROM ai_copilot_runs WHERE id=?')->execute([$runId]);

@@ -55,7 +55,8 @@ $maxDate = date('Y-m-d', strtotime('+30 days'));
     </div>
   <?php else: ?>
     <div class="dash-card" style="display:flex;align-items:center;gap:16px">
-      <img src="<?= !empty($lawyer['photo_path']) ? '/' . htmlspecialchars($lawyer['photo_path']) : '/assets/img/avatar-placeholder.svg' ?>" style="width:64px;height:64px;border-radius:50%;object-fit:cover;background:#EAEFF3" onerror="this.src='/assets/img/avatar-placeholder.svg'">
+      <img src="<?= !empty($lawyer['photo_path']) ? '/' . htmlspecialchars($lawyer['photo_path']) : '/assets/img/avatar-placeholder.svg' ?>" alt="<?= htmlspecialchars($lawyer['full_name']) ?>" style="width:64px;height:64px;border-radius:50%;object-fit:cover;background:#EAEFF3" onerror="this.src='/assets/img/avatar-placeholder.svg'">
+
       <div>
         <h2 style="margin:0"><?= htmlspecialchars($lawyer['full_name']) ?></h2>
         <p style="margin:4px 0 0;color:var(--text-muted);font-size:.88rem"><?= htmlspecialchars($lawyer['specialization'] ?? '') ?> · ⭐ <?= $lawyer['rating'] ?> · <?= currency_number($lawyer['hourly_rate']) ?> <?= currency_symbol() ?><?= is_rtl() ? '/ساعة' : '/hr' ?></p>

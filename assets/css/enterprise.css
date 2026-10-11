@@ -599,6 +599,10 @@ input[type=checkbox].lg, input[type=radio].lg{ width:22px; height:22px; min-heig
 /* ------------------------------------------------------------ responsive ---- */
 /* Tablet and below: sidebar becomes an off-canvas drawer, bottom nav appears. */
 @media (max-width:1024px){
+  /* The closed drawer is parked outside the inline edge, which would otherwise
+     give the page a horizontal scrollbar; clip it at the root without turning
+     the root into a scroll container (overflow:hidden would break sticky). */
+  html, body{ overflow-x:clip; }
   .app-shell{ display:block; }
   .app-sidebar{
     position:fixed; inset-block:0; inset-inline-start:0; width:min(288px,86vw); height:100vh;

@@ -66,8 +66,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <body>
 <div class="auth-wrap">
   <div class="auth-card">
-    <a href="/" class="brand"><img src="/assets/img/logo.webp" style="height:38px"></a>
-    <h2 style="text-align:center;font-size:1.4rem;margin-top:10px"><?= is_rtl() ? 'نسيت كلمة المرور؟' : 'Forgot your password?' ?></h2>
+    <a href="/" class="brand"><img src="/assets/img/logo.webp" alt="<?= htmlspecialchars(is_rtl() ? SITE_NAME_AR : SITE_NAME_EN) ?>" style="height:38px"></a>
+    <h1 style="text-align:center;font-size:1.4rem;margin-top:10px"><?= is_rtl() ? 'نسيت كلمة المرور؟' : 'Forgot your password?' ?></h1>
     <p style="text-align:center;color:var(--text-muted);font-size:.88rem;margin-bottom:10px"><?= is_rtl() ? 'أدخل بريدك الإلكتروني (حساب ' . $cfg['label'] . ') وسنرسل لك رابط إعادة التعيين.' : 'Enter your ' . $cfg['label'] . ' account email and we will send you a reset link.' ?></p>
 
     <?php if ($error): ?><div class="form-alert error"><?= htmlspecialchars($error) ?></div><?php endif; ?>

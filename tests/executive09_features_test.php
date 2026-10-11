@@ -61,14 +61,19 @@ check('a nonexistent stored path is refused', document_text_resolve_path('upload
 // 2. Court-order extraction (deterministic reading + review gate)
 // ===========================================================================
 echo "\n== court-order extraction ==\n";
-$caseSt = $pdo->prepare('SELECT id, user_id FROM cases WHERE firm_id=? ORDER BY id ASC LIMIT 1');
-$caseSt->execute([$firmId]);
-$caseRow = $caseSt->fetch() ?: null;
-$caseId = (int)($caseRow['id'] ?? 0);
-$caseUserId = (int)($caseRow['user_id'] ?? 0);
+// Build our own case + client so the test does not depend on pre-existing seed rows.
+$caseUserIns = $pdo->prepare("INSERT INTO users (full_name, email, password_hash, account_type, status, email_verified) VALUES ('EXEC09 client', ?, ?, 'individual', 'active', 1)");
+$caseUserIns->execute(['exec09-client-' . bin2hex(random_bytes(4)) . '@example.test', password_hash('x', PASSWORD_DEFAULT)]);
+$caseUserId = (int)$pdo->lastInsertId();
+$created['user'][] = $caseUserId;
+
+$caseIns = $pdo->prepare("INSERT INTO cases (lawyer_id, firm_id, user_id, title, status) VALUES (?,?,?, 'EXEC09 court order case', 'open')");
+$caseIns->execute([$ownerLawyerId, $firmId, $caseUserId]);
+$caseId = (int)$pdo->lastInsertId();
+$created['case'][] = $caseId;
 check('a case exists for the firm', $caseId > 0);
 
-if ($caseId > 0) {
+{
     $orderText = "المحكمة: محكمة البحرين الكبرى\nرقم القرار: 2024/345\nالقاضي: عبدالله محمد\nالتاريخ: 2026-01-15\n"
         . "المدعي: أحمد علي\nالمدعى عليه: شركة الفجر\nمنطوق الحكم بألزام المدعى عليه بمبلغ 50,000 ريال.\n";
     $docIns = $pdo->prepare("INSERT INTO documents (user_id, case_id, original_name, stored_path, file_type, document_type, status) VALUES (?,?,?,?,?, 'general', 'completed')");
@@ -212,6 +217,8 @@ foreach ($created['domain'] ?? [] as $id) {
     $pdo->prepare('DELETE FROM domain_ssl_jobs WHERE domain_id=?')->execute([$id]);
     $pdo->prepare('DELETE FROM firm_domains WHERE id=?')->execute([$id]);
 }
+foreach ($created['case'] ?? [] as $id) $pdo->prepare('DELETE FROM cases WHERE id=?')->execute([$id]);
+foreach ($created['user'] ?? [] as $id) $pdo->prepare('DELETE FROM users WHERE id=?')->execute([$id]);
 foreach ($created['file'] ?? [] as $path) @unlink($path);
 $pdo->prepare("DELETE FROM legacy_chat_migration_log WHERE run_by='test'")->execute();
 check('test data removed', true);

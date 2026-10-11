@@ -69,15 +69,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <body>
 <div class="auth-wrap">
   <div class="auth-card">
-    <a href="/" class="brand"><img src="/assets/img/logo.webp" style="height:38px"></a>
-    <h2 style="text-align:center;font-size:1.3rem;margin-top:10px"><?= is_rtl() ? 'دخول المحامين' : 'Lawyer Portal' ?></h2>
+    <a href="/" class="brand"><img src="/assets/img/logo.webp" alt="<?= htmlspecialchars(is_rtl() ? SITE_NAME_AR : SITE_NAME_EN) ?>" style="height:38px"></a>
+    <h1 style="text-align:center;font-size:1.3rem;margin-top:10px"><?= is_rtl() ? 'دخول المحامين' : 'Lawyer Portal' ?></h1>
     <p class="auth-role-note"><?= is_rtl() ? 'هذه الصفحة لمكاتب المحاماة والمحامين المستقلين. للعملاء استخدم بوابة العملاء.' : 'This page is for law firms and independent lawyers. Clients should use the client portal.' ?></p>
     <?php if ($notice): ?><div class="form-alert notice"><?= htmlspecialchars($notice) ?></div><?php endif; ?>
     <?php if ($error): ?><div class="form-alert error"><?= $error === strip_tags($error) ? htmlspecialchars($error) : $error ?></div><?php endif; ?>
     <?php if ($showResend): ?><a class="btn btn-outline btn-block" href="/resend-verification.php?as=lawyer"><?= is_rtl() ? 'إعادة إرسال رابط التأكيد' : 'Resend confirmation link' ?></a><?php endif; ?>
     <form method="post"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
-      <div class="field"><label><?= is_rtl() ? 'البريد الإلكتروني' : 'Email' ?></label><input type="email" name="email" required></div>
-      <div class="field"><label><?= is_rtl() ? 'كلمة المرور' : 'Password' ?></label><div class="password-input"><input type="password" name="password" id="lawyerLoginPassword" autocomplete="current-password" required><button type="button" class="password-toggle" data-password-toggle="lawyerLoginPassword"><?= is_rtl() ? 'إظهار' : 'Show' ?></button></div></div>
+      <div class="field"><label for="email"><?= is_rtl() ? 'البريد الإلكتروني' : 'Email' ?></label><input id="email" type="email" name="email" required></div>
+      <div class="field"><label for="lawyerLoginPassword"><?= is_rtl() ? 'كلمة المرور' : 'Password' ?></label><div class="password-input"><input type="password" name="password" id="lawyerLoginPassword" autocomplete="current-password" required><button type="button" class="password-toggle" data-password-toggle="lawyerLoginPassword"><?= is_rtl() ? 'إظهار' : 'Show' ?></button></div></div>
       <div class="auth-inline-link"><a href="/forgot-password.php?as=lawyer"><?= is_rtl() ? 'نسيت كلمة المرور؟' : 'Forgot password?' ?></a></div>
       <button class="btn btn-primary btn-block" type="submit"><?= is_rtl() ? 'دخول' : 'Login' ?></button>
     </form>
