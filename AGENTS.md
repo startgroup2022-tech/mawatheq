@@ -646,3 +646,30 @@ Writes are firm-scoped; firm B cannot delete firm A's domain.
   end against that mock and restores the original settings afterwards.
 - Suite totals after this execution: 13 suites + 3 probes (639 checks + 68 probe checks) and the
   Playwright suite, all green.
+
+## Execution 12 — release artifact build
+
+- **`php` is not installed in this image.** Every release so far assumed it was. Install it before
+  any lint/readiness step: `sudo apt-get install -y php-cli php-mysql php-curl php-mbstring php-xml`
+  (Debian 13 trixie ships **8.4.24**, exactly the production target). `sudo` is passwordless here.
+- MariaDB **is** installable at the matching version (`sudo apt-get install -y mariadb-server` →
+  11.8.6). Start it with `sudo mariadb-safe` after `sudo mkdir -p /run/mysqld && sudo chown mysql:mysql /run/mysqld`.
+  `mariadbd --version` and `mysqld --version` may not be on PATH; use `sudo mariadb` as the client.
+- To exercise `tools/production_check.php` you need a **sandbox** `config/secrets.php` (DB creds plus
+  `ADMIN_SETUP_KEY`/`MAWATHEQ_ENCRYPTION_KEY` ≥32 chars), a writable `uploads/` (755), and at least one
+  row in `admins`. Create it in the **extracted copy only**, then delete it — never in the repo. A clean
+  `schema.sql` import lands at **106 tables**; production_check then reports 59 OK / 0 warn / 0 fail.
+- `config/secrets.php` must be `600` **before** production_check runs; the checker fails a critical
+  test otherwise. `chmod 755 uploads` too — `go-rX` makes the write check fail.
+- Name the checksum sidecar `MAWATHEQ_EXECUTION_NN_COMPLETE.sha256` (matches the `.zip` stem) so
+  `sha256sum -c MAWATHEQ_EXECUTION_NN_COMPLETE.sha256` works. The build script previously wrote
+  `…COMPLETE.zip.sha256`; that convention breaks the standard verify command.
+- The package is built from **tracked files at the verified commit** (`git ls-tree`), so a doc added
+  after that commit (e.g. the deployment guide) is *not* inside the zip and does not change its hash.
+  Keep the artifact reproducible: rebuilds must yield the identical SHA-256.
+- Execution 12 changed **15 PHP files and no SQL** — `ai_provider.php`, `secret_crypto.php`, the six
+  feature includes, four API endpoints, three lawyer pages and two admin pages. Incremental cPanel
+  deployment therefore needs **no migration**; see `MAWATHEQ_EXECUTION_12_DEPLOYMENT_AR.md`.
+- To hand the artifact over, serve **only the artifact files** on port 12000
+  (`python3 -m http.server 12000 --directory /tmp/exec12_dist`) rather than the repo root — the repo
+  contains `config/secrets.php` and uploads. Public URL: `https://work-1-<id>.prod-runtime.all-hands.dev/`.
