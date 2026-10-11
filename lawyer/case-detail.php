@@ -185,7 +185,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $evidenceId = (int)$pdo->lastInsertId();
             if ($storedName && !empty($_POST['analyze_evidence'])) {
                 $settings=ai_load_settings($pdo);
-                if (!empty($settings['ai_provider']) && !empty($settings['ai_api_key']) && ($settings['ai_enabled'] ?? '1') !== '0') {
+                if (ai_chat_provider_configured($settings)) {
                     $types = ['pdf'=>'application/pdf','png'=>'image/png','jpg'=>'image/jpeg','jpeg'=>'image/jpeg'];
                     require_once __DIR__ . '/../includes/ai_gateway.php';
                     $aiTenant = ai_gateway_tenant_context($pdo, 'lawyer', (int)$lawyerId);
@@ -208,7 +208,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     if (($_POST['action'] ?? '') === 'analyze_case' && !empty($_POST['ai_consent'])) {
         $settings=ai_load_settings($pdo);
-        if (empty($settings['ai_provider']) || empty($settings['ai_api_key']) || ($settings['ai_enabled'] ?? '1') === '0') {
+        if (!ai_chat_provider_configured($settings)) {
             $caseActionMessage = is_rtl() ? 'فعّل مزوّد الذكاء الاصطناعي من إعدادات الإدارة أولاً.' : 'Enable an AI provider in admin settings first.';
         } elseif ((int)$pdo->query("SELECT COUNT(*) FROM case_analyses WHERE lawyer_id=" . (int)$lawyerId . " AND created_at>=DATE_SUB(NOW(),INTERVAL 1 HOUR)")->fetchColumn() >= 10) {
             $caseActionMessage = is_rtl() ? 'وصلت إلى الحد المؤقت لتحليلات القضايا. حاول بعد ساعة.' : 'Hourly case-analysis limit reached. Try again in an hour.';

@@ -82,7 +82,7 @@ foreach ($lawyerRecipients->fetchAll(PDO::FETCH_COLUMN) as $caseLawyerId) {
  * ============================================================
  */
 $settings = ai_load_settings($pdo);
-$aiEnabled = !empty($settings['ai_provider']) && !empty($settings['ai_api_key']) && ($settings['ai_enabled'] ?? '1') !== '0';
+$aiEnabled = ai_chat_provider_configured($settings);
 $isArabic = current_lang() === 'ar';
 
 if (!$aiEnabled) {
@@ -90,6 +90,15 @@ if (!$aiEnabled) {
         $isArabic
             ? 'بانتظار تفعيل مزوّد الذكاء الاصطناعي من لوحة تحكم الإدارة (الإعدادات) لتحليل هذا المستند تلقائياً.'
             : 'Awaiting AI provider activation from the admin settings to analyze this document automatically.',
+        $docId
+    ]);
+} elseif (!ai_vision_provider_configured($settings)) {
+    // The configured provider answers chat but cannot read a file directly. Say so
+    // plainly instead of recording a generic analysis failure.
+    $pdo->prepare("UPDATE documents SET status='pending', summary=? WHERE id=?")->execute([
+        $isArabic
+            ? 'المزوّد المفعّل لا يدعم تحليل الملفات مباشرة (PDF/صور)؛ يتطلب ذلك OpenAI أو Anthropic.'
+            : 'The active provider does not read files directly (PDF/images); that needs OpenAI or Anthropic.',
         $docId
     ]);
 } else {

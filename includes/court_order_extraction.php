@@ -142,8 +142,7 @@ if (!function_exists('court_order_ai_suggest')) {
      */
     function court_order_ai_suggest(PDO $pdo, int $firmId, int $documentId, string $text, array $verified): array {
         $settings = ai_load_settings($pdo);
-        if (!in_array($settings['ai_provider'] ?? '', ['openai', 'anthropic'], true)
-            || empty($settings['ai_api_key']) || ($settings['ai_enabled'] ?? '1') === '0') {
+        if (!ai_chat_provider_configured($settings)) {
             return ['ok' => false, 'error' => 'ai_not_configured'];
         }
 

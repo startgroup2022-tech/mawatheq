@@ -263,6 +263,92 @@ function ai_settings_configured(array $settings): bool {
 }
 
 /**
+ * The one predicate every feature page must call before offering AI output.
+ *
+ * It delegates to ai_settings_configured() rather than re-testing the settings, so a
+ * self-hosted OpenAI-compatible provider — which legitimately has no API key — is never
+ * mistaken for an unconfigured one. Historically several pages hand-rolled
+ * `!empty($settings['ai_api_key'])`, which made a working keyless local model look
+ * unconfigured and produced the "activate an AI provider" message.
+ */
+function ai_chat_provider_configured(array $settings): bool {
+    return ai_settings_configured($settings);
+}
+
+/**
+ * True when the configured provider can take a file/image directly (the vision path).
+ * Only the hosted providers implement that route; a self-hosted chat model is never used
+ * for it. Kept separate from ai_chat_provider_configured() so a local provider is reported
+ * as "configured but not vision-capable" rather than as "unconfigured".
+ */
+function ai_vision_provider_configured(array $settings): bool {
+    return ai_chat_provider_configured($settings)
+        && in_array((string)($settings['ai_provider'] ?? ''), ['openai', 'anthropic'], true);
+}
+
+/**
+ * Administrator-only configuration/reachability report. Every field is a boolean or a
+ * fixed enum string; no API key, endpoint credential or prompt content is ever included.
+ *
+ * @param bool $probe Perform a real inference request (default true). When false, only
+ *                    the saved configuration is described and reachability stays false.
+ * @return array{enabled:bool,provider:string,provider_selected:bool,provider_supported:bool,
+ *               model_set:bool,endpoint_set:bool,credentials_required:bool,credentials_present:bool,
+ *               configured:bool,reachable:bool,blocking:?string,detail:?string}
+ */
+function ai_diagnostics(PDO $pdo, array $settings, bool $probe = true): array {
+    $provider = (string)($settings['ai_provider'] ?? '');
+    $enabled = ($settings['ai_enabled'] ?? '1') !== '0';
+    $supported = ai_provider_chat_capable($provider);
+    $isLocal = $provider === 'openai_compatible';
+    $endpointSet = ai_endpoint_normalize((string)($settings['ai_endpoint'] ?? '')) !== null;
+    $credentialsRequired = $provider !== '' && !$isLocal;
+    $credentialsPresent = trim((string)($settings['ai_api_key'] ?? '')) !== '';
+
+    $blocking = null;
+    if (!$enabled) $blocking = 'disabled';
+    elseif ($provider === '') $blocking = 'no_provider';
+    elseif (!$supported) $blocking = 'provider_unsupported';
+    elseif ($isLocal && !$endpointSet) $blocking = 'no_endpoint';
+    elseif (!$isLocal && !$credentialsPresent) $blocking = 'no_credentials';
+
+    $configured = $blocking === null;
+    $reachable = false;
+    $detail = null;
+
+    if ($configured && $probe) {
+        $probeResult = test_ai_connection($provider, (string)($settings['ai_api_key'] ?? ''), (string)($settings['ai_model'] ?? ''), (string)($settings['ai_endpoint'] ?? ''));
+        $reachable = !empty($probeResult['ok']);
+        if (!$reachable) {
+            $blocking = 'unreachable';
+            $detail = (string)($probeResult['message'] ?? '');
+        }
+    }
+
+    // Defence in depth: the probe message comes from the provider, but it must never carry the
+    // credential back into an admin screen. Blank it out if a provider echoes the key.
+    if ($detail !== null && $credentialsPresent) {
+        $key = (string)$settings['ai_api_key'];
+        if ($key !== '' && str_contains($detail, $key)) $detail = str_replace($key, '[redacted]', $detail);
+    }
+
+    return [
+        'enabled' => $enabled,
+        'provider' => $provider,
+        'provider_selected' => $provider !== '',
+        'provider_supported' => $supported,
+        'model_set' => trim((string)($settings['ai_model'] ?? '')) !== '',
+        'endpoint_set' => $endpointSet,
+        'credentials_required' => $credentialsRequired,
+        'credentials_present' => $credentialsPresent,
+        'configured' => $configured,
+        'reachable' => $reachable,
+        'blocking' => $blocking,
+        'detail' => $detail,
+    ];
+}
+
+/**
  * اختبار اتصال حقيقي بمزوّد الذكاء الاصطناعي المحفوظ — يُستخدم من لوحة التحكم
  * (زر "اختبار الاتصال"). يرسل رسالة تجريبية قصيرة جداً فعلاً ويرجع نتيجة حقيقية.
  */

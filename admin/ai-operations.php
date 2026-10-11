@@ -51,6 +51,18 @@ require_once __DIR__ . '/includes/admin_header.php';
 
 $health = [];
 try { $health = ai_provider_status_snapshot($pdo); } catch (Throwable $e) {}
+$diag = null;
+if (isset($_GET['diag']) && $_GET['diag'] === '1') {
+    try { $diag = ai_diagnostics($pdo, $settings, true); } catch (Throwable $e) { $diag = null; }
+}
+$diagLabels = [
+    'disabled' => is_rtl() ? 'التكامل موقوف من المفتاح العام (ai_enabled = 0).' : 'Integration is switched off (ai_enabled = 0).',
+    'no_provider' => is_rtl() ? 'لم يُختر أي مزوّد بعد.' : 'No provider has been selected yet.',
+    'provider_unsupported' => is_rtl() ? 'المزوّد المختار غير مدعوم في هذا الإصدار.' : 'The selected provider is not supported by this build.',
+    'no_endpoint' => is_rtl() ? 'المزوّد المحلي يحتاج عنوان خادم صالحاً (http/https).' : 'The self-hosted provider needs a valid endpoint (http/https).',
+    'no_credentials' => is_rtl() ? 'مزوّد مستضاف يحتاج مفتاح API محفوظاً.' : 'A hosted provider needs a saved API key.',
+    'unreachable' => is_rtl() ? 'الإعداد سليم لكن الخادم غير قابل للوصول من هذا المضيف.' : 'Configuration is valid, but the server is unreachable from this host.',
+];
 $usageTotal = 0; $usage24h = 0; $usage7d = 0; $usageByProvider = []; $localOnlyTenants = 0;
 try {
     $usageTotal = (int)$pdo->query('SELECT COUNT(*) FROM ai_usage_events')->fetchColumn();
@@ -104,7 +116,45 @@ try {
     <?= ui_stat(is_rtl() ? 'تعارضات عالية الخطورة' : 'High-severity conflicts', (string)$conflictCritical, 'gold') ?>
   </div>
 
-  <!-- ============ Resilience settings ============ -->
+          <!-- ============ AI connectivity diagnostics ============ -->
+        <section class="dash-card">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+            <h2><?= is_rtl() ? 'تشخيص اتصال الذكاء الاصطناعي' : 'AI connectivity diagnostics' ?></h2>
+            <a class="btn btn-outline btn-sm" href="/admin/ai-operations.php?diag=1"><?= is_rtl() ? 'فحص الإعداد والوصول الآن' : 'Check config & reachability now' ?></a>
+          </div>
+          <p style="font-size:.85rem;margin-bottom:12px">
+            <?= is_rtl()
+              ? 'يعرض هذا القسم شرط الإعداد الذي يمنع التفعيل، ويفصل بين «غير مهيّأ» و«غير قابل للوصول». لا يعرض أي مفاتيح أو أسرار.'
+              : 'This shows which configuration condition is blocking activation, and separates "not configured" from "not reachable". No keys or secrets are ever shown.' ?>
+          </p>
+          <?php if ($diag === null): ?>
+            <?= ui_empty_state(is_rtl() ? 'لم يُجرَ الفحص بعد — اضغط «فحص الإعداد والوصول الآن».' : 'Not checked yet — press "Check config & reachability now".') ?>
+          <?php else: ?>
+            <?php $diagBadge = $diag['blocking'] === null ? 'success' : (($diag['blocking'] === 'unreachable') ? 'failed' : 'pending'); ?>
+            <p style="margin-bottom:10px">
+              <?= ui_badge($diagBadge, $diag['blocking'] === null
+                  ? (is_rtl() ? 'جاهز — الاستدعاء الحقيقي نجح' : 'Ready — a real inference call succeeded')
+                  : ($diagLabels[$diag['blocking']] ?? $diag['blocking'])) ?>
+            </p>
+            <table class="admin-table">
+              <tbody>
+                <tr><th><?= is_rtl() ? 'التكامل مفعّل' : 'Integration enabled' ?></th><td><?= ui_badge($diag['enabled'] ? 'success' : 'failed', $diag['enabled'] ? (is_rtl() ? 'نعم' : 'Yes') : (is_rtl() ? 'لا' : 'No')) ?></td></tr>
+                <tr><th><?= is_rtl() ? 'المزوّد مختار' : 'Provider selected' ?></th><td><?= ui_badge($diag['provider_selected'] ? 'success' : 'failed', $diag['provider_selected'] ? ui_e($diag['provider']) : (is_rtl() ? 'لا' : 'No')) ?></td></tr>
+                <tr><th><?= is_rtl() ? 'اسم النموذج محدّد' : 'Model name set' ?></th><td><?= ui_badge($diag['model_set'] ? 'success' : 'pending', $diag['model_set'] ? (is_rtl() ? 'نعم' : 'Yes') : (is_rtl() ? 'لا — سيُستخدم الافتراضي' : 'No — default will be used')) ?></td></tr>
+                <tr><th><?= is_rtl() ? 'العنوان (endpoint) محدّد' : 'Endpoint set' ?></th><td><?= ui_badge($diag['endpoint_set'] ? 'success' : ($diag['provider'] === 'openai_compatible' ? 'failed' : 'neutral'), $diag['endpoint_set'] ? (is_rtl() ? 'نعم' : 'Yes') : (is_rtl() ? 'لا' : 'No')) ?></td></tr>
+                <tr><th><?= is_rtl() ? 'المفتاح مطلوب / محفوظ' : 'Credentials required / present' ?></th><td><?= $diag['credentials_required'] ? ui_badge($diag['credentials_present'] ? 'success' : 'failed', $diag['credentials_present'] ? (is_rtl() ? 'محفوظ' : 'Present') : (is_rtl() ? 'غير محفوظ' : 'Missing')) : ui_badge('neutral', is_rtl() ? 'غير مطلوب لهذا المزوّد' : 'Not required for this provider') ?></td></tr>
+                <tr><th><?= is_rtl() ? 'الإعداد صالح للاستخدام' : 'Configuration usable' ?></th><td><?= ui_badge($diag['configured'] ? 'success' : 'failed', $diag['configured'] ? (is_rtl() ? 'نعم' : 'Yes') : (is_rtl() ? 'لا' : 'No')) ?></td></tr>
+                <tr><th><?= is_rtl() ? 'قابل للوصول (طلب حقيقي)' : 'Reachable (real request)' ?></th><td><?= ui_badge($diag['reachable'] ? 'success' : 'failed', $diag['reachable'] ? (is_rtl() ? 'نعم' : 'Yes') : (is_rtl() ? 'لا' : 'No')) ?></td></tr>
+                <tr><th><?= is_rtl() ? 'الشرط المانع للتفعيل' : 'Blocking condition' ?></th><td><?= $diag['blocking'] === null ? ui_badge('success', is_rtl() ? 'لا يوجد' : 'None') : ui_e($diagLabels[$diag['blocking']] ?? $diag['blocking']) ?></td></tr>
+                <?php if (!empty($diag['detail'])): ?>
+                  <tr><th><?= is_rtl() ? 'تفاصيل الخطأ (مُنقّاة)' : 'Error detail (redacted)' ?></th><td><?= ui_e((string)$diag['detail']) ?></td></tr>
+                <?php endif; ?>
+              </tbody>
+            </table>
+          <?php endif; ?>
+        </section>
+
+        <!-- ============ Resilience settings ============ -->
   <section class="dash-card">
     <h2><?= is_rtl() ? 'إعدادات المرونة' : 'Resilience settings' ?></h2>
     <form method="post" class="stack-form">

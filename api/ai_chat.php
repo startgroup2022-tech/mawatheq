@@ -52,8 +52,8 @@ $pdo->prepare('INSERT INTO ai_messages (conversation_id, sender, message) VALUES
 
 // جلب إعدادات مزوّد الذكاء الاصطناعي من قاعدة البيانات (لوحة التحكم → الإعدادات)
 $settings = ai_load_settings($pdo);
-// التكامل مفعّل فقط إن كان هناك مزوّد ومفتاح، وإن لم يكن الأدمن قد عطّله يدوياً
-$aiEnabled = !empty($settings['ai_provider']) && !empty($settings['ai_api_key']) && ($settings['ai_enabled'] ?? '1') !== '0';
+// التكامل مفعّل عبر الشرط الموحّد: مزوّد مستضاف يحتاج مفتاحاً، ومزوّد محلي يحتاج عنوان خادم فقط.
+$aiEnabled = ai_chat_provider_configured($settings);
 
 $answer = generate_grounded_legal_answer($message, current_lang() === 'ar', $settings, $pdo, (int)$_SESSION['user_id'], 'client');
 $reply = $answer['reply'];

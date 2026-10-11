@@ -69,7 +69,7 @@ $timeStmt->execute($timeScope['params']);
 $minutes30 = (int)$timeStmt->fetchColumn();
 
 $settings = ai_load_settings($pdo);
-$aiReady = !empty($settings['ai_provider']) && !empty($settings['ai_api_key']) && ($settings['ai_enabled'] ?? '1') !== '0';
+$aiReady = ai_chat_provider_configured($settings);
 
 /* ------------------------------------------------------------- Lists ---- */
 $todayEvents = $pdo->prepare("SELECT e.*, c.title AS case_title FROM legal_calendar_events e LEFT JOIN cases c ON c.id=e.case_id WHERE {$eventScopeE['sql']} AND e.status='upcoming' AND e.event_at >= CURDATE() ORDER BY e.event_at ASC LIMIT 5");

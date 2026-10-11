@@ -79,11 +79,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $docId = (int)$pdo->lastInsertId();
 
     $settings = ai_load_settings($pdo);
-    $aiEnabled = !empty($settings['ai_provider']) && !empty($settings['ai_api_key']) && ($settings['ai_enabled'] ?? '1') !== '0';
+    $aiEnabled = ai_chat_provider_configured($settings);
 
     if (!$aiEnabled) {
         $pdo->prepare("UPDATE documents SET status='pending', summary=? WHERE id=?")
             ->execute(['بانتظار تفعيل مزوّد الذكاء الاصطناعي من لوحة تحكم الإدارة لتحليل هذا المستند تلقائياً.', $docId]);
+    } elseif (!ai_vision_provider_configured($settings)) {
+        // Chat works, but this provider cannot read a file directly.
+        $pdo->prepare("UPDATE documents SET status='pending', summary=? WHERE id=?")
+            ->execute(['المزوّد المفعّل لا يدعم تحليل الملفات مباشرة (PDF/صور)؛ يتطلب ذلك OpenAI أو Anthropic.', $docId]);
     } else {
         $mediaTypes = ['pdf' => 'application/pdf', 'png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg'];
         $base64 = base64_encode(file_get_contents(UPLOAD_DIR . $storedName));

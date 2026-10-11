@@ -428,6 +428,26 @@ verified because someone clicked a button. **HTTPS is a manual server step; ther
 automatic certificate issuance**, and the UI says so. An unverified domain does not serve.
 Writes are firm-scoped; firm B cannot delete firm A's domain.
 
+### One predicate decides whether AI is available (`includes/ai_provider.php`)
+
+- **Always gate AI features on `ai_chat_provider_configured($settings)`.** It delegates to
+  `ai_settings_configured()`, which encodes the real rule: a hosted provider (`openai`, `anthropic`)
+  needs a non-empty `ai_api_key`, but a self-hosted `openai_compatible` provider needs only a valid
+  `ai_endpoint` — a local model has no credential to send. Never re-derive the condition inline.
+- Do **not** write `!empty($settings['ai_api_key'])` in a feature page. That check rejects a
+  perfectly reachable keyless local model and produces the Arabic "activate an AI provider" message
+  even though the provider works. Twelve pages had this bug; the test suite now asserts no page
+  reintroduces it (`tests/execution12_ai_connectivity_test.php`, section 3).
+- Do **not** hardcode `in_array($provider, ['openai','anthropic'])` as an availability test — that
+  excludes `openai_compatible` entirely. When you genuinely need "can this provider read a file
+  directly", use `ai_vision_provider_configured()`, which is exactly that and is separate from chat
+  availability, so a chat-only provider is reported honestly rather than as unconfigured.
+- **"Unconfigured" and "unreachable" are different states.** A valid-but-dead endpoint is still
+  *configured*; the call fails with a connection error. `ai_diagnostics()` reports the two
+  separately (`blocking` = `no_provider` / `no_endpoint` / `no_credentials` vs `unreachable`) and is
+  surfaced read-only in `admin/ai-operations.php?diag=1`. It never returns a key or prompt content —
+  keep it that way if you extend it.
+
 ### AI resilience and copilot (`includes/ai_resilience.php`, `includes/ai_copilot.php`)
 
 - `ai_resilient_gateway_call()` wraps `ai_gateway_call` with retry + exponential backoff for
@@ -438,6 +458,11 @@ Writes are firm-scoped; firm B cannot delete firm A's domain.
   `ai_rate_limit_per_hour()`. The `ai_timeout_seconds` value is threaded through
   `ai_gateway_call` into `ai_provider`'s `call_anthropic_raw()` / `call_openai_raw()`
   (`?int $timeoutSeconds`), so raising it here takes effect with no redeploy.
+- **`ai_load_settings()` must select the keys the readers use.** It once selected only the older
+  `ai_timeout`/`ai_retries`/`ai_rate_limit` names while the admin UI saved
+  `ai_timeout_seconds`/`ai_max_retries`/`ai_rate_limit_per_hour`, so every knob silently fell back to
+  its hardcoded default. Any new `ai_*` setting needs both a writer *and* a matching entry in the
+  `ai_load_settings()` SELECT — otherwise it looks saved and does nothing.
 - **The copilot is grounded, and the two halves must stay visually separate.** Verified
   columns are deterministic DB reads; the AI proposal is labelled and stored with
   `requires_review=1` and `status='pending_review'` until a lawyer approves it. Citation
@@ -599,3 +624,25 @@ Writes are firm-scoped; firm B cannot delete firm A's domain.
     idle timeout; deployment secrets are AES-256-GCM encrypted at rest via
     `includes/secret_crypto.php`; `config/config.php` sends `nosniff`, `SAMEORIGIN`,
     `Referrer-Policy` and a CSP. No real credential exists in the working tree or in git history.
+
+## Execution 12 — restore existing AI provider connectivity
+
+- **A self-hosted provider was invisible to most of the app.** `ai_settings_configured()` allows an
+  empty key for `openai_compatible`, but twelve call sites re-implemented the check as
+  `!empty($settings['ai_api_key'])`. A reachable keyless local model was therefore reported as
+  "not activated" on every AI feature. Fixed by `ai_chat_provider_configured()` — see the predicate
+  section above. Diagnosing this from the UI is confusing because `admin/settings.php` already used
+  the correct predicate: Settings said "configured" while `lawyer/drafting.php` said "not activated".
+  When two surfaces disagree about AI availability, suspect a hand-rolled check, not the provider.
+- **`127.0.0.1:11434` refusing does not mean the model is gone.** That is Ollama's default local
+  address; a model on a separate VPS, another port, or behind a gateway refuses identically. Do not
+  conclude the model is missing from a local probe alone.
+- **Do not invent endpoints or model names.** Nothing in the repo records the owner's production AI
+  host; it is only discoverable on the server (`~/.bash_history`, `ss -ltnp`, `ps aux`).
+- `tests/execution12_ai_connectivity_test.php` needs a local mock OpenAI-compatible server on
+  `127.0.0.1:11434` (`php -S 127.0.0.1:11434 /tmp/mockai/router.php`; the router source is in the
+  test file's header comment). It is a **mock** — it proves the client speaks the OpenAI schema, not
+  that any real model works. `tests/execution12_e2e_local_provider.php` demonstrates the fix end to
+  end against that mock and restores the original settings afterwards.
+- Suite totals after this execution: 13 suites + 3 probes (639 checks + 68 probe checks) and the
+  Playwright suite, all green.

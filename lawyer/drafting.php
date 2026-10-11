@@ -104,7 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'gener
     $details = mb_substr($details, 0, 6000, 'UTF-8');
 
     $settings = ai_load_settings($pdo);
-    $aiEnabled = !empty($settings['ai_provider']) && !empty($settings['ai_api_key']) && ($settings['ai_enabled'] ?? '1') !== '0';
+    $aiEnabled = ai_chat_provider_configured($settings);
 
     if ($caseId) {
         $ownedCase = $pdo->prepare('SELECT c.id,c.title,c.case_type,c.description,c.status FROM cases c WHERE c.id=? AND ' . $caseScope['sql']);

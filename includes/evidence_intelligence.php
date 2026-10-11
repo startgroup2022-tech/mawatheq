@@ -15,7 +15,7 @@ function evidence_intelligence_analyze(PDO $pdo, array $settings, array $case, a
     if (!$evidenceRows) {
         return ['ok' => false, 'error' => $isArabic ? 'لا توجد أدلة مسجلة بعد لتحليلها.' : 'No evidence recorded yet to analyze.'];
     }
-    $enabled = !empty($settings['ai_provider']) && !empty($settings['ai_api_key']) && ($settings['ai_enabled'] ?? '1') !== '0';
+    $enabled = ai_chat_provider_configured($settings);
     if (!$enabled) {
         return ['ok' => false, 'error' => $isArabic ? 'فعّل مزوّد الذكاء الاصطناعي من إعدادات الإدارة أولاً.' : 'Enable an AI provider in admin settings first.'];
     }
