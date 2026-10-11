@@ -518,3 +518,51 @@ Writes are firm-scoped; firm B cannot delete firm A's domain.
     extraction + review gate, legacy chat migration, and domain TLS jobs. Re-runnable and
     self-cleaning.
 
+
+## Execution 10 — verification pass (browser suite, a11y, responsive)
+
+### Running the browser suite
+
+- Playwright lives in `tests/e2e/` with `playwright.config.js` at the root. Seven specs run
+  across six viewports (`320x568`, `375x812`, `768x1024`, `1024x768`, `1440x900`, `1920x1080`),
+  in both RTL and LTR — 588 tests total.
+- The suite needs the dev server up: `php -S 127.0.0.1:12000 -t .`. Override the target with
+  `MAWATHEQ_BASE_URL`. Seeded logins come from `tests/e2e/helpers.js`.
+- **Run it in the background.** A full pass takes ~4.5 minutes, longer than a foreground
+  terminal command may live; `nohup npx playwright test --reporter=line > /tmp/pw.log 2>&1 &`
+  and poll the log.
+
+### Below 1024px the workspace nav is off-canvas
+
+- `includes/nav.php` renders `[data-app-nav-toggle]`; under `max-width:1024px` the sidebar is a
+  fixed drawer parked outside the inline edge. Any test that clicks a nav link must open the
+  drawer first, or the link is legitimately not visible.
+- The parked drawer would otherwise give the page a horizontal scrollbar. It is contained with
+  `html, body { overflow-x: clip }` in `assets/css/enterprise.css` — **`clip`, not `hidden`**:
+  `hidden` turns the root into a scroll container and breaks `position: sticky`.
+
+### `ui_e()` is not global
+
+- `ui_e()` is defined in `includes/ui.php`, which the standalone auth pages do **not** load. On
+  `login.php`, `register.php`, `admin/login.php` and friends, use `htmlspecialchars()` instead.
+  Calling `ui_e()` there is a fatal error that returns a blank page — and a blank login page
+  fails every browser test that starts by logging in.
+
+### Accessibility assertions
+
+- Every page must expose exactly one `<h1>`. The auth pages previously had a lone `<h2>`.
+- `tests/e2e/accessibility.spec.js` also rejects any `<a>` with no accessible name. An icon-only
+  logo link needs a non-empty `alt` (or `aria-label`); `alt=""` leaves the link unnamed.
+
+### Delivery
+
+- The repo is stacked: PR #2 (`phase-4-enterprise-ui`) targets `phase-3-finance-ai-integrations`,
+  not `main`. **Do not open a second PR for this branch** — append an "Update — Execution NN
+  pushed" section to the existing PR body instead.
+- Push with an explicit token URL; the `origin` remote's stored credential is stale and 403s:
+  `git push "https://x-access-token:${GITHUB_TOKEN}@github.com/startgroup2022-tech/mawatheq.git" phase-4-enterprise-ui:phase-4-enterprise-ui`
+- Release packages are built with `zipfile` (no `zip` binary in this image). Exclude `.git`,
+  `node_modules/`, `vendor/`, `storage/` (it holds a full DB dump), `config/secrets.php`, and
+  build archives; keep `tests/`. Name the artifact `MAWATHEQ_EXECUTION_NN_COMPLETE.zip` with a
+  `.sha256` sidecar.
+- Never commit an access token. One was previously embedded in `package.json`'s `repository.url`.
