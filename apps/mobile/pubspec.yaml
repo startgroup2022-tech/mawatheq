@@ -1,0 +1,50 @@
+name: mawatheq_mobile
+description: "مواثيق — التطبيق القانوني المتكامل (Flutter) / Mawatheq legal platform mobile app"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # Networking — one centralised client. The app never touches the database.
+  http: ^1.2.2
+  http_parser: ^4.0.2
+
+  # State management (lightweight, feature-scoped).
+  provider: ^6.1.2
+
+  # Secure token storage (Keychain / EncryptedSharedPreferences).
+  flutter_secure_storage: ^9.2.2
+
+  # Non-secret local preferences (locale, onboarding flag).
+  shared_preferences: ^2.3.2
+
+  # Arabic/Latin dates and number formatting.
+  intl: ^0.20.2
+
+  # Brand typography shared with the website (Cairo, IBM Plex Sans Arabic).
+  google_fonts: ^6.2.1
+
+  # Payment gateway page (documented N-Genius flow). Not used as app UI.
+  webview_flutter: ^4.10.0
+
+  # Opening external links (store pages, web fallbacks).
+  url_launcher: ^6.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/

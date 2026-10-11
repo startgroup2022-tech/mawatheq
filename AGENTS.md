@@ -673,3 +673,51 @@ Writes are firm-scoped; firm B cannot delete firm A's domain.
 - To hand the artifact over, serve **only the artifact files** on port 12000
   (`python3 -m http.server 12000 --directory /tmp/exec12_dist`) rather than the repo root — the repo
   contains `config/secrets.php` and uploads. Public URL: `https://work-1-<id>.prod-runtime.all-hands.dev/`.
+
+## Execution 13 — landing page 2.0 and the Flutter mobile app
+
+### Landing page 2.0 (public site)
+
+- `index.php` was restructured into 12 `<section>` blocks (`platform`, `features`,
+  `solutions`, `legal-ai`, `cases`, `documents`, `consultations`, `security`,
+  `mobile`, `how`, `pricing`, `faq`), styled by the new `assets/css/landing.css`.
+  `includes/header.php` gained the marketing shell and `lang/strings.php` the new
+  copy, so **both** `ar` (default, `dir="rtl"`) and `?lang=en` (`dir="ltr"`) render
+  the same sections. There is one canonical URL and a matching `sitemap.xml`.
+- Prices on the landing page come from `SELECT ... FROM plans WHERE status='active'`
+  in `index.php`. Never hardcode a price: the `plans` table is the only source.
+  On a fresh DB it holds `أساسية` (0/0), `احترافية` (149/1490) and `مؤسسية`
+  (799/7990) — note `ai_queries_limit`/`document_analysis_limit` are **NULL** for the
+  paid tiers, meaning "unlimited", not zero.
+- The page is served by the PHP dev server as `200` (~43 KB) with zero PHP notices;
+  a `503` on it almost always means the DB credentials in `config/secrets.php` are
+  wrong, not that the page is broken.
+
+### Mobile app (`apps/mobile/`)
+
+- Flutter client. **It never touches the database** — it speaks only to the existing
+  `api/v1/` endpoints over HTTPS. Adding a screen means adding an `ApiRepository`
+  method, not a query.
+- Two endpoints were added for it, both following the public-`lawyers.php` pattern:
+  - `api/v1/ai-status.php` — reports `available` plus a machine-readable `blocking`
+    reason (`no_provider`, `no_credentials`, `unreachable`, ...). It never returns a
+    credential. The assistant screen disables sending when `available` is false
+    instead of faking an answer.
+  - `api/v1/plans.php` — public list of active plans, so the app shows the shipped
+    prices rather than its own copy of them.
+- `POST /api/v1/auth/register.php` returns **202**, not 200 (email verification
+  precedes token issuance) and takes `account_type` (`individual` | `company`).
+  `ApiClient` treats any 2xx as success for exactly this reason; a client that only
+  accepts 200 would reject a valid registration.
+- The token is the only credential the app holds; it lives in the OS secure store.
+  `TokenStorage` implements the `TokenStore` interface so `ApiClient` and
+  `AuthController` can be unit-tested without the platform keychain.
+- Verify with `flutter analyze` (must be clean) and `flutter test` (11 tests). The
+  widget tests caught a real `RenderFlex` overflow in the pricing card that only
+  appeared below ~430 px logical width — set a phone-sized test surface
+  (`1080x2280 @3.0`) rather than the 800x600 default, or list screens overflow
+  spuriously.
+- Not built, and documented as such in `apps/mobile/README.md`: the document-upload
+  file picker (needs a platform plugin outside the approved dependency set) and the
+  firm-admin management screens.
+
