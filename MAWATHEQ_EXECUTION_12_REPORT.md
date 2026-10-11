@@ -154,3 +154,24 @@ done
 | Production AI operational | **No** — pending owner steps |
 
 These five states are independent. Only the first is achieved by this execution.
+
+## Release artifact
+
+| Field | Value |
+|---|---|
+| File | `MAWATHEQ_EXECUTION_12_COMPLETE.zip` |
+| Built from | commit `0e38e05` on `phase-4-enterprise-ui` (tracked files only) |
+| Size | 761,772 bytes (0.73 MiB) |
+| Files / directories | 294 files, 26 directories |
+| SHA-256 | `44b3a1350d007066e3fef4f9fef269fe99467855df5f42f826d99e60b8fe6d92` |
+| ZIP modes | 0644 files, 0755 directories (explicit, every entry) |
+| Excluded | 75 tracked files: `.git`, secrets, tests, screenshots, Node tooling, dev reports |
+| Sidecars | `.sha256`, `_FILES.sha256` (per-file), `_MANIFEST.txt` (included + excluded) |
+| Guide | `MAWATHEQ_EXECUTION_12_DEPLOYMENT_AR.md` (incremental cPanel) |
+
+Verification on the extracted package: 221 PHP files lint clean; `tools/production_check.php`
+exits 0 (59 OK, 0 warn, 0 fail) against a fresh database built from the packaged `schema.sql`
+(106 tables, v51 + v52 tables present); the shipped AI predicates were exercised directly and all
+9 assertions held, including that `ai_diagnostics()` output contains no key.
+
+**No database migration is required for Execution 12** — it changes PHP only.
