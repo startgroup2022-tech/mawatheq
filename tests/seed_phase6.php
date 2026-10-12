@@ -63,7 +63,11 @@ $aMember = upsert_lawyer($pdo, 'Firm A Member', 'member-a@example.com', $pwd);
 $bOwner = upsert_lawyer($pdo, 'Firm B Owner', 'owner-b@example.com', $pwd);
 $firmA = upsert_firm($pdo, 'Firm A Legal', $aOwner);
 $firmB = upsert_firm($pdo, 'Firm B Legal', $bOwner);
-$pdo->prepare("INSERT INTO law_firm_members (firm_id,lawyer_id,member_role,status) VALUES (?,?,'lawyer','active')")->execute([$firmA, $aMember]);
+// uq_law_firm_member_lawyer is unique per lawyer, so a re-run must update the existing
+// membership instead of inserting a duplicate — the header promises idempotency.
+$pdo->prepare("INSERT INTO law_firm_members (firm_id,lawyer_id,member_role,status) VALUES (?,?,'lawyer','active')
+        ON DUPLICATE KEY UPDATE firm_id=VALUES(firm_id), member_role='lawyer', status='active'")
+    ->execute([$firmA, $aMember]);
 
 $clientA = upsert_user($pdo, 'Client A', 'client-a@example.com', $pwd);
 $clientB = upsert_user($pdo, 'Client B', 'client-b@example.com', $pwd);
