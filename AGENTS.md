@@ -819,3 +819,17 @@ not verify against a release fingerprint. Emulator/device check:
 - `apps/mobile/test/exec15_password_reset_test.dart` — link parsing (host/path/token)
   and the forgot/reset screens against a fake transport.
 
+### Suite prerequisites are environmental, not defects
+
+- `tests/execution12_ai_connectivity_test.php` reports 3 failures (mock up, live
+  reachable, blocking=null) when the mock OpenAI server is **not running**. Start it
+  first: `mkdir -p /tmp/mockai`, drop the router from the test header, then
+  `php -S 127.0.0.1:11434 /tmp/mockai/router.php`. With it up the suite is 49/49.
+- `tests/executive09_features_test.php` needs `antiword` or `catdoc` on PATH for the
+  `.doc` extraction check; the image here has neither.
+- `tests/sadad_gateway_test.php` passes 105/105 in isolation; a couple of failures in a
+  single `for` loop over every suite are pre-existing cross-suite state leakage, not
+  caused by the seed or the reset work.
+- `tests/seed_phase6.php` is idempotent: the firm-membership row is upserted on
+  `uq_law_firm_member_lawyer` (a plain INSERT threw `SQLSTATE 1062` on the second run).
+
