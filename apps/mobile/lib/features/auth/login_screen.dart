@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/auth_controller.dart';
-import '../../core/config/app_config.dart';
 import '../../core/guest_session.dart';
 import '../../core/locale_controller.dart';
+import '../../core/network/api_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../shared/widgets/brand_widgets.dart';
+import 'password_reset_screens.dart';
 import 'register_screen.dart';
 
 /// Sign-in for both account types.
@@ -205,7 +206,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 Align(
                   alignment: AlignmentDirectional.centerStart,
                   child: TextButton(
-                    onPressed: () => _openWeb('/forgot-password.php'),
+                    onPressed: _openForgotPassword,
                     child: const Text('نسيت كلمة المرور؟'),
                   ),
                 ),
@@ -274,14 +275,19 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  /// Opens a page the app does not implement natively, in the system browser.
-  void _openWeb(String path) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('افتح الرابط في المتصفح: ${AppConfig.siteBase}$path'),
-      ),
-    );
-  }
+    /// Opens the native password-recovery flow. If the reset endpoint is somehow
+    /// unreachable, offers the website as a fallback rather than a dead end.
+    Future<void> _openForgotPassword() async {
+      final repo = context.read<ApiRepository>();
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ForgotPasswordScreen(
+            repository: repo,
+            asLawyer: _asLawyer,
+          ),
+        ),
+      );
+    }
 }
 
 class _TypeTab extends StatelessWidget {

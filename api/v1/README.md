@@ -103,6 +103,23 @@ X-Mawatheq-Signature: sha256=<hex>
 ```
 → `{ "ok": true, "token": "...", "lawyer": { ... } }`
 
+### طلب رابط إعادة تعيين كلمة المرور (عام)
+`POST /api/v1/auth/forgot-password.php`
+```json
+{ "email": "a@a.com", "account_type": "client" }
+```
+→ `{ "ok": true, "message": "..." }` (HTTP 200 دائماً، سواء كان البريد مسجّلاً أم لا — لا يكشف وجود الحساب، ولا يعيد رمز إعادة التعيين أبداً؛ يُرسَل الرابط إلى البريد المسجَّل فقط)
+→ `429` عند تجاوز حد المحاولات (5 محاولات لكل 15 دقيقة لكل بريد ولكل عنوان IP).
+
+### تعيين كلمة مرور جديدة برمز إعادة التعيين (عام)
+`POST /api/v1/auth/reset-password.php`
+```json
+{ "token": "<64 hex من الرابط>", "password": "12345678", "password_confirm": "12345678", "account_type": "client" }
+```
+→ `{ "ok": true, "message": "..." }` عند النجاح.
+→ `410` مع `{"error":"invalid_token"}` إن كان الرمز غير صالح أو منتهي الصلاحية، و`422` مع `weak_password` أو `too_long` أو `mismatch`.
+يُستهلك الرمز مرة واحدة فقط، وتُبطَل بعد النجاح كل رموز الدخول (Bearer) الصادرة للحساب قبل إعادة التعيين.
+
 ### الملف الشخصي الحالي (يحتاج توكن)
 `GET /api/v1/me.php`
 → `{ "ok": true, "type": "client"|"lawyer", "profile": { ... } }`

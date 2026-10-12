@@ -4,6 +4,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && !csrf_is_valid($_POST['c
     http_response_code(403); exit('Invalid request');
 }
 require_once __DIR__ . '/lang/strings.php';
+require_once __DIR__ . '/includes/auth_security.php';
 
 $asInput = $_GET['as'] ?? ($_POST['as'] ?? 'client');
 $as = is_string($asInput) ? $asInput : 'client';
@@ -30,21 +31,15 @@ if ($token) {
 if (!$token || !$account) {
     $error = is_rtl() ? 'رابط إعادة التعيين غير صالح أو منتهي الصلاحية. اطلب رابطاً جديداً.' : 'This reset link is invalid or has expired. Please request a new one.';
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $passwordInput = $_POST['password'] ?? '';
-    $confirmInput = $_POST['password_confirm'] ?? '';
-    $password = is_string($passwordInput) ? $passwordInput : '';
-    $confirm = is_string($confirmInput) ? $confirmInput : '';
-    if (strlen($password) < 8) {
-        $error = is_rtl() ? 'كلمة المرور يجب أن تكون 8 أحرف على الأقل.' : 'Password must be at least 8 characters.';
-    } elseif (strlen($password) > 72) {
-        $error = is_rtl() ? 'كلمة المرور يجب ألا تتجاوز 72 بايتاً.' : 'Password must not exceed 72 bytes.';
-    } elseif ($password !== $confirm) {
-        $error = is_rtl() ? 'كلمتا المرور غير متطابقتين.' : 'Passwords do not match.';
-    } else {
-        $hash = password_hash($password, PASSWORD_BCRYPT);
-        $pdo->prepare("UPDATE {$cfg['table']} SET password_hash = ?, reset_token = NULL, reset_expires = NULL WHERE id = ?")
-            ->execute([$hash, $account['id']]);
+    $password = is_string($_POST['password'] ?? null) ? $_POST['password'] : '';
+    $confirm = is_string($_POST['password_confirm'] ?? null) ? $_POST['password_confirm'] : '';
+    $result = consume_password_reset($pdo, $as, $token, $password, $confirm);
+    if ($result['ok']) {
         $done = true;
+    } else {
+        $error = is_rtl()
+            ? ['weak_password' => 'كلمة المرور يجب أن تكون 8 أحرف على الأقل.', 'too_long' => 'كلمة المرور يجب ألا تتجاوز 72 بايتاً.', 'mismatch' => 'كلمتا المرور غير متطابقتين.'][$result['error']] ?? 'رابط إعادة التعيين غير صالح.'
+            : ['weak_password' => 'Password must be at least 8 characters.', 'too_long' => 'Password must not exceed 72 bytes.', 'mismatch' => 'Passwords do not match.'][$result['error']] ?? 'This reset link is invalid.';
     }
 }
 ?>

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import 'app.dart';
 import 'core/auth_controller.dart';
+import 'core/deep_link_service.dart';
 import 'core/guest_session.dart';
 import 'core/locale_controller.dart';
 import 'core/network/api_repository.dart';
@@ -19,6 +20,9 @@ void main() {
   final tokens = TokenStorage();
   final repository = ApiRepository();
   final auth = AuthController(repository: repository, tokens: tokens);
+  final deepLinks = DeepLinkService();
+  // Listen from startup so a reset link that launched the app cold is not missed.
+  deepLinks.start();
 
   runApp(
     MultiProvider(
@@ -31,7 +35,7 @@ void main() {
           create: (_) => LocaleController()..load(),
         ),
       ],
-      child: const MawatheqApp(),
+      child: MawatheqApp(deepLinks: deepLinks),
     ),
   );
 }

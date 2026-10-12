@@ -32,6 +32,30 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+              <!-- App Links: the password-reset email links to
+                   https://mawatheq.com/reset-password.php?token=... which opens the
+                   native reset screen. android:autoVerify="true" makes Android check
+                   /.well-known/assetlinks.json on the domain before trusting the app
+                   for that host, so an unverified or other domain cannot hijack the
+                   link. The only value carried is the single-use reset token. -->
+              <intent-filter android:autoVerify="true">
+                  <action android:name="android.intent.action.VIEW"/>
+                  <category android:name="android.intent.category.DEFAULT"/>
+                  <category android:name="android.intent.category.BROWSABLE"/>
+                  <data
+                      android:scheme="https"
+                      android:host="mawatheq.com"
+                      android:pathPrefix="/reset-password"/>
+              </intent-filter>
+              <intent-filter android:autoVerify="true">
+                  <action android:name="android.intent.action.VIEW"/>
+                  <category android:name="android.intent.category.DEFAULT"/>
+                  <category android:name="android.intent.category.BROWSABLE"/>
+                  <data
+                      android:scheme="https"
+                      android:host="www.mawatheq.com"
+                      android:pathPrefix="/reset-password"/>
+              </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

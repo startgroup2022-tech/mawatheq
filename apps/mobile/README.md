@@ -109,7 +109,8 @@ cope with it being absent:
 
 ```bash
 flutter analyze     # must be clean
-flutter test        # 47 tests: model parsing, error mapping, pricing, guest, splash
+flutter test        # 79 tests: model parsing, error mapping, pricing, guest, splash,
+                    #            auth security, password reset, deep links
 ```
 
 The tests use a fake transport that returns the same JSON and status codes the
@@ -117,7 +118,48 @@ PHP endpoints return, so the production client, repository and widgets are all
 exercised for real. `_MemoryTokenStore` stands in for the platform keychain,
 which is not available in a unit-test process.
 
-## Known gaps
+  ## Password reset and Android App Links
+
+  The reset email links to `https://mawatheq.com/reset-password.php?as=<type>&token=<64 hex>`.
+  Tapping it on a device where the app is installed opens the native reset screen
+  (`ResetPasswordScreen`) instead of the website; the token is validated before use and a
+  link that does not match the expected host, path or token shape is ignored.
+
+  Three pieces must agree for the link to open the app:
+
+  1. The `intent-filter android:autoVerify="true"` entries in `android/app/src/main/AndroidManifest.xml`
+     (host `mawatheq.com` and `www.mawatheq.com`, path prefix `/reset-password`).
+  2. `https://mawatheq.com/.well-known/assetlinks.json` (committed at the repository root and
+     served by the web root), whose `package_name` is `com.mawatheq.app`.
+  3. The SHA-256 fingerprint of the certificate the installed build is signed with.
+
+  The committed `assetlinks.json` carries a `REPLACE_WITH_RELEASE_SHA256_FINGERPRINT`
+  placeholder. Before release:
+
+  ```bash
+  keytool -list -v -keystore <your-upload-key>.jks -alias <alias> | grep SHA256
+  ```
+
+  Paste the resulting colon-separated fingerprint into `assetlinks.json`. If the build is
+  distributed through Play App Signing, use the App signing key certificate fingerprint from
+  the Play Console (Setup → App integrity) instead of the local upload key.
+
+  Release signing is driven by `android/key.properties` (gitignored); when it is absent the
+  release build falls back to the debug signature. A properly signed release APK/AAB is needed
+  for App Links verification — a debug-signed build will not verify against a release
+  fingerprint.
+
+  Verify on a device/emulator (requires the app installed and the domain serving the real
+  fingerprint):
+
+  ```bash
+  adb shell pm verify-app-links --re-verify com.mawatheq.app
+  adb shell pm get-app-links com.mawatheq.app          # expect "verified" for mawatheq.com
+  adb shell am start -a android.intent.action.VIEW \
+    -d "https://mawatheq.com/reset-password.php?as=client&token=<token>"
+  ```
+
+  ## Known gaps
 
 - **Document upload needs a file picked on the device.** `ApiRepository.uploadDocument`
   is implemented (including the mandatory AI-consent flag the endpoint requires)

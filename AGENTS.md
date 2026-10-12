@@ -751,3 +751,71 @@ Writes are firm-scoped; firm B cannot delete firm A's domain.
   file picker (needs a platform plugin outside the approved dependency set) and the
   firm-admin management screens.
 
+
+## Execution 15 — password reset, API auth, and Android App Links (v52)
+
+### One shared reset implementation, three callers
+
+Password reset used to be duplicated between `forgot-password.php` and
+`reset-password.php`. Both now call `includes/auth_security.php`, which is also what
+the mobile API uses, so the website and the app cannot drift apart:
+
+- `password_reset_account_config($type)` maps `client`/`lawyer`/`admin` to
+  `users`/`lawyers`/`admins` and their login/forgot URLs. An unknown type falls back
+  to `client` — never to a caller-supplied table name.
+- `issue_password_reset()` stores a 64-hex token with a 1-hour `reset_expires` and
+  emails `SITE_URL/reset-password.php?as=<type>&token=<token>`. It returns the mail
+  delivery result but **never** the token, and the page ignores the boolean so the
+  response never reveals whether the address exists.
+- `consume_password_reset()` matches the raw token once, rejects
+  `invalid_token`/`weak_password`/`too_long`/`mismatch`, clears the token, and
+  revokes every `api_tokens` row for the account. Setting a password invalidates
+  tokens issued before it, so a stolen session cannot outlive the reset.
+- The reset token is stored plaintext **by design** (the column is matched raw).
+  It is single-use, 1-hour, high-entropy and never logged. Do not "fix" it into a
+  hash without changing the lookup to match.
+
+### API auth endpoints
+
+`api/v1/auth/forgot-password.php` and `api/v1/auth/reset-password.php` are public
+and mirror the pages. The forgot response is a neutral 200 whether or not the
+address exists; `429` marks the 15-minute throttle; the reset returns `410`
+(invalid/expired token) or `422` (weak/too-long/mismatch). Documented in
+`api/v1/README.md`.
+
+### Mobile deep links (`apps/mobile/lib/core/deep_link_service.dart`)
+
+- `IncomingLink.tryParse()` requires `https`, an allow-listed host
+  (`mawatheq.com`, `www.mawatheq.com`), the `/reset-password(.php)` path, and a
+  64-hex token. A link failing any check is dropped — a hostile link cannot steer
+  the app to another host or endpoint.
+- `DeepLinkService` bridges `app_links` into the running app and hands the token to
+  `ResetPasswordScreen`. `onResetPassword` is settable (assigned after the widget
+  tree is built).
+
+### Android App Links
+
+Three things must agree or the link opens the browser instead of the app:
+
+1. `android:autoVerify="true"` intent filters in `AndroidManifest.xml`
+   (`mawatheq.com` + `www.mawatheq.com`, path prefix `/reset-password`).
+2. `<repo root>/.well-known/assetlinks.json`, served by the web root, with
+   `package_name = com.mawatheq.app`.
+3. The **release** certificate SHA-256 fingerprint in `assetlinks.json`.
+
+The committed `assetlinks.json` carries a `REPLACE_WITH_RELEASE_SHA256_FINGERPRINT`
+placeholder — the flow is complete in code but App Links do **not** verify until the
+owner pastes the real fingerprint (from the upload key, or the Play App Signing key
+in Play Console → App integrity). `key.properties` (gitignored) drives release
+signing; without it the release build falls back to the debug signature, which will
+not verify against a release fingerprint. Emulator/device check:
+`adb shell pm get-app-links com.mawatheq.app`.
+
+### Tests
+
+- `tests/password_reset_test.php` — the shared helper contract (single-use token,
+  1-hour TTL, refusals, session revocation, throttling). Runs in a rolled-back
+  transaction.
+- `apps/mobile/test/exec15_password_reset_test.dart` — link parsing (host/path/token)
+  and the forgot/reset screens against a fake transport.
+

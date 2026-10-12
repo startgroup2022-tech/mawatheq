@@ -107,6 +107,45 @@ class ApiRepository {
     return SessionUser.fromJson(json);
   }
 
+  /// `POST /api/v1/auth/forgot-password.php`
+  ///
+  /// Always succeeds from the caller's point of view: the endpoint gives the same
+  /// answer whether or not the address exists, so the app must not branch on the
+  /// result. The reset link is only ever emailed.
+  Future<void> requestPasswordReset({
+    required String email,
+    String accountType = 'client',
+  }) async {
+    await _client.post(
+      '/auth/forgot-password.php',
+      auth: false,
+      body: {'email': email, 'account_type': accountType},
+    );
+  }
+
+  /// `POST /api/v1/auth/reset-password.php`
+  ///
+  /// Consumes the single-use token from the reset email and sets the new password.
+  /// Throws [ApiException] carrying `invalid_token`, `weak_password`, `too_long`
+  /// or `mismatch` when the server refuses.
+  Future<void> resetPassword({
+    required String token,
+    required String password,
+    required String passwordConfirm,
+    String accountType = 'client',
+  }) async {
+    await _client.post(
+      '/auth/reset-password.php',
+      auth: false,
+      body: {
+        'token': token,
+        'password': password,
+        'password_confirm': passwordConfirm,
+        'account_type': accountType,
+      },
+    );
+  }
+
   /// `POST /api/v1/revoke-token.php` — server-side logout.
   Future<void> revokeToken() async {
     try {

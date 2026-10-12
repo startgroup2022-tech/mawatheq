@@ -3,9 +3,12 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
 import 'core/auth_controller.dart';
+import 'core/deep_link_service.dart';
 import 'core/locale_controller.dart';
+import 'core/network/api_repository.dart';
 import 'core/theme/app_theme.dart';
 
+import 'features/auth/password_reset_screens.dart';
 import 'features/home/home_shell.dart';
 import 'features/public/onboarding_screen.dart';
 import 'features/public/public_guest_shell.dart';
@@ -13,8 +16,14 @@ import 'features/public/splash_screen.dart';
 
 /// Root widget: wires locale + direction, then routes from the splash to the
 /// dashboard, the welcome screen, or the public homepage depending on the session.
+///
+/// [deepLinks] is optional so widget tests can omit it and never touch a platform
+/// channel; in production `main.dart` supplies one that turns a reset link into the
+/// native reset screen.
 class MawatheqApp extends StatefulWidget {
-  const MawatheqApp({super.key});
+  const MawatheqApp({super.key, this.deepLinks});
+
+  final DeepLinkService? deepLinks;
 
   @override
   State<MawatheqApp> createState() => _MawatheqAppState();
@@ -23,6 +32,11 @@ class MawatheqApp extends StatefulWidget {
 class _MawatheqAppState extends State<MawatheqApp> {
   bool _restored = false;
   bool _splashDone = false;
+  final _navigatorKey = GlobalKey<NavigatorState>();
+
+  /// A reset token delivered before the app finished restoring is held here and
+  /// opened once the navigator exists, so a cold-start link is never dropped.
+  String? _pendingResetToken;
 
   @override
   void initState() {
@@ -30,8 +44,45 @@ class _MawatheqAppState extends State<MawatheqApp> {
     // Validate any stored token once, before deciding which screen to show.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await context.read<AuthController>().restore();
-      if (mounted) setState(() => _restored = true);
+      if (!mounted) return;
+      setState(() => _restored = true);
+      final token = _pendingResetToken;
+      if (token != null) {
+        _pendingResetToken = null;
+        _openResetScreen(token);
+      }
     });
+    widget.deepLinks?.onResetPassword = _onResetToken;
+  }
+
+  void _onResetToken(String token) {
+    if (_navigatorKey.currentState == null) {
+      _pendingResetToken = token;
+      return;
+    }
+    _openResetScreen(token);
+  }
+
+  void _openResetScreen(String token) {
+    final navigator = _navigatorKey.currentState;
+    if (navigator == null) return;
+    // The repository is provided in production (main.dart); a bare test harness may
+    // not provide it, in which case there is nothing to call and no link to act on.
+    ApiRepository? repository;
+    try {
+      repository = context.read<ApiRepository>();
+    } on ProviderNotFoundException {
+      repository = null;
+    }
+    if (repository == null) return;
+    navigator.push(
+      MaterialPageRoute(
+        builder: (_) => ResetPasswordScreen(
+          repository: repository!,
+          initialToken: token,
+        ),
+      ),
+    );
   }
 
   /// The splash stays until BOTH the session check and the entrance animation are
@@ -46,6 +97,7 @@ class _MawatheqAppState extends State<MawatheqApp> {
 
     return MaterialApp(
       title: 'مواثيق',
+      navigatorKey: _navigatorKey,
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       locale: Locale(locale.locale),
