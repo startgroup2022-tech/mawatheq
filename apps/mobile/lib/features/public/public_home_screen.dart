@@ -15,6 +15,7 @@ import '../auth/login_screen.dart';
 import '../auth/register_screen.dart';
 import 'pricing_screen.dart';
 import 'public_info_screen.dart';
+import 'public_service_list.dart';
 
 /// The public homepage a guest browses without an account.
 ///
@@ -22,10 +23,14 @@ import 'public_info_screen.dart';
 /// preview is read from `GET /api/v1/plans.php` — nothing here is invented, and no
 /// private data (cases, documents, consultations, profiles) is reachable from it.
 class PublicHomeScreen extends StatefulWidget {
-  const PublicHomeScreen({super.key, this.repository});
+  const PublicHomeScreen({super.key, this.repository, this.embedded = false});
 
   /// Injectable for tests; production uses the shared client.
   final ApiRepository? repository;
+
+  /// When true the page renders only its content, without its own `Scaffold` or
+  /// app bar, so it can live inside [PublicGuestShell] without a duplicated header.
+  final bool embedded;
 
   @override
   State<PublicHomeScreen> createState() => _PublicHomeScreenState();
@@ -79,6 +84,16 @@ class _PublicHomeScreenState extends State<PublicHomeScreen> {
   Widget build(BuildContext context) {
     final rtl = _isRtl;
 
+    if (widget.embedded) {
+      return RefreshIndicator(
+        onRefresh: _loadPlans,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+          children: _content(rtl),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: AppColors.bg,
       appBar: AppBar(
@@ -128,52 +143,61 @@ class _PublicHomeScreenState extends State<PublicHomeScreen> {
         onRefresh: _loadPlans,
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
-          children: [
-            _hero(rtl),
-            const SizedBox(height: 22),
-            _section(
-              title: _t(PublicContent.platformTitle),
-              body: _t(PublicContent.platformBody),
-            ),
-            const SizedBox(height: 22),
-            _legalAi(rtl),
-            const SizedBox(height: 22),
-            SectionHeader(title: _t(PublicContent.featuresTitle)),
-            Text(_t(PublicContent.featuresSub),
-                style: Theme.of(context).textTheme.bodySmall),
-            const SizedBox(height: 12),
-            _featureGrid(rtl),
-            const SizedBox(height: 24),
-            _services(rtl),
-            const SizedBox(height: 24),
-            _solutions(rtl),
-            const SizedBox(height: 24),
-            _section(
-              title: _t(PublicContent.documentsTitle),
-              body: _t(PublicContent.documentsBody),
-              icon: Icons.description_outlined,
-            ),
-            const SizedBox(height: 16),
-            _section(
-              title: _t(PublicContent.consultationsTitle),
-              body: _t(PublicContent.consultationsBody),
-              icon: Icons.forum_outlined,
-            ),
-            const SizedBox(height: 24),
-            _protectedArea(rtl),
-            const SizedBox(height: 24),
-            _pricingPreview(rtl),
-            const SizedBox(height: 24),
-            _howItWorks(rtl),
-            const SizedBox(height: 24),
-            _faq(rtl),
-            const SizedBox(height: 24),
-            _finalCta(rtl),
-          ],
+          children: _content(rtl),
         ),
       ),
     );
   }
+
+  /// The homepage sections, shared by the standalone page and the guest shell.
+  List<Widget> _content(bool rtl) => [
+        _hero(rtl),
+        const SizedBox(height: 22),
+        _section(
+          title: _t(PublicContent.platformTitle),
+          body: _t(PublicContent.platformBody),
+        ),
+        const SizedBox(height: 22),
+        _legalAi(rtl),
+        const SizedBox(height: 22),
+        SectionHeader(title: _t(PublicContent.featuresTitle)),
+        Text(_t(PublicContent.featuresSub),
+            style: Theme.of(context).textTheme.bodySmall),
+        const SizedBox(height: 12),
+        _featureGrid(rtl),
+        const SizedBox(height: 24),
+        _services(rtl),
+        const SizedBox(height: 24),
+        _solutions(rtl),
+        const SizedBox(height: 24),
+        _section(
+          title: _t(PublicContent.caseManagementTitle),
+          body: _t(PublicContent.caseManagementBody),
+          icon: Icons.folder_outlined,
+        ),
+        const SizedBox(height: 16),
+        _section(
+          title: _t(PublicContent.documentsTitle),
+          body: _t(PublicContent.documentsBody),
+          icon: Icons.description_outlined,
+        ),
+        const SizedBox(height: 16),
+        _section(
+          title: _t(PublicContent.consultationsTitle),
+          body: _t(PublicContent.consultationsBody),
+          icon: Icons.forum_outlined,
+        ),
+        const SizedBox(height: 24),
+        _protectedArea(rtl),
+        const SizedBox(height: 24),
+        _pricingPreview(rtl),
+        const SizedBox(height: 24),
+        _howItWorks(rtl),
+        const SizedBox(height: 24),
+        _faq(rtl),
+        const SizedBox(height: 24),
+        _finalCta(rtl),
+      ];
 
   // ------------------------------------------------------------------ sections
 
@@ -379,6 +403,10 @@ class _PublicHomeScreenState extends State<PublicHomeScreen> {
     );
   }
 
+  /// The public services a visitor can read about but must sign in to use.
+  ///
+  /// Tapping a card raises the authentication prompt naming that service — it never
+  /// opens a protected dashboard and never fires a request the server would reject.
   Widget _services(bool rtl) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -387,39 +415,7 @@ class _PublicHomeScreenState extends State<PublicHomeScreen> {
         Text(_t(PublicContent.servicesSub),
             style: Theme.of(context).textTheme.bodySmall),
         const SizedBox(height: 12),
-        for (final s in PublicContent.services)
-          Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(AppRadius.lg),
-              border: Border.all(color: AppColors.border),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    gradient: AppColors.cyanAccent,
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                  ),
-                  child: Icon(_iconFor(s.$1), size: 20, color: AppColors.navyDeep),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    rtl ? s.$2 : s.$3,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                  ),
-                ),
-                const Icon(Icons.lock_outline, size: 16, color: AppColors.textSubtle),
-              ],
-            ),
-          ),
+        PublicServiceList(rtl: rtl),
       ],
     );
   }
@@ -477,7 +473,7 @@ class _PublicHomeScreenState extends State<PublicHomeScreen> {
     const entries = <(ProtectedDestination, IconData, String, String)>[
       (ProtectedDestination.cases, Icons.folder_outlined, 'القضايا', 'Cases'),
       (ProtectedDestination.documents, Icons.description_outlined, 'المستندات', 'Documents'),
-      (ProtectedDestination.assistant, Icons.auto_awesome_outlined, 'المساعد الذكي', 'Assistant'),
+      (ProtectedDestination.legalAi, Icons.auto_awesome_outlined, 'المساعد الذكي', 'Assistant'),
       (ProtectedDestination.consultations, Icons.forum_outlined, 'الاستشارات', 'Consultations'),
       (ProtectedDestination.notifications, Icons.notifications_outlined, 'الإشعارات', 'Notifications'),
       (ProtectedDestination.account, Icons.person_outline, 'حسابي', 'Account'),

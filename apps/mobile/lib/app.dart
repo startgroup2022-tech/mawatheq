@@ -8,7 +8,7 @@ import 'core/theme/app_theme.dart';
 
 import 'features/home/home_shell.dart';
 import 'features/public/onboarding_screen.dart';
-import 'features/public/public_home_screen.dart';
+import 'features/public/public_guest_shell.dart';
 import 'features/public/splash_screen.dart';
 
 /// Root widget: wires locale + direction, then routes from the splash to the
@@ -70,10 +70,11 @@ class _MawatheqAppState extends State<MawatheqApp> {
               },
             )
           : switch (auth.status) {
-              // Authenticated user → personalised dashboard.
+              // Authenticated user → the role-based platform shell.
               AuthStatus.signedIn => const HomeShell(),
-              // Guest → public homepage.
-              AuthStatus.guest => const PublicHomeScreen(),
+              // Guest → the public shell. Deliberately a different shell from
+              // HomeShell: a guest never sees the authenticated dashboard.
+              AuthStatus.guest => const PublicGuestShell(),
               // Unauthenticated (including an expired session) → welcome screen
               // with guest access.
               _ => const OnboardingScreen(),

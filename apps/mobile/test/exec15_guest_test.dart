@@ -10,11 +10,13 @@ import 'package:mawatheq_mobile/core/locale_controller.dart';
 import 'package:mawatheq_mobile/core/network/api_client.dart';
 import 'package:mawatheq_mobile/core/network/api_exception.dart';
 import 'package:mawatheq_mobile/core/network/api_repository.dart';
+import 'package:mawatheq_mobile/core/network/models.dart';
 import 'package:mawatheq_mobile/core/storage/token_storage.dart';
 import 'package:mawatheq_mobile/features/auth/login_screen.dart';
 import 'package:mawatheq_mobile/features/home/home_shell.dart';
 import 'package:mawatheq_mobile/features/public/onboarding_screen.dart';
 import 'package:mawatheq_mobile/features/public/pricing_screen.dart';
+import 'package:mawatheq_mobile/features/public/public_guest_shell.dart';
 import 'package:mawatheq_mobile/features/public/public_home_screen.dart';
 import 'package:mawatheq_mobile/features/public/splash_screen.dart';
 import 'package:mawatheq_mobile/shared/widgets/auth_gate.dart';
@@ -378,7 +380,7 @@ void main() {
       await tester.tap(find.text('تسجيل الدخول').last);
       await tester.pumpAndSettle();
 
-      expect(guest.pendingIntent, ProtectedDestination.assistant);
+      expect(guest.pendingIntent, ProtectedDestination.legalAi);
     });
   });
 
@@ -832,6 +834,169 @@ void main() {
         repo.cases(),
         throwsA(isA<ApiException>()),
       );
+    });
+  });
+
+  // ------------------------------------------------ guest routing (exec 15.1)
+
+  group('Guest routing', () {
+    testWidgets('a guest lands on the public shell, never the authenticated one',
+        (tester) async {
+      final auth = AuthController(
+        repository: _repo(_FakeTransport((_) async => (200, {'ok': true}))),
+        tokens: _MemoryTokenStore(),
+      );
+      final guest = GuestSession();
+      final locale = LocaleController();
+      await locale.setLocale('ar');
+
+      await tester.pumpWidget(
+        _wrap(
+          auth: auth,
+          guest: guest,
+          locale: locale,
+          child: const PublicGuestShell(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The public shell is present; the authenticated shell is not.
+      expect(find.byType(PublicGuestShell), findsOneWidget);
+      expect(find.byType(HomeShell), findsNothing);
+      // Public navigation only: the guest tab bar never names the private areas.
+      expect(find.text('الرئيسية'), findsWidgets);
+      expect(find.text('الخدمات'), findsOneWidget);
+      expect(find.text('الأسعار'), findsOneWidget);
+      expect(find.text('القضايا'), findsNothing);
+      expect(find.text('المستندات'), findsNothing);
+    });
+
+    testWidgets('the guest shell shows public content, not a dashboard',
+        (tester) async {
+      final transport = _FakeTransport((_) async => (200, _plansJson));
+      final auth = AuthController(
+        repository: _repo(transport),
+        tokens: _MemoryTokenStore(),
+      );
+
+      await tester.pumpWidget(
+        _wrap(
+          auth: auth,
+          child: PublicGuestShell(repository: _repo(transport)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The public homepage hero is visible inside the shell.
+      expect(find.textContaining('مواثيق'), findsWidgets);
+      expect(find.text('القضايا'), findsNothing);
+    });
+
+    testWidgets('a guest tapping a service raises the sign-in prompt',
+        (tester) async {
+      final transport = _FakeTransport((_) async => (200, _plansJson));
+      final auth = AuthController(
+        repository: _repo(transport),
+        tokens: _MemoryTokenStore(),
+      );
+      final guest = GuestSession();
+
+      await tester.pumpWidget(
+        _wrap(
+          auth: auth,
+          guest: guest,
+          child: PublicGuestShell(repository: _repo(transport)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Scroll the homepage to the service list and tap a service card. The label
+      // is unique to the services list, so the tap cannot land on a decorative tile.
+      final tile = find.text('البحث في الأنظمة واللوائح');
+      await _scrollTo(tester, tile);
+      await tester.tap(tile);
+      await tester.pumpAndSettle();
+
+      // The prompt names the requested service and never opens a dashboard.
+      expect(find.textContaining('الخدمة المطلوبة'), findsOneWidget);
+      expect(find.textContaining('البحث في الأنظمة واللوائح'), findsWidgets);
+      expect(find.byType(HomeShell), findsNothing);
+    });
+
+    testWidgets('a guest choosing a plan is routed to sign-in, not a checkout',
+        (tester) async {
+      final transport = _FakeTransport((_) async => (200, _plansJson));
+      final auth = AuthController(
+        repository: _repo(transport),
+        tokens: _MemoryTokenStore(),
+      );
+      final guest = GuestSession();
+
+      await tester.pumpWidget(
+        _wrap(
+          auth: auth,
+          guest: guest,
+          child: PricingScreen(repository: _repo(transport), embedded: true),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final choose = find.text('اختيار هذه الباقة').first;
+      await tester.tap(choose);
+      await tester.pumpAndSettle();
+
+      // No subscription is activated; the chosen plan is only remembered for the
+      // sign-in flow, and the prompt states the service requires an account.
+      expect(guest.selectedPlan, isNotNull);
+      expect(find.textContaining('الخدمة المطلوبة'), findsOneWidget);
+    });
+  });
+
+  // ---------------------------------------------- permission-aware resume
+
+  group('Permission-aware resume', () {
+    test('a staff member without the capability is denied the destination', () {
+      const staff = SessionUser(
+        type: 'lawyer',
+        id: 7,
+        name: 'Staff',
+        role: 'staff',
+        permissions: ['cases.view', 'documents.view'],
+      );
+      // Staff can read cases but not manage documents' deletion; the destination
+      // gate follows the server-issued capability, not a guess.
+      expect(ProtectedDestination.cases.allows(staff), isTrue);
+      expect(ProtectedDestination.consultations.allows(staff), isFalse);
+    });
+
+    test('a client is allowed their own destinations without tenant permissions',
+        () {
+      const client = SessionUser(
+        type: 'client',
+        id: 3,
+        name: 'Client',
+        role: 'client',
+      );
+      // Clients hold no tenant capabilities; the gate must not deny them their own
+      // data just because permissions is empty.
+      expect(ProtectedDestination.cases.allows(client), isTrue);
+      expect(ProtectedDestination.documents.allows(client), isTrue);
+      expect(ProtectedDestination.consultations.allows(client), isTrue);
+    });
+
+    test('a signed-in user is denied when the destination needs a missing capability',
+        () {
+      const staff = SessionUser(
+        type: 'lawyer',
+        id: 9,
+        name: 'Staff',
+        role: 'staff',
+        permissions: ['cases.view'],
+      );
+      expect(ProtectedDestination.consultations.allows(staff), isFalse);
+      // Destinations with no required permission are open to any signed-in user.
+      expect(ProtectedDestination.legalAi.allows(staff), isTrue);
+      expect(ProtectedDestination.account.allows(staff), isTrue);
     });
   });
 }

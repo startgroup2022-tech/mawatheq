@@ -171,6 +171,19 @@ class PublicContent {
 
   // ------------------------------------------------- documents & consultations
 
+  static const caseManagementTitle = [
+    'قضاياك منظّمة من أول إجراء حتى الإغلاق',
+    'Your cases, organised from first step to close',
+  ];
+
+  static const caseManagementBody = [
+    'افتح القضية، وأضف الموكل والطرف الآخر والجلسات والمواعيد، واربط المستندات '
+        'والفريق بها. كل قضية معزولة عن غيرها، والوصول إليها محدود بصلاحياتك.',
+    'Open a case, add the client, the other party, hearings and deadlines, and link '
+        'documents and team members to it. Each case is isolated and access is limited '
+        'by your permissions.',
+  ];
+
   static const documentsTitle = [
     'مستنداتك محفوظة ومضبوطة الوصول',
     'Your documents, stored and access-controlled',

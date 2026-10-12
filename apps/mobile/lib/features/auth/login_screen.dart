@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/auth_controller.dart';
 import '../../core/config/app_config.dart';
 import '../../core/guest_session.dart';
+import '../../core/locale_controller.dart';
 import '../../core/theme/app_colors.dart';
 import '../../shared/widgets/brand_widgets.dart';
 import 'register_screen.dart';
@@ -70,12 +71,34 @@ class _LoginScreenState extends State<LoginScreen> {
   /// for; otherwise the dashboard.
   ///
   /// The explicit [LoginScreen.returnTo] wins, and the guest-session record is
-  /// consumed so the intent is honoured exactly once.
+  /// consumed so the intent is honoured exactly once. The destination is opened
+  /// only if the freshly signed-in account is permitted to be there — otherwise an
+  /// access-denied screen is shown, never an empty dashboard.
   void _resumeDestination() {
     final guest = context.read<GuestSession>();
     final destination =
         widget.returnTo ?? guest.consume() ?? ProtectedDestination.dashboard;
     guest.clear();
+
+    if (!destination.allows(context.read<AuthController>().user)) {
+      final rtl = context.read<LocaleController>().isRtl;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => AccessDeniedScreen(
+            destination: destination,
+            isRtl: rtl,
+            onBack: () => Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(
+                builder: (_) => ProtectedDestination.dashboard.buildShell(),
+              ),
+              (route) => false,
+            ),
+          ),
+        ),
+        (route) => false,
+      );
+      return;
+    }
 
     final pushed = destination.buildPushedScreen();
     Navigator.of(context).pushAndRemoveUntil(

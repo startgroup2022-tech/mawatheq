@@ -96,12 +96,11 @@ class _AuthPromptSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final title = isRtl ? 'ابدأ استخدام الخدمة' : 'Start using this service';
     final body = message ??
         (isRtl
-            ? 'للمتابعة إلى «${destination.labelAr}» سجّل الدخول أو أنشئ حساباً جديداً. '
-                'ويمكنك متابعة تصفّح المحتوى العام دون حساب.'
-            : 'To continue to “${destination.labelEn}”, sign in or create an account. '
-                'You can also keep browsing public content without one.');
+            ? 'للاستفادة من هذه الخدمة، يرجى تسجيل الدخول أو إنشاء حساب جديد.'
+            : 'To use this service, please sign in or create a new account.');
 
     return SafeArea(
       child: Padding(
@@ -135,11 +134,33 @@ class _AuthPromptSheet extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              isRtl ? 'هذه الميزة تتطلب حساباً' : 'This feature needs an account',
+              title,
               textAlign: TextAlign.center,
               style: theme.textTheme.titleLarge,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
+            // The selected service is named explicitly so the visitor knows
+            // exactly what they are being asked to sign in for.
+            Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: AppColors.surface3,
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                ),
+                child: Text(
+                  isRtl
+                      ? 'الخدمة المطلوبة: ${destination.labelAr}'
+                      : 'Requested service: ${destination.labelEn}',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.navy,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
             Text(
               body,
               textAlign: TextAlign.center,

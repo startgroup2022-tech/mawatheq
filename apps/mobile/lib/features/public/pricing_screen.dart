@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/auth_controller.dart';
+import '../../core/guest_session.dart';
 import '../../core/locale_controller.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/network/api_repository.dart';
 import '../../core/network/models.dart';
 import '../../core/theme/app_colors.dart';
+import '../../shared/widgets/auth_gate.dart';
 import '../../shared/widgets/brand_widgets.dart';
 
 /// Published plans, read from `GET /api/v1/plans.php`.
@@ -16,10 +19,14 @@ import '../../shared/widgets/brand_widgets.dart';
 /// would be a lie. The CTA instead explains how to subscribe and opens the
 /// authenticated flow only for a signed-in user.
 class PricingScreen extends StatefulWidget {
-  const PricingScreen({super.key, this.repository});
+  const PricingScreen({super.key, this.repository, this.embedded = false});
 
   /// Injectable for tests; production always uses the shared client.
   final ApiRepository? repository;
+
+  /// When true the page renders only its content, without its own `Scaffold` or
+  /// app bar, so it can live inside [PublicGuestShell].
+  final bool embedded;
 
   @override
   State<PricingScreen> createState() => _PricingScreenState();
@@ -85,74 +92,79 @@ class _PricingScreenState extends State<PricingScreen> {
   Widget build(BuildContext context) {
     final rtl = _isRtl;
 
+    final body = _loading
+        ? const Padding(
+            padding: EdgeInsets.all(16),
+            child: LoadingSkeleton(count: 4, height: 150),
+          )
+        : _error != null
+            ? ErrorState(message: _error!, onRetry: _load)
+            : _plans.isEmpty
+                ? const EmptyState(
+                    icon: Icons.workspace_premium_outlined,
+                    title: 'لا توجد خطط منشورة',
+                    message: 'لم تُنشر أي خطط من لوحة الإدارة بعد.',
+                  )
+                : RefreshIndicator(
+                    onRefresh: _load,
+                    child: ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        if (_anyYearly)
+                          Center(
+                            child: SegmentedButton<bool>(
+                              segments: [
+                                ButtonSegment(
+                                  value: false,
+                                  label: Text(rtl ? 'شهري' : 'Monthly'),
+                                ),
+                                ButtonSegment(
+                                  value: true,
+                                  label: Text(rtl ? 'سنوي' : 'Yearly'),
+                                ),
+                              ],
+                              selected: {_yearly},
+                              onSelectionChanged: (s) =>
+                                  setState(() => _yearly = s.first),
+                            ),
+                          ),
+                        const SizedBox(height: 18),
+                        ..._plans.map((plan) => Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: _PlanCard(
+                                plan: plan,
+                                yearly: _yearly,
+                                rtl: rtl,
+                                onSelect: () => _selectPlan(plan, rtl),
+                              ),
+                            )),
+                        if (_plans.length > 1) ...[
+                          const SizedBox(height: 6),
+                          SecondaryButton(
+                            label: rtl ? 'مقارنة الخطط' : 'Compare plans',
+                            icon: _compare
+                                ? Icons.view_list_outlined
+                                : Icons.table_chart_outlined,
+                            expand: true,
+                            onPressed: () =>
+                                setState(() => _compare = !_compare),
+                          ),
+                          if (_compare) ...[
+                            const SizedBox(height: 14),
+                            _ComparisonTable(plans: _plans, rtl: rtl),
+                          ],
+                        ],
+                        const SizedBox(height: 18),
+                        _note(rtl),
+                      ],
+                    ),
+                  );
+
+    if (widget.embedded) return body;
+
     return Scaffold(
       appBar: BrandAppBar(subtitle: rtl ? 'الخطط والأسعار' : 'Plans and pricing'),
-      body: _loading
-          ? const Padding(
-              padding: EdgeInsets.all(16),
-              child: LoadingSkeleton(count: 4, height: 150),
-            )
-          : _error != null
-              ? ErrorState(message: _error!, onRetry: _load)
-              : _plans.isEmpty
-                  ? const EmptyState(
-                      icon: Icons.workspace_premium_outlined,
-                      title: 'لا توجد خطط منشورة',
-                      message: 'لم تُنشر أي خطط من لوحة الإدارة بعد.',
-                    )
-                  : RefreshIndicator(
-                      onRefresh: _load,
-                      child: ListView(
-                        padding: const EdgeInsets.all(16),
-                        children: [
-                          if (_anyYearly)
-                            Center(
-                              child: SegmentedButton<bool>(
-                                segments: [
-                                  ButtonSegment(
-                                    value: false,
-                                    label: Text(rtl ? 'شهري' : 'Monthly'),
-                                  ),
-                                  ButtonSegment(
-                                    value: true,
-                                    label: Text(rtl ? 'سنوي' : 'Yearly'),
-                                  ),
-                                ],
-                                selected: {_yearly},
-                                onSelectionChanged: (s) =>
-                                    setState(() => _yearly = s.first),
-                              ),
-                            ),
-                          const SizedBox(height: 18),
-                          ..._plans.map((plan) => Padding(
-                                padding: const EdgeInsets.only(bottom: 12),
-                                child: _PlanCard(
-                                  plan: plan,
-                                  yearly: _yearly,
-                                  rtl: rtl,
-                                ),
-                              )),
-                          if (_plans.length > 1) ...[
-                            const SizedBox(height: 6),
-                            SecondaryButton(
-                              label: rtl ? 'مقارنة الخطط' : 'Compare plans',
-                              icon: _compare
-                                  ? Icons.view_list_outlined
-                                  : Icons.table_chart_outlined,
-                              expand: true,
-                              onPressed: () =>
-                                  setState(() => _compare = !_compare),
-                            ),
-                            if (_compare) ...[
-                              const SizedBox(height: 14),
-                              _ComparisonTable(plans: _plans, rtl: rtl),
-                            ],
-                          ],
-                          const SizedBox(height: 18),
-                          _note(rtl),
-                        ],
-                      ),
-                    ),
+      body: body,
     );
   }
 
@@ -189,6 +201,40 @@ class _PricingScreenState extends State<PricingScreen> {
       ),
     );
   }
+
+  /// A guest may read every plan, but subscribing needs an account. Selecting a plan
+  /// records it and routes to sign-in or registration; it never activates anything or
+  /// pretends a payment happened.
+  Future<void> _selectPlan(Plan plan, bool rtl) async {
+    final auth = context.read<AuthController>();
+    final name = rtl
+        ? (plan.nameAr.isEmpty ? plan.nameEn : plan.nameAr)
+        : (plan.nameEn.isEmpty ? plan.nameAr : plan.nameEn);
+
+    if (auth.isSignedIn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            rtl
+                ? 'سيتم إتمام الاشتراك في «$name» من خلال المنصة بعد الدخول.'
+                : 'Subscription to “$name” is completed on the platform after sign-in.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    context.read<GuestSession>().rememberPlan(name);
+    await requireAccount(
+      context,
+      ProtectedDestination.account,
+      message: rtl
+          ? 'للاستفادة من هذه الخدمة، يرجى تسجيل الدخول أو إنشاء حساب جديد. '
+              'الباقة المختارة: $name.'
+          : 'To use this service, please sign in or create a new account. '
+              'Selected plan: $name.',
+    );
+  }
 }
 
 /// One plan card: price, billing period, description and the real usage limits.
@@ -197,11 +243,16 @@ class _PlanCard extends StatelessWidget {
     required this.plan,
     required this.yearly,
     required this.rtl,
+    this.onSelect,
   });
 
   final Plan plan;
   final bool yearly;
   final bool rtl;
+
+  /// Raises the sign-in prompt for an unauthenticated visitor; null when the
+  /// pricing screen is rendered outside a guest flow (the standalone page).
+  final VoidCallback? onSelect;
 
   @override
   Widget build(BuildContext context) {
@@ -288,8 +339,8 @@ class _PlanCard extends StatelessWidget {
           _limit(context, rtl ? 'استشارات مشمولة' : 'Consultations included',
               plan.consultationsIncluded, rtl),
           const SizedBox(height: 6),
-          // No purchase button: there is no mobile subscription API. The label
-          // states where the subscription actually happens.
+          // There is no mobile subscription API, so this states plainly where the
+          // subscription happens — it never pretends to buy anything.
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(vertical: 11),
@@ -309,6 +360,17 @@ class _PlanCard extends StatelessWidget {
               ),
             ),
           ),
+          // A guest can pick a plan to carry into sign-in; this opens the auth
+          // prompt and activates nothing.
+          if (onSelect != null) ...[
+            const SizedBox(height: 8),
+            SecondaryButton(
+              label: rtl ? 'اختيار هذه الباقة' : 'Choose this plan',
+              icon: Icons.arrow_forward,
+              expand: true,
+              onPressed: onSelect!,
+            ),
+          ],
         ],
       ),
     );

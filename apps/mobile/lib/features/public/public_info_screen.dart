@@ -5,6 +5,7 @@ import '../../core/locale_controller.dart';
 import '../../core/public_content.dart';
 import '../../core/theme/app_colors.dart';
 import '../../shared/widgets/brand_widgets.dart';
+import 'public_service_list.dart';
 
 /// Which public information page to show.
 enum InfoSection { services, about, contact }
@@ -19,12 +20,17 @@ class PublicInfoScreen extends StatelessWidget {
     super.key,
     required this.section,
     this.highlight,
+    this.embedded = false,
   });
 
   final InfoSection section;
 
   /// Optional capability the visitor tapped, highlighted in the services list.
   final String? highlight;
+
+  /// When true the page renders only its content, without its own `Scaffold` or
+  /// app bar, so it can live inside [PublicGuestShell].
+  final bool embedded;
 
   @override
   Widget build(BuildContext context) {
@@ -35,17 +41,21 @@ class PublicInfoScreen extends StatelessWidget {
       InfoSection.contact => rtl ? 'تواصل معنا' : 'Contact us',
     };
 
+    final body = ListView(
+      padding: const EdgeInsets.all(16),
+      children: switch (section) {
+        InfoSection.services => _services(context, rtl),
+        InfoSection.about => _about(context, rtl),
+        InfoSection.contact => _contact(context, rtl),
+      },
+    );
+
+    if (embedded) return body;
+
     return Scaffold(
       backgroundColor: AppColors.bg,
       appBar: BrandAppBar(subtitle: title),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: switch (section) {
-          InfoSection.services => _services(context, rtl),
-          InfoSection.about => _about(context, rtl),
-          InfoSection.contact => _contact(context, rtl),
-        },
-      ),
+      body: body,
     );
   }
 
@@ -57,13 +67,8 @@ class PublicInfoScreen extends StatelessWidget {
         body: PublicContent.pick(PublicContent.servicesSub, rtl),
       ),
       const SizedBox(height: 16),
-      for (final s in PublicContent.services)
-        _row(
-          context,
-          icon: Icons.check_circle_outline,
-          label: rtl ? s.$2 : s.$3,
-          highlighted: highlight == (rtl ? s.$2 : s.$3),
-        ),
+      // Each service is actionable: tapping it raises the auth prompt naming it.
+      PublicServiceList(rtl: rtl),
       const SizedBox(height: 18),
       SectionHeader(
         title: PublicContent.pick(PublicContent.featuresTitle, rtl),
