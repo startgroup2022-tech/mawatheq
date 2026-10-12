@@ -82,7 +82,8 @@ class SessionUser {
   final String email;
   final String phone;
 
-  /// Firm member role: owner | partner | lawyer | staff (empty for solo/client).
+  /// Firm member role: owner | partner | lawyer | staff; `solo` for an independent
+  /// lawyer and `client` for a client account.
   final String role;
   final String jurisdiction;
   final int? firmId;
@@ -102,13 +103,17 @@ class SessionUser {
     return permissions.contains(permission);
   }
 
+  /// `me.php` returns session-scoped fields (`role`, `firm_id`, `firm_name`,
+  /// `permissions`) at the top level, next to `profile`, which holds the user's own
+  /// record. Read the top level first and fall back to `profile` so an older server
+  /// that nested them still works.
   factory SessionUser.fromJson(Map<String, dynamic> map) {
     final json = Json(map);
     final profile = json.object('profile') ?? json;
 
     // The API may nest permissions, or send them flat.
     final perms = <String>[];
-    for (final entry in [profile, json]) {
+    for (final entry in [json, profile]) {
       final list = entry.list('permissions');
       if (list.isNotEmpty) {
         perms.addAll(list.map((e) => e.str('name', fallback: e.str('key'))));
@@ -121,18 +126,33 @@ class SessionUser {
       }
     }
 
+    // `firm_id` is null for solo lawyers and clients, and a number otherwise. Accept
+    // a numeric string too, since a JSON encoder may render an int column that way.
+    int? firmId;
+    for (final entry in [json, profile]) {
+      final raw = entry.raw['firm_id'];
+      if (raw is num) {
+        firmId = raw.toInt();
+        break;
+      }
+      final parsed = int.tryParse(entry.str('firm_id'));
+      if (parsed != null) {
+        firmId = parsed;
+        break;
+      }
+    }
+
     return SessionUser(
       type: json.str('type', fallback: 'client'),
       id: profile.intg('id'),
       name: profile.str('full_name', fallback: profile.str('name')),
       email: profile.str('email'),
       phone: profile.str('phone'),
-      role: profile.str('member_role', fallback: profile.str('role')),
+      role: json.str('role',
+          fallback: profile.str('member_role', fallback: profile.str('role'))),
       jurisdiction: profile.str('jurisdiction'),
-      firmId: profile.raw['firm_id'] is num
-          ? profile.intg('firm_id')
-          : (int.tryParse(profile.str('firm_id'))),
-      firmName: profile.str('firm_name'),
+      firmId: firmId,
+      firmName: json.str('firm_name', fallback: profile.str('firm_name')),
       permissions: perms.where((p) => p.isNotEmpty).toList(),
     );
   }

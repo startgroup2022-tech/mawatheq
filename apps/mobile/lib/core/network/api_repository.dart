@@ -156,16 +156,22 @@ class ApiRepository {
   Future<Map<String, dynamic>> documentDetail(int id) =>
       _client.get('/documents.php', query: {'id': id});
 
-  /// Upload + AI analysis. Consent is mandatory server-side.
+  /// Upload + AI analysis. Consent is mandatory server-side: without
+  /// `aiConsent: true` the endpoint refuses to send the file to the AI provider.
+  ///
+  /// Lawyers must pass `caseId` — their documents are reached through the case they
+  /// belong to, and the server rejects an upload that is not inside their tenant.
   Future<Map<String, dynamic>> uploadDocument({
     required File file,
     required bool aiConsent,
     String? documentType,
+    String? caseId,
   }) =>
       _client.uploadDocument(
         file: file,
         aiConsent: aiConsent,
         documentType: documentType,
+        caseId: caseId,
       );
 
   // ------------------------------------------------------ consultations

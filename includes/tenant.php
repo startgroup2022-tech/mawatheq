@@ -247,6 +247,46 @@ function tenant_firm_capabilities(string $role): array {
 }
 
 /**
+ * Optional per-member permission override stored on the membership row.
+ * Returns null when the member has no override, so the role defaults apply.
+ */
+function tenant_member_override(PDO $pdo, int $firmId, int $lawyerId): ?array {
+    try {
+        $stmt = $pdo->prepare('SELECT permissions_json FROM law_firm_members WHERE lawyer_id=? AND firm_id=? LIMIT 1');
+        $stmt->execute([$lawyerId, $firmId]);
+        $raw = $stmt->fetchColumn();
+        if (is_string($raw) && $raw !== '') {
+            $override = json_decode($raw, true);
+            if (is_array($override)) return array_values(array_filter($override, 'is_string'));
+        }
+    } catch (PDOException $e) {
+        error_log('Tenant permission lookup failed: ' . $e->getMessage());
+    }
+    return null;
+}
+
+/**
+ * Effective capability list for a lawyer resolved by id, independent of the PHP session.
+ * Token-authenticated API routes have no session, so they cannot use tenant_can(); this is
+ * the single source both paths share. A solo practitioner owns their whole practice.
+ */
+function tenant_permissions_for_lawyer(PDO $pdo, int $lawyerId): array {
+    $ctx = tenant_context_for_lawyer($pdo, $lawyerId);
+    if (!$ctx['is_firm']) return tenant_all_permissions();
+    $override = tenant_member_override($pdo, (int)$ctx['firm_id'], $lawyerId);
+    return $override ?? tenant_firm_capabilities($ctx['role'] ?? 'lawyer');
+}
+
+/**
+ * Capability check for a lawyer resolved by id — the token-authenticated counterpart of
+ * tenant_can(). Both read tenant_permissions_for_lawyer(), so the API and the web app can
+ * never disagree about what a role may do.
+ */
+function tenant_can_for_lawyer(PDO $pdo, int $lawyerId, string $permission): bool {
+    return in_array($permission, tenant_permissions_for_lawyer($pdo, $lawyerId), true);
+}
+
+/**
  * Whether the current lawyer holds a capability within their tenant.
  * Solo lawyers are treated as their own owner (full legal-core capabilities).
  */
@@ -256,24 +296,11 @@ function tenant_can(?PDO $pdo, string $permission): bool {
         // Solo practitioner — full control of their own practice.
         return true;
     }
-    $caps = tenant_firm_capabilities($ctx['role'] ?? 'lawyer');
-
-    // Optional per-member override stored on the membership row.
-    if ($pdo instanceof PDO) {
-        try {
-            $stmt = $pdo->prepare('SELECT permissions_json FROM law_firm_members WHERE lawyer_id=? AND firm_id=? LIMIT 1');
-            $stmt->execute([$ctx['lawyer_id'], $ctx['firm_id']]);
-            $raw = $stmt->fetchColumn();
-            if (is_string($raw) && $raw !== '') {
-                $override = json_decode($raw, true);
-                if (is_array($override)) {
-                    return in_array($permission, $override, true);
-                }
-            }
-        } catch (PDOException $e) {
-            error_log('Tenant permission lookup failed: ' . $e->getMessage());
-        }
+    if (!$pdo instanceof PDO) {
+        return in_array($permission, tenant_firm_capabilities($ctx['role'] ?? 'lawyer'), true);
     }
+    $override = tenant_member_override($pdo, (int)$ctx['firm_id'], (int)$ctx['lawyer_id']);
+    $caps = $override ?? tenant_firm_capabilities($ctx['role'] ?? 'lawyer');
     return in_array($permission, $caps, true);
 }
 

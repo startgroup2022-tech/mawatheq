@@ -1,4 +1,4 @@
-package com.mawatheq.mawatheq_mobile
+package com.mawatheq.app
 
 import io.flutter.embedding.android.FlutterActivity
 

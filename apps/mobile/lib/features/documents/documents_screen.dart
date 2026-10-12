@@ -1,29 +1,38 @@
-import 'package:flutter/material.dart';
+import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../core/auth_controller.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/network/api_repository.dart';
 import '../../core/network/models.dart';
 import '../../core/theme/app_colors.dart';
 import '../../shared/widgets/brand_widgets.dart';
 
-/// Document list from `GET /api/v1/documents.php`.
+/// Document list from `GET /api/v1/documents.php`, with upload.
 ///
-/// Upload is deliberately not wired to a file picker in this build: adding a
-/// picker needs a platform plugin that was not part of the approved dependency
-/// set, and shipping a button that cannot pick a file would be worse than
-/// documenting the gap. The upload path (`ApiRepository.uploadDocument`, which
-/// enforces the AI-consent flag) is implemented and ready for that plugin.
+/// Upload is only offered to a capability that can actually perform it: a client
+/// always may, a lawyer only with `documents.upload` and only into a case of their
+/// own tenant (picked from `GET /api/v1/cases.php`). The file picker is restricted
+/// to the formats the server accepts — pdf, png, jpg — so the user cannot select a
+/// file the backend will reject.
 class DocumentsScreen extends StatefulWidget {
-  const DocumentsScreen({super.key});
+  const DocumentsScreen({super.key, this.repository});
+
+  /// Injected in tests; production uses the default client.
+  final ApiRepository? repository;
 
   @override
   State<DocumentsScreen> createState() => _DocumentsScreenState();
 }
 
 class _DocumentsScreenState extends State<DocumentsScreen> {
-  final _repo = ApiRepository();
+  late final ApiRepository _repo = widget.repository ?? ApiRepository();
   List<DocumentSummary> _all = const [];
   bool _loading = true;
+  bool _uploading = false;
   String? _error;
   String _filter = 'الكل';
 
@@ -61,6 +70,139 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     return _all;
   }
 
+  // ------------------------------------------------------------------ upload
+
+  /// Whether this account may upload at all. The server is the authority; this only
+  /// decides whether to show the button.
+  bool get _canUpload {
+    final user = context.read<AuthController>().user;
+    if (user.isClient) return true;
+    if (user.isLawyer) return user.can('documents.upload');
+    return false;
+  }
+
+  Future<void> _startUpload() async {
+    final user = context.read<AuthController>().user;
+    final picked = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['pdf', 'png', 'jpg', 'jpeg'],
+      withData: false,
+    );
+    final path = picked?.files.single.path;
+    if (path == null || !mounted) return;
+
+    // A lawyer's document must live on one of their own cases; a client's upload is
+    // account-scoped and the server attaches it without a case.
+    String? caseId;
+    if (user.isLawyer) {
+      caseId = await _pickCase();
+      if (caseId == null || !mounted) return;
+    }
+
+    final documentType = await _pickDocumentType();
+    if (documentType == null || !mounted) return;
+
+    final consent = await ConfirmationDialog.show(
+      context,
+      title: 'موافقة التحليل الذكي',
+      message:
+          'سيُرسل نص هذا المستند إلى مزوّد الذكاء الاصطناعي لتحليله. '
+          'يمكنك رفض الموافقة الآن؛ عندها لن يُرفع المستند.',
+      confirmLabel: 'أوافق وأرفع',
+      cancelLabel: 'إلغاء',
+    );
+    if (!consent || !mounted) return;
+
+    setState(() => _uploading = true);
+    try {
+      await _repo.uploadDocument(
+        file: File(path),
+        aiConsent: true,
+        documentType: documentType,
+        caseId: caseId,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تم رفع المستند، وسيظهر بعد اكتمال التحليل.'),
+        ),
+      );
+      await _load();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  Future<String?> _pickCase() async {
+    List<CaseSummary> cases;
+    try {
+      cases = await _repo.cases();
+    } on ApiException catch (e) {
+      if (!mounted) return null;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
+      return null;
+    }
+    if (!mounted) return null;
+    if (cases.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('لا توجد قضايا مرتبطة بحسابك لربط المستند بها.'),
+        ),
+      );
+      return null;
+    }
+    return showModalBottomSheet<String>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('اختر القضية المرتبطة بالمستند'),
+            ),
+            for (final c in cases)
+              ListTile(
+                title: Text(c.title),
+                subtitle: c.caseNumber.isEmpty ? null : Text(c.caseNumber),
+                onTap: () => Navigator.of(sheetContext).pop(c.id.toString()),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<String?> _pickDocumentType() => showModalBottomSheet<String>(
+    context: context,
+    builder: (sheetContext) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('نوع المستند'),
+          ),
+          ListTile(
+            title: const Text('مستند عام'),
+            onTap: () => Navigator.of(sheetContext).pop('general'),
+          ),
+          ListTile(
+            title: const Text('عقد'),
+            onTap: () => Navigator.of(sheetContext).pop('contract'),
+          ),
+        ],
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -81,6 +223,17 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
             onSelected: (v) => setState(() => _filter = v),
           ),
         ),
+        if (_canUpload)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+            child: PrimaryButton(
+              label: 'رفع مستند جديد',
+              icon: Icons.upload_file,
+              expand: true,
+              loading: _uploading,
+              onPressed: _uploading ? null : _startUpload,
+            ),
+          ),
         Expanded(
           child: _visible.isEmpty
               ? EmptyState(
@@ -166,15 +319,18 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
               child: LoadingSkeleton(count: 4),
             )
           : _error != null
-              ? ErrorState(message: _error!, onRetry: _load)
-              : _buildBody(),
+          ? ErrorState(message: _error!, onRetry: _load)
+          : _buildBody(),
     );
   }
 
   Widget _buildBody() {
     final json = Json(_data ?? const {});
     final doc = json.object('document') ?? json;
-    final analysis = json.object('analysis');
+    // The server returns flat `findings` (type/content) and `entities`
+    // (entity_type/value) arrays, not a nested `analysis` object.
+    final findings = json.list('findings');
+    final entities = json.list('entities');
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -210,7 +366,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
         ),
         const SizedBox(height: 18),
         SectionHeader(title: 'التحليل الذكي'),
-        if (analysis == null)
+        if (findings.isEmpty && entities.isEmpty)
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
@@ -226,53 +382,88 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
             ),
           )
         else
-          ..._analysisSections(analysis),
+          ..._analysisSections(doc, findings, entities),
       ],
     );
   }
 
-  /// Renders only the analysis fields the backend actually returned.
-  List<Widget> _analysisSections(Json analysis) {
+  /// Renders the analysis the backend actually returned: a one-line summary plus the
+  /// grouped findings and extracted entities. Nothing is invented for a document whose
+  /// analysis has not completed.
+  List<Widget> _analysisSections(
+    Json doc,
+    List<Json> findings,
+    List<Json> entities,
+  ) {
     final widgets = <Widget>[];
-    final summary = analysis.str('summary');
+    final summary = doc.str('summary');
     if (summary.isNotEmpty) {
       widgets.add(Text(summary, style: Theme.of(context).textTheme.bodyMedium));
       widgets.add(const SizedBox(height: 12));
     }
 
     for (final entry in const [
-      ('المخاطر', 'risks'),
-      ('الالتزامات', 'obligations'),
-      ('البنود المهمة', 'key_clauses'),
+      ('المخاطر', 'risk'),
+      ('التوصيات', 'recommendation'),
+      ('الالتزامات', 'obligation'),
+      ('البنود المهمة', 'clause'),
     ]) {
-      final list = analysis.list(entry.$2);
-      if (list.isEmpty) continue;
-      widgets.add(Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: Text(entry.$1,
-            style: Theme.of(context).textTheme.titleMedium),
-      ));
-      widgets.addAll(list.map((item) => Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Padding(
-                  padding: EdgeInsets.only(top: 6),
-                  child: Icon(Icons.circle, size: 6, color: AppColors.teal),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    item.str('text', fallback: item.str('title', fallback: item.toString())),
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                ),
-              ],
-            ),
-          )));
+      final items = findings.where((f) => f.str('type') == entry.$2).toList();
+      if (items.isEmpty) {
+        continue;
+      }
+      widgets.add(
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Text(entry.$1, style: Theme.of(context).textTheme.titleMedium),
+        ),
+      );
+      widgets.addAll(items.map((f) => _bullet(f.str('content'))));
       widgets.add(const SizedBox(height: 12));
+    }
+
+    if (entities.isNotEmpty) {
+      widgets.add(
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Text(
+            'الكيانات المستخرجة',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+        ),
+      );
+      widgets.addAll(
+        entities.map(
+          (e) => _bullet(
+            '${_entityLabel(e.str('entity_type'))}: ${e.str('value')}',
+          ),
+        ),
+      );
     }
     return widgets;
   }
+
+  Widget _bullet(String text) => Padding(
+    padding: const EdgeInsets.only(bottom: 6),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(top: 6),
+          child: Icon(Icons.circle, size: 6, color: AppColors.teal),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(text, style: Theme.of(context).textTheme.bodyMedium),
+        ),
+      ],
+    ),
+  );
+
+  static String _entityLabel(String type) => switch (type) {
+    'date' => 'تاريخ',
+    'amount' => 'مبلغ',
+    'party' => 'طرف',
+    _ => type,
+  };
 }

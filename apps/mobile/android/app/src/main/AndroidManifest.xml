@@ -1,8 +1,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The app is a pure HTTP client of the platform's own /api/v1 endpoints, so it needs
+         network access in every build type. Declared here (not only in the debug/profile
+         manifests) because a release build otherwise cannot reach the API at all.
+         No other permission is requested: the file picker uses the system document picker
+         (SAF), which grants per-file access without READ_EXTERNAL_STORAGE. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <application
-        android:label="mawatheq_mobile"
+        android:label="مواثيق"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="false">
         <activity
             android:name=".MainActivity"
             android:exported="true"

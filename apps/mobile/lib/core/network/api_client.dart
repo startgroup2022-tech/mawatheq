@@ -144,7 +144,7 @@ class ApiClient {
       if (documentType != null) request.fields['document_type'] = documentType;
       if (caseId != null) request.fields['case_id'] = caseId;
 
-      final streamed = await request.send().timeout(AppConfig.timeout);
+      final streamed = await _http.send(request).timeout(AppConfig.timeout);
       final response = await http.Response.fromStream(streamed);
       return _decode(response);
     } on ApiException {
@@ -154,6 +154,9 @@ class ApiClient {
     }
   }
 
+  /// Mirrors the server's allow-list in `includes/upload_validation.php` exactly
+  /// (pdf/png/jpg/jpeg). Anything else returns null so the request carries no
+  /// misleading content type; the server sniffs the bytes and rejects it anyway.
   static MediaType? _mediaTypeFor(String path) {
     final lower = path.toLowerCase();
     if (lower.endsWith('.pdf')) return MediaType('application', 'pdf');
@@ -161,13 +164,7 @@ class ApiClient {
     if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
       return MediaType('image', 'jpeg');
     }
-    if (lower.endsWith('.webp')) return MediaType('image', 'webp');
-    if (lower.endsWith('.docx')) {
-      return MediaType(
-        'application',
-        'vnd.openxmlformats-officedocument.wordprocessingml.document',
-      );
-    }
+    // No other extension is accepted by the server; leave the content type unset.
     return null;
   }
 

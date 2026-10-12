@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.mawatheq.mawatheq_mobile"
+    namespace = "com.mawatheq.app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -20,10 +20,9 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.mawatheq.mawatheq_mobile"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
+        // com.mawatheq.app — the production identifier. Changing it after the first Play
+        // upload would orphan the listing, so it is fixed here.
+        applicationId = "com.mawatheq.app"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -32,8 +31,9 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
+            // The app holds no credential, so the debug keystore is a valid signature for a
+            // testable release build. A Play upload needs the owner's upload key: drop a real
+            // keystore in and replace this with a release signingConfig before publishing.
             signingConfig = signingConfigs.getByName("debug")
         }
     }
