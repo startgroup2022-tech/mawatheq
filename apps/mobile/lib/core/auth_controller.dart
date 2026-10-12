@@ -39,12 +39,19 @@ class AuthController extends ChangeNotifier {
   SessionUser _user = SessionUser.empty;
   String? _error;
   bool _sessionExpired = false;
+  bool? _lastRegistrationEmailSent;
 
   AuthStatus get status => _status;
   SessionUser get user => _user;
   String? get error => _error;
   bool get isSignedIn => _status == AuthStatus.signedIn;
   bool get isGuest => _status == AuthStatus.guest;
+
+  /// For the most recent [register] call: whether the server reported the
+  /// verification email was handed off (`email_sent`). Null when the endpoint
+  /// did not report it. Lets the success screen avoid promising a delivery that
+  /// failed — the real cause is fixed server-side (see `includes/smtp.php`).
+  bool? get lastRegistrationEmailSent => _lastRegistrationEmailSent;
 
   /// True when the stored token was rejected by the server (expired or revoked)
   /// during [restore], so the welcome screen can say so.
@@ -157,6 +164,7 @@ class AuthController extends ChangeNotifier {
     String? phone,
   }) async {
     _error = null;
+    _lastRegistrationEmailSent = null;
     try {
       final outcome = await _repo.register(
         fullName: fullName,
@@ -165,6 +173,7 @@ class AuthController extends ChangeNotifier {
         accountType: accountType,
         phone: phone,
       );
+      _lastRegistrationEmailSent = outcome.emailSent;
       if (outcome.token != null && outcome.token!.isNotEmpty) {
         await _tokens.saveToken(outcome.token!);
         _user = outcome.user;

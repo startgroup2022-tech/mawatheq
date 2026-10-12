@@ -4,7 +4,8 @@ require_once __DIR__ . '/includes/admin_header.php';
 require_once __DIR__ . '/../includes/ai_provider.php';
 require_once __DIR__ . '/../includes/audit_log.php';
 require_once __DIR__ . '/../includes/ngenius.php';
-$saved = false; $pwError = null; $secretError=null;
+require_once __DIR__ . '/../includes/smtp.php';
+$saved = false; $pwError = null; $secretError=null; $mailTestResult=null;
 
 /** حفظ آمن لأي مفتاح إعداد: يحدّث القيمة إن وُجد المفتاح، وإلا يُنشئه (يمنع فشل الحفظ الصامت). */
 function save_setting(PDO $pdo, string $key, string $value): void {
@@ -85,6 +86,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'passw
     }
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'mailer_settings') {
+    save_setting($pdo, 'smtp_enabled', isset($_POST['smtp_enabled']) ? '1' : '0');
+    save_setting($pdo, 'smtp_host', trim($_POST['smtp_host'] ?? ''));
+    save_setting($pdo, 'smtp_port', (string)max(0, (int)($_POST['smtp_port'] ?? 0)));
+    save_setting($pdo, 'smtp_secure', in_array($_POST['smtp_secure'] ?? '', ['ssl','tls','none'], true) ? $_POST['smtp_secure'] : 'tls');
+    save_setting($pdo, 'smtp_username', trim($_POST['smtp_username'] ?? ''));
+    save_setting($pdo, 'smtp_from_email', trim($_POST['smtp_from_email'] ?? ''));
+    save_setting($pdo, 'smtp_from_name', trim($_POST['smtp_from_name'] ?? ''));
+    $smtpPassword = trim($_POST['smtp_password'] ?? '');
+    if (isset($_POST['revoke_smtp_password'])) {
+        secret_store_setting($pdo, 'smtp_password', '');
+    } elseif ($smtpPassword !== '' && !secret_store_setting($pdo, 'smtp_password', $smtpPassword)) {
+        $secretError = 'تعذر تشفير كلمة مرور البريد؛ اضبط مفتاح MAWATHEQ_ENCRYPTION_KEY في config/secrets.php أولاً.';
+    }
+    log_action($pdo, 'تحديث إعدادات إرسال البريد');
+    if (!$secretError) $saved = true;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'mailer_test') {
+    $target = trim($_POST['test_recipient'] ?? '');
+    if (!filter_var($target, FILTER_VALIDATE_EMAIL)) {
+        $mailTestResult = ['ok' => false, 'message' => 'أدخل بريداً إلكترونياً صحيحاً لاختبار الإرسال.'];
+    } else {
+        require_once __DIR__ . '/../includes/mailer.php';
+        // Render through the same template used for real verification mail, so a
+        // successful test exercises the true production path end to end.
+        $html = render_mail_template(
+            is_rtl() ? 'اختبار إرسال البريد' : 'Mail delivery test',
+            is_rtl()
+                ? '<p>هذه رسالة اختبار من لوحة تحكم مواثيق. إن وصلتك، فإرسال البريد يعمل بنجاح.</p>'
+                : '<p>This is a test message from the Mawatheq admin panel. If you received it, outbound mail is working.</p>'
+        );
+        $subject = is_rtl() ? 'اختبار إرسال البريد - مواثيق' : 'Mawatheq mail delivery test';
+        $ok = send_mail($target, $subject, $html);
+        $mailTestResult = ['ok' => $ok, 'message' => $ok
+            ? 'تم الإرسال بنجاح عبر ' . (mail_diagnostics($pdo)['transport'] === 'smtp' ? 'SMTP' : 'mail()') . ' — تحقق من صندوق الوارد والبريد المزعج.'
+            : 'فشل الإرسال. السبب: ' . (mail_last_error() ?: 'غير معروف')];
+    }
+}
+
 $settings = [];
 foreach ($pdo->query('SELECT * FROM site_settings')->fetchAll() as $s) $settings[$s['setting_key']] = $s['setting_value'];
 $aiSecureSettings=ai_load_settings($pdo); $settings=array_merge($settings,$aiSecureSettings);
@@ -102,6 +143,11 @@ $aiActive = $aiConfigured && $aiEnabledFlag;
 
 $ngeniusConfigured = !empty($settings['ngenius_outlet_ref']) && $ngeniusKeyConfigured;
 $ngeniusActive = ngenius_is_enabled($ngeniusSecureSettings);
+
+$mailSettings = smtp_settings($pdo);
+$mailDiag = mail_diagnostics($pdo);
+$mailConfigured = smtp_configured($mailSettings);
+$settings['smtp_password'] = '';
 ?>
 <div class="app-content">
   <div class="pg-head"><div><h1>الإعدادات</h1><p>إعدادات المنصة، مزوّد الذكاء الاصطناعي، بوابة الدفع، وحسابك الشخصي</p></div></div>
@@ -128,6 +174,103 @@ $ngeniusActive = ngenius_is_enabled($ngeniusSecureSettings);
       </div>
     </div>
     <button class="btn btn-primary" type="submit">حفظ الإعدادات</button>
+  </form>
+
+  <form class="dash-card" method="post" id="mailerForm"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
+    <input type="hidden" name="action" value="mailer_settings">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+      <h3 style="margin:0">إرسال البريد (تفعيل الحساب واستعادة كلمة المرور)</h3>
+      <span class="status-pill status-<?= $mailConfigured ? 'confirmed' : 'pending' ?>">
+        <?= $mailConfigured ? '✓ SMTP موثّق' : '— mail() المحلي' ?>
+      </span>
+    </div>
+    <p style="font-size:.85rem;margin-bottom:16px">
+      ترسل المنصة رسائل تفعيل الحساب وإعادة تعيين كلمة المرور من بريد النظام. اضبط الإرسال عبر SMTP
+      الخاص بمزوّد بريدك (نفس المزوّد الذي يملك سجلات SPF/DKIM لمجال موقعك) لضمان وصول الرسائل بدل
+      الاعتماد على <code>mail()</code> المحلي الذي كثيراً ما يفشل بصمت على الاستضافة المشتركة.
+      بيانات SMTP تجدها عند مزوّد البريد؛ وإن كان البريد مستضافاً في cPanel فاستخدم الخادم الذي
+      يظهر في <b>Email Accounts ← Connect Devices</b>.
+    </p>
+
+    <label style="display:flex;align-items:center;gap:8px;margin:14px 0;font-weight:700;font-size:.9rem">
+      <input type="checkbox" name="smtp_enabled" value="1" <?= ($mailSettings['smtp_enabled'] ?? '0') === '1' ? 'checked' : '' ?>>
+      إرسال الرسائل عبر SMTP الموثّق
+    </label>
+
+    <div class="grid-2">
+      <div class="field">
+        <label>خادم SMTP</label>
+        <input type="text" name="smtp_host" value="<?= htmlspecialchars($mailSettings['smtp_host'] ?? '') ?>" placeholder="mail.mawatheq.com">
+      </div>
+      <div class="field">
+        <label>المنفذ</label>
+        <input type="number" name="smtp_port" value="<?= htmlspecialchars((string)($mailSettings['smtp_port'] ?? '587')) ?>" min="1" max="65535" placeholder="587">
+      </div>
+      <div class="field">
+        <label>نوع التشفير</label>
+        <div class="select-wrap"><select name="smtp_secure" class="pro-select">
+          <?php $sec = $mailSettings['smtp_secure'] ?? 'tls'; ?>
+          <option value="tls" <?= $sec === 'tls' ? 'selected' : '' ?>>STARTTLS (منفذ 587 — الأكثر استخداماً)</option>
+          <option value="ssl" <?= $sec === 'ssl' ? 'selected' : '' ?>>SSL/TLS (منفذ 465)</option>
+          <option value="none" <?= $sec === 'none' ? 'selected' : '' ?>>بدون تشفير (خادم داخلي فقط)</option>
+        </select></div>
+      </div>
+      <div class="field">
+        <label>اسم المستخدم (البريد الكامل)</label>
+        <input type="text" name="smtp_username" value="<?= htmlspecialchars($mailSettings['smtp_username'] ?? '') ?>" placeholder="info@mawatheq.com">
+      </div>
+      <div class="field">
+        <label>كلمة مرور البريد</label>
+        <input type="password" name="smtp_password" value="" autocomplete="new-password" placeholder="<?= ($mailSettings['smtp_password'] ?? '') !== '' ? 'محفوظة — أدخل قيمة جديدة للتدوير' : 'أدخل كلمة مرور البريد' ?>">
+        <?php if(($mailSettings['smtp_password'] ?? '') !== ''): ?><label><input type="checkbox" name="revoke_smtp_password" value="1"> حذف كلمة المرور المحفوظة</label><?php endif; ?>
+      </div>
+      <div class="field">
+        <label>بريد المُرسِل (From)</label>
+        <input type="email" name="smtp_from_email" value="<?= htmlspecialchars($mailSettings['smtp_from_email'] ?? (defined('MAIL_FROM_EMAIL') ? MAIL_FROM_EMAIL : '')) ?>" placeholder="info@mawatheq.com">
+        <p class="field-hint">يفضّل أن يكون نفس اسم مستخدم SMTP ليطابق نطاق SPF/DKIM.</p>
+      </div>
+      <div class="field">
+        <label>اسم المُرسِل الظاهر</label>
+        <input type="text" name="smtp_from_name" value="<?= htmlspecialchars($mailSettings['smtp_from_name'] ?? 'مواثيق') ?>">
+      </div>
+    </div>
+
+    <div class="dash-card" style="background:var(--surface-2,#f7f8fa);margin:6px 0 16px">
+      <h4 style="margin:0 0 10px">تشخيص إرسال البريد</h4>
+      <table class="table" style="width:100%">
+        <tr><th style="text-align:start">وسيلة الإرسال الحالية</th><td><?= $mailDiag['transport'] === 'smtp' ? 'SMTP الموثّق' : 'mail() المحلي (sendmail/Exim)' ?></td></tr>
+        <?php if ($mailDiag['transport'] === 'smtp'): ?>
+          <tr><th style="text-align:start">الخادم</th><td><?= htmlspecialchars($mailDiag['host'] . ':' . $mailDiag['port'] . ' (' . $mailDiag['secure'] . ')') ?></td></tr>
+          <tr><th style="text-align:start">بيانات الدخول</th><td><?= $mailDiag['username_set'] ? 'اسم مستخدم محفوظ' : 'بلا اسم مستخدم' ?> — <?= $mailDiag['password_set'] ? 'كلمة مرور محفوظة' : 'بلا كلمة مرور' ?></td></tr>
+          <tr><th style="text-align:start">إمكانية الوصول للخادم</th><td><?= $mailDiag['reachable'] ? '✓ الخادم قابل للوصول' : ('✗ ' . htmlspecialchars((string)$mailDiag['error'])) ?></td></tr>
+        <?php else: ?>
+          <tr><th style="text-align:start">تسليم sendmail المحلي</th><td><?= $mailDiag['error'] ? ('⚠ ' . htmlspecialchars((string)$mailDiag['error'])) : 'المتاح' ?></td></tr>
+        <?php endif; ?>
+        <tr><th style="text-align:start">بريد المُرسِل الفعلي</th><td><?= htmlspecialchars($mailDiag['from_email']) ?> (<?= htmlspecialchars($mailDiag['from_name']) ?>)</td></tr>
+      </table>
+      <?php if ($mailDiag['transport'] !== 'smtp'): ?>
+        <p class="field-hint" style="margin-top:10px">إن لم تصل رسائل التفعيل، فعّل SMTP أعلاه. تأكد أيضاً من سجلات SPF وDKIM للمجال (لمنع تصنيف الرسائل كبريد مزعج) ومن مجلد الرسائل غير المرغوبة.</p>
+      <?php endif; ?>
+    </div>
+
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <button class="btn btn-primary" type="submit">حفظ إعدادات البريد</button>
+    </div>
+  </form>
+
+  <form class="dash-card" method="post">
+    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
+    <input type="hidden" name="action" value="mailer_test">
+    <h3 style="margin-bottom:6px">إرسال رسالة اختبار</h3>
+    <p style="font-size:.85rem;margin-bottom:14px">أرسل رسالة فعلية للتأكد من وصول البريد قبل تفعيل التسجيل للعملاء. تُستخدم نفس وسيلة الإرسال المحفوظة أعلاه.</p>
+    <?php if ($mailTestResult !== null): ?>
+      <div class="form-alert <?= $mailTestResult['ok'] ? 'success' : 'error' ?>"><?= htmlspecialchars($mailTestResult['message']) ?></div>
+    <?php endif; ?>
+    <div class="field" style="max-width:420px">
+      <label>البريد المستلِم للاختبار</label>
+      <input type="email" name="test_recipient" placeholder="you@example.com" required>
+    </div>
+    <button class="btn btn-outline" type="submit">إرسال رسالة اختبار</button>
   </form>
 
   <form class="dash-card" method="post" id="aiForm"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">

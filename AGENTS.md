@@ -285,7 +285,26 @@ and its own guard; none accepts a role from request input.
   on IP and on the account, and after 5 tries returns the 15-minute message.
 - CSRF: every auth POST validates `csrf_is_valid()` and returns 403 on a miss.
 
-### Why a page can render "empty" in the browser but 200 in curl
+  ### Outbound mail: prefer SMTP over PHP mail()
+
+  `includes/mailer.php`'s `send_mail()` is the single entry point for all system
+  mail (account verification in `includes/auth_security.php`, password reset in
+  `forgot-password.php`). It prefers the authenticated SMTP relay configured in
+  **Admin → Settings → Email delivery** (`includes/smtp.php`, STARTTLS/SSL,
+  AUTH LOGIN) and falls back to PHP `mail()` only when SMTP is off. The SMTP
+  password is stored encrypted in `site_settings` via `secret_store_setting()`.
+
+  On shared cPanel hosting `mail()` frequently fails silently: it can return
+  `true` with nothing delivered, offers no authentication, and a sending IP
+  without reverse-DNS / SPF alignment gets its mail rejected or spam-foldered
+  with no error visible in the app. When diagnosing "verification email never
+  arrives", check `mail_diagnostics($pdo)` (also surfaced on the settings page)
+  before touching application code - it reports the active transport, whether
+  the SMTP host is reachable, and why the legacy path would fail. The
+  `send_mail()` return value is what drives `email_sent` in
+  `api/v1/auth/register.php`, so a silent delivery failure is now visible there.
+
+  ### Why a page can render "empty" in the browser but 200 in curl
 
 An uncaught `Throwable` in a page body (e.g. a bad column alias in a new query)
 aborts the include **after** `header.php` has already printed `<head>` + sidebar

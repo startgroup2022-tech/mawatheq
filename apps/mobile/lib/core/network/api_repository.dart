@@ -97,6 +97,7 @@ class ApiRepository {
       verificationRequired: json['verification_required'] == true,
       token: json['token']?.toString(),
       user: SessionUser.fromJson(json),
+      emailSent: json['email_sent'] is bool ? json['email_sent'] as bool : null,
     );
   }
 
@@ -359,6 +360,7 @@ class LoginOutcome {
     required this.verificationRequired,
     this.token,
     required this.user,
+    this.emailSent,
   });
 
   /// True when the server accepted the credentials but the email is unverified;
@@ -366,6 +368,11 @@ class LoginOutcome {
   final bool verificationRequired;
   final String? token;
   final SessionUser user;
+
+  /// For registration: whether the server reported the verification mail was
+  /// handed off for delivery (`email_sent`). Null when the endpoint does not
+  /// report it, so the UI never claims a delivery that did not happen.
+  final bool? emailSent;
 }
 
 /// Notifications plus the server-computed unread count.

@@ -66,13 +66,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   Widget build(BuildContext context) {
     if (_done) {
+      // The server reports whether the verification email was actually handed off.
+      // Never promise "we sent it" when delivery failed; point to the resend page
+      // instead. A null (older backend) keeps the original positive wording.
+      final emailSent = context.watch<AuthController>().lastRegistrationEmailSent;
+      final delivered = emailSent ?? true;
       return Scaffold(
         appBar: const BrandAppBar(),
         body: EmptyState(
-          icon: Icons.mark_email_unread_outlined,
+          icon: delivered
+              ? Icons.mark_email_unread_outlined
+              : Icons.error_outline,
           title: 'تم إنشاء الحساب',
-          message:
-              'أرسلنا رابط تأكيد إلى بريدك الإلكتروني. أكّد البريد ثم سجّل الدخول.',
+          message: delivered
+              ? 'أرسلنا رابط تأكيد إلى بريدك الإلكتروني. أكّد البريد ثم سجّل الدخول.'
+              : 'تم إنشاء الحساب، لكن تعذّر إرسال رسالة التأكيد الآن. من صفحة "إعادة إرسال التفعيل" على الموقع يمكنك طلب رابط جديد.',
           actionLabel: 'رجوع لتسجيل الدخول',
           onAction: () => Navigator.of(context).pop(),
         ),
