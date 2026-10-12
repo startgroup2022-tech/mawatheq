@@ -125,7 +125,13 @@ class PrimaryButton extends StatelessWidget {
                 Icon(icon, size: 18),
                 const SizedBox(width: AppSpacing.s2),
               ],
-              Text(label),
+              if (expand)
+                Flexible(
+                  child: Text(label,
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                )
+              else
+                Text(label),
             ],
           );
 
@@ -164,7 +170,13 @@ class SecondaryButton extends StatelessWidget {
             Icon(icon, size: 18),
             const SizedBox(width: AppSpacing.s2),
           ],
-          Text(label),
+          if (expand)
+            Flexible(
+              child: Text(label,
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+            )
+          else
+            Text(label),
         ],
       ),
     );
@@ -1004,7 +1016,11 @@ class SectionHeader extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(title, style: Theme.of(context).textTheme.titleMedium),
+          // Expanded so a long Arabic section title wraps instead of overflowing
+          // the row (Row children are laid out at intrinsic width otherwise).
+          Expanded(
+            child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+          ),
           if (actionLabel != null)
             TextButton(onPressed: onAction, child: Text(actionLabel!)),
         ],

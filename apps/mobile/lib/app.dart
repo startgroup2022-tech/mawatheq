@@ -8,10 +8,11 @@ import 'core/theme/app_theme.dart';
 
 import 'features/home/home_shell.dart';
 import 'features/public/onboarding_screen.dart';
-import 'shared/widgets/brand_widgets.dart';
+import 'features/public/public_home_screen.dart';
+import 'features/public/splash_screen.dart';
 
-/// Root widget: wires locale + direction, then shows onboarding, login or the
-/// authenticated shell based on the restored session.
+/// Root widget: wires locale + direction, then routes from the splash to the
+/// dashboard, the welcome screen, or the public homepage depending on the session.
 class MawatheqApp extends StatefulWidget {
   const MawatheqApp({super.key});
 
@@ -21,6 +22,7 @@ class MawatheqApp extends StatefulWidget {
 
 class _MawatheqAppState extends State<MawatheqApp> {
   bool _restored = false;
+  bool _splashDone = false;
 
   @override
   void initState() {
@@ -31,6 +33,11 @@ class _MawatheqAppState extends State<MawatheqApp> {
       if (mounted) setState(() => _restored = true);
     });
   }
+
+  /// The splash stays until BOTH the session check and the entrance animation are
+  /// done, so the branding is not cut off mid-animation — but the animation is
+  /// short, so it never becomes an artificial delay.
+  bool get _showSplash => !_restored || !_splashDone;
 
   @override
   Widget build(BuildContext context) {
@@ -52,57 +59,25 @@ class _MawatheqAppState extends State<MawatheqApp> {
         // Force the text direction from the chosen locale so Arabic is always
         // RTL even when the device locale is something else.
         return Directionality(
-          textDirection:
-              locale.isRtl ? TextDirection.rtl : TextDirection.ltr,
+          textDirection: locale.isRtl ? TextDirection.rtl : TextDirection.ltr,
           child: child ?? const SizedBox.shrink(),
         );
       },
-      home: !_restored
-          ? const _SplashScreen()
-          : (auth.isSignedIn ? const HomeShell() : const _Gate()),
-    );
-  }
-}
-
-/// Decides between onboarding and login for a signed-out visitor.
-class _Gate extends StatelessWidget {
-  const _Gate();
-
-  @override
-  Widget build(BuildContext context) {
-    return const OnboardingScreen();
-  }
-}
-
-/// Branded splash shown while the stored token is validated.
-class _SplashScreen extends StatelessWidget {
-  const _SplashScreen();
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.light().scaffoldBackgroundColor,
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const BrandLogo(size: 84),
-            const SizedBox(height: 18),
-            Text('مواثيق', style: Theme.of(context).textTheme.headlineMedium),
-            const SizedBox(height: 6),
-            Text(
-              'منصة قانونية متكاملة',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 28),
-            const SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(strokeWidth: 2.2),
-            ),
-          ],
-        ),
-      ),
+      home: _showSplash
+          ? SplashScreen(
+              onAnimationComplete: () {
+                if (mounted) setState(() => _splashDone = true);
+              },
+            )
+          : switch (auth.status) {
+              // Authenticated user → personalised dashboard.
+              AuthStatus.signedIn => const HomeShell(),
+              // Guest → public homepage.
+              AuthStatus.guest => const PublicHomeScreen(),
+              // Unauthenticated (including an expired session) → welcome screen
+              // with guest access.
+              _ => const OnboardingScreen(),
+            },
     );
   }
 }

@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/auth_controller.dart';
 import '../../core/locale_controller.dart';
 import '../../core/theme/app_colors.dart';
 import '../../shared/widgets/brand_widgets.dart';
 import '../auth/login_screen.dart';
 
-/// Arabic-first onboarding. Three value-proposition slides, then sign-in.
+/// Arabic-first onboarding. Three value-proposition slides, then sign-in — plus a
+/// prominent guest path so a visitor can browse public content without an account.
 ///
 /// The claims here mirror the shipped feature set only — no invented capability.
 class OnboardingScreen extends StatefulWidget {
@@ -19,6 +21,22 @@ class OnboardingScreen extends StatefulWidget {
 class _OnboardingScreenState extends State<OnboardingScreen> {
   final _controller = PageController();
   int _page = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // A rejected stored token is reported once, on the first frame, so the visitor
+    // knows why they are being asked to sign in again.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final auth = context.read<AuthController>();
+      if (!mounted || !auth.sessionExpired) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('انتهت صلاحية جلستك. سجّل الدخول من جديد للمتابعة.'),
+        ),
+      );
+    });
+  }
 
   static const _slides = [
     (
@@ -144,6 +162,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     },
                   ),
                   const SizedBox(height: 10),
+                  // Prominent guest entry: browse public content with no account
+                  // and no session.
+                  SecondaryButton(
+                    label: locale.isRtl ? 'الدخول كزائر' : 'Continue as Guest',
+                    icon: Icons.explore_outlined,
+                    expand: true,
+                    onPressed: () => context.read<AuthController>().enterGuest(),
+                  ),
+                  const SizedBox(height: 6),
                   TextButton(
                     onPressed: () => context.read<LocaleController>().toggle(),
                     child: Text(

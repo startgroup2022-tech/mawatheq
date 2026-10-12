@@ -295,28 +295,33 @@ class _SettingTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      // Material, not a decorated Container, so the tile's ink splash is
+      // visible on the surface it actually paints on.
+      child: Material(
         color: AppColors.surface,
-        border: Border.all(color: AppColors.border),
-        borderRadius: BorderRadius.circular(AppRadius.md),
-      ),
-      child: ListTile(
-        onTap: onTap,
+        clipBehavior: Clip.antiAlias,
         shape: RoundedRectangleBorder(
+          side: const BorderSide(color: AppColors.border),
           borderRadius: BorderRadius.circular(AppRadius.md),
         ),
-        leading: Icon(icon, size: 20, color: AppColors.textMuted),
-        title: Text(label, style: Theme.of(context).textTheme.bodyMedium),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (value != null)
-              Text(value!, style: Theme.of(context).textTheme.bodySmall),
-            const SizedBox(width: 6),
-            const Icon(Icons.chevron_left, size: 18, color: AppColors.textSubtle),
-          ],
+        child: ListTile(
+          onTap: onTap,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.md),
+          ),
+          leading: Icon(icon, size: 20, color: AppColors.textMuted),
+          title: Text(label, style: Theme.of(context).textTheme.bodyMedium),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (value != null)
+                Text(value!, style: Theme.of(context).textTheme.bodySmall),
+              const SizedBox(width: 6),
+              const Icon(Icons.chevron_left, size: 18, color: AppColors.textSubtle),
+            ],
+          ),
         ),
       ),
     );

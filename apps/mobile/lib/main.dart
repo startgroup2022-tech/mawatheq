@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import 'app.dart';
 import 'core/auth_controller.dart';
+import 'core/guest_session.dart';
 import 'core/locale_controller.dart';
 import 'core/network/api_repository.dart';
 import 'core/storage/token_storage.dart';
@@ -25,6 +26,7 @@ void main() {
         Provider<ApiRepository>.value(value: repository),
         Provider<TokenStorage>.value(value: tokens),
         ChangeNotifierProvider<AuthController>.value(value: auth),
+        ChangeNotifierProvider<GuestSession>(create: (_) => GuestSession()),
         ChangeNotifierProvider<LocaleController>(
           create: (_) => LocaleController()..load(),
         ),

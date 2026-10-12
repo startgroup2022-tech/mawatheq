@@ -3,9 +3,9 @@ import 'package:provider/provider.dart';
 
 import '../../core/auth_controller.dart';
 import '../../core/config/app_config.dart';
+import '../../core/guest_session.dart';
 import '../../core/theme/app_colors.dart';
 import '../../shared/widgets/brand_widgets.dart';
-import '../home/home_shell.dart';
 import 'register_screen.dart';
 
 /// Sign-in for both account types.
@@ -13,10 +13,15 @@ import 'register_screen.dart';
 /// The two token types are genuinely different on the backend (`/auth/login.php`
 /// for clients, `/auth/lawyer-login.php` for lawyers), so the choice is explicit
 /// rather than guessed from the email.
+///
+/// [returnTo] is the destination a guest was stopped at. When sign-in succeeds the
+/// app opens that screen instead of the dashboard, so the visitor resumes what they
+/// were doing.
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key, this.startAsLawyer = false});
+  const LoginScreen({super.key, this.startAsLawyer = false, this.returnTo});
 
   final bool startAsLawyer;
+  final ProtectedDestination? returnTo;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -53,13 +58,35 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _busy = false);
 
     if (ok) {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const HomeShell()),
-        (route) => false,
-      );
+      _resumeDestination();
     } else if (auth.error != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(auth.error!)),
+      );
+    }
+  }
+
+  /// After a successful sign-in, land on the destination the guest was heading
+  /// for; otherwise the dashboard.
+  ///
+  /// The explicit [LoginScreen.returnTo] wins, and the guest-session record is
+  /// consumed so the intent is honoured exactly once.
+  void _resumeDestination() {
+    final guest = context.read<GuestSession>();
+    final destination =
+        widget.returnTo ?? guest.consume() ?? ProtectedDestination.dashboard;
+    guest.clear();
+
+    final pushed = destination.buildPushedScreen();
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => destination.buildShell()),
+      (route) => false,
+    );
+    if (pushed != null) {
+      // A destination that is not a bottom-nav tab (consultations,
+      // notifications) opens on top of the shell it belongs to.
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => pushed),
       );
     }
   }
@@ -172,9 +199,11 @@ class _LoginScreenState extends State<LoginScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(
+                      Flexible(
+                        child: Text(
                         'ليس لديك حساب؟',
                         style: Theme.of(context).textTheme.bodySmall,
+                        ),
                       ),
                       TextButton(
                         onPressed: () => Navigator.of(context).push(

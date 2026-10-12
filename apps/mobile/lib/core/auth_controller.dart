@@ -15,6 +15,14 @@ enum AuthStatus {
 
   /// A valid session exists — authenticated shell.
   signedIn,
+
+  /// Browsing public content without an account.
+  ///
+  /// This is deliberately *not* a session: no token is issued, no user id exists,
+  /// and [AuthController.user] stays empty. A guest can only reach endpoints that
+  /// are public on the server; every protected call still returns 401 and the app
+  /// asks the visitor to sign in.
+  guest,
 }
 
 /// Holds the session and exposes sign-in/out. Deliberately small: it stores no
@@ -30,17 +38,50 @@ class AuthController extends ChangeNotifier {
   AuthStatus _status = AuthStatus.checking;
   SessionUser _user = SessionUser.empty;
   String? _error;
+  bool _sessionExpired = false;
 
   AuthStatus get status => _status;
   SessionUser get user => _user;
   String? get error => _error;
   bool get isSignedIn => _status == AuthStatus.signedIn;
+  bool get isGuest => _status == AuthStatus.guest;
+
+  /// True when the stored token was rejected by the server (expired or revoked)
+  /// during [restore], so the welcome screen can say so.
+  bool get sessionExpired => _sessionExpired;
+
+  /// True when the visitor may browse public content — signed in or not.
+  bool get canBrowsePublic => _status != AuthStatus.checking;
+
+  /// Enters guest mode: public browsing, no account, no token, no user id.
+  ///
+  /// This changes nothing on the server. Any stored token is left untouched (a guest
+  /// is a visitor who has not signed in, not a signed-out user), and [user] stays
+  /// empty so no screen can mistake a guest for an authenticated account.
+  void enterGuest() {
+    _error = null;
+    _status = AuthStatus.guest;
+    notifyListeners();
+  }
+
+  /// Leaves guest mode back to the welcome screen, without touching any token.
+  void exitGuest() {
+    if (_status != AuthStatus.guest) return;
+    _status = AuthStatus.signedOut;
+    notifyListeners();
+  }
 
   /// Restores a session from the secure store on app start.
   ///
   /// A token that the server rejects (revoked, expired) is cleared locally so the
-  /// app never keeps a token it cannot use.
+  /// app never keeps a token it cannot use, and [sessionExpired] is raised so the
+  /// welcome screen can explain why the visitor has to sign in again rather than
+  /// appearing to have lost the session for no reason.
   Future<void> restore() async {
+    // Never clobber an active guest session: a guest has no token to validate,
+    // and the splash must not bounce them back to the welcome screen.
+    if (_status == AuthStatus.guest) return;
+
     final token = await _tokens.readToken();
     if (token == null || token.isEmpty) {
       _status = AuthStatus.signedOut;
@@ -50,13 +91,16 @@ class AuthController extends ChangeNotifier {
     try {
       _user = await _repo.me();
       _status = AuthStatus.signedIn;
+      _sessionExpired = false;
     } on ApiException catch (e) {
       if (e.kind == ApiErrorKind.unauthorized || e.kind == ApiErrorKind.forbidden) {
         await _tokens.clear();
+        _sessionExpired = true;
       }
       _status = AuthStatus.signedOut;
     } catch (_) {
-      // Offline: keep the token, but do not pretend to be signed in.
+      // Offline: keep the token, but do not pretend to be signed in. This is a
+      // reachability problem, not an expired session, so the flag stays down.
       _status = AuthStatus.signedOut;
     }
     notifyListeners();
@@ -90,6 +134,7 @@ class AuthController extends ChangeNotifier {
       await _tokens.saveDeviceLabel(deviceLabel);
       _user = outcome.user;
       _status = AuthStatus.signedIn;
+      _sessionExpired = false;
       notifyListeners();
       return true;
     } on ApiException catch (e) {
@@ -124,6 +169,7 @@ class AuthController extends ChangeNotifier {
         await _tokens.saveToken(outcome.token!);
         _user = outcome.user;
         _status = AuthStatus.signedIn;
+        _sessionExpired = false;
       }
       notifyListeners();
       return true;
@@ -140,6 +186,7 @@ class AuthController extends ChangeNotifier {
     await _tokens.clear();
     _user = SessionUser.empty;
     _status = AuthStatus.signedOut;
+    _sessionExpired = false;
     notifyListeners();
   }
 
