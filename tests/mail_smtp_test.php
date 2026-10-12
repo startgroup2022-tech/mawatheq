@@ -171,5 +171,26 @@ check('the legacy path returns a boolean without throwing', is_bool($legacy));
 
 $clearMail();
 
+// ===========================================================================
+// 7. The SMTP module is optional: a deployment without includes/smtp.php must
+//    still be able to send mail through the legacy path, never fatal.
+//    This guards the regression where send_mail() hard-required the new file.
+// ===========================================================================
+echo "\n== optional SMTP module (partial deployment) ==\n";
+$smtpPath = __DIR__ . '/../includes/smtp.php';
+$smtpBackup = $smtpPath . '.testbak';
+$renamed = @rename($smtpPath, $smtpBackup);
+check('test could stage a deployment missing includes/smtp.php', $renamed === true);
+if ($renamed) {
+    $probe = __DIR__ . '/fixtures/mailer_without_smtp_probe.php';
+    $out = shell_exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($probe) . ' 2>&1');
+    @rename($smtpBackup, $smtpPath);
+    check('send_mail() does not fatal when smtp.php is absent', stripos((string)$out, 'Fatal error') === false);
+    // The probe var_exports the returned bool; the final line is therefore "true" or "false".
+    check('send_mail() falls back to the legacy path (returns a boolean)', (bool)preg_match('/(true|false)\s*$/', trim((string)$out)));
+}
+
+$clearMail();
+
 echo "\n" . ($failures === 0 ? "OK" : "FAILED") . " — $checks checks, $failures failures\n";
 exit($failures === 0 ? 0 : 1);

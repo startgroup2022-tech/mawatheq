@@ -14,18 +14,24 @@ function mail_last_error(): ?string {
 function send_mail(string $to, string $subject, string $htmlBody): bool {
     $GLOBALS['mawatheq_mail_error'] = null;
 
-    // Prefer an authenticated SMTP relay when the owner has configured one.
-    if (isset($GLOBALS['pdo']) && $GLOBALS['pdo'] instanceof PDO) {
-        require_once __DIR__ . '/smtp.php';
-        $settings = smtp_settings($GLOBALS['pdo']);
-        if (smtp_configured($settings)) {
-            $smtpError = null;
-            if (smtp_send($settings, $to, $subject, $htmlBody, $smtpError)) {
-                return true;
+    // Prefer an authenticated SMTP relay when the owner has configured one. The SMTP
+    // transport lives in a separate, optional module: if a deployment did not ship
+    // `smtp.php`, delivery must still work through the original mail() path rather than
+    // fail every send. The module is only consulted once it actually exists and loads.
+    $smtpFile = __DIR__ . '/smtp.php';
+    if (isset($GLOBALS['pdo']) && $GLOBALS['pdo'] instanceof PDO && is_file($smtpFile)) {
+        require_once $smtpFile;
+        if (function_exists('smtp_configured')) {
+            $settings = smtp_settings($GLOBALS['pdo']);
+            if (smtp_configured($settings)) {
+                $smtpError = null;
+                if (smtp_send($settings, $to, $subject, $htmlBody, $smtpError)) {
+                    return true;
+                }
+                $GLOBALS['mawatheq_mail_error'] = 'SMTP: ' . (string)$smtpError;
+                error_log('Mawatheq SMTP delivery failed: ' . (string)$smtpError);
+                return false;
             }
-            $GLOBALS['mawatheq_mail_error'] = 'SMTP: ' . (string)$smtpError;
-            error_log('Mawatheq SMTP delivery failed: ' . (string)$smtpError);
-            return false;
         }
     }
 

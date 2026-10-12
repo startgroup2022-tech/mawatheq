@@ -302,7 +302,18 @@ and its own guard; none accepts a role from request input.
   before touching application code - it reports the active transport, whether
   the SMTP host is reachable, and why the legacy path would fail. The
   `send_mail()` return value is what drives `email_sent` in
-  `api/v1/auth/register.php`, so a silent delivery failure is now visible there.
+      `api/v1/auth/register.php`, so a silent delivery failure is now visible there.
+
+    `includes/smtp.php` is an **optional** module, not a hard dependency. The app
+    must keep sending through `mail()` on any deployment that did not ship the new
+    file (partial FTP upload, a release archive built from an exclusion list, a
+    host that only synced tracked files). `send_mail()` therefore guards the
+    require with `is_file()`/`function_exists()`, and `admin/settings.php` defines
+    local fallbacks when the module is missing; an unconditional
+    `require_once includes/smtp.php` turns a harmless "SMTP not configured" host
+    into a fatal on **every** registration, resend and password reset. This was a
+    real regression (see `tests/mail_smtp_test.php`, section 7) — keep the module
+    optional and let the legacy path remain the zero-config default.
 
   ### Why a page can render "empty" in the browser but 200 in curl
 

@@ -4,8 +4,40 @@ require_once __DIR__ . '/includes/admin_header.php';
 require_once __DIR__ . '/../includes/ai_provider.php';
 require_once __DIR__ . '/../includes/audit_log.php';
 require_once __DIR__ . '/../includes/ngenius.php';
-require_once __DIR__ . '/../includes/smtp.php';
+// The SMTP transport is an optional module: a deployment that did not ship `smtp.php`
+// must still render this page and keep sending mail through the legacy mail() path.
+$smtpModuleFile = __DIR__ . '/../includes/smtp.php';
+$mailModuleAvailable = false;
+if (is_file($smtpModuleFile)) {
+    require_once $smtpModuleFile;
+    $mailModuleAvailable = function_exists('smtp_settings');
+}
 $saved = false; $pwError = null; $secretError=null; $mailTestResult=null;
+
+// Fallbacks so the page still renders (and reports the legacy transport) when the
+// optional `includes/smtp.php` module is not present in the deployment.
+if (!$mailModuleAvailable) {
+    if (!function_exists('smtp_settings')) {
+        function smtp_settings(PDO $pdo): array { return []; }
+    }
+    if (!function_exists('smtp_configured')) {
+        function smtp_configured(array $settings): bool { return false; }
+    }
+    if (!function_exists('mail_diagnostics')) {
+        function mail_diagnostics(PDO $pdo): array {
+            $sendmailPath = (string)ini_get('sendmail_path');
+            $binary = trim(strtok($sendmailPath, ' ') ?: '');
+            return [
+                'transport' => 'mail', 'smtp_enabled' => false, 'host' => '', 'port' => 0,
+                'secure' => 'none', 'username_set' => false, 'password_set' => false,
+                'from_email' => defined('MAIL_FROM_EMAIL') ? (string)MAIL_FROM_EMAIL : '',
+                'from_name' => defined('MAIL_FROM_NAME') ? (string)MAIL_FROM_NAME : 'Mawatheq',
+                'reachable' => null,
+                'error' => ($binary === '' || !is_file($binary)) ? 'PHP mail() has no local sendmail binary to hand off to' : null,
+            ];
+        }
+    }
+}
 
 /** حفظ آمن لأي مفتاح إعداد: يحدّث القيمة إن وُجد المفتاح، وإلا يُنشئه (يمنع فشل الحفظ الصامت). */
 function save_setting(PDO $pdo, string $key, string $value): void {
