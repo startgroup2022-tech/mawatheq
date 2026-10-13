@@ -404,7 +404,7 @@ foreach ($lawyers as $lawyer) {
 
 .lawyers-page .lawyer-id {
     color: #98a2b3;
-    font-size: 10px;
+    font-size: 12px;
     margin-top: 2px;
 }
 
@@ -436,7 +436,7 @@ foreach ($lawyers as $lawyer) {
     gap: 5px;
     padding: 5px 9px;
     border-radius: 999px;
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 800;
     white-space: nowrap;
 }
@@ -467,7 +467,7 @@ foreach ($lawyers as $lawyer) {
 .lawyers-page .source-text {
     max-width: 125px;
     color: #667085;
-    font-size: 10px;
+    font-size: 12px;
     line-height: 1.6;
 }
 
@@ -494,7 +494,7 @@ foreach ($lawyers as $lawyer) {
     background: #fff;
     color: #475467;
     text-decoration: none;
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 800;
     transition: .15s ease;
 }
@@ -712,7 +712,7 @@ foreach ($lawyers as $lawyer) {
 .lawyers-modal .form-hint {
     margin: 5px 0 0;
     color: #98a2b3;
-    font-size: 10px;
+    font-size: 12px;
 }
 
 .lawyers-modal .alert {
@@ -1133,11 +1133,11 @@ body.lawyers-modal-open {
                     </div>
 
                     <div class="field">
-                        <label for="lawyer_rate">السعر بالساعة (د.ب)</label>
+                        <label for="lawyer_rate">السعر بالساعة (<?= currency_symbol() ?>)</label>
                         <input
                             id="lawyer_rate"
                             type="number"
-                            step="0.001"
+                            step="<?= currency_step() ?>"
                             min="0"
                             name="hourly_rate"
                             value="<?= htmlspecialchars($oldCreate['hourly_rate']) ?>"

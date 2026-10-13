@@ -7,6 +7,26 @@ require_once __DIR__ . '/../../includes/invoice_time_items.php';
 require_once __DIR__ . '/../../includes/tenant.php';
 require_once __DIR__ . '/../../includes/finance.php';
 $auth = api_authenticate($pdo);
+if (($auth['type'] ?? '') === 'integration') {
+    $firmId = $auth['firm_id'];
+    $firmClause = $firmId === null ? '1=1' : 'i.firm_id = ?';
+    $stmt = $pdo->prepare('
+        SELECT i.*, u.full_name AS client_name, c.title AS case_title
+        FROM invoices i
+        JOIN users u ON u.id = i.user_id
+        LEFT JOIN cases c ON c.id = i.case_id
+        WHERE ' . $firmClause . ' AND i.is_draft=0
+        ORDER BY i.created_at DESC
+    ');
+    $stmt->execute($firmId === null ? [] : [$firmId]);
+    $invoices = $stmt->fetchAll();
+    foreach ($invoices as &$inv) {
+        $inv['balance'] = finance_invoice_balance($inv);
+        $inv['is_overdue'] = finance_display_status($inv) === 'overdue';
+    }
+    unset($inv);
+    api_json(['ok' => true, 'invoices' => $invoices]);
+}
 
 if ($auth['type'] === 'client') {
     $stmt = $pdo->prepare('

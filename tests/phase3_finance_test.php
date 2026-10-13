@@ -55,7 +55,7 @@ try {
 
     echo "== itemization and totals ==\n";
     $pdo->prepare('INSERT INTO invoices (invoice_number,lawyer_id,created_by_lawyer_id,firm_id,user_id,description,amount,currency,status,is_draft,issue_date) VALUES (?,?,?,?,?,?,?,?,?,0,CURDATE())')
-        ->execute([$n1, $ownerA, $ownerA, $firmA, $clientA, 'Itemized invoice', 0, 'BHD', 'unpaid']); $invA = (int)$pdo->lastInsertId();
+        ->execute([$n1, $ownerA, $ownerA, $firmA, $clientA, 'Itemized invoice', 0, 'SAR', 'unpaid']); $invA = (int)$pdo->lastInsertId();
     $pdo->prepare('INSERT INTO invoice_items (invoice_id,firm_id,description,quantity,unit_price,discount_amount,tax_rate,line_total,sort_order) VALUES (?,?,?,?,?,?,?,?,?)')
         ->execute([$invA, $firmA, 'Consultation', 2, 100.000, 50.000, 10.000, 165.000, 1]);
     $pdo->prepare('INSERT INTO invoice_items (invoice_id,firm_id,description,quantity,unit_price,discount_amount,tax_rate,line_total,sort_order) VALUES (?,?,?,?,?,?,?,?,?)')
@@ -93,7 +93,7 @@ try {
 
     echo "== idempotency key makes retries a no-op ==\n";
     $pdo->prepare('INSERT INTO invoices (invoice_number,lawyer_id,created_by_lawyer_id,firm_id,user_id,description,amount,currency,status,is_draft,issue_date) VALUES (?,?,?,?,?,?,?,?,?,0,CURDATE())')
-        ->execute([$n2, $ownerB, $ownerB, $firmB, $clientB, 'Webhook invoice', 100.0, 'BHD', 'unpaid']); $invB = (int)$pdo->lastInsertId();
+        ->execute([$n2, $ownerB, $ownerB, $firmB, $clientB, 'Webhook invoice', 100.0, 'SAR', 'unpaid']); $invB = (int)$pdo->lastInsertId();
     $r1 = finance_record_payment($pdo, $invB, 100.0, ['method' => 'ngenius', 'idempotency_key' => 'ngenius:TEST-' . $suffix, 'reference' => 'TEST-' . $suffix]);
     $r2 = finance_record_payment($pdo, $invB, 100.0, ['method' => 'ngenius', 'idempotency_key' => 'ngenius:TEST-' . $suffix, 'reference' => 'TEST-' . $suffix]);
     check('first webhook payment recorded', $r1['ok'] === true && empty($r1['duplicate']));
@@ -130,7 +130,7 @@ try {
 
     echo "== receivables and method breakdown ==\n";
     $pdo->prepare('INSERT INTO invoices (invoice_number,lawyer_id,created_by_lawyer_id,firm_id,user_id,description,amount,currency,status,is_draft,issue_date,due_date) VALUES (?,?,?,?,?,?,?,?,?,0,CURDATE(),DATE_SUB(CURDATE(),INTERVAL 30 DAY))')
-        ->execute([finance_next_invoice_number($pdo, $firmA, $ownerA), $ownerA, $ownerA, $firmA, $clientA, 'Overdue invoice', 50.0, 'BHD', 'unpaid']); $invOverdue = (int)$pdo->lastInsertId();
+        ->execute([finance_next_invoice_number($pdo, $firmA, $ownerA), $ownerA, $ownerA, $firmA, $clientA, 'Overdue invoice', 50.0, 'SAR', 'unpaid']); $invOverdue = (int)$pdo->lastInsertId();
     $receivables = finance_client_balances($pdo, $scopeA);
     $found = null; foreach ($receivables as $r) if ((int)$r['id'] === $clientA) $found = $r;
     check('client appears in receivables', $found !== null);
@@ -151,7 +151,7 @@ try {
     check('rejects discount above gross', finance_normalize_item(['description' => 'x', 'quantity' => 1, 'unit_price' => 10, 'discount_amount' => 20]) === null);
     check('rejects tax above 100%', finance_normalize_item(['description' => 'x', 'quantity' => 1, 'unit_price' => 10, 'tax_rate' => 150]) === null);
     $valid = finance_normalize_item(['description' => 'ok', 'quantity' => 3, 'unit_price' => 100, 'discount_amount' => 50, 'tax_rate' => 5]);
-    check('normalizes a valid item to a 3-decimal line total', $valid !== null && abs($valid['line_total'] - 262.5) < 0.001);
+    check('normalizes a valid item to the expected line total', $valid !== null && abs($valid['line_total'] - 262.5) < 0.001);
     check('display status derives overdue', finance_display_status(['status' => 'unpaid', 'is_draft' => 0, 'due_date' => date('Y-m-d', time() - 86400)]) === 'overdue');
     check('display status keeps drafts', finance_display_status(['status' => 'unpaid', 'is_draft' => 1, 'due_date' => null]) === 'draft');
 } finally {

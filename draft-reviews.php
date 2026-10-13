@@ -1,6 +1,8 @@
 <?php
-$activePage = 'draft-reviews';
-require_once __DIR__ . '/includes/app_header.php';
+// The shell header flushes HTML, so the POST (and its redirect) must run before it.
+require_once __DIR__ . '/config/config.php';
+require_once __DIR__ . '/lang/strings.php';
+require_once __DIR__ . '/includes/auth_guard.php';
 require_once __DIR__ . '/includes/csrf.php';
 $userId = (int)$_SESSION['user_id'];
 $message = null;
@@ -25,6 +27,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
+$activePage = 'draft-reviews';
+require_once __DIR__ . '/includes/app_header.php';
 $q = $pdo->prepare("SELECT d.*,c.title AS case_title,l.full_name AS lawyer_name FROM draft_documents d JOIN cases c ON c.id=d.case_id JOIN lawyers l ON l.id=d.lawyer_id WHERE c.user_id=? AND d.client_visible=1 ORDER BY d.created_at DESC");
 $q->execute([$userId]); $drafts = $q->fetchAll();
 ?>

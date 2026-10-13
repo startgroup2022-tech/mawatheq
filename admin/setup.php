@@ -33,7 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 ?>
 <!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/assets/css/style.css"><title>تهيئة المدير — مواثيق</title></head><body>
-<div class="auth-wrap"><div class="auth-card"><h2>إنشاء حساب المدير الأول</h2>
+<div class="auth-wrap"><div class="auth-card"><h1>إنشاء حساب المدير الأول</h1>
 <p class="field-hint">هذه الصفحة تعمل فقط قبل إنشاء أي حساب مدير. ضع مفتاح التهيئة الخاص في config/secrets.php، ثم احذف admin/setup.php بعد الإنشاء.</p>
 <?php if ($error): ?><div class="form-alert error"><?= htmlspecialchars($error) ?></div><?php endif; ?>
 <?php if ($done): ?><div class="form-alert success">تم إنشاء حساب المدير. احذف هذه الصفحة من الخادم الآن.</div><a class="btn btn-primary btn-block" href="/admin/login.php">تسجيل الدخول</a><?php else: ?>

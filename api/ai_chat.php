@@ -11,6 +11,14 @@ if (empty($_SESSION['user_id'])) {
     exit;
 }
 
+// Defense in depth: config.php also enforces CSRF for session-backed POSTs, but this
+// endpoint consumes the AI quota, so verify the token again before doing work.
+if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+    http_response_code(403);
+    echo json_encode(['error' => 'invalid_request']);
+    exit;
+}
+
 $conversationId = (int)($_POST['conversation_id'] ?? 0);
 $message = trim($_POST['message'] ?? '');
 
@@ -44,8 +52,8 @@ $pdo->prepare('INSERT INTO ai_messages (conversation_id, sender, message) VALUES
 
 // جلب إعدادات مزوّد الذكاء الاصطناعي من قاعدة البيانات (لوحة التحكم → الإعدادات)
 $settings = ai_load_settings($pdo);
-// التكامل مفعّل فقط إن كان هناك مزوّد ومفتاح، وإن لم يكن الأدمن قد عطّله يدوياً
-$aiEnabled = !empty($settings['ai_provider']) && !empty($settings['ai_api_key']) && ($settings['ai_enabled'] ?? '1') !== '0';
+// التكامل مفعّل عبر الشرط الموحّد: مزوّد مستضاف يحتاج مفتاحاً، ومزوّد محلي يحتاج عنوان خادم فقط.
+$aiEnabled = ai_chat_provider_configured($settings);
 
 $answer = generate_grounded_legal_answer($message, current_lang() === 'ar', $settings, $pdo, (int)$_SESSION['user_id'], 'client');
 $reply = $answer['reply'];

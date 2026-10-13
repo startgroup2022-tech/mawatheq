@@ -33,21 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $account = $stmt->fetch();
 
         if ($account) {
-            $token = bin2hex(random_bytes(32));
-            $pdo->prepare("UPDATE {$cfg['table']} SET reset_token = ?, reset_expires = DATE_ADD(NOW(), INTERVAL 1 HOUR) WHERE id = ?")
-                ->execute([$token, $account['id']]);
-
-            $resetUrl = rtrim(SITE_URL, '/') . '/reset-password.php?as=' . $as . '&token=' . $token;
-            $bodyHtml = is_rtl()
-                ? '<p>مرحباً ' . htmlspecialchars($account['full_name']) . '،</p><p>وصلنا طلب لإعادة تعيين كلمة مرور حسابك في منصة مواثيق. الرابط صالح لمدة ساعة واحدة فقط.</p><p>إن لم تطلب ذلك، تجاهل هذه الرسالة ولن يتغيّر شيء.</p>'
-                : '<p>Hello ' . htmlspecialchars($account['full_name']) . ',</p><p>We received a request to reset your Mawatheq account password. This link is valid for 1 hour only.</p><p>If you did not request this, you can safely ignore this email.</p>';
-            $html = render_mail_template(
-                is_rtl() ? 'إعادة تعيين كلمة المرور' : 'Reset your password',
-                $bodyHtml,
-                is_rtl() ? 'إعادة تعيين كلمة المرور' : 'Reset password',
-                $resetUrl
-            );
-            send_mail($email, is_rtl() ? 'إعادة تعيين كلمة المرور - مواثيق' : 'Reset your Mawatheq password', $html);
+            issue_password_reset($pdo, $as, (int)$account['id'], $email, $account['full_name']);
         }
         // نعرض نفس الرسالة سواء كان البريد موجوداً أم لا، لحماية خصوصية الحسابات
         $sent = true;
@@ -66,8 +52,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <body>
 <div class="auth-wrap">
   <div class="auth-card">
-    <a href="/" class="brand"><img src="/assets/img/logo.webp" style="height:38px"></a>
-    <h2 style="text-align:center;font-size:1.4rem;margin-top:10px"><?= is_rtl() ? 'نسيت كلمة المرور؟' : 'Forgot your password?' ?></h2>
+    <a href="/" class="brand"><img src="/assets/img/logo.webp" alt="<?= htmlspecialchars(is_rtl() ? SITE_NAME_AR : SITE_NAME_EN) ?>" style="height:38px"></a>
+    <h1 style="text-align:center;font-size:1.4rem;margin-top:10px"><?= is_rtl() ? 'نسيت كلمة المرور؟' : 'Forgot your password?' ?></h1>
     <p style="text-align:center;color:var(--text-muted);font-size:.88rem;margin-bottom:10px"><?= is_rtl() ? 'أدخل بريدك الإلكتروني (حساب ' . $cfg['label'] . ') وسنرسل لك رابط إعادة التعيين.' : 'Enter your ' . $cfg['label'] . ' account email and we will send you a reset link.' ?></p>
 
     <?php if ($error): ?><div class="form-alert error"><?= htmlspecialchars($error) ?></div><?php endif; ?>

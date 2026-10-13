@@ -7,6 +7,9 @@ define('DB_USER', 'your_cpanel_database_user');
 define('DB_PASS', 'replace-with-a-unique-strong-password');
 define('SITE_URL', 'https://mawatheq.com');
 define('MAIL_FROM_EMAIL', 'info@mawatheq.com');
+// Outbound mail is configured in the admin panel (Settings -> Email delivery).
+// Only add MAWATHEQ_SMTP_CA_FILE here if your SMTP host uses a private CA:
+// define('MAWATHEQ_SMTP_CA_FILE', '/home/CPANEL_USER/ssl/smtp-ca.pem');
 // Generate a unique random key of at least 32 characters for first-admin setup.
 define('ADMIN_SETUP_KEY', 'replace-with-a-random-secret-at-least-32-characters');
 // Keep this stable: changing it makes encrypted provider/payment secrets unreadable.

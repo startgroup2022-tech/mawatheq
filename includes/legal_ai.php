@@ -87,7 +87,7 @@ function generate_grounded_legal_answer(string $question, bool $isArabic, array 
     }
     $retrievalMethod = ($match || $knowledgeSources) ? 'hybrid' : 'none';
 
-    $enabled = !empty($settings['ai_provider']) && !empty($settings['ai_api_key']) && ($settings['ai_enabled'] ?? '1') !== '0';
+    $enabled = ai_chat_provider_configured($settings);
     if (!$enabled) {
         if (!$match && $knowledgeSources) {
             $source=$knowledgeSources[0];

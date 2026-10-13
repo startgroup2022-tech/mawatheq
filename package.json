@@ -1,0 +1,28 @@
+{
+  "name": "mawatheq",
+  "version": "1.0.0",
+  "description": "منصة قانونية احترافية (موقع + لوحة تحكم) بنفس روح قاضي برو، بهوية مواثيق البصرية. جاهزة للرفع مباشرة على استضافة cPanel (PHP + MySQL).",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/startgroup2022-tech/mawatheq.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/startgroup2022-tech/mawatheq/issues"
+  },
+  "homepage": "https://github.com/startgroup2022-tech/mawatheq#readme",
+  "dependencies": {
+    "@playwright/test": "^1.64.0"
+  }
+}

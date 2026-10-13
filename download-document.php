@@ -1,9 +1,16 @@
 <?php
 require_once __DIR__ . '/config/config.php';
-require_once __DIR__ . '/includes/auth_guard.php';
 $id=(int)($_GET['id']??0);
-$q=$pdo->prepare('SELECT id,original_name,stored_path,file_type FROM documents WHERE id=? AND user_id=? LIMIT 1');
-$q->execute([$id,(int)$_SESSION['user_id']]); $doc=$q->fetch();
+if (!empty($_SESSION['admin_id'])) {
+    // Admins may open any client's document from the console (RBAC is enforced on the
+    // console route itself); a client may only download a document they own.
+    $q=$pdo->prepare('SELECT id,original_name,stored_path,file_type FROM documents WHERE id=? LIMIT 1');
+    $q->execute([$id]); $doc=$q->fetch();
+} else {
+    require_once __DIR__ . '/includes/auth_guard.php';
+    $q=$pdo->prepare('SELECT id,original_name,stored_path,file_type FROM documents WHERE id=? AND user_id=? LIMIT 1');
+    $q->execute([$id,(int)$_SESSION['user_id']]); $doc=$q->fetch();
+}
 if(!$doc){http_response_code(404);exit('Not found');}
 $base=realpath(UPLOAD_DIR); $path=realpath(__DIR__.DIRECTORY_SEPARATOR.$doc['stored_path']);
 $ext=strtolower((string)$doc['file_type']);

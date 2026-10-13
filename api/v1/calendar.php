@@ -7,6 +7,17 @@
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/../../includes/tenant.php';
 $auth = api_authenticate($pdo);
+if (($auth['type'] ?? '') === 'integration') {
+    if ($_SERVER['REQUEST_METHOD'] !== 'GET') api_error('this token is read-only', 403);
+    $firmId = $auth['firm_id'];
+    $firmClause = $firmId === null ? '1=1' : 'e.firm_id = ?';
+    $stmt = $pdo->prepare("SELECT e.id,e.case_id,e.event_type,e.title,e.description,e.event_at,e.status,c.title AS case_title
+        FROM legal_calendar_events e LEFT JOIN cases c ON c.id=e.case_id
+        WHERE " . $firmClause . " AND e.status<>'cancelled' AND e.event_at>=DATE_SUB(NOW(),INTERVAL 30 DAY)
+        ORDER BY e.event_at ASC LIMIT 500");
+    $stmt->execute($firmId === null ? [] : [$firmId]);
+    api_json(['ok'=>true,'events'=>$stmt->fetchAll()]);
+}
 if ($auth['type'] !== 'lawyer') api_error('lawyer account required', 403);
 $lawyerId = (int)$auth['id'];
 $calScope = tenant_owner_where_for_lawyer($pdo, $lawyerId, 'e');

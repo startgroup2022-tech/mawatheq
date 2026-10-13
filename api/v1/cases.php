@@ -6,6 +6,23 @@
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/../../includes/tenant.php';
 $auth = api_authenticate($pdo);
+if (($auth['type'] ?? '') === 'integration') {
+    // A scoped integration token reads its firm's cases; it has no personal client identity.
+    $caseId = (int)($_GET['id'] ?? 0);
+    $firmId = $auth['firm_id'];
+    $firmClause = $firmId === null ? '1=1' : 'c.firm_id = ?';
+    $firmParam = $firmId === null ? [] : [$firmId];
+    if ($caseId) {
+        $stmt = $pdo->prepare('SELECT c.*, u.full_name AS client_name, u.email AS client_email FROM cases c JOIN users u ON u.id=c.user_id WHERE c.id=? AND ' . $firmClause);
+        $stmt->execute(array_merge([$caseId], $firmParam));
+        $case = $stmt->fetch();
+        if (!$case) api_error('case not found', 404);
+        api_json(['ok' => true, 'case' => $case]);
+    }
+    $stmt = $pdo->prepare('SELECT c.*, u.full_name AS client_name FROM cases c JOIN users u ON u.id=c.user_id WHERE ' . $firmClause . ' ORDER BY c.updated_at DESC');
+    $stmt->execute($firmParam);
+    api_json(['ok' => true, 'cases' => $stmt->fetchAll()]);
+}
 
 $caseId = (int)($_GET['id'] ?? 0);
 

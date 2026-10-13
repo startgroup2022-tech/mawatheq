@@ -117,8 +117,8 @@ require_once __DIR__ . '/includes/admin_header.php';
           <?php if ($plan['is_corporate']): ?><span class="status-pill status-pending">مؤسسات</span><?php endif; ?>
         </h3>
         <p style="margin:0;color:var(--text-muted);font-size:.85rem">
-          <?= $isFree ? 'مجانية' : number_format($plan['price_monthly'],3) . ' د.ب/شهر' ?>
-          <?= $plan['price_yearly'] ? ' · ' . number_format($plan['price_yearly'],3) . ' د.ب/سنة' : '' ?>
+          <?= $isFree ? 'مجانية' : money_text($plan['price_monthly']) . '/شهر' ?>
+          <?= $plan['price_yearly'] ? ' · ' . money_text($plan['price_yearly']) . '/سنة' : '' ?>
           · <?= $plan['ai_queries_limit'] === null ? 'استفسارات AI غير محدودة' : $plan['ai_queries_limit'] . ' استفسار AI/شهر' ?>
           · <?= $plan['document_analysis_limit'] === null ? 'تحليل مستندات غير محدود' : $plan['document_analysis_limit'] . ' تحليل مستند/شهر' ?>
         </p>

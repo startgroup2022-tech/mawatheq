@@ -47,7 +47,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             $lim=$pdo->prepare("SELECT COUNT(*) FROM ai_agent_executions WHERE task_name LIKE ? AND created_at>=DATE_SUB(NOW(),INTERVAL 1 HOUR)");
             $lim->execute([$moduleId.':%']);
             if ((int)$lim->fetchColumn()>=(int)$agent['requests_per_hour']) throw new RuntimeException('تم بلوغ حد الطلبات لهذه الوحدة خلال الساعة الحالية.');
-            if (empty($settings['ai_provider'])||empty($settings['ai_api_key'])||!in_array($settings['ai_provider'],['openai','anthropic'],true)||($settings['ai_enabled']??'1')==='0') throw new RuntimeException('فعّل مزود AI ومفتاحه من إعدادات الإدارة أولاً.');
+            if (!ai_chat_provider_configured($settings)) throw new RuntimeException('فعّل مزود الذكاء الاصطناعي من إعدادات الإدارة أولاً.');
             $terms=preg_split('/\s+/u',$question,-1,PREG_SPLIT_NO_EMPTY)?:[]; $terms=array_slice(array_values(array_filter($terms,function($t){return mb_strlen($t,'UTF-8')>=2;})),0,8);
             if (!$terms) throw new RuntimeException('أضف كلمات بحث واضحة لاستخراج المصادر الموثقة.');
             $where=implode(' OR ',array_fill(0,count($terms),'k.chunk_text LIKE ?'));

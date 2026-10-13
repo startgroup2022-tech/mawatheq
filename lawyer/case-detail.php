@@ -7,6 +7,7 @@ require_once __DIR__ . '/../includes/upload_validation.php';
 require_once __DIR__ . '/../includes/csrf.php';
 require_once __DIR__ . '/../includes/tenant.php';
 require_once __DIR__ . '/../includes/audit_log.php';
+require_once __DIR__ . '/../includes/notifications.php';
 $lawyerId = $_SESSION['lawyer_id'];
 $firmId = tenant_write_firm_id($pdo);
 $caseId = (int)($_GET['id'] ?? 0);
@@ -36,7 +37,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ->execute([$_POST['status'], $probability !== '' ? (int)$probability : null, $caseId]);
         if ($_POST['status'] !== $case['status']) {
             log_action($pdo, 'تحديث حالة القضية إلى ' . $_POST['status'], 'case', $caseId);
-            notify($pdo, 'client', (int)$case['user_id'], is_rtl() ? 'تحديث حالة القضية' : 'Case status updated', $case['title'] . ' → ' . $_POST['status'], '/consultations.php');
+            notify($pdo, 'client', (int)$case['user_id'], is_rtl() ? 'تحديث حالة القضية' : 'Case status updated', $case['title'] . ' → ' . $_POST['status'], '/my-cases.php');
+            require_once __DIR__ . '/../includes/integrations.php';
+            integration_emit_quietly($pdo, isset($case['firm_id']) && $case['firm_id'] !== null ? (int)$case['firm_id'] : null, 'case.status_changed', [
+                'case_id' => $caseId, 'title' => (string)$case['title'],
+                'from_status' => (string)$case['status'], 'to_status' => (string)$_POST['status'],
+            ]);
         }
         header('Location: /lawyer/case-detail.php?id=' . $caseId); exit;
         }
@@ -179,7 +185,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $evidenceId = (int)$pdo->lastInsertId();
             if ($storedName && !empty($_POST['analyze_evidence'])) {
                 $settings=ai_load_settings($pdo);
-                if (!empty($settings['ai_provider']) && !empty($settings['ai_api_key']) && ($settings['ai_enabled'] ?? '1') !== '0') {
+                if (ai_chat_provider_configured($settings)) {
                     $types = ['pdf'=>'application/pdf','png'=>'image/png','jpg'=>'image/jpeg','jpeg'=>'image/jpeg'];
                     require_once __DIR__ . '/../includes/ai_gateway.php';
                     $aiTenant = ai_gateway_tenant_context($pdo, 'lawyer', (int)$lawyerId);
@@ -202,7 +208,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     if (($_POST['action'] ?? '') === 'analyze_case' && !empty($_POST['ai_consent'])) {
         $settings=ai_load_settings($pdo);
-        if (empty($settings['ai_provider']) || empty($settings['ai_api_key']) || ($settings['ai_enabled'] ?? '1') === '0') {
+        if (!ai_chat_provider_configured($settings)) {
             $caseActionMessage = is_rtl() ? 'فعّل مزوّد الذكاء الاصطناعي من إعدادات الإدارة أولاً.' : 'Enable an AI provider in admin settings first.';
         } elseif ((int)$pdo->query("SELECT COUNT(*) FROM case_analyses WHERE lawyer_id=" . (int)$lawyerId . " AND created_at>=DATE_SUB(NOW(),INTERVAL 1 HOUR)")->fetchColumn() >= 10) {
             $caseActionMessage = is_rtl() ? 'وصلت إلى الحد المؤقت لتحليلات القضايا. حاول بعد ساعة.' : 'Hourly case-analysis limit reached. Try again in an hour.';
@@ -349,6 +355,12 @@ $evidenceConflicts = $latestEvidenceReport ? (json_decode($latestEvidenceReport[
 $evidenceMissing = $latestEvidenceReport ? (json_decode($latestEvidenceReport['missing_evidence_json'] ?? '[]', true) ?: []) : [];
 $evidence = $pdo->prepare('SELECT e.*,cc.description AS related_claim,cf.description AS related_fact,la.law_name_ar AS related_law_name,la.article_number AS related_law_article_number FROM case_evidence e LEFT JOIN case_claims cc ON cc.id=e.related_claim_id LEFT JOIN case_facts cf ON cf.id=e.related_fact_id LEFT JOIN law_articles la ON la.id=e.related_law_article_id WHERE e.case_id=? ORDER BY e.created_at DESC');
 $evidence->execute([$caseId]); $evidence = $evidence->fetchAll();
+
+// Client-filed documents for this case. `documents` is the client's own library;
+// this surfaces the ones the client explicitly filed against this matter so the
+// lawyer sees the client's paperwork next to the evidence register.
+$caseDocuments = $pdo->prepare('SELECT id,original_name,stored_path,status,created_at FROM documents WHERE case_id=? ORDER BY created_at DESC');
+$caseDocuments->execute([$caseId]); $caseDocuments = $caseDocuments->fetchAll();
 $analyses = $pdo->prepare('SELECT * FROM case_analyses WHERE case_id=? ORDER BY created_at DESC LIMIT 10');
 $analyses->execute([$caseId]); $analyses = $analyses->fetchAll();
 $risks = $pdo->prepare('SELECT * FROM case_risks WHERE case_id=? ORDER BY likelihood*impact DESC,id DESC');
@@ -363,7 +375,7 @@ $billableValue = array_sum(array_map(fn($entry)=>(int)$entry['billable']?round((
   <div class="dash-card" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px">
     <div>
       <h2 style="margin-bottom:4px"><?= htmlspecialchars($case['title']) ?></h2>
-      <p style="margin:0"><?= htmlspecialchars($case['client_name']) ?> — <?= htmlspecialchars($case['client_email']) ?> · <?= htmlspecialchars($case['case_type']) ?></p>
+        <p style="margin:0"><?= htmlspecialchars($case['client_name']) ?> — <?= htmlspecialchars($case['client_email']) ?> · <?= htmlspecialchars($case['case_type'] ?? '') ?></p>
       <?php if ($case['description']): ?><p style="margin-top:10px"><?= htmlspecialchars($case['description']) ?></p><?php endif; ?>
     </div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -525,6 +537,11 @@ $billableValue = array_sum(array_map(fn($entry)=>(int)$entry['billable']?round((
       <?php if ($item['ai_summary']): ?><div class="rec-item" style="margin-top:8px"><strong><?= is_rtl()?'ملخص AI':'AI summary' ?>:</strong> <?= htmlspecialchars($item['ai_summary']) ?><?php $aiFindings=json_decode($item['ai_findings'] ?? '',true) ?: [];foreach(($aiFindings['risks'] ?? []) as $risk): ?><div style="color:var(--danger)">⚠️ <?= htmlspecialchars($risk) ?></div><?php endforeach;foreach(($aiFindings['recommendations'] ?? []) as $recommendation): ?><div>💡 <?= htmlspecialchars($recommendation) ?></div><?php endforeach; ?></div><?php endif; ?>
       <small style="display:block;color:var(--text-muted)"><?= date('Y-m-d H:i',strtotime($item['created_at'])) ?></small>
     </div><?php endforeach; ?>
+    <?php if ($caseDocuments): ?>
+    <div style="margin-top:14px"><h4 style="margin:0 0 8px">📎 <?= is_rtl() ? 'مستندات رفعها العميل لهذه القضية' : 'Documents the client filed for this case' ?></h4>
+      <?php foreach ($caseDocuments as $caseDoc): ?><div class="rec-item"><strong><?= htmlspecialchars($caseDoc['original_name']) ?></strong> <span class="status-pill status-<?= htmlspecialchars($caseDoc['status']) ?>"><?= htmlspecialchars($caseDoc['status']) ?></span> <small style="color:var(--text-muted)"><?= date('Y-m-d H:i',strtotime($caseDoc['created_at'])) ?></small></div><?php endforeach; ?>
+    </div>
+    <?php endif; ?>
     <?php if (!$evidence): ?><p style="color:var(--text-muted)"><?= is_rtl() ? 'لا توجد أدلة مسجلة بعد.' : 'No evidence recorded yet.' ?></p><?php endif; ?>
 
     <?php if (count($evidence) >= 2): ?>
@@ -600,16 +617,16 @@ $billableValue = array_sum(array_map(fn($entry)=>(int)$entry['billable']?round((
 
   <div class="dash-card" id="time">
     <h3>⏱️ <?= is_rtl()?'سجل الوقت':'Time tracking' ?></h3>
-    <p style="color:var(--text-muted)"><?= is_rtl()?'الوقت القابل للفوترة: '.round($billableMinutes/60,2).' ساعة · القيمة التقديرية: '.number_format($billableValue,3).' دينار بحريني (حسب سعرك الحالي عند تسجيل الوقت).':'Billable time: '.round($billableMinutes/60,2).' hours · Estimated value: '.number_format($billableValue,3).' BHD (rate snapshot at entry time).' ?></p>
+    <p style="color:var(--text-muted)"><?= is_rtl()?'الوقت القابل للفوترة: '.round($billableMinutes/60,2).' ساعة · القيمة التقديرية: '.money_text($billableValue).' (حسب سعرك الحالي عند تسجيل الوقت).':'Billable time: '.round($billableMinutes/60,2).' hours · Estimated value: '.money_text($billableValue).' (rate snapshot at entry time).' ?></p>
     <details class="lawyer-form-toggle"<?= $caseActionMessage && ($_POST['action']??'')==='add_time_entry' ? ' open' : '' ?>><summary>＋ <?= is_rtl()?'تسجيل وقت عمل':'Log work time' ?></summary>
     <form method="post" class="grid-2" style="margin:14px 0"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="add_time_entry">
       <div class="field"><label><?= is_rtl()?'وصف العمل':'Work description' ?></label><input name="time_description" required maxlength="255"></div>
       <div class="field"><label><?= is_rtl()?'التاريخ':'Date' ?></label><input type="date" name="work_date" value="<?= date('Y-m-d') ?>" required></div>
       <div class="field"><label><?= is_rtl()?'المدة بالدقائق':'Duration in minutes' ?></label><input type="number" name="minutes" min="1" max="1440" required></div>
-      <div class="field"><label><input type="checkbox" name="billable" value="1" checked> <?= is_rtl()?'قابل للفوترة':'Billable' ?></label><small><?= is_rtl()?'السعر بالساعة المسجل لملفك: ':'Profile hourly rate: ' ?><?= number_format((float)($case['lawyer_hourly_rate'] ?? 0),3) ?> <?= is_rtl()?'دينار بحريني':'BHD' ?></small></div>
+      <div class="field"><label><input type="checkbox" name="billable" value="1" checked> <?= is_rtl()?'قابل للفوترة':'Billable' ?></label><small><?= is_rtl()?'السعر بالساعة المسجل لملفك: ':'Profile hourly rate: ' ?><?= money($case['lawyer_hourly_rate'] ?? 0) ?></small></div>
       <div style="grid-column:1/-1"><button class="btn btn-outline btn-sm" type="submit"><?= is_rtl()?'تسجيل الوقت':'Log time' ?></button></div>
     </form></details>
-    <?php foreach ($timeEntries as $entry): ?><div class="rec-item"><strong><?= date('Y-m-d',strtotime($entry['work_date'])) ?></strong> · <?= htmlspecialchars($entry['description']) ?> · <?= round((int)$entry['minutes']/60,2) ?> <?= is_rtl()?'ساعة':'hours' ?> · <?= (int)$entry['billable'] ? number_format(((int)$entry['minutes']/60)*(float)$entry['hourly_rate'],3).' BHD' : (is_rtl()?'غير قابل للفوترة':'Non-billable') ?><?php if($entry['invoice_id']): ?><div class="field-hint"><a href="/lawyer/invoices.php"><?= is_rtl()?'مرتبط بفاتورة #':'Linked to invoice #' ?><?= (int)$entry['invoice_id'] ?></a> · <?= !empty($entry['invoice_is_draft'])?(is_rtl()?'مسودة غير مرسلة':'Unsent draft'):(is_rtl()?'مفوتر':'Invoiced') ?></div><?php endif; ?></div><?php endforeach; ?>
+    <?php foreach ($timeEntries as $entry): ?><div class="rec-item"><strong><?= date('Y-m-d',strtotime($entry['work_date'])) ?></strong> · <?= htmlspecialchars($entry['description']) ?> · <?= round((int)$entry['minutes']/60,2) ?> <?= is_rtl()?'ساعة':'hours' ?> · <?= (int)$entry['billable'] ? money_text(((int)$entry['minutes']/60)*(float)$entry['hourly_rate']) : (is_rtl()?'غير قابل للفوترة':'Non-billable') ?><?php if($entry['invoice_id']): ?><div class="field-hint"><a href="/lawyer/invoices.php"><?= is_rtl()?'مرتبط بفاتورة #':'Linked to invoice #' ?><?= (int)$entry['invoice_id'] ?></a> · <?= !empty($entry['invoice_is_draft'])?(is_rtl()?'مسودة غير مرسلة':'Unsent draft'):(is_rtl()?'مفوتر':'Invoiced') ?></div><?php endif; ?></div><?php endforeach; ?>
     <?php if (!$timeEntries): ?><p style="color:var(--text-muted)"><?= is_rtl()?'لم تسجل وقتاً بعد.':'No time entries yet.' ?></p><?php endif; ?>
   </div>
 

@@ -3,6 +3,15 @@
 # منع عرض محتويات المجلدات
 Options -Indexes
 
+# Preserve the Authorization header for the Bearer-token REST API (/api/v1).
+# Under mod_php/CGI Apache drops it before PHP runs, which makes every API call
+# return 401 in production. Exposing it via mod_rewrite also sets REDIRECT_HTTP_AUTHORIZATION.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+</IfModule>
+
 # Enforce HTTPS for the production host while preserving the requested path/query.
 <IfModule mod_rewrite.c>
     RewriteEngine On
@@ -20,7 +29,10 @@ Options -Indexes
 # مجلدات المصدر والإعداد لا تحتاج استقبال طلبات HTTP مباشرة
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    RewriteRule ^(?:config|database|includes)/ - [F,L,NC]
+    RewriteRule ^(?:config|database|includes|tests|tools)/ - [F,L,NC]
+    # Block the whole version-control directory: FilesMatch (^\.) only matches a file's own
+    # name, so nested files like .git/config bypassed it and exposed history and remote creds.
+    RewriteRule ^\.git(?:/|$) - [F,L,NC]
     RewriteRule ^uploads/.*\.(?:php[0-9]?|phtml|phar|cgi|pl|asp|aspx)$ - [F,L,NC]
 </IfModule>
 

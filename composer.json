@@ -1,0 +1,15 @@
+{
+    "name": "mawatheq/platform",
+    "description": "Mawatheq — Arabic/RTL-first LegalTech SaaS platform (PHP 8.4 + MariaDB).",
+    "type": "project",
+    "license": "proprietary",
+    "require": {
+        "php": ">=8.4",
+        "onelogin/php-saml": "^4.3"
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true,
+        "allow-plugins": {}
+    }
+}

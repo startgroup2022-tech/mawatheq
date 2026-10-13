@@ -68,7 +68,7 @@ $myBookings = $myBookings->fetchAll();
       <div class="lawyer-avatar"><?= mb_substr($lw['full_name'],0,1) ?></div>
       <div style="flex:1">
         <strong><?= htmlspecialchars($lw['full_name']) ?></strong>
-        <div style="font-size:.85rem;color:var(--text-muted)"><?= htmlspecialchars($lw['specialization']) ?> · ⭐ <?= $lw['rating'] ?> · <?= $lw['years_experience'] ?> <?= is_rtl() ? 'سنة خبرة' : 'yrs exp.' ?> · 🌍 <?= htmlspecialchars($lw['jurisdiction'] ?? 'السعودية') ?></div>
+        <div style="font-size:.85rem;color:var(--text-muted)"><?= htmlspecialchars($lw['specialization'] ?? '') ?> · ⭐ <?= $lw['rating'] ?> · <?= $lw['years_experience'] ?> <?= is_rtl() ? 'سنة خبرة' : 'yrs exp.' ?> · 🌍 <?= htmlspecialchars($lw['jurisdiction'] ?? 'السعودية') ?></div>
       </div>
       <a href="/booking.php?lawyer_id=<?= $lw['id'] ?>" class="btn btn-primary"><?= t('hero_cta_book') ?></a>
     </div>

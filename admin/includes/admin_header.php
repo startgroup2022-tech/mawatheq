@@ -28,6 +28,8 @@ $adminNavGroups = [
     ]],
     ['t' => adm('المالية والتحليلات', 'Finance & insights'), 'items' => [
         'invoices' => ['i' => 'receipt', 'ar' => 'الفواتير والإيرادات', 'en' => 'Invoices & revenue', 'href' => '/admin/invoices.php'],
+        'gateways' => ['i' => 'card', 'ar' => 'بوابات الدفع', 'en' => 'Payment gateways', 'href' => '/admin/gateways.php'],
+        'gateway-transactions' => ['i' => 'receipt', 'ar' => 'عمليات الدفع', 'en' => 'Gateway transactions', 'href' => '/admin/gateway-transactions.php'],
         'plans' => ['i' => 'card', 'ar' => 'الباقات', 'en' => 'Plans', 'href' => '/admin/plans.php'],
         'reports' => ['i' => 'chart', 'ar' => 'التقارير والتحليلات', 'en' => 'Reports', 'href' => '/admin/reports.php'],
     ]],
@@ -35,11 +37,13 @@ $adminNavGroups = [
         'ai-control' => ['i' => 'shield', 'ar' => 'التحكم في AI والخصوصية', 'en' => 'AI control & privacy', 'href' => '/admin/ai-control.php'],
         'ai-knowledge' => ['i' => 'spark', 'ar' => 'مركز معرفة AI', 'en' => 'AI knowledge', 'href' => '/admin/ai-knowledge.php'],
         'ai-orchestration' => ['i' => 'bot', 'ar' => 'وحدات ووكلاء AI', 'en' => 'AI agents', 'href' => '/admin/ai-orchestration.php'],
+          'ai-operations' => ['i' => 'settings', 'ar' => 'عمليات وحكامة AI', 'en' => 'AI operations', 'href' => '/admin/ai-operations.php'],
         'ai-workflows' => ['i' => 'check', 'ar' => 'سير عمل الوكلاء والموافقات', 'en' => 'Agent workflows', 'href' => '/admin/ai-workflows.php', 'badge' => 'wf'],
         'articles' => ['i' => 'book', 'ar' => 'مركز المعرفة', 'en' => 'Articles', 'href' => '/admin/articles.php'],
         'laws' => ['i' => 'landmark', 'ar' => 'مكتبة الأنظمة', 'en' => 'Law library', 'href' => '/admin/laws.php'],
     ]],
     ['t' => adm('النظام', 'System'), 'items' => [
+        'integrations' => ['i' => 'external', 'ar' => 'التكاملات الخارجية', 'en' => 'External integrations', 'href' => '/admin/integrations.php'],
         'audit-log' => ['i' => 'shield', 'ar' => 'سجل التدقيق', 'en' => 'Audit log', 'href' => '/admin/audit-log.php'],
         'settings' => ['i' => 'settings', 'ar' => 'الإعدادات', 'en' => 'Settings', 'href' => '/admin/settings.php'],
     ]],
@@ -71,21 +75,22 @@ $langToggleUrl = '?' . http_build_query(array_merge($_GET, ['lang' => $admLang =
 <!DOCTYPE html>
 <html lang="<?= h($admLang) ?>" dir="<?= $admDir ?>">
 <head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="icon" href="/assets/img/logo.webp">
 <title><?= h($pageTitle ? $pageTitle . ' · ' : '') ?><?= h(adm('لوحة تحكم مواثيق', 'Mawatheq Admin')) ?></title>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/assets/css/style.css">
 <link rel="stylesheet" href="/assets/css/app.css">
-<link rel="stylesheet" href="/admin/assets/admin.css">
-<?php require __DIR__ . '/admin_design_system.php'; ?>
-<link rel="stylesheet" href="/admin/assets/admin-ui.css?v=40">
+<link rel="stylesheet" href="/assets/css/enterprise.css">
+<link rel="stylesheet" href="/assets/css/dashboard.css">
+<link rel="stylesheet" href="/admin/assets/admin-ui.css?v=41">
 </head>
 <body class="adm" data-theme="light">
+<a class="skip-link" href="#adm-content"><?= h(adm('تخطَّ إلى المحتوى', 'Skip to content')) ?></a>
 <script>(function(){try{var t=localStorage.getItem('adm_theme');if(!t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';document.body.setAttribute('data-theme',t||'light');if(localStorage.getItem('adm_sb')==='1'&&innerWidth>1024)document.body.classList.add('sb-collapsed')}catch(e){}})();</script>
 <div class="adm-shell">
   <aside class="adm-sidebar" id="admSidebar">
-    <a href="/admin/index.php" class="adm-brand"><img src="/assets/img/logo.webp" alt=""><div><b><?= h(adm('مواثيق', 'Mawatheq')) ?></b><small>LegalTech Admin</small></div></a>
+    <a href="/admin/index.php" class="adm-brand"><img src="/assets/img/logo.webp" alt="<?= h(SITE_NAME_AR) ?>"><div><b><?= h(adm('مواثيق', 'Mawatheq')) ?></b><small>LegalTech Admin</small></div></a>
     <nav class="adm-nav">
       <?php foreach ($adminNavGroups as $g):
           $vis = array_filter($g['items'], fn($it) => $canSee($it['href']));
@@ -132,4 +137,4 @@ $langToggleUrl = '?' . http_build_query(array_merge($_GET, ['lang' => $admLang =
             <form method="post" action="/admin/logout.php"><input type="hidden" name="csrf_token" value="<?= h(csrf_token()) ?>"><button class="item" type="submit"><?= adm_icon('logout') ?><?= h(adm('تسجيل الخروج', 'Sign out')) ?></button></form></div></div>
       </div>
     </header>
-    <div class="adm-content">
+    <div class="adm-content" id="adm-content">

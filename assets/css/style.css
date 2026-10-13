@@ -79,6 +79,9 @@ img{ max-width:100%; display:block; }
   border-bottom:1px solid var(--border);
 }
 .site-header .container{ display:flex; align-items:center; justify-content:space-between; height:78px; gap:24px; }
+/* The mobile menu button ships here so the marketing header still opens its
+   navigation when the enhancement layer (enterprise.css) is unavailable. */
+.nav-toggle{ display:none; }
 .brand{ display:flex; align-items:center; gap:10px; font-family:var(--serif); font-weight:800; font-size:1.25rem; color:var(--navy-dark); }
 .brand img{ height:34px; width:auto; }
 .main-nav{ display:flex; align-items:center; gap:30px; }
@@ -203,9 +206,50 @@ img{ max-width:100%; display:block; }
 }
 
 /* ---------- Forms (auth, admin) ---------- */
-.auth-wrap{ min-height:100vh; display:flex; align-items:center; justify-content:center; background:var(--navy-dark); padding:24px; }
-.auth-card{ background:#fff; border-radius:16px; padding:44px; width:100%; max-width:420px; }
-.auth-card .brand{ justify-content:center; margin-bottom:8px; }
+/* Login / register / password screens. These pages ship style.css only, so the
+   whole auth look lives here (nothing is inherited from enterprise.css).
+   Goals: a clear card, comfortable spacing, readable labels and errors, and a
+   real touch target on every control — on phones as well as on desktop. */
+.auth-wrap{
+  min-height:100vh; min-height:100dvh; display:flex; align-items:center; justify-content:center;
+  background:radial-gradient(1200px 600px at 50% -10%, #1b3252 0%, var(--navy-dark) 60%);
+  padding:28px 18px;
+}
+.auth-card{
+  background:#fff; border-radius:18px; padding:38px; width:100%; max-width:440px;
+  box-shadow:0 24px 60px rgba(8,17,32,.28); border:1px solid rgba(255,255,255,.06);
+}
+.auth-card .brand{ justify-content:center; margin-bottom:6px; }
+.auth-card .brand img{ height:40px; width:auto; }
+.auth-card h1{ text-align:center; font-size:1.35rem; margin:8px 0 22px; color:var(--navy-dark); }
+.auth-card .field label{ font-size:.86rem; }
+.auth-card .field input, .auth-card .field select{ min-height:48px; font-size:.95rem; }
+.auth-card .field-hint{ line-height:1.6; }
+.auth-card .form-alert{ display:flex; align-items:flex-start; gap:8px; border:1px solid transparent; line-height:1.7; }
+.auth-card .form-alert.error{ border-color:#F2C9BE; }
+.auth-card .form-alert.success{ border-color:#BFE3D0; }
+.auth-card .btn-block{ min-height:48px; font-size:.98rem; border-radius:10px; }
+.auth-card .muted-link{ line-height:1.8; }
+.auth-card .muted-link a{ display:inline-block; padding:6px 2px; }
+/* "Forgot password?" sits under the password field: right-aligned, with a
+   comfortable tap area instead of a 19px text box. */
+.auth-inline-link{ text-align:end; margin:-8px 0 16px; }
+.auth-inline-link a{ display:inline-block; padding:8px 2px; font-size:.84rem; font-weight:700; color:var(--teal); }
+
+/* بوابة الدخول: تمييز واضح بين مسار العميل ومسار المحامي */
+.auth-role-note{
+  text-align:center; font-size:.82rem; line-height:1.7; color:var(--text-muted);
+  margin:-6px 0 18px; padding:0 4px;
+}
+.auth-card .form-alert.notice{ border-color:#C7D8F5; background:#EAF1FC; color:var(--navy-dark); }
+.auth-switch{
+  display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:6px 10px;
+  margin-top:16px; padding-top:16px; border-top:1px solid var(--border);
+  font-size:.86rem; color:var(--text-muted); text-align:center;
+}
+.auth-switch a{ display:inline-flex; align-items:center; min-height:44px; padding:0 6px; font-weight:700; color:var(--teal); }
+.type-tabs{ margin-bottom:20px; }
+.type-tabs a{ min-height:44px; display:flex; align-items:center; justify-content:center; }
 .field{ margin-bottom:18px; }
 .field label{ display:block; font-weight:700; font-size:.88rem; margin-bottom:6px; }
 .field input, .field select, .field textarea{
@@ -366,4 +410,43 @@ html[dir="ltr"] .pro-select{ background-position:right 14px center; }
   .pricing-grid{ grid-template-columns:1fr; }
   .testi-grid{ grid-template-columns:1fr; }
   .main-nav{ display:none; }
+  /* Marketing header on small screens: collapse the links into a dropdown that
+     the menu button toggles, and keep the header actions on one row. */
+  .site-header .container{ height:64px; }
+  .nav-toggle{
+    display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px;
+    border:1.5px solid var(--border); border-radius:11px; background:#fff; color:var(--navy-dark); cursor:pointer;
+  }
+  .nav-toggle svg{ width:20px; height:20px; stroke:currentColor; fill:none; stroke-width:1.9; stroke-linecap:round; }
+  .main-nav{
+    display:none; position:absolute; inset-inline:0; top:100%; flex-direction:column; align-items:stretch; gap:0;
+    background:#fff; border-bottom:1px solid var(--border); box-shadow:0 6px 20px rgba(15,31,51,.07); padding:8px;
+  }
+  .main-nav.is-open{ display:flex; }
+  .main-nav a{ padding:14px 16px; border-radius:11px; min-height:48px; display:flex; align-items:center; }
+  .main-nav a:hover{ background:#F8FAFC; }
+  .header-actions .btn-outline{ display:none; }
+}
+@media (max-width: 480px){
+  .site-header .container{ gap:10px; }
+  .header-actions{ gap:8px; }
+  .brand span{ font-size:1rem; }
+  .header-actions .social-row{ display:none; }
+}
+
+/* Auth screens on phones: the card fills the width, padding tightens and the
+   buttons stay full-height so the form is comfortable to use one-handed. */
+@media (max-width: 520px){
+  .auth-wrap{ padding:16px 12px; align-items:flex-start; }
+  .auth-card{ padding:24px 20px; border-radius:16px; max-width:none; }
+  .auth-card h1{ font-size:1.2rem; margin:6px 0 18px; }
+  .auth-card .brand img{ height:36px; }
+  .type-tabs a{ padding:10px 8px; font-size:.85rem; }
+  .type-tabs a span, .type-tabs a{ white-space:normal; }
+  .password-toggle{ padding:0 10px; font-size:.78rem; }
+  .muted-link{ font-size:.86rem; }
+}
+@media (max-width: 380px){
+  .auth-card{ padding:20px 16px; }
+  .auth-card h1{ font-size:1.1rem; }
 }

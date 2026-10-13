@@ -95,6 +95,6 @@ function render_phone_field(string $name, string $dialValue = '+966', string $lo
         echo '<option value="' . htmlspecialchars($c['dial']) . '"' . $sel . '>' . htmlspecialchars($label) . '</option>';
     }
     echo '</select>';
-    echo '<input type="tel" inputmode="numeric" name="' . htmlspecialchars($name) . '_local" value="' . htmlspecialchars($localValue) . '" placeholder="' . ($rtl ? '5xxxxxxxx' : '5xxxxxxxx') . '" required>';
+    echo '<input type="tel" inputmode="numeric" name="' . htmlspecialchars($name) . '_local" value="' . htmlspecialchars($localValue) . '" placeholder="' . ($rtl ? '5xxxxxxxx' : '5xxxxxxxx') . '" aria-label="' . ($rtl ? 'رقم الجوال' : 'Phone number') . '" required>';
     echo '</div>';
 }

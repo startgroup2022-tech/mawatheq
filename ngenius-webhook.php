@@ -51,7 +51,10 @@ $stmt = $pdo->prepare('SELECT * FROM invoices WHERE gateway_order_ref = ? AND is
 $stmt->execute([$orderRef]);
 $invoice = $stmt->fetch();
 
-$amountValue = isset($payload['order']['amount']['value']) ? $payload['order']['amount']['value'] / 1000 : null;
+// The gateway returns the amount in minor units (halalas for SAR, fils for 3-decimal
+// currencies), so divide by the configured currency's minor-unit factor.
+$minorUnits = ngenius_minor_units(ngenius_currency($settings));
+$amountValue = isset($payload['order']['amount']['value']) ? $payload['order']['amount']['value'] / $minorUnits : null;
 
 try {
     $pdo->prepare('INSERT INTO payment_transactions (invoice_id, firm_id, gateway, gateway_order_ref, event_type, event_hash, amount, raw_payload) VALUES (?,?,?,?,?,?,?,?)')
