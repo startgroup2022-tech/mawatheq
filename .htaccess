@@ -26,10 +26,17 @@ Options -Indexes
     Require all denied
 </FilesMatch>
 
+# ملفات البناء ومديري الحزم وبيانات الاختبار: تكشف إصدارات المكتبات وأدوات التطوير.
+# نُسمّيها صراحةً بدل منع كل ملفات .json، لأن .well-known/assetlinks.json وملف
+# تطبيق الجوال (manifest.json) يجب أن يبقيا متاحين للعامة.
+<FilesMatch "^(composer\.(json|lock)|package(-lock)?\.json|playwright\.config\.js|phpunit\.xml(\.dist)?|\.editorconfig)$">
+    Require all denied
+</FilesMatch>
+
 # مجلدات المصدر والإعداد لا تحتاج استقبال طلبات HTTP مباشرة
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    RewriteRule ^(?:config|database|includes|tests|tools)/ - [F,L,NC]
+    RewriteRule ^(?:config|database|includes|tests|tools|vendor|storage|node_modules|apps)/ - [F,L,NC]
     # Block the whole version-control directory: FilesMatch (^\.) only matches a file's own
     # name, so nested files like .git/config bypassed it and exposed history and remote creds.
     RewriteRule ^\.git(?:/|$) - [F,L,NC]
