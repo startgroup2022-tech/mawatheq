@@ -198,7 +198,7 @@ Environment (local sandbox): install with
 `sudo apt-get install -y php-cli php-curl php-mysql php-mbstring mariadb-server`, start with
 `sudo service mariadb start`, and create the `mawatheq` DB/user matching `config/secrets.php`.
 Load `database/schema.sql` then every `database/upgrade_v*.sql` in order (currently
-through `upgrade_v52.sql`); the migrations are idempotent. `schema.sql` folds v50–v52, so a
+through `upgrade_v54.sql`); the migrations are idempotent. `schema.sql` folds v50–v52, so a
 clean install lands at **106 tables**, identical to a fully migrated database (verified
 table-by-table). Replaying the upgrades over `schema.sql` is harmless.
 
@@ -767,13 +767,25 @@ the mobile API uses, so the website and the app cannot drift apart:
   emails `SITE_URL/reset-password.php?as=<type>&token=<token>`. It returns the mail
   delivery result but **never** the token, and the page ignores the boolean so the
   response never reveals whether the address exists.
-- `consume_password_reset()` matches the raw token once, rejects
+- `consume_password_reset()` claims the token once, rejects
   `invalid_token`/`weak_password`/`too_long`/`mismatch`, clears the token, and
   revokes every `api_tokens` row for the account. Setting a password invalidates
   tokens issued before it, so a stolen session cannot outlive the reset.
-- The reset token is stored plaintext **by design** (the column is matched raw).
-  It is single-use, 1-hour, high-entropy and never logged. Do not "fix" it into a
-  hash without changing the lookup to match.
+- The reset token is stored as a SHA-256 hash, never plaintext (Execution 29). The
+  `reset_token` column keeps its name but now holds the hash, not the raw value. The
+  database is a copy that leaves the server in every backup, dump and support ticket,
+  so a plaintext reset token there is a usable credential for anyone who reads it.
+  `issue_password_reset()` writes `hash('sha256', $token)` and
+  `consume_password_reset()` hashes the presented token before matching, so the raw
+  value exists only in the email link.
+- Consumption is atomic: the claim is one conditional
+  `UPDATE ... SET reset_token=NULL, ... WHERE reset_token=? AND reset_expires>NOW()`,
+  and the affected-row count decides the winner. Two concurrent submissions of the same
+  link cannot both succeed. A read-then-check-then-write pair would let both requests
+  pass the check before either cleared the token.
+- A reset also stamps `session_invalidated_at` on the account. The session guard
+  compares it against the session's start time and ends sessions older than the reset,
+  so a reset logs out anyone already signed in — not only the API tokens.
 
 ### API auth endpoints
 
@@ -832,4 +844,80 @@ not verify against a release fingerprint. Emulator/device check:
   caused by the seed or the reset work.
 - `tests/seed_phase6.php` is idempotent: the firm-membership row is upserted on
   `uq_law_firm_member_lawyer` (a plain INSERT threw `SQLSTATE 1062` on the second run).
+
+
+## Execution 29 — security hardening and runtime database safety
+
+Four defects were found by writing probes that attack the app over real HTTP, not by
+reading it. Each fix below has a regression suite named beside it.
+
+### Runtime schema mutation is opt-in
+
+`config/config.php`, `api/v1/bootstrap.php` and `includes/jurisdiction.php` used to call
+`schema_ensure_column()` on every request, so a missing column was added as a side effect
+of serving a page. That means the schema was changed by whichever request arrived first,
+concurrently, with no ordering against the migration files and no record of what was
+applied — the reason a drift incident was hard to reason about. Self-healing now requires
+`MAWATHEQ_ALLOW_RUNTIME_SCHEMA_DDL=1`; the default path is
+`database/repair/00_preflight_check.php` to report drift and `database/upgrade_v*.sql` to
+fix it. `tests/execution29_runtime_ddl_test.php` drops a column, drives requests, and
+asserts it is not re-added. The helper still validates identifiers before interpolating
+them, so it can never become an injection point.
+
+### Admin RBAC is shared, and root-level routes must apply it
+
+The role map lived as a local variable inside `admin/includes/admin_guard.php`, so a route
+outside `/admin/` could not use it. `download-document.php` sits at the web root and its
+only check was "is an admin logged in" — an `editor`, a role the map refuses the documents
+console, could download any client's document by id. The map now lives in
+`includes/admin_rbac.php` (`admin_role_allows()`, `admin_can_access()`), and
+`download-document.php` re-reads the role from the database so a demoted operator loses
+access immediately rather than at the next console page load. **When adding a root-level
+route that an admin may reach, call `admin_can_access($pdo, '<console script>')`** — do not
+assume `admin_guard.php` ran.
+
+### File downloads
+
+`download-document.php` is the only route that serves a private document to a client, and
+it checks the document belongs to `$_SESSION['user_id']`, resolves the path with
+`realpath()` and requires it to sit under `UPLOAD_DIR` with a 40-hex filename, so a
+traversal-shaped `stored_path` or a hand-placed file is refused. `uploads/` denies the
+directory and any executable extension. `tests/execution29_file_security_probe.php`
+attacks all of it, including the cross-tenant and role cases.
+
+### Mobile API tokens
+
+- Integration tokens (`integration_api_tokens`) carry `expires_at` (v54, default 180 days).
+  Lookup treats an expired token exactly like an unknown one, so a token issued for a
+  one-off export does not stay valid forever.
+- `api/v1/logout.php` revokes exactly the token that authenticated the request. It is
+  idempotent and refuses an integration token, which has no session.
+- The legacy plaintext-to-hash upgrade in `api_authenticate()` was a write on a read path
+  with no guard; two concurrent requests could both match the plaintext row and rewrite it,
+  after which the token stopped working. The `UPDATE` repeats the plaintext condition so it
+  can only touch a row that is still plaintext.
+
+### Tenant isolation
+
+`api/v1/calendar.php` returned HTTP 500 for every caller completing an event: the `UPDATE`
+had no table alias while the tenant scope clause was written against `e`. A child table
+that inherits its tenant (`case_evidence`) must be scoped through a join on the parent case
+— see the Gotchas section. `tests/execution29_tenant_isolation_probe.php` seeds two firms
+and attacks every entity type as both lawyer and client.
+
+### Probe conventions
+
+Execution 29 probes (`tests/execution29_*`) need the app on `127.0.0.1:8080`, seed their own
+accounts and rows with a random suffix, and delete them in a `cleanup` section. If a probe
+is interrupted before cleanup, its rows survive — `tests/execution29_runtime_ddl_test.php`
+repairs its own schema baseline on start for exactly this reason.
+
+Run the whole suite with `bash tests/run_all_tests.sh` (optionally with a name filter, e.g.
+`bash tests/run_all_tests.sh execution29`). Do **not** hand-roll a `for` loop over
+`tests/*.php`: the probes authenticate over real HTTP and the app rate-limits repeated logins
+per account and IP, so a later suite inherits an earlier suite's throttle and reports login
+failures that have nothing to do with the code. The runner clears `auth_rate_limits` before
+each suite and starts the mock AI provider if it is down. A phantom failure is worse than no
+check, because it teaches everyone to ignore real ones.
+
 
