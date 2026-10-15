@@ -6,8 +6,13 @@ require_once __DIR__ . '/schema_guard.php';
  * Databases created from an older base may lack it, which turned every page that
  * filters or lists by jurisdiction into a bare HTTP 500. Repair it once here, at
  * the single include every such page already loads, so the failure cannot recur.
+ *
+ * Repair is opt-in (MAWATHEQ_ALLOW_RUNTIME_SCHEMA_DDL=1), matching config.php and
+ * api/v1/bootstrap.php: an ordinary page load must not alter the schema as a side
+ * effect. A drifted database is reported by database/repair/00_preflight_check.php
+ * and repaired by applying database/upgrade_v*.sql.
  */
-if (isset($pdo) && $pdo instanceof PDO) {
+if (isset($pdo) && $pdo instanceof PDO && getenv('MAWATHEQ_ALLOW_RUNTIME_SCHEMA_DDL') === '1') {
     schema_ensure_column($pdo, 'lawyers', 'jurisdiction', "VARCHAR(100) NOT NULL DEFAULT 'السعودية'");
     schema_ensure_column($pdo, 'law_categories', 'jurisdiction', "VARCHAR(100) NOT NULL DEFAULT 'السعودية'");
 }

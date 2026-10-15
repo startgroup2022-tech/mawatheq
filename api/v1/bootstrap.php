@@ -16,8 +16,15 @@ header('Content-Type: application/json; charset=utf-8');
 // display_errors is off, so the mobile app received a bare 500 with an empty body
 // and the failure was invisible. Repair the known additive columns up front, and
 // answer with parseable JSON (never a blank body) if anything still goes wrong.
-schema_ensure_column($pdo, 'lawyers', 'jurisdiction', "VARCHAR(100) NOT NULL DEFAULT 'السعودية'");
-schema_ensure_column($pdo, 'law_categories', 'jurisdiction', "VARCHAR(100) NOT NULL DEFAULT 'السعودية'");
+//
+// Repair is opt-in (MAWATHEQ_ALLOW_RUNTIME_SCHEMA_DDL=1). Off by default so an
+// ordinary API request cannot alter the schema as a side effect; the exception
+// handler below still turns a missing column into parseable JSON rather than a
+// blank 500, and database/repair/00_preflight_check.php reports the drift.
+if (getenv('MAWATHEQ_ALLOW_RUNTIME_SCHEMA_DDL') === '1') {
+    schema_ensure_column($pdo, 'lawyers', 'jurisdiction', "VARCHAR(100) NOT NULL DEFAULT 'السعودية'");
+    schema_ensure_column($pdo, 'law_categories', 'jurisdiction', "VARCHAR(100) NOT NULL DEFAULT 'السعودية'");
+}
 
 set_exception_handler(function (Throwable $e): void {
     error_log('api/v1 uncaught: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());

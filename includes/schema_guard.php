@@ -13,6 +13,14 @@
  * query works and the incident does not recur. It never drops, renames or alters an
  * existing column, and it only ever runs a query that the migration itself runs.
  *
+ * Self-healing is OPT-IN. The callers gate it on MAWATHEQ_ALLOW_RUNTIME_SCHEMA_DDL=1,
+ * because running DDL from a page request means the schema is changed by whichever HTTP
+ * request arrives first, with no ordering against the migration files and no record of
+ * what was applied. Left on by default that turns browsing into a schema mutation, which
+ * is exactly the kind of invisible change that makes an incident hard to diagnose. It is
+ * kept for an operator who explicitly needs a self-healing deploy; the supported path is
+ * to apply database/upgrade_v*.sql (see database/repair/00_preflight_check.php).
+ *
  * The check is one cached information_schema lookup per request (the result is held
  * in a static and in the session), so it costs nothing on the hot path.
  */

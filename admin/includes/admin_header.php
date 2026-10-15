@@ -65,8 +65,8 @@ try {
 
 $pageTitle = $pageTitle ?? '';
 foreach ($adminNavGroups as $g) if (isset($g['items'][$activeAdmin]) && $pageTitle === '') $pageTitle = adm($g['items'][$activeAdmin]['ar'], $g['items'][$activeAdmin]['en']);
-$canSee = function (string $href) use ($routeRoles, $adminRole): bool {
-    $r = $routeRoles[basename($href)] ?? ['super_admin']; return in_array($adminRole, $r, true);
+$canSee = function (string $href) use ($adminRole): bool {
+    return admin_role_allows(basename($href), $adminRole);
 };
 $initial = mb_strtoupper(mb_substr((string)($_SESSION['admin_name'] ?? 'A'), 0, 1, 'UTF-8'), 'UTF-8');
 $roleLabels = ['super_admin' => adm('مدير عام', 'Super admin'), 'editor' => adm('محرر', 'Editor'), 'support' => adm('دعم', 'Support')];

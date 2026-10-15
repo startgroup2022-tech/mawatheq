@@ -85,10 +85,20 @@ if (is_file($mawatheqAutoload)) require_once $mawatheqAutoload;
 
 // The client document library links to a case via `documents.case_id` (upgrade_v47).
 // A cPanel install can run this code against a database that predates that migration;
-// the guard self-heals the additive column so the client and admin document views
+// the guard can self-heal the additive column so the client and admin document views
 // never die with an unexplained 500. Same pattern as the jurisdiction column.
+//
+// Self-healing is off by default. Running DDL from an ordinary page request means the
+// database is modified by whatever HTTP request happens to arrive first, concurrently,
+// with no ordering against the migration files and no record of what was applied. That
+// is what made the original failure hard to reason about: the schema changed as a side
+// effect of browsing. The owner opts in during a deploy by setting
+// MAWATHEQ_ALLOW_RUNTIME_SCHEMA_DDL=1; otherwise a drifted database is surfaced by
+// database/repair/00_preflight_check.php and fixed by the migration files, deliberately.
 require_once __DIR__ . '/../includes/schema_guard.php';
-schema_ensure_column($pdo, 'documents', 'case_id', 'INT UNSIGNED DEFAULT NULL');
+if (getenv('MAWATHEQ_ALLOW_RUNTIME_SCHEMA_DDL') === '1') {
+    schema_ensure_column($pdo, 'documents', 'case_id', 'INT UNSIGNED DEFAULT NULL');
+}
 
 if (!headers_sent()) {
     header('X-Content-Type-Options: nosniff');
