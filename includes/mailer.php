@@ -11,8 +11,20 @@ function mail_last_error(): ?string {
     return $GLOBALS['mawatheq_mail_error'] ?? null;
 }
 
+/**
+ * The body of the most recent send_mail() call, or null if none was sent.
+ *
+ * Exists so a test can assert on the message a user would actually receive — the only
+ * place a password-reset token exists in plaintext once it is stored hashed. Never
+ * written to a log or a response; it lives only for the life of the request.
+ */
+function mail_last_body(): ?string {
+    return $GLOBALS['mawatheq_mail_last_body'] ?? null;
+}
+
 function send_mail(string $to, string $subject, string $htmlBody): bool {
     $GLOBALS['mawatheq_mail_error'] = null;
+    $GLOBALS['mawatheq_mail_last_body'] = $htmlBody;
 
     // Prefer an authenticated SMTP relay when the owner has configured one. The SMTP
     // transport lives in a separate, optional module: if a deployment did not ship

@@ -72,6 +72,10 @@ if (!empty($_SESSION['_last_activity']) && $now-(int)$_SESSION['_last_activity']
     $_SESSION=[]; session_regenerate_id(true);
 }
 $_SESSION['_last_activity']=$now;
+// When this session was established, used to discard sessions that predate a password
+// change. Set once, then carried for the life of the session; the route guards compare
+// it against the account's session_invalidated_at (see account_session_is_stale()).
+$_SESSION['mawatheq_session_started_at'] ??= $now;
 require_once __DIR__ . '/../includes/csrf.php';
 require_once __DIR__ . '/../includes/currency.php';
 // Composer autoloader: optional, because a deployment that never enables SAML SSO does not

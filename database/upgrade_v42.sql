@@ -7,17 +7,17 @@
 -- ------------------------------------------------------------
 SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='law_firms' AND COLUMN_NAME='legal_name');
 SET @s := IF(@c=0, "ALTER TABLE law_firms
-    ADD COLUMN legal_name VARCHAR(200) DEFAULT NULL AFTER name,
-    ADD COLUMN display_name VARCHAR(180) DEFAULT NULL AFTER legal_name,
-    ADD COLUMN email VARCHAR(150) DEFAULT NULL AFTER display_name,
-    ADD COLUMN phone VARCHAR(30) DEFAULT NULL AFTER email,
-    ADD COLUMN address VARCHAR(255) DEFAULT NULL AFTER phone,
-    ADD COLUMN city VARCHAR(100) DEFAULT NULL AFTER address,
-    ADD COLUMN country VARCHAR(100) DEFAULT NULL AFTER city,
-    ADD COLUMN commercial_register VARCHAR(80) DEFAULT NULL AFTER country,
-    ADD COLUMN license_number VARCHAR(80) DEFAULT NULL AFTER commercial_register,
-    ADD COLUMN logo_path VARCHAR(255) DEFAULT NULL AFTER license_number,
-    ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at", 'SELECT 1');
+    ADD COLUMN legal_name VARCHAR(200) DEFAULT NULL,
+    ADD COLUMN display_name VARCHAR(180) DEFAULT NULL,
+    ADD COLUMN email VARCHAR(150) DEFAULT NULL,
+    ADD COLUMN phone VARCHAR(30) DEFAULT NULL,
+    ADD COLUMN address VARCHAR(255) DEFAULT NULL,
+    ADD COLUMN city VARCHAR(100) DEFAULT NULL,
+    ADD COLUMN country VARCHAR(100) DEFAULT NULL,
+    ADD COLUMN commercial_register VARCHAR(80) DEFAULT NULL,
+    ADD COLUMN license_number VARCHAR(80) DEFAULT NULL,
+    ADD COLUMN logo_path VARCHAR(255) DEFAULT NULL,
+    ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP", 'SELECT 1');
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 
 -- ------------------------------------------------------------
@@ -25,9 +25,9 @@ PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 -- ------------------------------------------------------------
 SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='law_firm_members' AND COLUMN_NAME='status');
 SET @s := IF(@c=0, "ALTER TABLE law_firm_members
-    ADD COLUMN status ENUM('active','inactive') NOT NULL DEFAULT 'active' AFTER member_role,
-    ADD COLUMN permissions_json TEXT DEFAULT NULL AFTER status,
-    ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER joined_at", 'SELECT 1');
+    ADD COLUMN status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+    ADD COLUMN permissions_json TEXT DEFAULT NULL,
+    ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP", 'SELECT 1');
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 
 -- ------------------------------------------------------------
@@ -35,39 +35,39 @@ PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 --    so removing a firm never destroys business history).
 -- ------------------------------------------------------------
 SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='cases' AND COLUMN_NAME='firm_id');
-SET @s := IF(@c=0, 'ALTER TABLE cases ADD COLUMN firm_id INT UNSIGNED DEFAULT NULL AFTER lawyer_id, ADD INDEX idx_cases_firm (firm_id), ADD CONSTRAINT fk_cases_firm FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE SET NULL', 'SELECT 1');
+SET @s := IF(@c=0, 'ALTER TABLE cases ADD COLUMN firm_id INT UNSIGNED DEFAULT NULL, ADD INDEX idx_cases_firm (firm_id), ADD CONSTRAINT fk_cases_firm FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE SET NULL', 'SELECT 1');
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 
 SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='consultations' AND COLUMN_NAME='firm_id');
-SET @s := IF(@c=0, 'ALTER TABLE consultations ADD COLUMN firm_id INT UNSIGNED DEFAULT NULL AFTER lawyer_id, ADD INDEX idx_consultations_firm (firm_id), ADD CONSTRAINT fk_consultations_firm FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE SET NULL', 'SELECT 1');
+SET @s := IF(@c=0, 'ALTER TABLE consultations ADD COLUMN firm_id INT UNSIGNED DEFAULT NULL, ADD INDEX idx_consultations_firm (firm_id), ADD CONSTRAINT fk_consultations_firm FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE SET NULL', 'SELECT 1');
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 
 SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='invoices' AND COLUMN_NAME='firm_id');
-SET @s := IF(@c=0, 'ALTER TABLE invoices ADD COLUMN firm_id INT UNSIGNED DEFAULT NULL AFTER lawyer_id, ADD INDEX idx_invoices_firm (firm_id), ADD CONSTRAINT fk_invoices_firm FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE SET NULL', 'SELECT 1');
+SET @s := IF(@c=0, 'ALTER TABLE invoices ADD COLUMN firm_id INT UNSIGNED DEFAULT NULL, ADD INDEX idx_invoices_firm (firm_id), ADD CONSTRAINT fk_invoices_firm FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE SET NULL', 'SELECT 1');
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 
 SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='draft_documents' AND COLUMN_NAME='firm_id');
-SET @s := IF(@c=0, 'ALTER TABLE draft_documents ADD COLUMN firm_id INT UNSIGNED DEFAULT NULL AFTER lawyer_id, ADD INDEX idx_draft_documents_firm (firm_id), ADD CONSTRAINT fk_draft_documents_firm FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE SET NULL', 'SELECT 1');
+SET @s := IF(@c=0, 'ALTER TABLE draft_documents ADD COLUMN firm_id INT UNSIGNED DEFAULT NULL, ADD INDEX idx_draft_documents_firm (firm_id), ADD CONSTRAINT fk_draft_documents_firm FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE SET NULL', 'SELECT 1');
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 
 SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='case_evidence' AND COLUMN_NAME='firm_id');
-SET @s := IF(@c=0, 'ALTER TABLE case_evidence ADD COLUMN firm_id INT UNSIGNED DEFAULT NULL AFTER added_by_lawyer_id, ADD INDEX idx_case_evidence_firm (firm_id), ADD CONSTRAINT fk_case_evidence_firm FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE SET NULL', 'SELECT 1');
+SET @s := IF(@c=0, 'ALTER TABLE case_evidence ADD COLUMN firm_id INT UNSIGNED DEFAULT NULL, ADD INDEX idx_case_evidence_firm (firm_id), ADD CONSTRAINT fk_case_evidence_firm FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE SET NULL', 'SELECT 1');
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 
 SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='case_notes' AND COLUMN_NAME='firm_id');
-SET @s := IF(@c=0, 'ALTER TABLE case_notes ADD COLUMN firm_id INT UNSIGNED DEFAULT NULL AFTER lawyer_id, ADD INDEX idx_case_notes_firm (firm_id), ADD CONSTRAINT fk_case_notes_firm FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE SET NULL', 'SELECT 1');
+SET @s := IF(@c=0, 'ALTER TABLE case_notes ADD COLUMN firm_id INT UNSIGNED DEFAULT NULL, ADD INDEX idx_case_notes_firm (firm_id), ADD CONSTRAINT fk_case_notes_firm FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE SET NULL', 'SELECT 1');
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 
 SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='case_time_entries' AND COLUMN_NAME='firm_id');
-SET @s := IF(@c=0, 'ALTER TABLE case_time_entries ADD COLUMN firm_id INT UNSIGNED DEFAULT NULL AFTER lawyer_id, ADD INDEX idx_case_time_entries_firm (firm_id), ADD CONSTRAINT fk_case_time_entries_firm FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE SET NULL', 'SELECT 1');
+SET @s := IF(@c=0, 'ALTER TABLE case_time_entries ADD COLUMN firm_id INT UNSIGNED DEFAULT NULL, ADD INDEX idx_case_time_entries_firm (firm_id), ADD CONSTRAINT fk_case_time_entries_firm FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE SET NULL', 'SELECT 1');
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 
 SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='legal_calendar_events' AND COLUMN_NAME='firm_id');
-SET @s := IF(@c=0, 'ALTER TABLE legal_calendar_events ADD COLUMN firm_id INT UNSIGNED DEFAULT NULL AFTER lawyer_id, ADD INDEX idx_legal_calendar_firm (firm_id), ADD CONSTRAINT fk_legal_calendar_firm FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE SET NULL', 'SELECT 1');
+SET @s := IF(@c=0, 'ALTER TABLE legal_calendar_events ADD COLUMN firm_id INT UNSIGNED DEFAULT NULL, ADD INDEX idx_legal_calendar_firm (firm_id), ADD CONSTRAINT fk_legal_calendar_firm FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE SET NULL', 'SELECT 1');
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 
 SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='audit_logs' AND COLUMN_NAME='firm_id');
-SET @s := IF(@c=0, 'ALTER TABLE audit_logs ADD COLUMN firm_id INT UNSIGNED DEFAULT NULL AFTER actor_name, ADD INDEX idx_audit_logs_firm (firm_id), ADD CONSTRAINT fk_audit_logs_firm FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE SET NULL', 'SELECT 1');
+SET @s := IF(@c=0, 'ALTER TABLE audit_logs ADD COLUMN firm_id INT UNSIGNED DEFAULT NULL, ADD INDEX idx_audit_logs_firm (firm_id), ADD CONSTRAINT fk_audit_logs_firm FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE SET NULL', 'SELECT 1');
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 
 -- ------------------------------------------------------------
