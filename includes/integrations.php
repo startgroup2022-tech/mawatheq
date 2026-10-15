@@ -24,6 +24,9 @@ require_once __DIR__ . '/schema_guard.php';
 
 const INTEGRATION_TOKEN_PREFIX = 'mwq_';
 const INTEGRATION_SIGNATURE_TOLERANCE = 300; // seconds a receiver should accept either side of now
+// Default lifetime for a newly issued integration token. Long enough for a scheduled
+// export to keep working unattended, short enough that a leaked token is not permanent.
+const INTEGRATION_TOKEN_TTL_DAYS = 180;
 
 /* ------------------------------------------------------------------ scopes */
 
@@ -72,8 +75,17 @@ function integration_token_issue(PDO $pdo, ?int $firmId, string $label, array $s
     $label = trim($label) !== '' ? mb_substr(trim($label), 0, 150, 'UTF-8') : 'تكامل';
     $token = INTEGRATION_TOKEN_PREFIX . bin2hex(random_bytes(24));
     try {
-        $pdo->prepare('INSERT INTO integration_api_tokens (firm_id,label,token_hash,scopes) VALUES (?,?,?,?)')
-            ->execute([$firmId, $label, hash('sha256', $token), implode(',', $scopes)]);
+        // A default lifetime is set at issuance: without one a token issued for a one-off
+        // export stayed valid forever unless someone revoked it by hand. The column is
+        // nullable, so a deployment that has not yet run upgrade_v54 still works — the
+        // INSERT simply falls back to no expiry rather than failing.
+        try {
+            $pdo->prepare('INSERT INTO integration_api_tokens (firm_id,label,token_hash,scopes,expires_at) VALUES (?,?,?,?,DATE_ADD(NOW(), INTERVAL ? DAY))')
+                ->execute([$firmId, $label, hash('sha256', $token), implode(',', $scopes), INTEGRATION_TOKEN_TTL_DAYS]);
+        } catch (PDOException $e) {
+            $pdo->prepare('INSERT INTO integration_api_tokens (firm_id,label,token_hash,scopes) VALUES (?,?,?,?)')
+                ->execute([$firmId, $label, hash('sha256', $token), implode(',', $scopes)]);
+        }
         return ['ok' => true, 'token' => $token, 'id' => (int)$pdo->lastInsertId(), 'error' => null];
     } catch (PDOException $e) {
         error_log('integration_token_issue failed: ' . $e->getMessage());
@@ -81,12 +93,14 @@ function integration_token_issue(PDO $pdo, ?int $firmId, string $label, array $s
     }
 }
 
-/** Resolve a raw bearer token to its row, or null when unknown/revoked/inactive. */
+/** Resolve a raw bearer token to its row, or null when unknown/revoked/inactive/expired. */
 function integration_token_find(PDO $pdo, string $rawToken): ?array {
     $rawToken = trim($rawToken);
     if ($rawToken === '' || strpos($rawToken, INTEGRATION_TOKEN_PREFIX) !== 0) return null;
     try {
-        $stmt = $pdo->prepare('SELECT * FROM integration_api_tokens WHERE token_hash=? AND is_active=1 AND revoked_at IS NULL LIMIT 1');
+        // Expiry is part of the lookup, so an expired token is indistinguishable from an
+        // unknown one — the caller gets the same 401 and learns nothing.
+        $stmt = $pdo->prepare('SELECT * FROM integration_api_tokens WHERE token_hash=? AND is_active=1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > NOW()) LIMIT 1');
         $stmt->execute([hash('sha256', $rawToken)]);
         $row = $stmt->fetch();
         return $row ?: null;

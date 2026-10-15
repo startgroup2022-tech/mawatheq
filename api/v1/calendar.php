@@ -36,7 +36,10 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') api_error('method not allowed', 405);
 $input = api_input();
 if (($input['action'] ?? '') === 'complete') {
     $eventId = (int)($input['event_id'] ?? 0);
-    $stmt = $pdo->prepare("UPDATE legal_calendar_events SET status='completed' WHERE id=? AND " . $calScope['sql'] . " AND status='upcoming'");
+    // The table needs the `e` alias here: $calScope is written against `e`, and MySQL
+    // rejects `e.firm_id` in an UPDATE whose table has no alias — SQLSTATE 42S22, which
+    // surfaced as a 500 instead of the intended 404.
+    $stmt = $pdo->prepare("UPDATE legal_calendar_events e SET e.status='completed' WHERE e.id=? AND " . $calScope['sql'] . " AND e.status='upcoming'");
     $stmt->execute(array_merge([$eventId], $calScope['params']));
     if (!$stmt->rowCount()) api_error('event not found or already completed',404);
     api_json(['ok'=>true]);

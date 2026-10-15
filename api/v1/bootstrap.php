@@ -94,8 +94,13 @@ function api_authenticate(PDO $pdo): array {
     if (!$profile || empty($profile['email_verified']) || ($row['user_type'] === 'client' && $profile['status'] !== 'active') || ($row['user_type'] === 'lawyer' && $profile['status'] !== 'approved')) {
         api_error('account is inactive or email is not verified', 403);
     }
-    if (hash_equals($token, $row['token'])) {
-        $pdo->prepare('UPDATE api_tokens SET token=? WHERE id=?')->execute([hash('sha256', $token), $row['id']]);
+    // Upgrade a legacy plaintext token to its hash on first use. The WHERE clause repeats
+    // the plaintext condition so the write only touches a row that is still plaintext —
+    // otherwise a concurrent request could rewrite an already-hashed row and the token
+    // would stop matching on the next call.
+    if (hash_equals($token, (string)$row['token'])) {
+        $pdo->prepare('UPDATE api_tokens SET token=? WHERE id=? AND token=?')
+            ->execute([hash('sha256', $token), $row['id'], $token]);
     }
     $pdo->prepare('UPDATE api_tokens SET last_used_at = NOW() WHERE id = ?')->execute([$row['id']]);
     return ['type' => $row['user_type'], 'id' => (int)$row['user_id'], 'token_id'=>(int)$row['id']];
