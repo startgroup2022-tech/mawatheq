@@ -8,8 +8,8 @@
 
 <div class="form-section-title">السعر والمدة</div>
 <div class="grid-2">
-  <div class="field"><label>السعر الشهري (د.ب) — 0 تعني باقة مجانية</label><input type="number" step="0.001" min="0" name="price_monthly" value="<?= htmlspecialchars((string)$plan['price_monthly']) ?>"></div>
-  <div class="field"><label>السعر السنوي (د.ب) — اختياري</label><input type="number" step="0.001" min="0" name="price_yearly" value="<?= htmlspecialchars((string)($plan['price_yearly'] ?? '')) ?>"></div>
+  <div class="field"><label>السعر الشهري (<?= currency_symbol() ?>) — 0 تعني باقة مجانية</label><input type="number" step="<?= currency_step() ?>" min="0" name="price_monthly" value="<?= htmlspecialchars((string)$plan['price_monthly']) ?>"></div>
+  <div class="field"><label>السعر السنوي (<?= currency_symbol() ?>) — اختياري</label><input type="number" step="<?= currency_step() ?>" min="0" name="price_yearly" value="<?= htmlspecialchars((string)($plan['price_yearly'] ?? '')) ?>"></div>
 </div>
 
 <div class="form-section-title">الحدود والمزايا الفعلية (تُطبَّق تلقائياً على كل مشترك)</div>

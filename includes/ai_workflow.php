@@ -53,7 +53,7 @@ function ai_agent_execute(PDO $pdo, array $settings, string $agentKey, string $m
     $lim = $pdo->prepare("SELECT COUNT(*) FROM ai_agent_executions WHERE task_name LIKE ? AND created_at>=DATE_SUB(NOW(),INTERVAL 1 HOUR)");
     $lim->execute([$moduleId . ':%']);
     if ((int)$lim->fetchColumn() >= (int)$agent['requests_per_hour']) return ['ok' => false, 'error' => 'Hourly rate limit for this module reached.'];
-    if (empty($settings['ai_provider']) || empty($settings['ai_api_key']) || !in_array($settings['ai_provider'], ['openai', 'anthropic'], true) || ($settings['ai_enabled'] ?? '1') === '0')
+    if (!ai_chat_provider_configured($settings))
         return ['ok' => false, 'error' => 'AI provider is not enabled in settings.'];
 
     $terms = preg_split('/\s+/u', $task, -1, PREG_SPLIT_NO_EMPTY) ?: [];
@@ -91,16 +91,20 @@ function ai_agent_execute(PDO $pdo, array $settings, string $agentKey, string $m
     $temperature = min((float)$agent['temperature'], (float)$agent['module_temperature']);
     $maxTokens = min((int)$agent['token_limit'], (int)$agent['module_tokens']);
     $t0 = microtime(true);
-    $result = $settings['ai_provider'] === 'anthropic'
-        ? call_anthropic_raw($settings['ai_api_key'], $model, $system, $input, $maxTokens, $temperature)
-        : call_openai_raw($settings['ai_api_key'], $model, $system, $input, $maxTokens, $temperature);
+    require_once __DIR__ . '/ai_gateway.php';
+    // Admin orchestration only ever reads verified GLOBAL knowledge sources (no tenant/client
+    // data), so it runs under the platform policy and is fully audited like every other call.
+    $gatewayCall = ai_gateway_call($pdo, $settings, ai_gateway_tenant_context($pdo, 'admin', $adminId), 'admin-agent', 'legal_text', $adminId, 'admin', $system, $input, $maxTokens, $temperature, $moduleId);
     $ms = (int)round((microtime(true) - $t0) * 1000);
-    if (!$result['ok'] || !$result['text']) {
-        $logExec('failed', mb_substr((string)($result['error'] ?? 'Provider returned no output'), 0, 500, 'UTF-8'), null, $sourceIds, null, null, null, $ms);
-        return ['ok' => false, 'error' => 'The AI provider failed to return an answer.'];
+    if (!$gatewayCall['ok'] || !$gatewayCall['text']) {
+        $logExec('failed', mb_substr((string)($gatewayCall['error'] ?? 'Provider returned no output'), 0, 500, 'UTF-8'), null, $sourceIds, null, null, null, $ms);
+        return ['ok' => false, 'error' => $gatewayCall['denied'] ? ($gatewayCall['error'] ?? 'Denied by policy.') : 'The AI provider failed to return an answer.'];
     }
+    $result = ['ok' => true, 'text' => $gatewayCall['text'], 'input_tokens' => $gatewayCall['input_tokens'], 'output_tokens' => $gatewayCall['output_tokens']];
     $inTok = (int)($result['input_tokens'] ?? 0); $outTok = (int)($result['output_tokens'] ?? 0);
-    $id = $logExec('completed', null, $result['text'], $sourceIds, $inTok, $outTok, ai_estimate_cost($settings, $inTok, $outTok), $ms);
+    // Cost stays NULL when the provider did not report tokens, matching the gateway audit rows.
+    $cost = ai_gateway_cost($settings, $result['input_tokens'], $result['output_tokens']);
+    $id = $logExec('completed', null, $result['text'], $sourceIds, $inTok, $outTok, $cost, $ms);
     return ['ok' => true, 'output' => $result['text'], 'execution_id' => $id, 'input_tokens' => $inTok, 'output_tokens' => $outTok, 'source_ids' => $sourceIds];
 }
 

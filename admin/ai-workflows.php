@@ -4,6 +4,7 @@ require_once __DIR__ . '/../lang/strings.php';
 require_once __DIR__ . '/includes/admin_guard.php';
 require_once __DIR__ . '/../includes/ai_workflow.php';
 require_once __DIR__ . '/../includes/audit_log.php';
+require_once __DIR__ . '/includes/admin_ui.php';
 
 $adminId = (int)$_SESSION['admin_id']; $message = null; $error = null;
 $ready = true;

@@ -1,23 +1,27 @@
 <?php
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/includes/lawyer_guard.php';
+require_once __DIR__ . '/../includes/tenant.php';
 
 $lawyerId = (int)$_SESSION['lawyer_id'];
+$caseScope = tenant_owner_where($pdo, 'c');
+$consultScope = tenant_owner_where($pdo, 'co');
+$calScope = tenant_owner_where($pdo, 'e');
 $sql = "SELECT event_at,event_title,case_title,event_type,event_id FROM (
     SELECT CONCAT(ct.event_date,' 00:00:00') AS event_at,ct.event AS event_title,c.title AS case_title,'timeline' AS event_type,CONCAT('timeline-',ct.id) AS event_id
-    FROM case_timeline ct JOIN cases c ON c.id=ct.case_id WHERE c.lawyer_id=?
+    FROM case_timeline ct JOIN cases c ON c.id=ct.case_id WHERE " . $caseScope['sql'] . "
     UNION ALL
     SELECT CONCAT(t.due_date,' 00:00:00') AS event_at,t.title AS event_title,c.title AS case_title,'task' AS event_type,CONCAT('task-',t.id) AS event_id
-    FROM case_tasks t JOIN cases c ON c.id=t.case_id WHERE c.lawyer_id=? AND t.due_date IS NOT NULL AND t.status='pending'
+    FROM case_tasks t JOIN cases c ON c.id=t.case_id WHERE " . $caseScope['sql'] . " AND t.due_date IS NOT NULL AND t.status='pending'
     UNION ALL
     SELECT co.scheduled_at AS event_at,COALESCE(co.topic,'استشارة') AS event_title,u.full_name AS case_title,'consultation' AS event_type,CONCAT('consultation-',co.id) AS event_id
-    FROM consultations co JOIN users u ON u.id=co.user_id WHERE co.lawyer_id=? AND co.status IN ('pending','confirmed')
+    FROM consultations co JOIN users u ON u.id=co.user_id WHERE " . $consultScope['sql'] . " AND co.status IN ('pending','confirmed')
     UNION ALL
     SELECT e.event_at AS event_at,e.title AS event_title,COALESCE(c.title,'') AS case_title,e.event_type AS event_type,CONCAT('event-',e.id) AS event_id
-    FROM legal_calendar_events e LEFT JOIN cases c ON c.id=e.case_id WHERE e.lawyer_id=? AND e.status='upcoming'
+    FROM legal_calendar_events e LEFT JOIN cases c ON c.id=e.case_id WHERE " . $calScope['sql'] . " AND e.status='upcoming'
 ) calendar_items WHERE event_at >= DATE_SUB(NOW(),INTERVAL 30 DAY) ORDER BY event_at ASC LIMIT 1000";
 $stmt = $pdo->prepare($sql);
-$stmt->execute([$lawyerId,$lawyerId,$lawyerId,$lawyerId]);
+$stmt->execute(array_merge($caseScope['params'], $caseScope['params'], $consultScope['params'], $calScope['params']));
 $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 $escapeIcs = static function (string $value): string {

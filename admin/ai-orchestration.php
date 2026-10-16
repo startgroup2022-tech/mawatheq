@@ -47,7 +47,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             $lim=$pdo->prepare("SELECT COUNT(*) FROM ai_agent_executions WHERE task_name LIKE ? AND created_at>=DATE_SUB(NOW(),INTERVAL 1 HOUR)");
             $lim->execute([$moduleId.':%']);
             if ((int)$lim->fetchColumn()>=(int)$agent['requests_per_hour']) throw new RuntimeException('تم بلوغ حد الطلبات لهذه الوحدة خلال الساعة الحالية.');
-            if (empty($settings['ai_provider'])||empty($settings['ai_api_key'])||!in_array($settings['ai_provider'],['openai','anthropic'],true)||($settings['ai_enabled']??'1')==='0') throw new RuntimeException('فعّل مزود AI ومفتاحه من إعدادات الإدارة أولاً.');
+            if (!ai_chat_provider_configured($settings)) throw new RuntimeException('فعّل مزود الذكاء الاصطناعي من إعدادات الإدارة أولاً.');
             $terms=preg_split('/\s+/u',$question,-1,PREG_SPLIT_NO_EMPTY)?:[]; $terms=array_slice(array_values(array_filter($terms,function($t){return mb_strlen($t,'UTF-8')>=2;})),0,8);
             if (!$terms) throw new RuntimeException('أضف كلمات بحث واضحة لاستخراج المصادر الموثقة.');
             $where=implode(' OR ',array_fill(0,count($terms),'k.chunk_text LIKE ?'));
@@ -63,12 +63,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             $input=json_encode(['task'=>$question,'sources'=>$sourceTexts],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
             $model=trim((string)$agent['model'])?:((string)($settings['ai_model']??''));
             $temperature=min((float)$agent['temperature'],(float)$agent['module_temperature']);
-            $result=$settings['ai_provider']==='anthropic'?call_anthropic_raw($settings['ai_api_key'],$model,$system,$input,min((int)$agent['token_limit'],(int)$agent['module_tokens']),$temperature):call_openai_raw($settings['ai_api_key'],$model,$system,$input,min((int)$agent['token_limit'],(int)$agent['module_tokens']),$temperature);
-            if (!$result['ok']||!$result['text']) {
+            require_once __DIR__ . '/../includes/ai_gateway.php';
+            $gatewayCall=ai_gateway_call($pdo,$settings,ai_gateway_tenant_context($pdo,'admin',(int)$_SESSION['admin_id']),'admin-agent','legal_text',(int)$_SESSION['admin_id'],'admin',$system,$input,min((int)$agent['token_limit'],(int)$agent['module_tokens']),$temperature,$moduleId);
+            if (!$gatewayCall['ok']||!$gatewayCall['text']) {
                 $pdo->prepare("INSERT INTO ai_agent_executions (agent_id,user_type,user_id,task_name,input_summary,source_ids_json,status,error_message,finished_at) VALUES (?,'admin',?,?,?,?, 'failed',?,NOW())")
-                    ->execute([$agentId,(int)$_SESSION['admin_id'],$moduleId.':'.$agent['agent_key'],mb_substr($question,0,1000,'UTF-8'),json_encode(array_column($sources,'id')),$result['error']??'Provider returned no output']);
-                throw new RuntimeException('فشل مزود الذكاء الاصطناعي؛ راجع سجل PHP وإعدادات المزود.');
+                    ->execute([$agentId,(int)$_SESSION['admin_id'],$moduleId.':'.$agent['agent_key'],mb_substr($question,0,1000,'UTF-8'),json_encode(array_column($sources,'id')),$gatewayCall['error']??'Provider returned no output']);
+                throw new RuntimeException($gatewayCall['denied'] ? ('رُفض الإرسال الخارجي حسب سياسة الخصوصية: '.($gatewayCall['error']??'')) : 'فشل مزود الذكاء الاصطناعي؛ راجع سجل PHP وإعدادات المزود.');
             }
+            $result=['ok'=>true,'text'=>$gatewayCall['text'],'input_tokens'=>$gatewayCall['input_tokens'],'output_tokens'=>$gatewayCall['output_tokens']];
             $runOutput=$result['text'];
             $pdo->prepare("INSERT INTO ai_agent_executions (agent_id,user_type,user_id,task_name,input_summary,source_ids_json,output_text,status,input_tokens,output_tokens,finished_at) VALUES (?,'admin',?,?,?,?,?,'completed',?,?,NOW())")
                 ->execute([$agentId,(int)$_SESSION['admin_id'],$moduleId.':'.$agent['agent_key'],mb_substr($question,0,1000,'UTF-8'),json_encode(array_column($sources,'id')),$runOutput,(int)($result['input_tokens']??0),(int)($result['output_tokens']??0)]);

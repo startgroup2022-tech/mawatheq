@@ -1,11 +1,57 @@
 <?php
 /**
- * إرسال بريد بسيط عبر دالة mail() المدمجة بـPHP — تعمل مباشرة على أغلب
- * استضافات cPanel بدون أي إعداد إضافي (تُرسل عبر Exim على السيرفر نفسه).
- * إن احتجت لاحقاً موثوقية أعلى (SMTP خارجي)، يمكن استبدال هذه الدالة بمكتبة
- * مثل PHPMailer دون تغيير أي كود آخر في المشروع (نفس التوقيع).
+ * إرسال بريد بسيط. يفضّل SMTP الموثّق عند ضبطه من لوحة التحكم (يشمل STARTTLS)،
+ * وإلا يرجع إلى دالة mail() المدمجة عبر Exim/التسليم المحلي.
+ *
+ * على استضافات cPanel كثيراً ما يفشل mail() بصمت: قد يعيد true دون تسليم فعلي،
+ * ولا يدعم المصادقة، فيُرفض أو يُصنَّف كبريد مزعج بلا خطأ ظاهر. ضبط SMTP عبر مزوّد
+ * البريد الذي يملك السجلات SPF/DKIM للمجال هو الحل الموثوق.
  */
+function mail_last_error(): ?string {
+    return $GLOBALS['mawatheq_mail_error'] ?? null;
+}
+
+/**
+ * The body of the most recent send_mail() call, or null if none was sent.
+ *
+ * Exists so a test can assert on the message a user would actually receive — the only
+ * place a password-reset token exists in plaintext once it is stored hashed. Never
+ * written to a log or a response; it lives only for the life of the request.
+ */
+function mail_last_body(): ?string {
+    return $GLOBALS['mawatheq_mail_last_body'] ?? null;
+}
+
 function send_mail(string $to, string $subject, string $htmlBody): bool {
+    $GLOBALS['mawatheq_mail_error'] = null;
+    $GLOBALS['mawatheq_mail_last_body'] = $htmlBody;
+
+    // Prefer an authenticated SMTP relay when the owner has configured one. The SMTP
+    // transport lives in a separate, optional module: if a deployment did not ship
+    // `smtp.php`, delivery must still work through the original mail() path rather than
+    // fail every send. The module is only consulted once it actually exists and loads.
+    $smtpFile = __DIR__ . '/smtp.php';
+    if (isset($GLOBALS['pdo']) && $GLOBALS['pdo'] instanceof PDO && is_file($smtpFile)) {
+        require_once $smtpFile;
+        if (function_exists('smtp_configured')) {
+            $settings = smtp_settings($GLOBALS['pdo']);
+            if (smtp_configured($settings)) {
+                $smtpError = null;
+                if (smtp_send($settings, $to, $subject, $htmlBody, $smtpError)) {
+                    return true;
+                }
+                $GLOBALS['mawatheq_mail_error'] = 'SMTP: ' . (string)$smtpError;
+                error_log('Mawatheq SMTP delivery failed: ' . (string)$smtpError);
+                return false;
+            }
+        }
+    }
+
+    return send_mail_via_php_mail($to, $subject, $htmlBody);
+}
+
+/** The legacy local-MTA path: PHP mail() through the host's sendmail binary. */
+function send_mail_via_php_mail(string $to, string $subject, string $htmlBody): bool {
     $fromEmail = defined('MAIL_FROM_EMAIL') ? trim((string)MAIL_FROM_EMAIL) : '';
     if (!filter_var($fromEmail, FILTER_VALIDATE_EMAIL) || preg_match('/[\r\n]/', $fromEmail)) {
         error_log('Mawatheq mail delivery failed: MAIL_FROM_EMAIL is invalid.');

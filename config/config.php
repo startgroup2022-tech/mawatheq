@@ -72,7 +72,33 @@ if (!empty($_SESSION['_last_activity']) && $now-(int)$_SESSION['_last_activity']
     $_SESSION=[]; session_regenerate_id(true);
 }
 $_SESSION['_last_activity']=$now;
+// When this session was established, used to discard sessions that predate a password
+// change. Set once, then carried for the life of the session; the route guards compare
+// it against the account's session_invalidated_at (see account_session_is_stale()).
+$_SESSION['mawatheq_session_started_at'] ??= $now;
 require_once __DIR__ . '/../includes/csrf.php';
+require_once __DIR__ . '/../includes/currency.php';
+// Composer autoloader: optional, because a deployment that never enables SAML SSO does not
+// need vendor/. Code that depends on it checks class_exists() rather than assuming it loaded.
+$mawatheqAutoload = __DIR__ . '/../vendor/autoload.php';
+if (is_file($mawatheqAutoload)) require_once $mawatheqAutoload;
+
+// The client document library links to a case via `documents.case_id` (upgrade_v47).
+// A cPanel install can run this code against a database that predates that migration;
+// the guard can self-heal the additive column so the client and admin document views
+// never die with an unexplained 500. Same pattern as the jurisdiction column.
+//
+// Self-healing is off by default. Running DDL from an ordinary page request means the
+// database is modified by whatever HTTP request happens to arrive first, concurrently,
+// with no ordering against the migration files and no record of what was applied. That
+// is what made the original failure hard to reason about: the schema changed as a side
+// effect of browsing. The owner opts in during a deploy by setting
+// MAWATHEQ_ALLOW_RUNTIME_SCHEMA_DDL=1; otherwise a drifted database is surfaced by
+// database/repair/00_preflight_check.php and fixed by the migration files, deliberately.
+require_once __DIR__ . '/../includes/schema_guard.php';
+if (getenv('MAWATHEQ_ALLOW_RUNTIME_SCHEMA_DDL') === '1') {
+    schema_ensure_column($pdo, 'documents', 'case_id', 'INT UNSIGNED DEFAULT NULL');
+}
 
 if (!headers_sent()) {
     header('X-Content-Type-Options: nosniff');
@@ -104,9 +130,18 @@ if (!headers_sent()) {
 }
 
 // SameSite cookies plus a same-origin check block cross-site browser POSTs.
-// REST API clients and the payment provider webhook use their own authentication.
+// The Bearer-token REST API (/api/v1/...) and the payment provider webhooks authenticate
+// requests themselves, so they are exempt: they are server-to-server calls that cannot carry
+// a CSRF token. The browser-facing /api/ helpers (ai_chat, upload_document, ...) run on the
+// PHP session cookie, so they must be protected like any other page POST.
 $requestPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
-if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && strpos($requestPath, '/api/') !== 0 && $requestPath !== '/ngenius-webhook.php') {
+  // SAML endpoints are exempt because the IdP POSTs to them from its own origin and cannot
+  // carry our CSRF token. Authenticity there is the XML signature (verified in sso/acs.php),
+  // not a session token — the same reasoning as the payment webhooks above.
+  $csrfExemptPaths = ['/ngenius-webhook.php', '/sadad-webhook.php', '/sso/acs.php', '/sso/sls.php'];
+
+$isBearerApi = strpos($requestPath, '/api/v1/') === 0;
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && !$isBearerApi && !in_array($requestPath, $csrfExemptPaths, true)) {
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) { http_response_code(403); exit('Invalid request'); }
     $source = $_SERVER['HTTP_ORIGIN'] ?? ($_SERVER['HTTP_REFERER'] ?? '');
     if ($source !== '') {

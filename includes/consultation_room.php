@@ -69,7 +69,7 @@ $type = $consultation['consultation_type'];
       input.value = '';
       await fetch('/api/consultation_messages.php', {
         method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
-        body: new URLSearchParams({consultation_id: consultationId, message: text})
+        body: new URLSearchParams({consultation_id: consultationId, message: text, csrf_token: "<?= htmlspecialchars(csrf_token()) ?>"})
       });
       poll();
     });

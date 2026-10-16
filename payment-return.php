@@ -4,6 +4,7 @@ require_once __DIR__ . '/lang/strings.php';
 require_once __DIR__ . '/includes/auth_guard.php';
 require_once __DIR__ . '/includes/ngenius.php';
 require_once __DIR__ . '/includes/notifications.php';
+require_once __DIR__ . '/includes/finance.php';
 
 $invoiceId = (int)($_GET['invoice_id'] ?? 0);
 $stmt = $pdo->prepare('SELECT * FROM invoices WHERE id=? AND user_id=? AND is_draft=0');
@@ -12,35 +13,43 @@ $invoice = $stmt->fetch();
 
 $resultState = null; $resultError = null;
 
-if ($invoice && $invoice['status'] === 'paid') {
-    $resultState = 'CAPTURED';
-} elseif ($invoice && $invoice['gateway_order_ref']) {
-    if ($invoice['status'] !== 'unpaid') {
-        $resultError = is_rtl() ? 'حالة هذه الفاتورة لا تسمح بتحديث دفعها.' : 'This invoice status does not allow payment processing.';
-    } else {
+if (!$invoice) {
+    $resultError = is_rtl() ? 'الفاتورة غير موجودة.' : 'Invoice not found.';
+} elseif ($invoice['status'] === 'paid' && finance_invoice_balance($invoice) <= 0) {
+    $resultState = 'CAPTURED'; // already settled — nothing left to reconcile
+} elseif (!$invoice['gateway_order_ref']) {
+    $resultError = is_rtl() ? 'لا يوجد طلب دفع مرتبط بهذه الفاتورة.' : 'No linked payment order for this invoice.';
+} else {
     // لا نثق بمعاملات الرابط فقط — نستعلم عن الحالة الحقيقية مباشرة من بوابة الدفع
     $settings = ngenius_settings($pdo);
     $tokenResult = ngenius_get_access_token($settings['ngenius_environment'], $settings['ngenius_api_key'], $settings['ngenius_realm_name'] ?: 'ni');
 
-    if ($tokenResult['ok']) {
-        $status = ngenius_get_order_status($settings['ngenius_environment'], $settings['ngenius_outlet_ref'], $tokenResult['token'], $invoice['gateway_order_ref']);
-        if ($status['ok']) {
-            $resultState = $status['state'];
-            if (ngenius_is_paid_state($resultState) && $invoice['status'] !== 'paid') {
-                $pdo->prepare("UPDATE invoices SET status='paid', paid_at=NOW(), payment_method='ngenius' WHERE id=? AND status='unpaid' AND is_draft=0")->execute([$invoiceId]);
-                $pdo->prepare('INSERT INTO payment_transactions (invoice_id, gateway, gateway_order_ref, event_type, amount) VALUES (?,?,?,?,?)')
-                    ->execute([$invoiceId, 'ngenius', $invoice['gateway_order_ref'], $resultState, $invoice['amount']]);
-                notify($pdo, 'lawyer', $invoice['lawyer_id'], is_rtl() ? 'تم استلام دفعة إلكترونية' : 'Online payment received', $invoice['description'], '/lawyer/invoices.php');
-            }
-        } else {
-            $resultError = $status['error'];
-        }
-    } else {
+    if (!$tokenResult['ok']) {
         $resultError = $tokenResult['error'];
+    } else {
+        $status = ngenius_get_order_status($settings['ngenius_environment'], $settings['ngenius_outlet_ref'], $tokenResult['token'], $invoice['gateway_order_ref']);
+        if (!$status['ok']) {
+            $resultError = $status['error'];
+        } else {
+            $resultState = $status['state'];
+            if (ngenius_is_paid_state($resultState)) {
+                // Reconcile against the amount actually charged for this order (not the invoice
+                // total), so a partially-paid invoice is settled for the correct remainder.
+                $amtStmt = $pdo->prepare("SELECT amount FROM payment_transactions WHERE gateway_order_ref=? AND event_type='ORDER_CREATED' ORDER BY id DESC LIMIT 1");
+                $amtStmt->execute([$invoice['gateway_order_ref']]);
+                $orderAmount = $amtStmt->fetchColumn();
+                $amount = ($orderAmount !== false && $orderAmount !== null) ? (float)$orderAmount : finance_invoice_balance($invoice);
+                $recorded = finance_record_payment($pdo, $invoiceId, $amount, [
+                    'method' => 'ngenius', 'reference' => $invoice['gateway_order_ref'],
+                    'idempotency_key' => 'ngenius:' . $invoice['gateway_order_ref'],
+                    'recorded_by_type' => 'system', 'notes' => 'N-Genius return: ' . $resultState,
+                ]);
+                if (!empty($recorded['ok']) && empty($recorded['duplicate'])) {
+                    notify($pdo, 'lawyer', $invoice['lawyer_id'], is_rtl() ? 'تم استلام دفعة إلكترونية' : 'Online payment received', $invoice['description'], '/lawyer/invoices.php');
+                }
+            }
+        }
     }
-    }
-} else {
-    $resultError = is_rtl() ? 'الفاتورة غير موجودة أو لا يوجد طلب دفع مرتبط بها.' : 'Invoice not found or no linked payment order.';
 }
 
 require_once __DIR__ . '/includes/app_header.php';

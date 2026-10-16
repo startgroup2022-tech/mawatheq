@@ -29,7 +29,7 @@ function secret_store_setting(PDO $pdo,string $settingKey,string $plain): bool {
 }
 function ai_load_settings(PDO $pdo): array {
     $settings=[];
-    foreach($pdo->query("SELECT setting_key,setting_value FROM site_settings WHERE setting_key IN ('ai_provider','ai_api_key','ai_model','ai_enabled','ai_endpoint','ai_backup_model','ai_max_tokens','ai_temperature','ai_timeout','ai_retries','ai_rate_limit')")->fetchAll() as $row) $settings[$row['setting_key']]=$row['setting_value'];
+    foreach($pdo->query("SELECT setting_key,setting_value FROM site_settings WHERE setting_key IN ('ai_provider','ai_api_key','ai_model','ai_enabled','ai_endpoint','ai_backup_model','ai_max_tokens','ai_temperature','ai_timeout','ai_retries','ai_rate_limit','ai_timeout_seconds','ai_max_retries','ai_rate_limit_per_hour','ai_fallback_enabled')")->fetchAll() as $row) $settings[$row['setting_key']]=$row['setting_value'];
     if(isset($settings['ai_api_key'])) {
         $stored=$settings['ai_api_key'];$settings['ai_api_key']=secret_decrypt_value($stored);
         if($settings['ai_api_key']!=='' && strpos((string)$stored,'enc:v1:')!==0 && secret_encryption_key()) secret_store_setting($pdo,'ai_api_key',$settings['ai_api_key']);
@@ -40,7 +40,7 @@ function ai_load_settings(PDO $pdo): array {
 /** Settings for semantic embeddings are separate from chat; fall back only to a saved OpenAI chat key. */
 function embedding_load_settings(PDO $pdo): array {
     $settings=[];
-    foreach($pdo->query("SELECT setting_key,setting_value FROM site_settings WHERE setting_key IN ('embedding_provider','embedding_api_key','embedding_model')")->fetchAll() as $row) $settings[$row['setting_key']]=$row['setting_value'];
+    foreach($pdo->query("SELECT setting_key,setting_value FROM site_settings WHERE setting_key IN ('embedding_provider','embedding_api_key','embedding_model','embedding_endpoint')")->fetchAll() as $row) $settings[$row['setting_key']]=$row['setting_value'];
     if(isset($settings['embedding_api_key'])) {
         $stored=$settings['embedding_api_key']; $settings['embedding_api_key']=secret_decrypt_value($stored);
         if($settings['embedding_api_key']!=='' && strpos((string)$stored,'enc:v1:')!==0 && secret_encryption_key()) secret_store_setting($pdo,'embedding_api_key',$settings['embedding_api_key']);

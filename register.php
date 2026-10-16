@@ -1,5 +1,8 @@
 <?php
 require_once __DIR__ . '/config/config.php';
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && !csrf_is_valid($_POST['csrf_token'] ?? null)) {
+    http_response_code(403); exit('Invalid request');
+}
 require_once __DIR__ . '/lang/strings.php';
 require_once __DIR__ . '/includes/phone.php';
 require_once __DIR__ . '/includes/specialization_field.php';
@@ -110,13 +113,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <body>
 <div class="auth-wrap">
   <div class="auth-card">
-    <a href="/" class="brand"><img src="/assets/img/logo.webp" style="height:38px"></a>
-    <h2 style="text-align:center;font-size:1.4rem;margin-top:10px"><?= is_rtl() ? 'إنشاء حساب جديد' : 'Create your account' ?></h2>
+    <a href="/" class="brand"><img src="/assets/img/logo.webp" alt="<?= htmlspecialchars(is_rtl() ? SITE_NAME_AR : SITE_NAME_EN) ?>" style="height:38px"></a>
+    <h1 style="text-align:center;font-size:1.4rem;margin-top:10px"><?= is_rtl() ? 'إنشاء حساب جديد' : 'Create your account' ?></h1>
 
     <div class="type-tabs">
       <a href="?as=client" class="<?= $who === 'client' ? 'active' : '' ?>"><?= is_rtl() ? '👤 أنا عميل' : "👤 I'm a client" ?></a>
       <a href="?as=lawyer" class="<?= $who === 'lawyer' ? 'active' : '' ?>"><?= is_rtl() ? '⚖️ أنا محامٍ' : "⚖️ I'm a lawyer" ?></a>
     </div>
+    <p class="auth-role-note">
+      <?= $who === 'lawyer'
+        ? (is_rtl() ? 'تسجيل المحامين: أنشئ حسابك كمحامٍ، وأكّد بريدك، ثم ينتظر الحساب اعتماد الإدارة قبل الدخول من بوابة المحامين.' : 'Lawyer signup: create your lawyer account, confirm your email, then the account awaits admin approval before you can sign in from the lawyer portal.')
+        : (is_rtl() ? 'تسجيل العملاء: أنشئ حسابك كعميل أو شركة، وأكّد بريدك، ثم ادخل مباشرة من بوابة العملاء.' : 'Client signup: create your client or company account, confirm your email, then sign in directly from the client portal.') ?>
+    </p>
 
     <?php if ($error): ?><div class="form-alert error"><?= htmlspecialchars($error) ?></div><?php endif; ?>
     <?php if ($accountCreated && !$lawyerSuccess): ?><a class="btn btn-outline btn-block" href="/resend-verification.php?as=<?= urlencode($who) ?>"><?= is_rtl()?'إعادة إرسال رابط التفعيل':'Resend verification link' ?></a><?php endif; ?>
@@ -134,15 +142,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <input type="hidden" name="who" value="<?= $who ?>">
       <?php if ($who === 'client'): ?>
         <div class="field">
-          <label><?= is_rtl() ? 'نوع الحساب' : 'Account type' ?></label>
-          <select name="account_type">
+          <label for="account_type"><?= is_rtl() ? 'نوع الحساب' : 'Account type' ?></label>
+          <select name="account_type" id="account_type">
             <option value="individual" <?= $old['account_type']==='individual'?'selected':'' ?>><?= is_rtl() ? 'فرد' : 'Individual' ?></option>
             <option value="company" <?= $old['account_type']==='company'?'selected':'' ?>><?= is_rtl() ? 'شركة' : 'Company' ?></option>
           </select>
         </div>
       <?php endif; ?>
-      <div class="field"><label><?= is_rtl() ? 'الاسم الكامل' : 'Full name' ?></label><input type="text" name="full_name" value="<?= htmlspecialchars($old['full_name']) ?>" required></div>
-      <div class="field"><label><?= is_rtl() ? 'البريد الإلكتروني' : 'Email' ?></label><input type="email" name="email" value="<?= htmlspecialchars($old['email']) ?>" required></div>
+      <div class="field"><label for="full_name"><?= is_rtl() ? 'الاسم الكامل' : 'Full name' ?></label><input id="full_name" type="text" name="full_name" value="<?= htmlspecialchars($old['full_name']) ?>" required></div>
+      <div class="field"><label for="email"><?= is_rtl() ? 'البريد الإلكتروني' : 'Email' ?></label><input id="email" type="email" name="email" value="<?= htmlspecialchars($old['email']) ?>" required></div>
       <div class="field">
         <label><?= is_rtl() ? 'رقم الجوال' : 'Phone' ?></label>
         <?php render_phone_field('phone', $old['phone_dial'], $old['phone_local']); ?>
@@ -155,8 +163,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           <p class="field-hint"><?= is_rtl() ? 'يمكنك إضافة تخصصات وخبرات إضافية لاحقاً من ملفك الشخصي بعد الدخول.' : 'You can add more specializations and experience later from your profile.' ?></p>
         </div>
       <?php endif; ?>
-      <div class="field"><label><?= is_rtl() ? 'كلمة المرور' : 'Password' ?></label><div class="password-input"><input type="password" name="password" id="registerPassword" minlength="8" autocomplete="new-password" required><button type="button" class="password-toggle" data-password-toggle="registerPassword" aria-label="<?= is_rtl() ? 'إظهار كلمة المرور' : 'Show password' ?>"><?= is_rtl() ? 'إظهار' : 'Show' ?></button></div></div>
-      <div class="field"><label><?= is_rtl() ? 'تأكيد كلمة المرور' : 'Confirm password' ?></label><div class="password-input"><input type="password" name="password_confirm" id="registerPasswordConfirm" minlength="8" autocomplete="new-password" required><button type="button" class="password-toggle" data-password-toggle="registerPasswordConfirm" aria-label="<?= is_rtl() ? 'إظهار كلمة المرور' : 'Show password' ?>"><?= is_rtl() ? 'إظهار' : 'Show' ?></button></div></div>
+      <div class="field"><label for="registerPassword"><?= is_rtl() ? 'كلمة المرور' : 'Password' ?></label><div class="password-input"><input type="password" name="password" id="registerPassword" minlength="8" autocomplete="new-password" required><button type="button" class="password-toggle" data-password-toggle="registerPassword" aria-label="<?= is_rtl() ? 'إظهار كلمة المرور' : 'Show password' ?>"><?= is_rtl() ? 'إظهار' : 'Show' ?></button></div></div>
+      <div class="field"><label for="registerPasswordConfirm"><?= is_rtl() ? 'تأكيد كلمة المرور' : 'Confirm password' ?></label><div class="password-input"><input type="password" name="password_confirm" id="registerPasswordConfirm" minlength="8" autocomplete="new-password" required><button type="button" class="password-toggle" data-password-toggle="registerPasswordConfirm" aria-label="<?= is_rtl() ? 'إظهار كلمة المرور' : 'Show password' ?>"><?= is_rtl() ? 'إظهار' : 'Show' ?></button></div></div>
       <button class="btn btn-primary btn-block" type="submit">
         <?= $who === 'lawyer' ? (is_rtl() ? 'إرسال طلب انضمام كمحامٍ' : 'Submit lawyer application') : t('nav_get_started') ?>
       </button>

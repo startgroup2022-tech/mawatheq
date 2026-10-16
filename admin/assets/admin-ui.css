@@ -11,7 +11,7 @@ body.adm{
   --gold:#c39a3e; --gold-50:#fbf5e6; --success:#12805c; --success-50:#e8f6f0; --warn:#b7791f; --warn-50:#fdf3e1;
   --danger:#c2413a; --danger-50:#fdecea; --info:#0e7490; --info-50:#e6f4f8;
   --sb-bg:#0b1f3a; --sb-bg-2:#0e2748; --sb-ink:#c7d2e4; --sb-ink-dim:#7f92b0; --sb-active:rgba(195,154,62,.16);
-  --radius:14px; --radius-sm:10px; --shadow-sm:0 1px 2px rgba(15,23,42,.05),0 1px 3px rgba(15,23,42,.04);
+  --radius:14px; --radius-sm:11px; --shadow-sm:0 1px 2px rgba(15,23,42,.05),0 1px 3px rgba(15,23,42,.04);
   --shadow:0 4px 14px rgba(15,23,42,.06),0 1px 3px rgba(15,23,42,.05); --shadow-lg:0 24px 60px rgba(15,23,42,.22);
   --sb-w:264px; --top-h:68px;
   /* legacy tokens used by inline styles in older pages */
@@ -39,24 +39,25 @@ body.adm.sb-collapsed{ --sb-w:78px; }
 .adm-brand{ display:flex; align-items:center; gap:12px; padding:6px 8px 18px; text-decoration:none; color:#fff; }
 .adm-brand img{ width:36px; height:36px; border-radius:10px; background:#fff; padding:3px; object-fit:contain; }
 .adm-brand b{ font-family:"Cairo",sans-serif; font-size:17px; font-weight:800; line-height:1.1; display:block; }
-.adm-brand small{ color:var(--gold); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; font-weight:700; }
+.adm-brand small{ color:var(--gold); font-size:12px; letter-spacing:.14em; text-transform:uppercase; font-weight:700; }
+.adm-nav{ display:flex; flex-direction:column; gap:2px; }
 .adm-nav-group{ margin-top:14px; }
-.adm-nav-title{ padding:0 12px 6px; font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--sb-ink-dim); font-weight:700; white-space:nowrap; }
-.adm-nav a{ display:flex; align-items:center; gap:12px; padding:10px 12px; margin:2px 0; border-radius:11px; color:var(--sb-ink); text-decoration:none; font-weight:500; font-size:13.5px; position:relative; transition:background .15s,color .15s; white-space:nowrap; }
+.adm-nav-title{ padding:0 12px 6px; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--sb-ink-dim); font-weight:700; white-space:nowrap; }
+.adm-nav a{ display:flex; align-items:center; gap:12px; min-height:44px; padding:10px 12px; margin:2px 0; border-radius:11px; color:var(--sb-ink); text-decoration:none; font-weight:500; font-size:13.5px; position:relative; transition:background .15s,color .15s; white-space:nowrap; }
 .adm-nav a:hover{ background:rgba(255,255,255,.06); color:#fff; }
 .adm-nav a.active{ background:var(--sb-active); color:#fff; font-weight:600; }
 .adm-nav a.active::before{ content:""; position:absolute; inset-block:9px; inset-inline-start:-14px; width:4px; border-radius:0 4px 4px 0; background:var(--gold); }
 [dir=rtl] .adm-nav a.active::before{ border-radius:4px 0 0 4px; }
-.adm-nav a .badge{ margin-inline-start:auto; min-width:20px; height:20px; padding:0 6px; border-radius:99px; background:var(--gold); color:#1b1405; font-size:11px; font-weight:800; display:grid; place-items:center; }
+.adm-nav a .badge{ margin-inline-start:auto; min-width:20px; height:20px; padding:0 6px; border-radius:99px; background:var(--gold); color:#1b1405; font-size:12px; font-weight:800; display:grid; place-items:center; }
 .adm-sidebar-foot{ margin-top:auto; padding-top:16px; }
-.adm-sidebar-foot button{ width:100%; display:flex; align-items:center; gap:12px; padding:10px 12px; border:0; border-radius:11px; background:rgba(255,255,255,.05); color:var(--sb-ink); cursor:pointer; font:inherit; font-size:13px; }
+.adm-sidebar-foot button{ width:100%; display:flex; align-items:center; gap:12px; min-height:44px; padding:10px 12px; border:0; border-radius:11px; background:rgba(255,255,255,.05); color:var(--sb-ink); cursor:pointer; font:inherit; font-size:13px; }
 .adm-sidebar-foot button:hover{ background:rgba(194,65,58,.22); color:#fff; }
 body.adm.sb-collapsed .adm-brand>div, body.adm.sb-collapsed .adm-nav-title, body.adm.sb-collapsed .adm-nav a span.lbl, body.adm.sb-collapsed .adm-nav a .badge, body.adm.sb-collapsed .adm-sidebar-foot span{ display:none; }
 body.adm.sb-collapsed .adm-nav a, body.adm.sb-collapsed .adm-sidebar-foot button{ justify-content:center; }
 
 .adm-main{ min-width:0; display:flex; flex-direction:column; }
 .adm-topbar{ position:sticky; top:0; z-index:50; height:var(--top-h); display:flex; align-items:center; gap:14px; padding:0 28px; background:color-mix(in srgb,var(--surface) 86%,transparent); backdrop-filter:saturate(1.4) blur(12px); border-bottom:1px solid var(--line); }
-.adm-iconbtn{ width:40px; height:40px; display:grid; place-items:center; border:1px solid var(--line); border-radius:11px; background:var(--surface); color:var(--ink-2); cursor:pointer; position:relative; transition:.15s; text-decoration:none; }
+.adm-iconbtn{ width:42px; height:42px; display:grid; place-items:center; border:1px solid var(--line); border-radius:11px; background:var(--surface); color:var(--ink-2); cursor:pointer; position:relative; transition:.15s; text-decoration:none; }
 .adm-iconbtn:hover{ border-color:var(--primary); color:var(--primary); }
 .adm-iconbtn .dot{ position:absolute; top:7px; inset-inline-end:8px; min-width:16px; height:16px; padding:0 4px; border-radius:99px; background:var(--danger); color:#fff; font-size:10px; font-weight:800; display:grid; place-items:center; border:2px solid var(--surface); }
 .adm-crumbs{ display:flex; flex-direction:column; line-height:1.25; min-width:0; }
@@ -78,7 +79,7 @@ body.adm.sb-collapsed .adm-nav a, body.adm.sb-collapsed .adm-sidebar-foot button
 .adm-pop .pop-head{ padding:8px 12px; font-weight:700; font-size:12px; color:var(--muted); }
 .adm-avatar{ width:38px; height:38px; border-radius:12px; background:linear-gradient(135deg,var(--primary),var(--gold)); color:#fff; display:grid; place-items:center; font-weight:800; font-family:"Cairo",sans-serif; }
 .adm-userbtn{ display:flex; align-items:center; gap:10px; border:0; background:none; cursor:pointer; color:var(--ink); font:inherit; padding:2px; }
-.adm-userbtn small{ display:block; color:var(--muted); font-size:11px; line-height:1.2; text-align:start; }
+.adm-userbtn small{ display:block; color:var(--muted); font-size:12px; line-height:1.2; text-align:start; }
 .adm-userbtn b{ font-size:13px; display:block; line-height:1.2; }
 .adm-notif-item{ display:block; padding:10px 12px; border-radius:10px; text-decoration:none; }
 .adm-notif-item.unread{ background:var(--primary-50); }
@@ -120,7 +121,7 @@ body.adm .mini-card{ padding:16px 18px; text-align:start; } body.adm .mini-card 
 /* ---------- Tables ---------- */
 body.adm .table-wrap{ overflow-x:auto; margin:0 0 18px; -webkit-overflow-scrolling:touch; }
 body.adm .admin-table{ width:100%; min-width:680px; border-collapse:separate; border-spacing:0; background:transparent; border:0; }
-body.adm .admin-table th{ position:sticky; top:0; padding:12px 16px; background:var(--surface-2); color:var(--muted); font-size:11.5px; font-weight:700; letter-spacing:.03em; text-align:start; white-space:nowrap; border-bottom:1px solid var(--line); text-transform:none; }
+body.adm .admin-table th{ position:sticky; top:0; padding:12px 16px; background:var(--surface-2); color:var(--muted); font-size:12px; font-weight:700; letter-spacing:.03em; text-align:start; white-space:nowrap; border-bottom:1px solid var(--line); text-transform:none; }
 body.adm .admin-table td{ padding:13px 16px; border-bottom:1px solid var(--line-2); color:var(--ink-2); font-size:13px; vertical-align:middle; }
 body.adm .admin-table tbody tr{ transition:background .12s; } body.adm .admin-table tbody tr:hover td{ background:var(--surface-2); }
 body.adm .admin-table tbody tr:last-child td{ border-bottom:0; }
@@ -171,7 +172,7 @@ body.adm .modal-close{ position:absolute; top:14px; inset-inline-end:14px; width
 /* ---------- Tabs, timeline, lists ---------- */
 .tabs{ display:flex; gap:4px; border-bottom:1px solid var(--line); margin-bottom:18px; overflow-x:auto; }
 .tabs button,.tabs a{ padding:11px 16px; border:0; background:none; color:var(--muted); font:inherit; font-weight:700; font-size:13px; cursor:pointer; border-bottom:2px solid transparent; white-space:nowrap; text-decoration:none; display:inline-flex; gap:7px; align-items:center; }
-.tabs .on{ color:var(--primary); border-bottom-color:var(--primary); } .tabs .n{ background:var(--surface-2); border-radius:99px; padding:0 8px; font-size:11px; }
+.tabs .on{ color:var(--primary); border-bottom-color:var(--primary); } .tabs .n{ background:var(--surface-2); border-radius:99px; padding:0 8px; font-size:12px; }
 .tab-pane{ display:none; } .tab-pane.on{ display:block; }
 .tl{ position:relative; margin:0; padding:0; list-style:none; } .tl li{ position:relative; padding-inline-start:34px; padding-bottom:18px; }
 .tl li::before{ content:""; position:absolute; inset-inline-start:11px; top:24px; bottom:-2px; width:2px; background:var(--line); } .tl li:last-child::before{ display:none; }
@@ -189,7 +190,7 @@ body.adm .modal-close{ position:absolute; top:14px; inset-inline-end:14px; width
 
 /* ---------- Charts ---------- */
 .chart{ width:100%; } .chart svg{ width:100%; height:auto; overflow:visible; display:block; }
-.chart .ax{ fill:var(--muted); font-size:11px; } .chart .gl{ stroke:var(--line); stroke-dasharray:3 4; } .chart-tip{ position:fixed; z-index:300; pointer-events:none; background:#0f172a; color:#fff; font-size:12px; padding:6px 10px; border-radius:8px; display:none; }
+.chart .ax{ fill:var(--muted); font-size:12px; } .chart .gl{ stroke:var(--line); stroke-dasharray:3 4; } .chart-tip{ position:fixed; z-index:300; pointer-events:none; background:#0f172a; color:#fff; font-size:12px; padding:6px 10px; border-radius:8px; display:none; }
 .donut-wrap{ display:flex; align-items:center; gap:22px; flex-wrap:wrap; } .donut-wrap .chart{ width:170px; flex:none; }
 .bar-row{ display:grid; grid-template-columns:110px 1fr 44px; gap:10px; align-items:center; margin:9px 0; font-size:12.5px; } .bar-row .tr{ height:9px; border-radius:9px; background:var(--surface-2); overflow:hidden; } .bar-row .tr i{ display:block; height:100%; border-radius:9px; background:linear-gradient(90deg,var(--primary),var(--gold)); }
 
@@ -224,6 +225,49 @@ body.adm .modal-close{ position:absolute; top:14px; inset-inline-end:14px; width
   .adm-search{ display:none; } .adm-topbar{ padding:0 16px; } .adm-content{ padding:18px 16px; } .adm-userbtn div{ display:none; }
 }
 @media (max-width:720px){ .g-4,.g-3,.g-2{ grid-template-columns:minmax(0,1fr); } body.adm .grid-2{ grid-template-columns:minmax(0,1fr); } .cal .day{ min-height:70px; } .cal .ev{ font-size:0; height:8px; padding:0; } .pg-head h1,body.adm .toolbar h2{ font-size:20px; } .adm-crumbs small{ display:none; } .bar-row{ grid-template-columns:80px 1fr 38px; } }
+
+/* Card mode for admin data tables on phones. This file pins .admin-table to
+   680px, so the override has to live here (and match its specificity) for the
+   rows to stack into readable cards instead of scrolling sideways. */
+@media (max-width:820px){
+  body.adm .table-wrap.table-cards{ border:0; box-shadow:none; background:transparent; overflow:visible; }
+  body.adm .table-cards .admin-table,
+  body.adm .table-cards .admin-table tbody,
+  body.adm .table-cards .admin-table tr,
+  body.adm .table-cards .admin-table td{ display:block; width:100%; min-width:0; }
+  body.adm .table-cards .admin-table thead{ display:none; }
+  body.adm .table-cards .admin-table tr{
+    border:1px solid var(--line); border-radius:14px; background:var(--surface);
+    padding:12px; margin-bottom:12px; box-shadow:0 1px 2px rgba(15,31,51,.05);
+  }
+  body.adm .table-cards .admin-table td{
+    display:flex; align-items:flex-start; justify-content:space-between; gap:12px;
+    padding:8px 4px; border-bottom:1px dashed var(--line-2); text-align:end;
+  }
+  body.adm .table-cards .admin-table tr td:last-child{ border-bottom:0; }
+  body.adm .table-cards .admin-table td::before{
+    content:attr(data-label); flex:none; font-size:12px; font-weight:800;
+    color:var(--muted); text-align:start; padding-inline-end:8px;
+  }
+  body.adm .table-cards .admin-table td[data-label=""]::before,
+  body.adm .table-cards .admin-table td:not([data-label])::before{ display:none; }
+}
+
+/* Phone: keep every header control on one comfortable row — tighten the gaps,
+   let the action cluster wrap instead of pushing the page sideways, and never
+   shrink an icon button below the 42px touch target. */
+@media (max-width:560px){
+  .adm-topbar{ padding:0 12px; gap:8px; }
+  .adm-actions{ gap:6px; }
+  .adm-crumbs{ flex:1; min-width:0; }
+  .adm-crumbs b{ font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .adm-iconbtn{ width:40px; height:40px; }
+  .adm-userbtn{ padding:0; }
+  .adm-userbtn div{ display:none; }
+  /* Status chips are links here: give them a comfortable tap height. */
+  .pill{ min-height:36px; padding:8px 12px; }
+  body.adm .icon-btn{ min-height:38px; padding:0 12px; }
+}
 @media print{ .adm-sidebar,.adm-topbar{ display:none; } .adm-shell{ display:block; } }
 
 /* touch fallback for kanban + misc */
@@ -231,3 +275,52 @@ body.adm .modal-close{ position:absolute; top:14px; inset-inline-end:14px; width
 @media (hover:none){ .kcard select{ display:block; } .kcard{ cursor:default; } }
 .k-empty{ text-align:center; color:var(--muted); font-size:12px; padding:18px 6px; border:1px dashed var(--line); border-radius:10px; }
 .lang-pill{ font-weight:800; font-size:12px; }
+
+/* ---------- Phase 4: shared design system alignment ---------- */
+/* The admin console now also loads assets/css/enterprise.css. Only the pieces
+   that are genuinely admin-specific stay here; anything generic (buttons, form
+   fields, alerts, badges, empty states, focus rings) is inherited from there,
+   so all three panels share one vocabulary. The rules below cover classes that
+   exist only in the admin console. */
+
+/* Compact page header used by every admin page. */
+.adm-content .page-head{ margin-bottom:20px; }
+.adm-content .page-head h1,.adm-content .page-head h2{ font-size:22px; }
+
+/* Admin-specific KPI card (.kpi) keeps its delta treatment. */
+.kpi{ background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:16px 18px; box-shadow:var(--shadow-sm); }
+.kpi-top{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.kpi-val{ font-family:"Cairo","Inter",sans-serif; font-size:26px; font-weight:800; color:var(--ink); font-variant-numeric:tabular-nums; }
+.kpi-lbl{ color:var(--muted); font-size:12.5px; font-weight:600; }
+.kpi-ic{ width:38px; height:38px; border-radius:11px; display:grid; place-items:center; background:var(--primary-50); color:var(--primary); flex:none; }
+.kpi-ic svg{ width:19px; height:19px; }
+.kpi-ic.gold{ background:var(--gold-50); color:var(--gold); }
+.kpi-ic.red{ background:var(--danger-50); color:var(--danger); }
+.kpi-delta{ display:inline-flex; align-items:center; gap:4px; font-size:12px; font-weight:700; color:var(--success); }
+.kpi-delta.down{ color:var(--danger); }
+
+/* Legacy .card used inside the .grid helper on a few admin pages. */
+.grid{ display:grid; gap:16px; }
+.grid.g-2{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+.grid.g-3{ grid-template-columns:repeat(3,minmax(0,1fr)); }
+.grid.g-21{ grid-template-columns:2fr 1fr; }
+.grid.g-12{ grid-template-columns:1fr 2fr; }
+body.adm .card{ background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:20px; box-shadow:var(--shadow-sm); }
+@media (max-width:1280px){ .grid.g-4{ grid-template-columns:repeat(2,minmax(0,1fr)); } .grid.g-21,.grid.g-12{ grid-template-columns:minmax(0,1fr); } }
+@media (max-width:720px){ .grid.g-2,.grid.g-3,.grid.g-4{ grid-template-columns:minmax(0,1fr); } }
+
+/* Tables on the admin console keep the sticky header treatment. */
+body.adm .admin-table th{ position:sticky; top:0; z-index:1; }
+
+/* Guarantee the readable floor for every admin text node. */
+body.adm small{ font-size:max(11.5px,0.8em); }
+
+/* Mobile: the admin drawer must never leave the page scrollable sideways. */
+@media (max-width:1024px){
+  body.adm{ overflow-x:hidden; }
+  .adm-content{ overflow-x:hidden; }
+}
+
+
+/* Nothing in the console may render below the 12px readable floor. */
+body.adm small,body.adm .adm-nav-title,body.adm .admin-table th,body.adm .badge{ font-size:max(12px,0.75rem); }

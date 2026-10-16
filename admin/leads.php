@@ -36,19 +36,19 @@ $n = ['new' => 0, 'contacted' => 0, 'closed' => 0]; foreach ($rows as $r) if (is
   </div>
 
   <div class="tbl-tools"><input type="search" placeholder="<?= h(adm('بحث بالاسم أو البريد…', 'Search name or email…')) ?>" data-filter="#leadTable"></div>
-  <div class="table-wrap"><table class="admin-table" id="leadTable">
+  <div class="table-wrap table-cards"><table class="admin-table" id="leadTable">
     <thead><tr><th><?= h(adm('النوع', 'Type')) ?></th><th><?= h(adm('الاسم', 'Name')) ?></th><th><?= h(adm('البريد', 'Email')) ?></th><th><?= h(adm('الجوال', 'Phone')) ?></th><th><?= h(adm('الرسالة', 'Message')) ?></th><th><?= h(adm('المصدر', 'Source')) ?></th><th><?= h(adm('الحالة', 'Status')) ?></th><th></th></tr></thead>
     <tbody>
       <?php foreach ($rows as $l): ?>
       <tr>
-        <td><span class="pill blue"><?= h($leadTypeLabels[$l['lead_type']] ?? $l['lead_type']) ?></span></td>
-        <td><b><?= h($l['full_name']) ?></b></td>
-        <td><?= h($l['email']) ?></td>
-        <td><?= display_phone($l['phone']) ?></td>
-        <td style="max-width:240px;white-space:normal"><?= h(mb_substr($l['message'] ?? '', 0, 80, 'UTF-8')) ?></td>
-        <td><small style="color:var(--muted)"><?= h(format_lead_source($l['utm_source'] ?? null, $l['utm_medium'] ?? null, $l['utm_campaign'] ?? null)) ?></small></td>
-        <td><span class="status-pill status-<?= $l['status'] === 'new' ? 'pending' : 'confirmed' ?>"><?= h($statusLbl[$l['status']] ?? $l['status']) ?></span></td>
-        <td>
+        <td data-label="<?= h(adm('النوع', 'Type')) ?>"><span class="pill blue"><?= h($leadTypeLabels[$l['lead_type']] ?? $l['lead_type']) ?></span></td>
+        <td data-label="<?= h(adm('الاسم', 'Name')) ?>"><b><?= h($l['full_name']) ?></b></td>
+        <td data-label="<?= h(adm('البريد', 'Email')) ?>"><?= h($l['email']) ?></td>
+        <td data-label="<?= h(adm('الجوال', 'Phone')) ?>"><?= display_phone($l['phone']) ?></td>
+        <td data-label="<?= h(adm('الرسالة', 'Message')) ?>" style="max-width:240px;white-space:normal"><?= h(mb_substr($l['message'] ?? '', 0, 80, 'UTF-8')) ?></td>
+        <td data-label="<?= h(adm('المصدر', 'Source')) ?>"><small style="color:var(--muted)"><?= h(format_lead_source($l['utm_source'] ?? null, $l['utm_medium'] ?? null, $l['utm_campaign'] ?? null)) ?></small></td>
+        <td data-label="<?= h(adm('الحالة', 'Status')) ?>"><span class="status-pill status-<?= $l['status'] === 'new' ? 'pending' : 'confirmed' ?>"><?= h($statusLbl[$l['status']] ?? $l['status']) ?></span></td>
+        <td data-label="">
           <?php if ($l['status'] !== 'contacted'): ?><form method="post" style="display:inline"><?= $csrf ?><input type="hidden" name="action" value="change_status"><input type="hidden" name="lead_id" value="<?= (int)$l['id'] ?>"><input type="hidden" name="status" value="contacted"><button class="icon-btn" type="submit"><?= h(adm('تم التواصل', 'Contacted')) ?></button></form><?php endif; ?>
           <?php if ($l['status'] !== 'closed'): ?><form method="post" style="display:inline"><?= $csrf ?><input type="hidden" name="action" value="change_status"><input type="hidden" name="lead_id" value="<?= (int)$l['id'] ?>"><input type="hidden" name="status" value="closed"><button class="icon-btn" type="submit"><?= h(adm('إغلاق', 'Close')) ?></button></form><?php endif; ?>
         </td>

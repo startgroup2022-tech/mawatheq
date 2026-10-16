@@ -98,7 +98,7 @@ $phoneParts = split_phone($lawyer['phone'] ?? '');
     </div>
     <div class="grid-2">
       <div class="field"><label><?= is_rtl() ? 'سنوات الخبرة' : 'Years of experience' ?></label><input class="pro-input" type="number" min="0" name="years_experience" value="<?= $lawyer['years_experience'] ?>"></div>
-      <div class="field"><label><?= is_rtl() ? 'السعر بالساعة (د.ب)' : 'Hourly rate (BHD)' ?></label><input class="pro-input" type="number" step="0.001" min="0" name="hourly_rate" value="<?= $lawyer['hourly_rate'] ?>"></div>
+      <div class="field"><label><?= is_rtl() ? 'السعر بالساعة' : 'Hourly rate' ?> (<?= currency_symbol() ?>)</label><input class="pro-input" type="number" step="<?= currency_step() ?>" min="0" name="hourly_rate" value="<?= $lawyer['hourly_rate'] ?>"></div>
       <div class="field"><label><?= is_rtl() ? 'رقم الترخيص (اختياري)' : 'License number (optional)' ?></label><input class="pro-input" type="text" name="license_number" value="<?= htmlspecialchars($lawyer['license_number'] ?? '') ?>"></div>
     </div>
     <div class="field"><label><?= is_rtl() ? 'المؤهلات (الشهادات، الدرجات العلمية، العضويات المهنية)' : 'Qualifications (degrees, certificates, memberships)' ?></label><textarea name="qualifications" rows="3" placeholder="<?= is_rtl() ? 'مثال: بكالوريوس حقوق - جامعة الملك سعود، عضو الهيئة السعودية للمحامين...' : 'e.g. LLB - King Saud University, Member of the Saudi Bar...' ?>"><?= htmlspecialchars($lawyer['qualifications'] ?? '') ?></textarea></div>

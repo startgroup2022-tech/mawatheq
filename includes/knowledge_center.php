@@ -25,25 +25,30 @@ function knowledge_index_text(PDO $pdo, int $sourceId, string $content): int {
         $pdo->prepare("UPDATE knowledge_sources SET processing_status='needs_extraction',indexing_status='pending',content=NULL WHERE id=?")->execute([$sourceId]);
         return 0;
     }
-    $segments = preg_split('/\n{2,}/u', $content) ?: [$content];
-    $chunks = []; $buffer = '';
-    foreach ($segments as $segment) {
-        $segment = trim($segment);
-        if ($segment === '') continue;
-        while (mb_strlen($segment, 'UTF-8') > 3000) {
-            if ($buffer !== '') { $chunks[] = trim($buffer); $buffer = ''; }
-            $chunks[] = trim(mb_substr($segment, 0, 3000, 'UTF-8'));
-            $segment = trim(mb_substr($segment, 3000, null, 'UTF-8'));
-        }
-        if ($buffer !== '' && mb_strlen($buffer . "\n\n" . $segment, 'UTF-8') > 3000) {
-            $chunks[] = trim($buffer); $buffer = '';
-        }
-        $buffer .= ($buffer === '' ? '' : "\n\n") . $segment;
-    }
-    if ($buffer !== '') $chunks[] = trim($buffer);
+    // Legal-aware chunking: keep article/clause boundaries and record provenance so an
+    // answer can cite the article and page, not just the document title.
+    require_once __DIR__ . '/legal_chunker.php';
+    $chunks = legal_chunk_content($content);
+    if (!$chunks) $chunks = [['text'=>$content,'heading_path'=>null,'section_label'=>null,'article_label'=>null,'clause_label'=>null,'page_no'=>null,'chunk_kind'=>'paragraph']];
 
-    $insert = $pdo->prepare('INSERT INTO knowledge_chunks (source_id,chunk_order,chunk_text,text_hash) VALUES (?,?,?,?)');
-    foreach ($chunks as $i => $chunk) $insert->execute([$sourceId, $i + 1, $chunk, hash('sha256', $chunk)]);
+    // The provenance columns arrive with upgrade_v48; on a database that has not run it
+    // yet we fall back to the original insert so indexing still works (deploy safety).
+    $hasProvenance = false;
+    try {
+        $col = $pdo->query("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='knowledge_chunks' AND COLUMN_NAME='heading_path'")->fetchColumn();
+        $hasProvenance = ((int)$col) > 0;
+    } catch (PDOException $e) { $hasProvenance = false; }
+
+    if ($hasProvenance) {
+        $insert = $pdo->prepare('INSERT INTO knowledge_chunks (source_id,chunk_order,chunk_text,heading_path,section_label,article_label,clause_label,page_no,chunk_kind,text_hash) VALUES (?,?,?,?,?,?,?,?,?,?)');
+        foreach ($chunks as $i => $chunk) {
+            $insert->execute([$sourceId, $i + 1, $chunk['text'], $chunk['heading_path'], $chunk['section_label'],
+                $chunk['article_label'], $chunk['clause_label'], $chunk['page_no'], $chunk['chunk_kind'], hash('sha256', $chunk['text'])]);
+        }
+    } else {
+        $insert = $pdo->prepare('INSERT INTO knowledge_chunks (source_id,chunk_order,chunk_text,text_hash) VALUES (?,?,?,?)');
+        foreach ($chunks as $i => $chunk) $insert->execute([$sourceId, $i + 1, $chunk['text'], hash('sha256', $chunk['text'])]);
+    }
     $hash = hash('sha256', $content);
     $pdo->prepare("UPDATE knowledge_sources SET content=?,content_hash=?,processing_status='completed',indexing_status='indexed' WHERE id=?")
         ->execute([$content, $hash, $sourceId]);
@@ -159,7 +164,8 @@ function knowledge_retrieve(PDO $pdo, string $query, string $moduleId, string $a
     $terms=array_slice(array_values(array_filter($terms,function($term){return mb_strlen($term,'UTF-8')>=2;})),0,8);
     if (!$terms) return [];
     $termSql = implode(' OR ', array_fill(0,count($terms),'k.chunk_text LIKE ?'));
-    $sql = "SELECT s.id,s.source_name,s.source_url,s.version,s.source_type,s.verification_status,s.jurisdiction,s.module_id,k.chunk_order,k.chunk_text FROM knowledge_chunks k JOIN knowledge_sources s ON s.id=k.source_id WHERE s.status='active' AND s.processing_status='completed' AND s.indexing_status='indexed' AND s.module_id IN (?,'*')";
+    require_once __DIR__ . '/legal_chunker.php';
+    $sql = "SELECT s.id,s.source_name,s.source_url,s.version,s.source_type,s.verification_status,s.jurisdiction,s.module_id,k.chunk_order,k.chunk_text" . legal_chunk_provenance_select($pdo) . " FROM knowledge_chunks k JOIN knowledge_sources s ON s.id=k.source_id WHERE s.status='active' AND s.processing_status='completed' AND s.indexing_status='indexed' AND s.module_id IN (?,'*')";
     $params = [$moduleId];
     if ($verifiedOnly) $sql .= " AND s.verification_status='verified'";
     if(!empty($filters['source_type'])&&in_array($filters['source_type'],['file','manual','website','external_api','database'],true)){$sql.=' AND s.source_type=?';$params[]=$filters['source_type'];}
@@ -172,8 +178,11 @@ function knowledge_retrieve(PDO $pdo, string $query, string $moduleId, string $a
         $params[] = $actorId;
     }
     if ($caseAllowed) { $sql .= " OR (s.scope_type='case' AND s.scope_id=?)"; $params[] = $caseId; }
-    $sql .= " OR (s.scope_type='private' AND s.created_by_type=? AND s.created_by=?) ) AND ($termSql) LIMIT 200";
+    $sql .= " OR (s.scope_type='private' AND s.created_by_type=? AND s.created_by=?) )";
     $params[] = $actorType; $params[] = $actorId;
+    $permissionSql = knowledge_permission_sql($pdo, $actorType, $actorId, 's.id');
+    if ($permissionSql !== '') $params = array_merge($params, knowledge_permission_params($pdo, $actorType, $actorId));
+    $sql .= $permissionSql . " AND ($termSql) LIMIT 200";
     foreach ($terms as $term) $params[] = '%' . $term . '%';
     $stmt = $pdo->prepare($sql); $stmt->execute($params); $rows = $stmt->fetchAll();
     foreach ($rows as &$row) {

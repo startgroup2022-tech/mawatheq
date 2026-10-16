@@ -2,10 +2,12 @@
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/includes/lawyer_guard.php';
 require_once __DIR__ . '/../includes/docx_export.php';
+require_once __DIR__ . '/../includes/tenant.php';
 
 $id = (int)($_GET['id'] ?? 0);
-$stmt = $pdo->prepare('SELECT * FROM draft_documents WHERE id=? AND lawyer_id=?');
-$stmt->execute([$id, $_SESSION['lawyer_id']]);
+$scope = tenant_owner_where($pdo, 'draft_documents');
+$stmt = $pdo->prepare('SELECT * FROM draft_documents WHERE id=? AND ' . $scope['sql']);
+$stmt->execute(array_merge([$id], $scope['params']));
 $draft = $stmt->fetch();
 
 // نفس شرط download-draft.php: يُمنع التصدير أثناء انتظار مراجعة داخلية لم تُعتمد بعد.

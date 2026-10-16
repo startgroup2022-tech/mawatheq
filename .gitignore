@@ -1,0 +1,41 @@
+# Deployment-only credentials (never commit)
+config/secrets.php
+
+# Local runtime / editor artifacts
+.agent_tmp/
+.openhands/
+*.log
+.DS_Store
+
+# Uploaded user content (runtime data, not source)
+uploads/documents/*
+uploads/evidence/*
+uploads/lawyer-photos/*
+uploads/knowledge/*
+!uploads/**/.htaccess
+
+# Dependency / build output
+node_modules/
+vendor/
+
+# Runtime backups (created by cron/backup.php; may contain the full database dump)
+storage/
+
+# Browser test output (screenshots, traces, HTML report)
+tests/e2e/.artifacts/
+
+# Delivery build artifacts
+MAWATHEQ_COMPLETE_FINAL.zip
+MAWATHEQ_COMPLETE_FINAL.sha256
+MAWATHEQ_EXECUTION_08_COMPLETE.zip
+MAWATHEQ_EXECUTION_08_COMPLETE.sha256
+MAWATHEQ_EXECUTION_09_COMPLETE.zip
+MAWATHEQ_EXECUTION_09_COMPLETE.sha256
+MAWATHEQ_EXECUTION_10_COMPLETE.zip
+MAWATHEQ_EXECUTION_10_COMPLETE.sha256
+MAWATHEQ_EXECUTION_11_COMPLETE.zip
+MAWATHEQ_EXECUTION_11_COMPLETE.sha256
+MAWATHEQ_EXECUTION_12_COMPLETE.zip
+MAWATHEQ_EXECUTION_12_COMPLETE.sha256
+MAWATHEQ_EXECUTION_12_COMPLETE_FILES.sha256
+MAWATHEQ_EXECUTION_12_COMPLETE_MANIFEST.txt
