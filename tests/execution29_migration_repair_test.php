@@ -198,8 +198,23 @@ echo "\n== 7. the repair file is complete on its own ==\n";
 $repairSql = $stripSqlComments((string)file_get_contents($root . '/database/repair/01_repair_reset_columns.sql'));
 $guards = preg_match_all('/SET @c := \(SELECT COUNT\(\*\)/', $repairSql);
 $executes = preg_match_all('/EXECUTE stmt;/', $repairSql);
-check('every guarded statement has a matching EXECUTE', $guards > 0 && $guards === $executes);
+// Guards and EXECUTEs are no longer 1:1: the verification block at the end prepares one
+// extra statement, a SIGNAL that fires only when a required column is still missing. That
+// EXECUTE is deliberate and must not be counted out, so assert the invariant that actually
+// matters — every guard reaches an EXECUTE, and every prepared statement is deallocated
+// (a PREPARE without a DEALLOCATE leaks a statement handle and is the real bug here).
+$prepares = preg_match_all('/PREPARE stmt FROM @s;/', $repairSql);
+$deallocates = preg_match_all('/DEALLOCATE PREPARE stmt;/', $repairSql);
+check('every guarded statement has a matching EXECUTE', $guards > 0 && $executes >= $guards,
+    "guards=$guards executes=$executes");
+check('every prepared statement is deallocated', $prepares > 0 && $prepares === $deallocates,
+    "prepares=$prepares deallocates=$deallocates");
 check('the repair contains no positional AFTER', !preg_match('/\bAFTER\b/i', $repairSql));
+// The verification must be able to fail the file, not just report. Without a SIGNAL the
+// last statement prints a row that a deployment can ignore, which is how the original
+// 12-vs-13 mismatch went unnoticed.
+check('the repair raises a SIGNAL when a required column is missing',
+    (bool)preg_match('/SIGNAL SQLSTATE/i', $repairSql));
 
 echo "\n== cleanup ==\n";
 $admin->exec("DROP DATABASE IF EXISTS `$scratch`");
