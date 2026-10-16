@@ -81,13 +81,26 @@ cp -r "$STAGE/site/database" "$STAGE/migrations/database"
 mkdir -p "$STAGE/migrations/config"
 cp "$STAGE/site/config/secrets.example.php" "$STAGE/migrations/config/" 2>/dev/null \
     || printf 'note: config/secrets.example.php not found\n'
-for doc in MAWATHEQ_EXECUTION_29_DEPLOYMENT_AR.md MAWATHEQ_EXECUTION_29_REPORT.md; do
+# The migrations package is what the operator deploys from, so it carries the current
+# deployment guide, the migration report and the verification runbook. Keep the Execution
+# 29 docs too: the 29.1 guide supersedes them but an operator mid-upgrade may still be
+# following the earlier one.
+for doc in \
+    MAWATHEQ_EXECUTION_29_1_DEPLOYMENT_AR.md \
+    MAWATHEQ_EXECUTION_29_1_MIGRATION_REPORT.md \
+    MAWATHEQ_EXECUTION_29_1_VERIFICATION_RUNBOOK.md \
+    MAWATHEQ_EXECUTION_29_DEPLOYMENT_AR.md \
+    MAWATHEQ_EXECUTION_29_REPORT.md
+do
     [ -f "$STAGE/site/$doc" ] && cp "$STAGE/site/$doc" "$STAGE/migrations/"
 done
-# The migrations package is applied on the server before the site files, so it must
+# The migration package is applied on the server before the site files, so it must
 # carry its own copy of the preflight the operator runs first.
 [ -f "$STAGE/migrations/database/repair/00_preflight_check.php" ] \
     || fail "database/repair/00_preflight_check.php is missing from the package"
+# And the deployment guide, since a package without it cannot be followed on the server.
+[ -f "$STAGE/migrations/MAWATHEQ_EXECUTION_29_1_DEPLOYMENT_AR.md" ] \
+    || fail "MAWATHEQ_EXECUTION_29_1_DEPLOYMENT_AR.md is missing from the migration package"
 
 # --- modes and timestamps --------------------------------------------------
 step "normalizing file modes and timestamps"
