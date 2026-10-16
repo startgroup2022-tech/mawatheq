@@ -920,4 +920,108 @@ failures that have nothing to do with the code. The runner clears `auth_rate_lim
 each suite and starts the mock AI provider if it is down. A phantom failure is worse than no
 check, because it teaches everyone to ignore real ones.
 
+## Execution 29.1 - migration verification
 
+Five defects were fixed here, all with the same shape: **a check that could not fail
+reported success on a database that was broken.** When touching anything under
+`database/repair/`, keep that frame: a check that prints a row, or that tests one
+column on behalf of many, is not a check.
+
+### `database/upgrade_v42.sql`: guard every object on itself
+
+The original file guarded a multi-column `ALTER` on a single column:
+
+```sql
+IF legal_name absent THEN ALTER TABLE law_firms ADD legal_name, display_name, email, ...
+```
+
+MySQL stops a file at the first error. A run aborted after `legal_name` landed left
+`display_name` and nine others missing **forever**, because the guard now found
+`legal_name` present and skipped the whole statement. The same shape wrapped
+`ADD COLUMN firm_id` + `ADD INDEX` + `ADD CONSTRAINT` on every firm-owned table.
+
+Every column, index and constraint is now guarded on itself. Two consequences:
+
+- A re-run **completes** what an aborted run left unfinished. This is the supported way
+  to repair a partial migration - do not hand-write `ALTER` statements to patch a schema.
+- `AFTER <column>` must never appear. Naming a sibling column that does not exist is
+  `SQLSTATE 42S22`, and MySQL abandons the rest of the file. Column position has no
+  functional effect; leave the clause out.
+
+### `database/repair/migration_verify.php`: requirements come from the file
+
+Requirements are extracted from each `upgrade_v*.sql` by a quote-aware scanner.
+Quote-aware matters: `ENUM('active')` and `'...'` string bodies otherwise truncate naive
+splitting, and a truncated ALTER is a silently-empty requirement set - the worst possible
+failure mode for a verifier. Measured across all 54 files: 328 objects, 0 unparsed. A file
+the scanner cannot understand is reported `unknown`; never assume it applied.
+
+### `database/repair/02_migration_ledger.php`: record only proven work
+
+The v53 ledger recorded a migration on the strength of a single hand-mapped "proof
+column". `upgrade_v42.sql` declares 41 objects, so `audit_logs.firm_id` alone recorded it
+as applied. Now a file is recorded only when every declared object is present, with states
+`verified`/`partial`/`missing`/`unknown` and exit 1 when anything is incomplete. Two
+properties to preserve:
+
+- **A historical checksum is never overwritten.** `checksum` is what was applied;
+  `current_checksum` is the file on disk now. Drift is reported beside the record, not on
+  top of it.
+- **It exits non-zero.** A bare `SELECT` that prints a row nobody reads is not a check.
+
+### `database/repair/01_repair_reset_columns.sql`: 13, not 12
+
+The final check declared `12 AS expected` against a real requirement of 13 (users 5 +
+lawyers 5 + admins 3), over a predicate matching a column *name* on *any* of the three
+tables. So a database missing exactly one column counted 12, equalled the expectation, and
+**passed on the script that exists to catch a missing column**. It was also a bare
+`SELECT`, so it could not fail a deployment.
+
+The expectation is now derived from a requirement list (a session temporary table), and
+each column is verified by table, name **and type**, with `SIGNAL SQLSTATE '45000'` on
+failure. A count can only say "one is missing", never which one - and a database missing
+`lawyers.reset_token` but not `users.reset_token` satisfies any name-based predicate.
+
+### v42 backfill: never guess a tenant
+
+The old backfill joined `law_firm_members` directly. Correct today only because of
+`UNIQUE(lawyer_id)` in another table; relaxing that uniqueness would pick an arbitrary
+firm and move one tenant's records into another. Assignment now joins a derived table
+filtered to lawyers with exactly one distinct firm, every statement is
+`WHERE firm_id IS NULL` (an existing owner is never overwritten), and ambiguous rows stay
+`NULL` and are reported. Rows that cannot be resolved are surfaced for reconciliation,
+never guessed.
+
+### `00_preflight_check.php`: blockers vs warnings
+
+Preflight and postflight (`--postflight`), exit 0/1/2. A missing `ALTER` grant or a missing
+critical column is a **blocker** (stop the deployment); an unrecorded-but-verified
+migration is a **warning** (bookkeeping is behind; the ledger command fixes it with no
+schema change). It measures every migration against the **live schema**, not the ledger -
+the ledger can be wrong, the schema cannot.
+
+### Testing migrations: schema.sql is the consolidated CURRENT schema
+
+This will silently invert a test if you miss it. `database/schema.sql` already contains
+everything the migrations add, so loading it and measuring `upgrade_v42.sql` reports
+`verified` without the migration having done anything. Use
+`e291_build_without($admin, $db, $file)` from `tests/lib/migration_harness.php`, which
+loads `schema.sql` and then removes every object the file declares.
+
+Two related traps, both hit while writing these tests:
+
+- Truncating a migration to "simulate an interruption" at too few statements executes
+  nothing, producing a `missing` state that masquerades as a passing partial test.
+  Truncate **mid-file**, where some objects have landed and others have not.
+- `config.php` uses `if (!defined(...))`, so a `DB_NAME` define in a test `secrets.php`
+  **wins over `MAWATHEQ_DB_*`** and the tool connects to the wrong database. The tests
+  pass `--database=<name>` or set the environment and omit the DB defines.
+
+### Release artifact smoke test
+
+`tests/execution29_1_release_smoke_test.php` tests the **downloaded** artifact, not the
+working tree: it verifies checksums, asserts the site archive carries no
+secrets/tests/docs/.git, unpacks both archives, writes the documented `secrets.php`,
+overlays the migration package and applies it in the documented order to a scratch
+database. A test against the repository copy proves the repository is correct and says
+nothing about the bytes an operator actually downloads.
