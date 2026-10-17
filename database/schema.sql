@@ -846,7 +846,15 @@ INSERT INTO site_settings (setting_key, setting_value) VALUES
 ('ngenius_webhook_secret', ''),
 ('sadad_enabled', '0'),
 ('sadad_environment', 'sandbox'),
-('sadad_currency', 'SAR');
+('sadad_currency', 'SAR'),
+-- Mirrors database/upgrade_v56.sql (Execution 30) so a fresh install is complete.
+-- user_total_mb is deliberately absent: it is a per-client ceiling the library defaults
+-- to 2048 MB and an operator sets from the admin console, not a seeded value.
+('consultation_attachment_document_mb', '20'),
+('consultation_attachment_audio_mb', '50'),
+('consultation_attachment_video_mb', '100'),
+('consultation_attachment_max_files', '10'),
+('consultation_attachment_total_mb', '500');
 
 INSERT INTO law_categories (name_ar, name_en, icon, sort_order) VALUES
 ('نظام العمل', 'Labor Law', 'work', 1),
