@@ -3,6 +3,7 @@ $activePage = 'consultations';
 require_once __DIR__ . '/includes/app_header.php';
 require_once __DIR__ . '/includes/availability.php';
 require_once __DIR__ . '/includes/notifications.php';
+require_once __DIR__ . '/includes/consultation_attachments.php';
 
 $lawyerId = (int)($_GET['lawyer_id'] ?? 0);
 $stmt = $pdo->prepare("SELECT * FROM lawyers WHERE id=? AND status='approved'");
@@ -14,6 +15,15 @@ $availCount = $pdo->prepare('SELECT COUNT(*) c FROM lawyer_availability WHERE la
 $availCount->execute([$lawyerId]);
 $hasAvailability = (int)$availCount->fetch()['c'] > 0;
 
+// The attachment section uploads as the user picks files, before the consultation row
+// exists. A per-form draft token is what later lets this exact submission claim them.
+// It is stored in the session so a form redisplayed after a validation error keeps the
+// same token — and therefore the files already uploaded — instead of orphaning them.
+if (empty($_SESSION['booking_draft_tokens'][$lawyerId])) {
+    $_SESSION['booking_draft_tokens'][$lawyerId] = consultation_attachment_new_draft_token();
+}
+$draftToken = $_SESSION['booking_draft_tokens'][$lawyerId];
+
 $error = null;
 $success = false;
 
@@ -24,6 +34,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $topic = trim($_POST['topic'] ?? '');
     $scheduledAt = $date . ' ' . $time . ':00';
 
+    // A token the browser invented is not accepted: only the one this session was issued
+    // can be claimed, so a crafted POST cannot adopt another client's staged uploads.
+    $postedToken = (string)($_POST['attachment_draft_token'] ?? '');
+    if ($postedToken !== $draftToken) $postedToken = '';
+
     $validSlots = ($date && $hasAvailability) ? get_available_slots($pdo, $lawyerId, $date) : [];
     if (!$date || !$time) {
         $error = is_rtl() ? 'يرجى اختيار التاريخ والوقت.' : 'Please choose a date and time.';
@@ -32,11 +47,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $pdo->prepare('INSERT INTO consultations (user_id, lawyer_id, consultation_type, scheduled_at, topic, price) VALUES (?,?,?,?,?,?)')
             ->execute([$_SESSION['user_id'], $lawyerId, $type, $scheduledAt, $topic, $lawyer['hourly_rate']]);
+        $consultationId = (int)$pdo->lastInsertId();
+
+        // Bind the files the client attached while filling the form. A failure here must not
+        // lose the booking — the consultation exists and the lawyer will be notified — so the
+        // result is reported rather than thrown, and unclaimed files stay staged for the
+        // sweeper instead of being silently attached to the wrong place.
+        $claimed = 0;
+        if ($postedToken !== '') {
+            $claimed = consultation_attachment_claim($pdo, $postedToken, $consultationId, null, (int)$_SESSION['user_id']);
+            unset($_SESSION['booking_draft_tokens'][$lawyerId]);
+        }
+
+        require_once __DIR__ . '/includes/audit_log.php';
+        if ($claimed > 0) {
+            log_action($pdo, 'حجز استشارة مع ' . $claimed . ' مرفق', 'consultation', $consultationId);
+        }
+
         notify($pdo, 'lawyer', $lawyerId, is_rtl() ? 'طلب حجز استشارة جديد' : 'New consultation request', ($topic ?: '') . ' — ' . $scheduledAt, '/lawyer/consultations.php');
         require_once __DIR__ . '/includes/integrations.php';
         integration_emit_for_lawyer($pdo, $lawyerId, 'consultation.booked', [
-            'consultation_id' => (int)$pdo->lastInsertId(), 'lawyer_id' => (int)$lawyerId,
+            'consultation_id' => $consultationId, 'lawyer_id' => (int)$lawyerId,
             'client_id' => (int)$_SESSION['user_id'], 'consultation_type' => (string)$type, 'scheduled_at' => (string)$scheduledAt,
+            'attachments' => $claimed,
         ]);
         $success = true;
     }
@@ -44,6 +77,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $minDate = date('Y-m-d');
 $maxDate = date('Y-m-d', strtotime('+30 days'));
+$attachmentLimits = consultation_attachment_limits($pdo);
+$extraPageAssets = [
+    '<link rel="stylesheet" href="/assets/css/consultation-attachments.css">',
+    '<script src="/assets/js/consultation-attachments.js" defer></script>',
+];
 ?>
 <div class="app-content">
   <?php if ($success): ?>
@@ -68,7 +106,8 @@ $maxDate = date('Y-m-d', strtotime('+30 days'));
       <div class="form-alert" style="background:#FFF8E6;color:#8A6D1D"><?= is_rtl() ? 'هذا المحامي لم يحدد أوقات دوام بعد — اختر تاريخاً ووقتاً مبدئياً وسيتواصل معك لتأكيد الموعد.' : "This lawyer hasn't set booking hours yet — pick a tentative date/time and they'll confirm with you." ?></div>
     <?php endif; ?>
 
-    <form class="dash-card" method="post" id="bookingForm"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
+    <form class="dash-card" method="post" id="bookingForm" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
+      <input type="hidden" name="attachment_draft_token" value="<?= htmlspecialchars($draftToken) ?>" data-ca-draft-token>
       <div class="field">
         <label><?= is_rtl() ? 'نوع الاستشارة' : 'Consultation type' ?></label>
         <div class="select-wrap"><select name="consultation_type" class="pro-select">
@@ -93,6 +132,20 @@ $maxDate = date('Y-m-d', strtotime('+30 days'));
       <?php endif; ?>
 
       <div class="field"><label><?= is_rtl() ? 'موضوع الاستشارة' : 'Topic' ?></label><textarea name="topic" rows="3"></textarea></div>
+
+      <?php
+      /*
+       * المرفقات والمستندات — sits after the topic and before the submit button, as the
+       * brief specifies. Rendered through the shared include so the booking form and the
+       * consultation pages cannot drift apart; only the mode differs (draft staging here,
+       * direct attach there). Attachments are optional: nothing in this section is required
+       * and the form submits with an empty list.
+       */
+      $consultation = null;
+      $attachments = [];
+      $actor = ['type' => 'client', 'id' => (int)$_SESSION['user_id']];
+      require __DIR__ . '/includes/consultation_attachments_panel.php';
+      ?>
       <button class="btn btn-primary btn-block btn-lg" type="submit"><?= t('hero_cta_book') ?></button>
     </form>
   <?php endif; ?>

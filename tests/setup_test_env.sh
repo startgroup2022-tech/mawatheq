@@ -77,6 +77,20 @@ log "5/6 installing PHP and JS dependencies"
 (cd "$ROOT" && npm install --no-audit --no-fund)
 (cd "$ROOT" && npx playwright install --with-deps chromium)
 
+# Apache writes consultation attachments as www-data; the test suites run as the invoking
+# user and must be able to read, rename and delete the same files. Sharing the group is what
+# makes that work — the directory mode alone cannot, because a setgid directory still denies
+# a non-member. The private root is a SIBLING of the app root, so it is created here if the
+# application has not run yet.
+PRIVATE_ROOT="$(dirname "$ROOT")/mawatheq-private"
+sudo mkdir -p "$PRIVATE_ROOT"
+sudo chgrp -R www-data "$PRIVATE_ROOT"
+sudo chmod 2770 "$PRIVATE_ROOT"
+if ! id -nG "$(id -un)" | tr ' ' '\n' | grep -qx www-data; then
+    sudo usermod -aG www-data "$(id -un)"
+    echo "note: added $(id -un) to the www-data group; re-login for it to take effect"
+fi
+
 log "6/6 starting the mock AI provider and Apache on 12000 + 8080"
 # executive09/execution12 tests expect an OpenAI-compatible server on $MOCK_AI_PORT.
 mkdir -p /tmp/mockai

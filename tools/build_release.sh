@@ -86,6 +86,8 @@ cp "$STAGE/site/config/secrets.example.php" "$STAGE/migrations/config/" 2>/dev/n
 # 29 docs too: the 29.1 guide supersedes them but an operator mid-upgrade may still be
 # following the earlier one.
 for doc in \
+    MAWATHEQ_EXECUTION_30_DEPLOYMENT_AR.md \
+    MAWATHEQ_EXECUTION_30_REPORT.md \
     MAWATHEQ_EXECUTION_29_1_DEPLOYMENT_AR.md \
     MAWATHEQ_EXECUTION_29_1_MIGRATION_REPORT.md \
     MAWATHEQ_EXECUTION_29_1_VERIFICATION_RUNBOOK.md \
@@ -98,9 +100,13 @@ done
 # carry its own copy of the preflight the operator runs first.
 [ -f "$STAGE/migrations/database/repair/00_preflight_check.php" ] \
     || fail "database/repair/00_preflight_check.php is missing from the package"
-# And the deployment guide, since a package without it cannot be followed on the server.
-[ -f "$STAGE/migrations/MAWATHEQ_EXECUTION_29_1_DEPLOYMENT_AR.md" ] \
-    || fail "MAWATHEQ_EXECUTION_29_1_DEPLOYMENT_AR.md is missing from the migration package"
+# And the current deployment guide, since a package without it cannot be followed on
+# the server. The Execution 30 guide supersedes 29.1 but both are shipped: an operator
+# mid-upgrade may still be following the earlier one.
+[ -f "$STAGE/migrations/MAWATHEQ_EXECUTION_30_DEPLOYMENT_AR.md" ] \
+    || fail "MAWATHEQ_EXECUTION_30_DEPLOYMENT_AR.md is missing from the migration package"
+[ -f "$STAGE/migrations/database/upgrade_v56.sql" ] \
+    || fail "database/upgrade_v56.sql is missing from the migration package"
 
 # --- modes and timestamps --------------------------------------------------
 step "normalizing file modes and timestamps"

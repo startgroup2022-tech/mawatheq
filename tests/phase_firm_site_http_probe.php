@@ -68,10 +68,29 @@ function firm_post(string $base, string $jar, array $fields): array {
 }
 
 // ---- Snapshot firm 2 so we can restore it -------------------------------------------
-$firmB = $pdo->query('SELECT * FROM law_firms ORDER BY id DESC LIMIT 1')->fetch();
+// Resolved through owner-b's membership rather than "the newest firm". The probe drives
+// owner-b's dashboard, so the firm it mutates must be owner-b's; picking the highest id
+// silently targets whichever firm was seeded last once other suites have added their own.
+$firmB = $pdo->query(
+    "SELECT f.* FROM law_firms f
+       JOIN law_firm_members m ON m.firm_id = f.id
+       JOIN lawyers l ON l.id = m.lawyer_id
+      WHERE l.email = 'owner-b@example.com' AND m.status = 'active'
+      ORDER BY m.id ASC LIMIT 1"
+)->fetch();
+if (!$firmB) { fwrite(STDERR, "owner-b has no active firm membership; cannot run\n"); exit(1); }
 $firmBId = (int)$firmB['id'];
 $slug = 'fs-probe-' . bin2hex(random_bytes(3));
 $createdPages = []; $createdBranches = []; $createdDepts = []; $createdAnns = [];
+
+// Remove any pages this probe may have left behind. The probe asserts an HTTP 302 after
+// saving a page, and a run killed before its cleanup (a timeout, a Ctrl-C) leaves the row
+// in place; the unique key on (firm_id, slug) then makes the next run's INSERT fail and the
+// save silently render 200 instead of redirecting. Clearing first makes the probe repeatable
+// rather than dependent on the previous run having finished.
+try {
+    $pdo->prepare('DELETE FROM firm_pages WHERE firm_id=? AND slug IN (?,?)')->execute([$firmBId, 'probe-page', 'draft-page']);
+} catch (Throwable $e) { error_log('probe pre-clean: ' . $e->getMessage()); }
 
 try {
     // ---- Owner B publishes the site -------------------------------------------------

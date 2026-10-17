@@ -142,6 +142,21 @@ $requestPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 
 $isBearerApi = strpos($requestPath, '/api/v1/') === 0;
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && !$isBearerApi && !in_array($requestPath, $csrfExemptPaths, true)) {
+    // A body larger than post_max_size is discarded by PHP before any script runs, so $_POST
+    // arrives empty and the token check below can never pass. Answering "Invalid request"
+    // there sends the user hunting for a form bug; the real cause is the size. Detecting it
+    // here means every upload form in the app reports the honest reason.
+    if (empty($_POST) && empty($_FILES) && (int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+        http_response_code(413);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode([
+            'ok' => false,
+            'code' => 'request_too_large',
+            'error' => 'حجم الطلب تجاوز الحد المسموح على الخادم. ارفع الملفات واحداً واحداً أو صغّر حجمها.',
+            'error_en' => 'The request exceeded the server size limit. Upload files one at a time or reduce their size.',
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) { http_response_code(403); exit('Invalid request'); }
     $source = $_SERVER['HTTP_ORIGIN'] ?? ($_SERVER['HTTP_REFERER'] ?? '');
     if ($source !== '') {

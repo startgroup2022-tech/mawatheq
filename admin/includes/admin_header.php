@@ -24,6 +24,7 @@ $adminNavGroups = [
         'lawyers' => ['i' => 'scale', 'ar' => 'المحامون', 'en' => 'Lawyers', 'href' => '/admin/lawyers.php', 'badge' => 'lawyers'],
         'firms' => ['i' => 'building', 'ar' => 'المكاتب القانونية', 'en' => 'Law firms', 'href' => '/admin/firms.php'],
         'consultations' => ['i' => 'message', 'ar' => 'الاستشارات', 'en' => 'Consultations', 'href' => '/admin/consultations.php'],
+        'consultation-attachments' => ['i' => 'file', 'ar' => 'مرفقات الاستشارات', 'en' => 'Consultation attachments', 'href' => '/admin/consultation-attachments.php'],
         'documents' => ['i' => 'file', 'ar' => 'المستندات', 'en' => 'Documents', 'href' => '/admin/documents.php'],
     ]],
     ['t' => adm('المالية والتحليلات', 'Finance & insights'), 'items' => [

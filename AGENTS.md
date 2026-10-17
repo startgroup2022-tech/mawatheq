@@ -1025,3 +1025,75 @@ secrets/tests/docs/.git, unpacks both archives, writes the documented `secrets.p
 overlays the migration package and applies it in the documented order to a scratch
 database. A test against the repository copy proves the repository is correct and says
 nothing about the bytes an operator actually downloads.
+
+## Execution 30 — consultation attachments
+
+### The attachment file lives outside the web root, and the route is the only door
+
+`includes/consultation_attachments.php` resolves the storage root to a sibling of the
+application root (`../mawatheq-private/consultation-attachments`, sharded by consultation
+id) and falls back to `<app>/storage/...` only when the parent is not writable. There is no
+public URL for a stored file: `download-consultation-attachment.php` re-checks ownership on
+every request instead of trusting a token in the URL. A signed link was the alternative and
+was rejected because it cannot be revoked when a consultation is reassigned or a lawyer
+leaves the firm, and it leaks access through history, proxies and referrers.
+
+The root guard is `02770` (group write + setgid), not `0750`. Apache writes the files but
+the maintenance sweeper and any cron job run as a different user, and both must be able to
+rename and unlink inside these directories; the setgid bit keeps the group stable as files
+are added instead of letting each writer's primary group take over and lock the other out.
+`tests/setup_test_env.sh` adds the CLI user to the `www-data` group for the same reason — a
+fresh clone otherwise uploads fine over HTTP and then fails every direct filesystem check.
+
+### Validation is three checks, not one
+
+`consultation_attachment_validate()` requires the extension to be in the catalog, the
+finfo-detected MIME to be one of the MIMEs that extension legitimately produces, and the
+body not to carry an executable signature. Each alone is defeated by an ordinary file: a
+`.pdf` whose bytes are a PNG passes the extension check, and a text file named `.php` passes
+a MIME sniff that trusts the extension. `consultation_attachment_has_executable_signature()`
+scans for PHP/open-tag and script markers rather than rejecting leading NUL bytes — an
+MP4/MOV/M4A is ISO-BMFF and its box size legitimately begins with `\x00`, so a NUL check
+rejects real media. `tests/execution30_consultation_attachments_probe.php` covers both
+directions (a PNG named `.pdf`, a PDF named `.txt`, and a PDF that is also valid PHP).
+
+### Limits are clamped to what PHP will actually accept
+
+`consultation_attachment_limits()` takes the configured values and clamps each per-file
+limit to `upload_max_filesize` and to `post_max_size` minus a multipart-envelope allowance,
+via `consultation_attachment_ini_bytes()` (which parses `2M`/`512K`/`1G`). Advertising the
+configured 100 MB video limit on a server with a 2 MB `upload_max_filesize` promises
+something the server discards before the script runs, which surfaces as an empty `$_FILES`
+rather than a size error. The probe reads the effective limit instead of asserting a
+constant, so it stays correct on any php.ini.
+
+Related: an oversized POST arrives with `$_POST` and `$_FILES` both empty. `config.php` used
+to answer that with a bare 403 "Invalid request", which reads as a CSRF failure and sends
+the uploader looking in the wrong place; it now returns a request-too-large answer, and both
+upload endpoints also check `CONTENT_LENGTH` to say the same thing in JSON.
+
+### Two-phase upload: stage now, claim at booking
+
+The booking form collects files before the consultation row exists, so an upload is written
+`status='staged'` with `consultation_id` NULL and a `draft_token`, then claimed by
+`booking.php` when the form is submitted. `consultation_id` is nullable for this reason. A
+staged row whose token is never claimed is an abandoned draft, reclaimed by
+`consultation_attachment_purge_drafts()`; a file with no row at all (a crash between
+`move_uploaded_file()` and the INSERT) is reclaimed by `consultation_attachment_purge_orphans()`,
+which reports rows whose file is missing rather than deleting them — the row is the user's
+record that the file once existed. `booking.php` accepts only the token this session was
+issued, so a crafted POST cannot adopt another client's staged uploads.
+
+### Test probes that mutate seeded rows must resolve them by identity, not by "newest"
+
+`tests/phase_firm_site_http_probe.php` used to snapshot `SELECT * FROM law_firms ORDER BY id
+DESC LIMIT 1` and assume that was owner-b's firm. That held until other suites seeded their
+own firms; the probe then published owner-b's site on a *different* firm's row, so
+`firm.php?firm=<slug>` kept returning 200 after the probe set `is_public=0` on the wrong row.
+It now joins `law_firm_members` through `owner-b@example.com`, which is the identity the
+probe actually drives. The same probe now clears `probe-page`/`draft-page` for that firm
+before it starts: it asserts an HTTP 302 after saving a page, and a run killed before its
+cleanup leaves the row behind, after which the unique key on `(firm_id, slug)` makes the next
+INSERT fail and the save render 200 instead of redirecting. Both bugs were invisible until
+the suite was run twice in a row.
+

@@ -24,6 +24,7 @@ function admin_route_roles(): array {
         'lawyers.php' => ['super_admin', 'support'],
         'firms.php' => ['super_admin', 'support'],
         'consultations.php' => ['super_admin', 'support'],
+        'consultation-attachments.php' => ['super_admin', 'support'],
         'documents.php' => ['super_admin', 'support'],
         'leads.php' => ['super_admin', 'support'],
         'articles.php' => ['super_admin', 'editor'],
