@@ -168,6 +168,10 @@ positional `AFTER` clause appears anywhere in the file.
 
 - **Not deployed to production.** The migration package and site files must be applied by the
   operator. See `MAWATHEQ_EXECUTION_30_DEPLOYMENT_AR.md`.
-- **No AI feature installed or enabled.** Ollama is not installed, no inference server is
-  listening, and no external provider is configured. The existing AI functionality is
-  preserved (verified by `phase3_ai_gateway_test`).
+- **No AI feature installed or enabled.** No external AI provider is configured (`ai_provider`
+  and `ai_api_key` are empty in `site_settings`) and the `ollama` binary is not installed. The
+  only process on the Ollama port is the test suite's own mock provider
+  (`php -S 127.0.0.1:11434 /tmp/mockai/router.php`), a stub that returns a canned string and
+  exists so `execution12_ai_connectivity_test` can assert the client contract without a real
+  model. It is a test fixture, not a runtime, and it is started by `tests/run_all_tests.sh`.
+  The existing AI functionality is preserved (verified by `phase3_ai_gateway_test`).
