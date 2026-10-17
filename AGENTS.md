@@ -1084,6 +1084,15 @@ which reports rows whose file is missing rather than deleting them — the row i
 record that the file once existed. `booking.php` accepts only the token this session was
 issued, so a crafted POST cannot adopt another client's staged uploads.
 
+### Do not run the PHP suite and Playwright at the same time
+
+`tests/password_reset_test.php` wraps its rate-limit section in a transaction and drives
+`auth_rate_limit_failure_key()`, whose `INSERT ... ON DUPLICATE KEY UPDATE` scans
+`auth_rate_limits`. A Playwright run logs in through the real app, which writes the same
+table, so the two together make InnoDB raise `SQLSTATE[HY000] 1020 Record has changed since
+last read in table 'auth_rate_limits'` and the suite exits 255. It reads like a regression in
+the rate limiter and is not one: run alone, the suite is green. Serialize them.
+
 ### Test probes that mutate seeded rows must resolve them by identity, not by "newest"
 
 `tests/phase_firm_site_http_probe.php` used to snapshot `SELECT * FROM law_firms ORDER BY id
