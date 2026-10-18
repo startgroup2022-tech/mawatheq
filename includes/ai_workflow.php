@@ -53,7 +53,7 @@ function ai_agent_execute(PDO $pdo, array $settings, string $agentKey, string $m
     $lim = $pdo->prepare("SELECT COUNT(*) FROM ai_agent_executions WHERE task_name LIKE ? AND created_at>=DATE_SUB(NOW(),INTERVAL 1 HOUR)");
     $lim->execute([$moduleId . ':%']);
     if ((int)$lim->fetchColumn() >= (int)$agent['requests_per_hour']) return ['ok' => false, 'error' => 'Hourly rate limit for this module reached.'];
-    if (empty($settings['ai_provider']) || empty($settings['ai_api_key']) || !in_array($settings['ai_provider'], ['openai', 'anthropic'], true) || ($settings['ai_enabled'] ?? '1') === '0')
+    if (!ai_chat_provider_configured($settings))
         return ['ok' => false, 'error' => 'AI provider is not enabled in settings.'];
 
     $terms = preg_split('/\s+/u', $task, -1, PREG_SPLIT_NO_EMPTY) ?: [];

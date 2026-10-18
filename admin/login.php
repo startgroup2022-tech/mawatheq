@@ -61,15 +61,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <body>
 <div class="auth-wrap">
   <div class="auth-card">
-    <a href="/" class="brand"><img src="/assets/img/logo.webp" style="height:38px"></a>
-    <h2 style="text-align:center;font-size:1.3rem;margin-top:10px">دخول لوحة التحكم</h2>
+    <a href="/" class="brand"><img src="/assets/img/logo.webp" alt="<?= htmlspecialchars(is_rtl() ? SITE_NAME_AR : SITE_NAME_EN) ?>" style="height:38px"></a>
+    <h1 style="text-align:center;font-size:1.3rem;margin-top:10px">دخول لوحة التحكم</h1>
     <?php if ($error): ?><div class="form-alert error"><?= htmlspecialchars($error) ?></div><?php endif; ?>
     <form method="post"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
       <?php if($twoFactorPending): ?><div class="field"><label>رمز تطبيق المصادقة (6 أرقام) أو رمز استرداد</label><input inputmode="numeric" name="totp_code" autocomplete="one-time-code" required autofocus></div><button class="btn btn-primary btn-block" type="submit">تحقق وتسجيل الدخول</button>
       <?php else: ?>
-      <div class="field"><label>البريد الإلكتروني</label><input type="email" name="email" autocomplete="username" required></div>
-      <div class="field"><label>كلمة المرور</label><div class="password-input"><input type="password" name="password" id="adminLoginPassword" autocomplete="current-password" required><button type="button" class="password-toggle" data-password-toggle="adminLoginPassword">إظهار</button></div></div>
-      <div style="text-align:end;margin:-10px 0 16px"><a href="/forgot-password.php?as=admin" style="font-size:.82rem;color:var(--teal)">نسيت كلمة المرور؟</a></div>
+      <div class="field"><label for="email">البريد الإلكتروني</label><input id="email" type="email" name="email" autocomplete="username" required></div>
+      <div class="field"><label for="adminLoginPassword">كلمة المرور</label><div class="password-input"><input type="password" name="password" id="adminLoginPassword" autocomplete="current-password" required><button type="button" class="password-toggle" data-password-toggle="adminLoginPassword">إظهار</button></div></div>
+      <div class="auth-inline-link"><a href="/forgot-password.php?as=admin">نسيت كلمة المرور؟</a></div>
       <button class="btn btn-primary btn-block" type="submit">دخول</button>
       <?php endif; ?>
     </form>

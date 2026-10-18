@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/secret_crypto.php';
+require_once __DIR__ . '/currency.php';
 /**
  * ============================================================
  * تكامل حقيقي مع بوابة الدفع السعودية N-Genius (Network International)
@@ -46,15 +47,38 @@ function ngenius_get_access_token(string $environment, string $apiKey, string $r
     return ['ok' => true, 'token' => $data['access_token'], 'error' => null];
 }
 
+/** Default settlement currency for the N-Genius outlet (this integration uses the Saudi gateway). */
+const NGENIUS_DEFAULT_CURRENCY = 'SAR';
+
+/**
+ * Settlement currency configured for the outlet. The merchant account decides which currency
+ * it can accept, so this mirrors that choice rather than hard-coding one.
+ */
+function ngenius_currency(array $settings): string {
+    $code = strtoupper(trim((string)($settings['ngenius_currency'] ?? '')));
+    return $code !== '' ? $code : NGENIUS_DEFAULT_CURRENCY;
+}
+
+/** Minor units per major unit for the gateway's integer amount (100 for SAR, 1000 for 3-decimal). */
+function ngenius_minor_units(string $currency): int {
+    return currency_decimals($currency) === 3 ? 1000 : 100;
+}
+
+/** Whether an invoice's currency matches the outlet's configured settlement currency. */
+function ngenius_supports_currency(array $settings, ?string $currency): bool {
+    return strtoupper(trim((string)$currency)) === ngenius_currency($settings);
+}
+
 /**
  * الخطوة 2: إنشاء طلب دفع (Order) وإرجاع رابط صفحة الدفع المستضافة للعميل.
- * $amount بالدينار البحريني — يُحوَّل إلى الفلس (3 خانات عشرية) كما تتطلب البوابة.
+ * $amount بعملة الـoutlet (افتراضياً الريال السعودي) — يُحوَّل إلى أصغر وحدة نقدية (هللة = 100).
  * @return array{ok:bool, order_reference:?string, payment_url:?string, error:?string}
  */
 function ngenius_create_order(
     string $environment, string $outletRef, string $accessToken,
     float $amount, string $customerEmail, string $customerName,
-    string $redirectUrl, string $cancelUrl, string $merchantOrderReference, string $language = 'ar'
+    string $redirectUrl, string $cancelUrl, string $merchantOrderReference, string $language = 'ar',
+    string $currency = NGENIUS_DEFAULT_CURRENCY, string $countryCode = 'SA'
 ): array {
     $nameParts = explode(' ', trim($customerName), 2);
     $firstName = $nameParts[0] ?: 'Customer';
@@ -62,7 +86,7 @@ function ngenius_create_order(
 
     $body = [
         'action' => 'PURCHASE',
-        'amount' => ['currencyCode' => 'BHD', 'value' => (int) round($amount * 1000)],
+        'amount' => ['currencyCode' => $currency, 'value' => (int) round($amount * ngenius_minor_units($currency))],
         'emailAddress' => $customerEmail,
         'language' => $language,
         'merchantOrderReference' => preg_replace('/[^A-Za-z0-9-]/', '-', $merchantOrderReference),
@@ -74,7 +98,7 @@ function ngenius_create_order(
         'billingAddress' => [
             'firstName' => $firstName,
             'lastName' => $lastName,
-            'countryCode' => 'BH',
+            'countryCode' => $countryCode,
         ],
     ];
 
@@ -137,7 +161,7 @@ function ngenius_is_paid_state(?string $state): bool {
 /** يجلب إعدادات بوابة الدفع المحفوظة من site_settings كمصفوفة جاهزة. */
 function ngenius_settings(PDO $pdo): array {
     $settings = [];
-    $keys = ['ngenius_enabled','ngenius_environment','ngenius_outlet_ref','ngenius_api_key','ngenius_realm_name','ngenius_webhook_secret'];
+    $keys = ['ngenius_enabled','ngenius_environment','ngenius_outlet_ref','ngenius_api_key','ngenius_realm_name','ngenius_webhook_secret','ngenius_currency'];
     $placeholders = implode(',', array_fill(0, count($keys), '?'));
     $stmt = $pdo->prepare("SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ($placeholders)");
     $stmt->execute($keys);

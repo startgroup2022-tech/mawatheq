@@ -1,0 +1,86 @@
+/* =============================================================================
+   MAWATHEQ — Law firm public website layer (v50)
+   -----------------------------------------------------------------------------
+   Additive only. Reuses the tokens declared in style.css (:root) so a firm site
+   inherits the approved Mawatheq visual identity. Loaded after style.css and
+   enterprise.css, and only on the /firm*.php pages, so no other surface changes.
+   ============================================================================= */
+
+.firm-site .firm-header .brand span { font-weight: 800; }
+
+.firm-hero {
+  padding: 72px 0 56px;
+  background: linear-gradient(160deg, var(--navy-dark), var(--navy));
+  color: #fff;
+  text-align: center;
+}
+.firm-hero h1 { font-family: var(--serif); font-size: clamp(1.8rem, 4vw, 2.8rem); margin: 0 0 12px; color: #fff; }
+.firm-tagline { max-width: 720px; margin: 0 auto 26px; color: rgba(255,255,255,.86); font-size: 1.05rem; }
+.firm-hero-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.firm-hero-actions .btn-outline { border-color: rgba(255,255,255,.5); color: #fff; }
+
+.firm-prose { max-width: 820px; color: var(--text-muted); font-size: 1rem; line-height: 1.9; }
+
+.firm-chips { display: flex; flex-wrap: wrap; gap: 10px; }
+.firm-chip {
+  display: inline-block; padding: 8px 16px; border-radius: 999px;
+  background: var(--surface); border: 1.5px solid var(--border);
+  color: var(--navy); font-weight: 600; font-size: .9rem;
+}
+
+.firm-team-grid {
+  display: grid; gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+.firm-person {
+  background: var(--surface); border: 1.5px solid var(--border);
+  border-radius: var(--radius); padding: 20px; text-align: center;
+}
+.firm-person img {
+  width: 92px; height: 92px; border-radius: 50%; object-fit: cover;
+  margin: 0 auto 12px; display: block;
+}
+.firm-person h3 { margin: 0 0 4px; font-size: 1.05rem; color: var(--navy); }
+.firm-role { margin: 0 0 8px; color: var(--teal); font-weight: 600; font-size: .88rem; }
+.firm-meta { margin: 0 0 8px; color: var(--text-muted); font-size: .82rem; }
+.firm-bio, .firm-qual { margin: 0 0 8px; color: var(--text-muted); font-size: .86rem; line-height: 1.7; }
+.firm-social { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 10px; }
+.firm-social a { color: var(--navy); font-size: .84rem; font-weight: 600; text-decoration: none; }
+.firm-social a:hover { color: var(--teal); }
+
+.firm-article-list { display: grid; gap: 18px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.firm-article {
+  background: var(--surface); border: 1.5px solid var(--border);
+  border-radius: var(--radius); padding: 20px;
+}
+.firm-article h3 { margin: 0 0 6px; font-size: 1.02rem; }
+.firm-article h3 a { color: var(--navy); text-decoration: none; }
+.firm-article h3 a:hover { color: var(--teal); }
+.firm-article time { display: block; color: var(--text-muted); font-size: .78rem; margin-bottom: 8px; }
+.firm-article p { margin: 0; color: var(--text-muted); font-size: .88rem; }
+
+.firm-contact-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.firm-contact-grid > div { display: flex; flex-direction: column; gap: 2px; }
+.firm-contact-grid strong { color: var(--navy); font-size: .88rem; }
+.firm-contact-grid span { color: var(--text-muted); font-size: .92rem; }
+
+.firm-subhead { margin: 28px 0 12px; color: var(--navy); font-size: 1.1rem; }
+.firm-branches { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.firm-branch {
+  display: flex; flex-direction: column; gap: 3px;
+  background: var(--surface); border: 1.5px solid var(--border);
+  border-radius: var(--radius); padding: 16px;
+}
+.firm-branch strong { color: var(--navy); }
+.firm-branch span { color: var(--text-muted); font-size: .86rem; }
+
+.firm-more { margin-top: 22px; }
+.firm-empty { color: var(--text-muted); }
+
+.firm-footer-name { font-weight: 800; color: #fff; display: block; margin-bottom: 10px; }
+.firm-footer-tagline { color: rgba(255,255,255,.7); font-size: .88rem; margin: 0 0 10px; max-width: 340px; }
+
+@media (max-width: 640px) {
+  .firm-hero { padding: 52px 0 40px; }
+  .firm-team-grid { grid-template-columns: 1fr 1fr; }
+}

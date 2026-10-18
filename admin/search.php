@@ -20,9 +20,9 @@ $sections = [
     'clients' => [adm('العملاء', 'Clients'), 'users', fn($r) => ['/admin/client-detail.php?id=' . $r['id'], $r['full_name'], $r['email']]],
     'lawyers' => [adm('المحامون', 'Lawyers'), 'scale', fn($r) => ['/admin/lawyers.php', $r['full_name'], $r['specialization'] . ' · ' . $r['status']]],
     'cases' => [adm('القضايا', 'Cases'), 'briefcase', fn($r) => ['/admin/client-detail.php?id=' . $r['user_id'] . '#cases', $r['title'], $r['uname'] . ' · ' . $r['status']]],
-    'invoices' => [adm('الفواتير', 'Invoices'), 'receipt', fn($r) => ['/admin/client-detail.php?id=' . $r['user_id'] . '#billing', $r['description'], number_format($r['amount'], 3) . ' · ' . $r['status']]],
+    'invoices' => [adm('الفواتير', 'Invoices'), 'receipt', fn($r) => ['/admin/client-detail.php?id=' . $r['user_id'] . '#billing', $r['description'], money_text($r['amount']) . ' · ' . $r['status']]],
     'leads' => [adm('الطلبات الواردة', 'Leads'), 'inbox', fn($r) => ['/admin/leads.php', $r['full_name'], $r['email'] . ' · ' . $r['status']]],
-    'opps' => [adm('الفرص', 'Opportunities'), 'target', fn($r) => ['/admin/crm.php#opportunities', $r['title'], $r['stage'] . ' · ' . number_format($r['value'], 0)]],
+    'opps' => [adm('الفرص', 'Opportunities'), 'target', fn($r) => ['/admin/crm.php#opportunities', $r['title'], $r['stage'] . ' · ' . money_text($r['value'])]],
 ];
 ?>
 <div class="app-content">

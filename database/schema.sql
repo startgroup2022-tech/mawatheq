@@ -208,6 +208,7 @@ CREATE TABLE IF NOT EXISTS ai_messages (
 CREATE TABLE IF NOT EXISTS documents (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     user_id INT UNSIGNED NOT NULL,
+    case_id INT UNSIGNED DEFAULT NULL,
     original_name VARCHAR(255) NOT NULL,
     stored_path VARCHAR(255) NOT NULL,
     file_type VARCHAR(50) DEFAULT NULL,
@@ -216,7 +217,8 @@ CREATE TABLE IF NOT EXISTS documents (
     summary TEXT DEFAULT NULL,
     contract_analysis_json MEDIUMTEXT DEFAULT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_documents_case (case_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS document_findings (
@@ -560,7 +562,7 @@ CREATE TABLE IF NOT EXISTS notifications (
 
 CREATE TABLE IF NOT EXISTS audit_logs (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    actor_type ENUM('admin','lawyer','system') NOT NULL DEFAULT 'admin',
+    actor_type ENUM('admin','lawyer','client','system') NOT NULL DEFAULT 'admin',
     actor_id INT UNSIGNED DEFAULT NULL,
     actor_name VARCHAR(150) DEFAULT NULL,
     firm_id INT UNSIGNED DEFAULT NULL,
@@ -692,11 +694,49 @@ CREATE TABLE IF NOT EXISTS payment_transactions (
     invoice_id INT UNSIGNED DEFAULT NULL,
     gateway VARCHAR(30) NOT NULL DEFAULT 'ngenius',
     gateway_order_ref VARCHAR(100) DEFAULT NULL,
+    gateway_transaction_id VARCHAR(120) DEFAULT NULL,
     event_type VARCHAR(50) DEFAULT NULL,
     amount DECIMAL(12,3) DEFAULT NULL,
+    currency VARCHAR(3) DEFAULT NULL,
+    status VARCHAR(20) DEFAULT NULL,
+    environment VARCHAR(20) DEFAULT NULL,
+    response_code VARCHAR(40) DEFAULT NULL,
+    response_message VARCHAR(255) DEFAULT NULL,
+    paid_at DATETIME DEFAULT NULL,
+    callback_received_at DATETIME DEFAULT NULL,
+    verified_at DATETIME DEFAULT NULL,
+    metadata TEXT DEFAULT NULL,
     raw_payload TEXT DEFAULT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS tenant_gateway_settings (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    tenant_type ENUM('firm','lawyer','platform') NOT NULL,
+    tenant_id INT UNSIGNED NOT NULL,
+    gateway VARCHAR(30) NOT NULL,
+    settings_json TEXT DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_tenant_gateway (tenant_type, tenant_id, gateway)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS gateway_webhook_events (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    gateway VARCHAR(30) NOT NULL,
+    event_id VARCHAR(120) DEFAULT NULL,
+    event_type VARCHAR(60) DEFAULT NULL,
+    reference VARCHAR(120) DEFAULT NULL,
+    payment_id INT UNSIGNED DEFAULT NULL,
+    processing_status ENUM('received','processed','ignored','duplicate','rejected') NOT NULL DEFAULT 'received',
+    message VARCHAR(255) DEFAULT NULL,
+    event_hash CHAR(64) DEFAULT NULL,
+    raw_payload TEXT DEFAULT NULL,
+    received_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    processed_at DATETIME DEFAULT NULL,
+    UNIQUE KEY uniq_gateway_event_hash (gateway, event_hash),
+    INDEX idx_gateway_events_ref (gateway, reference, received_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS site_settings (
@@ -749,6 +789,7 @@ SET FOREIGN_KEY_CHECKS = 1;
 INSERT INTO site_settings (setting_key, setting_value) VALUES
 ('site_name_ar', 'مواثيق'),
 ('site_name_en', 'Mawatheq'),
+('site_currency', 'SAR'),
 ('whatsapp_number', '966501453765'),
 ('contact_email', 'info@mawatheq.com'),
 ('default_lang', 'ar'),
@@ -761,7 +802,11 @@ INSERT INTO site_settings (setting_key, setting_value) VALUES
 ('ngenius_outlet_ref', ''),
 ('ngenius_api_key', ''),
 ('ngenius_realm_name', 'ni'),
-('ngenius_webhook_secret', '');
+('ngenius_currency', 'SAR'),
+('ngenius_webhook_secret', ''),
+('sadad_enabled', '0'),
+('sadad_environment', 'sandbox'),
+('sadad_currency', 'SAR');
 
 INSERT INTO law_categories (name_ar, name_en, icon, sort_order) VALUES
 ('نظام العمل', 'Labor Law', 'work', 1),
@@ -1155,7 +1200,7 @@ SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DA
 SET @s := IF(@c=0, 'ALTER TABLE invoices ADD COLUMN invoice_number VARCHAR(40) DEFAULT NULL AFTER id, ADD UNIQUE KEY uniq_invoices_number (invoice_number)', 'SELECT 1');
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='invoices' AND COLUMN_NAME='currency');
-SET @s := IF(@c=0, 'ALTER TABLE invoices ADD COLUMN currency VARCHAR(3) NOT NULL DEFAULT ''BHD'' AFTER amount', 'SELECT 1');
+SET @s := IF(@c=0, 'ALTER TABLE invoices ADD COLUMN currency VARCHAR(3) NOT NULL DEFAULT ''SAR'' AFTER amount', 'SELECT 1');
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='invoices' AND COLUMN_NAME='subtotal');
 SET @s := IF(@c=0, 'ALTER TABLE invoices ADD COLUMN subtotal DECIMAL(12,3) NOT NULL DEFAULT 0 AFTER currency', 'SELECT 1');
@@ -1202,8 +1247,8 @@ CREATE TABLE IF NOT EXISTS invoice_items (
 
 CREATE TABLE IF NOT EXISTS invoice_payments (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, invoice_id INT UNSIGNED NOT NULL, firm_id INT UNSIGNED DEFAULT NULL,
-    lawyer_id INT UNSIGNED DEFAULT NULL, amount DECIMAL(12,3) NOT NULL, currency VARCHAR(3) NOT NULL DEFAULT 'BHD',
-    method ENUM('manual','cash','bank_transfer','card','ngenius','other') NOT NULL DEFAULT 'manual',
+    lawyer_id INT UNSIGNED DEFAULT NULL, amount DECIMAL(12,3) NOT NULL, currency VARCHAR(3) NOT NULL DEFAULT 'SAR',
+    method ENUM('manual','cash','bank_transfer','card','ngenius','sadad','other') NOT NULL DEFAULT 'manual',
     status ENUM('pending','completed','failed','refunded') NOT NULL DEFAULT 'completed', reference VARCHAR(120) DEFAULT NULL,
     idempotency_key VARCHAR(80) DEFAULT NULL, notes VARCHAR(500) DEFAULT NULL, paid_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     recorded_by_type ENUM('lawyer','admin','client','system') NOT NULL DEFAULT 'system', recorded_by_id INT UNSIGNED DEFAULT NULL,
@@ -1285,3 +1330,845 @@ WHERE NOT EXISTS (SELECT 1 FROM law_firm_members m WHERE m.lawyer_id=l.id AND m.
 INSERT IGNORE INTO ai_tenant_settings (tenant_type,tenant_id,privacy_mode,allowed_data_categories,external_features)
 VALUES ('platform', 0, 'external_allowed', 'user_prompt,legal_text,case_information,client_information,firm_knowledge,document_text', '');
 
+-- ------------------------------------------------------------
+-- Cross-module links declared after every referenced table exists.
+-- `documents` is created before `cases`, so its case link is added here.
+-- Guarded so re-running the schema on an existing database is harmless.
+-- ------------------------------------------------------------
+SET @fk := (SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'documents' AND CONSTRAINT_NAME = 'fk_documents_case');
+SET @s := IF(@fk = 0, 'ALTER TABLE documents ADD CONSTRAINT fk_documents_case FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE SET NULL', 'SELECT 1');
+PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+
+-- ------------------------------------------------------------
+-- v50 — law firm public website + office structure
+-- Mirrors database/upgrade_v50.sql so a fresh install is complete. Additive and
+-- guarded (IF NOT EXISTS) so re-running the schema on an existing database is harmless.
+-- ------------------------------------------------------------
+ALTER TABLE law_firms ADD COLUMN IF NOT EXISTS public_slug VARCHAR(190) DEFAULT NULL;
+ALTER TABLE law_firms ADD COLUMN IF NOT EXISTS is_public TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE law_firms ADD COLUMN IF NOT EXISTS tagline_ar VARCHAR(300) DEFAULT NULL;
+ALTER TABLE law_firms ADD COLUMN IF NOT EXISTS tagline_en VARCHAR(300) DEFAULT NULL;
+ALTER TABLE law_firms ADD COLUMN IF NOT EXISTS about_ar MEDIUMTEXT DEFAULT NULL;
+ALTER TABLE law_firms ADD COLUMN IF NOT EXISTS about_en MEDIUMTEXT DEFAULT NULL;
+ALTER TABLE law_firms ADD COLUMN IF NOT EXISTS practice_areas VARCHAR(1000) DEFAULT NULL;
+ALTER TABLE law_firms ADD COLUMN IF NOT EXISTS working_hours VARCHAR(500) DEFAULT NULL;
+ALTER TABLE law_firms ADD COLUMN IF NOT EXISTS website_url VARCHAR(255) DEFAULT NULL;
+ALTER TABLE law_firms ADD COLUMN IF NOT EXISTS social_json VARCHAR(1000) DEFAULT NULL;
+ALTER TABLE law_firms ADD COLUMN IF NOT EXISTS meta_title_ar VARCHAR(200) DEFAULT NULL;
+ALTER TABLE law_firms ADD COLUMN IF NOT EXISTS meta_title_en VARCHAR(200) DEFAULT NULL;
+ALTER TABLE law_firms ADD COLUMN IF NOT EXISTS meta_description_ar VARCHAR(400) DEFAULT NULL;
+ALTER TABLE law_firms ADD COLUMN IF NOT EXISTS meta_description_en VARCHAR(400) DEFAULT NULL;
+ALTER TABLE law_firms ADD UNIQUE KEY IF NOT EXISTS uq_firm_public_slug (public_slug);
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS firm_id INT UNSIGNED DEFAULT NULL;
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS author_lawyer_id INT UNSIGNED DEFAULT NULL;
+ALTER TABLE articles ADD INDEX IF NOT EXISTS idx_articles_firm (firm_id, status);
+
+CREATE TABLE IF NOT EXISTS firm_pages (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    firm_id INT UNSIGNED NOT NULL,
+    slug VARCHAR(190) NOT NULL,
+    page_type ENUM('about','services','practice_areas','privacy','custom') NOT NULL DEFAULT 'custom',
+    title_ar VARCHAR(255) NOT NULL,
+    title_en VARCHAR(255) DEFAULT NULL,
+    content_ar MEDIUMTEXT,
+    content_en MEDIUMTEXT,
+    status ENUM('draft','published') NOT NULL DEFAULT 'draft',
+    sort_order INT NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_firm_page_slug (firm_id, slug),
+    INDEX idx_firm_page_pub (firm_id, status),
+    FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS firm_branches (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    firm_id INT UNSIGNED NOT NULL,
+    name_ar VARCHAR(180) NOT NULL,
+    name_en VARCHAR(180) DEFAULT NULL,
+    city VARCHAR(100) DEFAULT NULL,
+    address VARCHAR(255) DEFAULT NULL,
+    phone VARCHAR(30) DEFAULT NULL,
+    working_hours VARCHAR(500) DEFAULT NULL,
+    is_primary TINYINT(1) NOT NULL DEFAULT 0,
+    status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_firm_branch_firm (firm_id, status),
+    FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS firm_departments (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    firm_id INT UNSIGNED NOT NULL,
+    name_ar VARCHAR(180) NOT NULL,
+    name_en VARCHAR(180) DEFAULT NULL,
+    description VARCHAR(500) DEFAULT NULL,
+    manager_lawyer_id INT UNSIGNED DEFAULT NULL,
+    status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_firm_dept_firm (firm_id, status),
+    FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS firm_announcements (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    firm_id INT UNSIGNED NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    body MEDIUMTEXT,
+    audience ENUM('all','lawyers','staff') NOT NULL DEFAULT 'all',
+    status ENUM('draft','published') NOT NULL DEFAULT 'published',
+    created_by_lawyer_id INT UNSIGNED DEFAULT NULL,
+    published_at DATETIME DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_firm_ann_firm (firm_id, status),
+    FOREIGN KEY (firm_id) REFERENCES law_firms(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+-- ============================================================
+-- Folded from upgrade_v51.sql (Executive 08) — additive, idempotent
+-- ============================================================
+
+-- ============================================================
+-- Mawatheq upgrade v51 — Executive 08
+--   conflict-of-interest engine, HR/attendance/leave, branch isolation,
+--   custom domains, AI resilience + privacy governance.
+-- Additive only, non-destructive, safe to re-run.
+-- Compatible with v47–v50. No existing column is altered or dropped.
+-- ============================================================
+--
+-- Design rules honoured here:
+--   * Every new table is firm-scoped (`firm_id`). Branch-aware tables also carry a
+--     nullable `branch_id`.
+--   * `branch_id IS NULL` means "firm-wide / not yet assigned". Migration NEVER invents a
+--     branch for an existing row — that would silently re-file a firm's records. The UI
+--     surfaces unassigned rows and an owner must assign them explicitly.
+--   * Conflict decisions are append-only in `conflict_audit_trail`; the application layer
+--     never issues UPDATE/DELETE against it.
+--   * Nothing here transmits data off-host; AI governance tables store policy, not content.
+
+-- ============================================================
+-- 1. CONFLICT-OF-INTEREST ENGINE
+-- ============================================================
+
+-- Parties a firm needs to screen: its clients, opposing parties, and related
+-- individuals/companies. `name_norm` is the normalization key; `name_block` is a short
+-- prefix used to keep fuzzy matching from scanning the whole table.
+CREATE TABLE IF NOT EXISTS conflict_parties (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    firm_id INT UNSIGNED NOT NULL,
+    party_type ENUM('client','opposing_party','related_person','related_company','witness','other') NOT NULL DEFAULT 'other',
+    name_ar VARCHAR(255) DEFAULT NULL,
+    name_en VARCHAR(255) DEFAULT NULL,
+    name_norm VARCHAR(255) NOT NULL,
+    name_block VARCHAR(8) NOT NULL DEFAULT '',
+    id_number VARCHAR(80) DEFAULT NULL,
+    commercial_register VARCHAR(80) DEFAULT NULL,
+    country VARCHAR(100) DEFAULT NULL,
+    notes VARCHAR(500) DEFAULT NULL,
+    linked_client_user_id INT UNSIGNED DEFAULT NULL,
+    linked_case_id INT UNSIGNED DEFAULT NULL,
+    branch_id INT UNSIGNED DEFAULT NULL,
+    status ENUM('active','archived') NOT NULL DEFAULT 'active',
+    created_by_lawyer_id INT UNSIGNED DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_cp_firm (firm_id),
+    KEY idx_cp_norm (firm_id, name_norm),
+    KEY idx_cp_block (firm_id, name_block),
+    KEY idx_cp_type (firm_id, party_type),
+    KEY idx_cp_case (linked_case_id),
+    KEY idx_cp_branch (branch_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- One screening result. AI may populate `ai_*` (a suggestion only); only a human reviewer
+-- populates the decision/override columns. `status='cleared_with_override'` is unreachable
+-- without `override_approved_by_lawyer_id` + `override_reason`.
+CREATE TABLE IF NOT EXISTS conflict_reviews (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    firm_id INT UNSIGNED NOT NULL,
+    case_id INT UNSIGNED DEFAULT NULL,
+    client_user_id INT UNSIGNED DEFAULT NULL,
+    subject_party_id INT UNSIGNED DEFAULT NULL,
+    matched_party_id INT UNSIGNED DEFAULT NULL,
+    matched_case_id INT UNSIGNED DEFAULT NULL,
+    match_type ENUM('exact','normalized','fuzzy','id_number','commercial_register','related') NOT NULL DEFAULT 'normalized',
+    match_score DECIMAL(5,2) NOT NULL DEFAULT 0,
+    severity ENUM('low','medium','high','critical') NOT NULL DEFAULT 'medium',
+    status ENUM('open','under_review','approved','rejected','cleared_with_override','closed') NOT NULL DEFAULT 'open',
+    ai_assisted TINYINT(1) NOT NULL DEFAULT 0,
+    ai_confidence DECIMAL(5,2) DEFAULT NULL,
+    ai_rationale VARCHAR(1000) DEFAULT NULL,
+    assigned_reviewer_lawyer_id INT UNSIGNED DEFAULT NULL,
+    decision_by_lawyer_id INT UNSIGNED DEFAULT NULL,
+    decision_at DATETIME DEFAULT NULL,
+    decision_note VARCHAR(1000) DEFAULT NULL,
+    override_approved_by_lawyer_id INT UNSIGNED DEFAULT NULL,
+    override_reason VARCHAR(1000) DEFAULT NULL,
+    branch_id INT UNSIGNED DEFAULT NULL,
+    created_by_lawyer_id INT UNSIGNED DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_cr_firm_status (firm_id, status),
+    KEY idx_cr_case (case_id),
+    KEY idx_cr_reviewer (assigned_reviewer_lawyer_id),
+    KEY idx_cr_severity (firm_id, severity),
+    KEY idx_cr_branch (branch_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Alert rows created when a new conflict is detected. Delivery also goes through the
+-- existing notifications table; this table is the durable record of what was raised.
+CREATE TABLE IF NOT EXISTS conflict_alerts (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    firm_id INT UNSIGNED NOT NULL,
+    review_id INT UNSIGNED NOT NULL,
+    alert_type ENUM('new_conflict','severity_escalated','reminder','decision_recorded') NOT NULL DEFAULT 'new_conflict',
+    severity ENUM('low','medium','high','critical') NOT NULL DEFAULT 'medium',
+    recipient_lawyer_id INT UNSIGNED DEFAULT NULL,
+    is_read TINYINT(1) NOT NULL DEFAULT 0,
+    detail VARCHAR(500) DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_ca_firm (firm_id, is_read),
+    KEY idx_ca_review (review_id),
+    KEY idx_ca_recipient (recipient_lawyer_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Append-only decision trail. The application never updates or deletes a row here.
+CREATE TABLE IF NOT EXISTS conflict_audit_trail (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    firm_id INT UNSIGNED NOT NULL,
+    review_id INT UNSIGNED DEFAULT NULL,
+    actor_lawyer_id INT UNSIGNED DEFAULT NULL,
+    actor_role VARCHAR(40) DEFAULT NULL,
+    action VARCHAR(60) NOT NULL,
+    from_status VARCHAR(30) DEFAULT NULL,
+    to_status VARCHAR(30) DEFAULT NULL,
+    detail VARCHAR(1000) DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_cat_firm (firm_id),
+    KEY idx_cat_review (review_id),
+    KEY idx_cat_actor (actor_lawyer_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- 2. HR, ATTENDANCE AND LEAVE
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS hr_employees (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    firm_id INT UNSIGNED NOT NULL,
+    lawyer_id INT UNSIGNED DEFAULT NULL,
+    user_id INT UNSIGNED DEFAULT NULL,
+    employee_no VARCHAR(40) DEFAULT NULL,
+    full_name VARCHAR(180) NOT NULL,
+    job_title VARCHAR(150) DEFAULT NULL,
+    department_id INT UNSIGNED DEFAULT NULL,
+    branch_id INT UNSIGNED DEFAULT NULL,
+    employment_type ENUM('full_time','part_time','contract','intern') NOT NULL DEFAULT 'full_time',
+    employment_status ENUM('active','on_leave','terminated') NOT NULL DEFAULT 'active',
+    hire_date DATE DEFAULT NULL,
+    termination_date DATE DEFAULT NULL,
+    work_email VARCHAR(150) DEFAULT NULL,
+    work_phone VARCHAR(30) DEFAULT NULL,
+    manager_lawyer_id INT UNSIGNED DEFAULT NULL,
+    notes VARCHAR(500) DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_he_firm (firm_id),
+    KEY idx_he_lawyer (lawyer_id),
+    KEY idx_he_dept (department_id),
+    KEY idx_he_branch (branch_id),
+    KEY idx_he_status (firm_id, employment_status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS hr_attendance (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    firm_id INT UNSIGNED NOT NULL,
+    employee_id INT UNSIGNED NOT NULL,
+    work_date DATE NOT NULL,
+    check_in DATETIME DEFAULT NULL,
+    check_out DATETIME DEFAULT NULL,
+    status ENUM('present','late','absent','leave','holiday','remote') NOT NULL DEFAULT 'present',
+    minutes_late INT UNSIGNED NOT NULL DEFAULT 0,
+    worked_minutes INT UNSIGNED DEFAULT NULL,
+    source ENUM('manual','self','system') NOT NULL DEFAULT 'manual',
+    note VARCHAR(500) DEFAULT NULL,
+    recorded_by_lawyer_id INT UNSIGNED DEFAULT NULL,
+    branch_id INT UNSIGNED DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_hr_att_emp_day (employee_id, work_date),
+    KEY idx_ha_firm_date (firm_id, work_date),
+    KEY idx_ha_employee (employee_id),
+    KEY idx_ha_status (firm_id, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS hr_leave_balances (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    firm_id INT UNSIGNED NOT NULL,
+    employee_id INT UNSIGNED NOT NULL,
+    leave_type ENUM('annual','sick','unpaid','emergency','maternity','paternity','other') NOT NULL DEFAULT 'annual',
+    balance_year SMALLINT NOT NULL,
+    entitled DECIMAL(6,1) NOT NULL DEFAULT 0,
+    used DECIMAL(6,1) NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_hr_lb (employee_id, leave_type, balance_year),
+    KEY idx_hlb_firm (firm_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS hr_leave_requests (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    firm_id INT UNSIGNED NOT NULL,
+    employee_id INT UNSIGNED NOT NULL,
+    leave_type ENUM('annual','sick','unpaid','emergency','maternity','paternity','other') NOT NULL DEFAULT 'annual',
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    days DECIMAL(6,1) NOT NULL DEFAULT 0,
+    reason VARCHAR(500) DEFAULT NULL,
+    status ENUM('pending','approved','rejected','cancelled') NOT NULL DEFAULT 'pending',
+    reviewed_by_lawyer_id INT UNSIGNED DEFAULT NULL,
+    reviewed_at DATETIME DEFAULT NULL,
+    review_note VARCHAR(500) DEFAULT NULL,
+    branch_id INT UNSIGNED DEFAULT NULL,
+    created_by_lawyer_id INT UNSIGNED DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_hlr_firm_status (firm_id, status),
+    KEY idx_hlr_employee (employee_id),
+    KEY idx_hlr_dates (firm_id, start_date, end_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS hr_schedules (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    firm_id INT UNSIGNED NOT NULL,
+    employee_id INT UNSIGNED NOT NULL,
+    branch_id INT UNSIGNED DEFAULT NULL,
+    schedule_type ENUM('shift','court','duty','remote','training','other') NOT NULL DEFAULT 'shift',
+    title VARCHAR(255) NOT NULL,
+    start_at DATETIME NOT NULL,
+    end_at DATETIME DEFAULT NULL,
+    location VARCHAR(255) DEFAULT NULL,
+    status ENUM('planned','completed','cancelled') NOT NULL DEFAULT 'planned',
+    created_by_lawyer_id INT UNSIGNED DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_hs_firm (firm_id, start_at),
+    KEY idx_hs_employee (employee_id),
+    KEY idx_hs_branch (branch_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- 3. BRANCH-LEVEL ACCESS ISOLATION
+-- ============================================================
+
+-- A member's home branch (nullable = unrestricted within the firm).
+SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS
+           WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='law_firm_members' AND COLUMN_NAME='branch_id');
+SET @s := IF(@c=0,'ALTER TABLE law_firm_members ADD COLUMN branch_id INT UNSIGNED DEFAULT NULL','SELECT 1');
+PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+SET @i := (SELECT COUNT(*) FROM information_schema.STATISTICS
+           WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='law_firm_members' AND INDEX_NAME='idx_lfm_branch');
+SET @s := IF(@i=0,'CREATE INDEX idx_lfm_branch ON law_firm_members (branch_id)','SELECT 1');
+PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+
+-- Explicit multi-branch grants. A row means "this lawyer may work in this branch";
+-- access_level='manager' additionally satisfies branch-manager checks for it.
+CREATE TABLE IF NOT EXISTS member_branch_access (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    firm_id INT UNSIGNED NOT NULL,
+    lawyer_id INT UNSIGNED NOT NULL,
+    branch_id INT UNSIGNED NOT NULL,
+    access_level ENUM('member','manager') NOT NULL DEFAULT 'member',
+    granted_by_lawyer_id INT UNSIGNED DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_mba (lawyer_id, branch_id),
+    KEY idx_mba_firm (firm_id),
+    KEY idx_mba_branch (branch_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Explicit cross-branch sharing of one record (case/document/...) with another branch.
+CREATE TABLE IF NOT EXISTS branch_record_shares (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    firm_id INT UNSIGNED NOT NULL,
+    entity_type ENUM('case','document','evidence','consultation','invoice') NOT NULL,
+    entity_id INT UNSIGNED NOT NULL,
+    branch_id INT UNSIGNED NOT NULL,
+    granted_by_lawyer_id INT UNSIGNED DEFAULT NULL,
+    revoked_at DATETIME DEFAULT NULL,
+    note VARCHAR(500) DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_brs (entity_type, entity_id, branch_id),
+    KEY idx_brs_firm (firm_id),
+    KEY idx_brs_branch (branch_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Branch column on the firm's branch-restricted working records. Nullable on purpose:
+-- NULL = legacy/unassigned = visible firm-wide (see the design rules at the top).
+-- Each ADD is guarded so re-running is a no-op.
+SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='cases' AND COLUMN_NAME='branch_id');
+SET @s := IF(@c=0,'ALTER TABLE cases ADD COLUMN branch_id INT UNSIGNED DEFAULT NULL','SELECT 1'); PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='documents' AND COLUMN_NAME='branch_id');
+SET @s := IF(@c=0,'ALTER TABLE documents ADD COLUMN branch_id INT UNSIGNED DEFAULT NULL','SELECT 1'); PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='case_evidence' AND COLUMN_NAME='branch_id');
+SET @s := IF(@c=0,'ALTER TABLE case_evidence ADD COLUMN branch_id INT UNSIGNED DEFAULT NULL','SELECT 1'); PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='consultations' AND COLUMN_NAME='branch_id');
+SET @s := IF(@c=0,'ALTER TABLE consultations ADD COLUMN branch_id INT UNSIGNED DEFAULT NULL','SELECT 1'); PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='invoices' AND COLUMN_NAME='branch_id');
+SET @s := IF(@c=0,'ALTER TABLE invoices ADD COLUMN branch_id INT UNSIGNED DEFAULT NULL','SELECT 1'); PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='legal_calendar_events' AND COLUMN_NAME='branch_id');
+SET @s := IF(@c=0,'ALTER TABLE legal_calendar_events ADD COLUMN branch_id INT UNSIGNED DEFAULT NULL','SELECT 1'); PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='case_time_entries' AND COLUMN_NAME='branch_id');
+SET @s := IF(@c=0,'ALTER TABLE case_time_entries ADD COLUMN branch_id INT UNSIGNED DEFAULT NULL','SELECT 1'); PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='draft_documents' AND COLUMN_NAME='branch_id');
+SET @s := IF(@c=0,'ALTER TABLE draft_documents ADD COLUMN branch_id INT UNSIGNED DEFAULT NULL','SELECT 1'); PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+
+-- Supporting indexes for the (firm_id, branch_id) filter used by every scoped query.
+SET @i := (SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='cases' AND INDEX_NAME='idx_cases_branch');
+SET @s := IF(@i=0,'CREATE INDEX idx_cases_branch ON cases (firm_id, branch_id)','SELECT 1'); PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+SET @i := (SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='documents' AND INDEX_NAME='idx_documents_branch');
+SET @s := IF(@i=0,'CREATE INDEX idx_documents_branch ON documents (branch_id)','SELECT 1'); PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+SET @i := (SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='case_evidence' AND INDEX_NAME='idx_evidence_branch');
+SET @s := IF(@i=0,'CREATE INDEX idx_evidence_branch ON case_evidence (branch_id)','SELECT 1'); PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+SET @i := (SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='consultations' AND INDEX_NAME='idx_consultations_branch');
+SET @s := IF(@i=0,'CREATE INDEX idx_consultations_branch ON consultations (branch_id)','SELECT 1'); PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+SET @i := (SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='invoices' AND INDEX_NAME='idx_invoices_branch');
+SET @s := IF(@i=0,'CREATE INDEX idx_invoices_branch ON invoices (branch_id)','SELECT 1'); PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+SET @i := (SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='legal_calendar_events' AND INDEX_NAME='idx_lce_branch');
+SET @s := IF(@i=0,'CREATE INDEX idx_lce_branch ON legal_calendar_events (branch_id)','SELECT 1'); PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+
+-- ============================================================
+-- 4. CUSTOM DOMAINS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS firm_domains (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    firm_id INT UNSIGNED NOT NULL,
+    domain VARCHAR(255) NOT NULL,
+    status ENUM('pending','verification_pending','verified','active','failed','disabled') NOT NULL DEFAULT 'pending',
+    verification_token CHAR(48) NOT NULL,
+    verification_method ENUM('dns_txt','dns_cname') NOT NULL DEFAULT 'dns_txt',
+    verified_at DATETIME DEFAULT NULL,
+    last_checked_at DATETIME DEFAULT NULL,
+    last_check_result VARCHAR(500) DEFAULT NULL,
+    ssl_status ENUM('unknown','manual_required','ready','failed') NOT NULL DEFAULT 'unknown',
+    is_primary TINYINT(1) NOT NULL DEFAULT 0,
+    created_by_lawyer_id INT UNSIGNED DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_firm_domain (domain),
+    KEY idx_fd_firm (firm_id),
+    KEY idx_fd_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- 5. AI RESILIENCE, RATE LIMITING AND PRIVACY GOVERNANCE
+-- ============================================================
+
+-- Provider/model health probe history (admin-only surface).
+CREATE TABLE IF NOT EXISTS ai_provider_health (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    provider VARCHAR(40) NOT NULL,
+    model VARCHAR(150) DEFAULT NULL,
+    endpoint VARCHAR(255) DEFAULT NULL,
+    ok TINYINT(1) NOT NULL DEFAULT 0,
+    latency_ms INT UNSIGNED DEFAULT NULL,
+    error_message VARCHAR(500) DEFAULT NULL,
+    checked_by_admin_id INT UNSIGNED DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_aph_provider (provider, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Persisted copilot runs. `verified_json` holds facts taken from stored records;
+-- `suggested_json` holds AI proposals. They are stored apart so the UI can never
+-- present a suggestion as a verified fact.
+CREATE TABLE IF NOT EXISTS ai_copilot_runs (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    firm_id INT UNSIGNED DEFAULT NULL,
+    case_id INT UNSIGNED DEFAULT NULL,
+    lawyer_id INT UNSIGNED DEFAULT NULL,
+    kind ENUM('chronology','summary','facts','missing_documents','hearing_prep','research','document_analysis','draft','risk_flags') NOT NULL,
+    provider VARCHAR(40) DEFAULT NULL,
+    model VARCHAR(150) DEFAULT NULL,
+    verified_json LONGTEXT DEFAULT NULL,
+    suggested_json LONGTEXT DEFAULT NULL,
+    status ENUM('completed','pending_review','approved','rejected','failed') NOT NULL DEFAULT 'completed',
+    requires_review TINYINT(1) NOT NULL DEFAULT 1,
+    reviewed_by_lawyer_id INT UNSIGNED DEFAULT NULL,
+    reviewed_at DATETIME DEFAULT NULL,
+    error_message VARCHAR(500) DEFAULT NULL,
+    branch_id INT UNSIGNED DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_acr_firm (firm_id, created_at),
+    KEY idx_acr_case (case_id),
+    KEY idx_acr_status (firm_id, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Consent register (privacy notices / AI external-transmission consent).
+CREATE TABLE IF NOT EXISTS privacy_consents (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    subject_type ENUM('client','lawyer','firm') NOT NULL,
+    subject_id INT UNSIGNED NOT NULL,
+    consent_type VARCHAR(60) NOT NULL,
+    policy_version VARCHAR(40) NOT NULL DEFAULT 'v1',
+    granted TINYINT(1) NOT NULL DEFAULT 0,
+    granted_at DATETIME DEFAULT NULL,
+    revoked_at DATETIME DEFAULT NULL,
+    ip VARCHAR(45) DEFAULT NULL,
+    user_agent VARCHAR(255) DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_pc (subject_type, subject_id, consent_type, policy_version),
+    KEY idx_pc_type (consent_type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Retention policy per data class (declared policy; enforcement is operational).
+CREATE TABLE IF NOT EXISTS data_retention_policies (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    data_class VARCHAR(60) NOT NULL,
+    retention_days INT UNSIGNED NOT NULL DEFAULT 3650,
+    legal_basis VARCHAR(255) DEFAULT NULL,
+    notes VARCHAR(500) DEFAULT NULL,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_drp_class (data_class)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Runtime knobs for provider resilience and rate limits (key/value, same shape as
+-- site_settings so the existing settings surface can read them).
+INSERT IGNORE INTO site_settings (setting_key, setting_value) VALUES
+    ('ai_max_retries', '2'),
+    ('ai_timeout_seconds', '25'),
+    ('ai_rate_limit_per_hour', '120'),
+    ('ai_fallback_enabled', '1');
+
+-- Declared retention defaults. Illustrative policy values, not legal advice.
+INSERT IGNORE INTO data_retention_policies (data_class, retention_days, legal_basis, notes) VALUES
+    ('case_file', 3650, 'عميل / تنفيذ عقد', 'ملفات القضايا المغلقة'),
+    ('client_documents', 3650, 'عميل / تنفيذ عقد', 'مستندات العملاء'),
+    ('ai_transmissions', 730, 'مصلحة مشروعة / أمن', 'سجلات إرسال خارجي'),
+    ('audit_logs', 2555, 'التزام قانوني / أمن', 'سجل التدقيق');
+
+-- ============================================================
+-- Folded from upgrade_v47.sql — additive, idempotent
+-- ============================================================
+
+-- ============================================================
+-- Mawatheq upgrade v47 — link client documents to a case
+-- Non-destructive. Safe to re-run.
+-- ============================================================
+
+-- The client document library (`documents`) and the lawyer evidence register
+-- (`case_evidence`) were disconnected: a document a client uploaded could not be
+-- associated with the case it belongs to. `case_id` closes that gap so the same
+-- document surfaces inside the case file. It is nullable — a general library
+-- document that belongs to no particular case stays valid.
+
+SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'documents' AND COLUMN_NAME = 'case_id');
+SET @s := IF(@c = 0, 'ALTER TABLE documents ADD COLUMN case_id INT UNSIGNED DEFAULT NULL AFTER user_id', 'SELECT 1');
+PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+
+SET @idx := (SELECT COUNT(*) FROM information_schema.STATISTICS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'documents' AND INDEX_NAME = 'idx_documents_case');
+SET @s := IF(@idx = 0, 'CREATE INDEX idx_documents_case ON documents (case_id)', 'SELECT 1');
+PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+
+SET @fk := (SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'documents' AND CONSTRAINT_NAME = 'fk_documents_case');
+SET @s := IF(@fk = 0, 'ALTER TABLE documents ADD CONSTRAINT fk_documents_case FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE SET NULL', 'SELECT 1');
+PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+
+-- ============================================================
+-- Folded from upgrade_v48.sql — additive, idempotent
+-- ============================================================
+
+-- ============================================================
+-- Mawatheq upgrade v48 — legal-aware chunk provenance
+-- Non-destructive. Safe to re-run.
+-- ============================================================
+
+-- Legal-aware chunking records where a chunk came from so an answer can cite
+-- the article/clause and page, not just the document title. Every column is
+-- nullable: when the source has no detectable structure the value stays NULL
+-- rather than being guessed, so a citation never points at an invented article.
+
+SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'knowledge_chunks' AND COLUMN_NAME = 'heading_path');
+SET @s := IF(@c = 0, 'ALTER TABLE knowledge_chunks ADD COLUMN heading_path VARCHAR(500) DEFAULT NULL AFTER chunk_text', 'SELECT 1');
+PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+
+SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'knowledge_chunks' AND COLUMN_NAME = 'section_label');
+SET @s := IF(@c = 0, 'ALTER TABLE knowledge_chunks ADD COLUMN section_label VARCHAR(255) DEFAULT NULL AFTER heading_path', 'SELECT 1');
+PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+
+SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'knowledge_chunks' AND COLUMN_NAME = 'article_label');
+SET @s := IF(@c = 0, 'ALTER TABLE knowledge_chunks ADD COLUMN article_label VARCHAR(255) DEFAULT NULL AFTER section_label', 'SELECT 1');
+PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+
+SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'knowledge_chunks' AND COLUMN_NAME = 'clause_label');
+SET @s := IF(@c = 0, 'ALTER TABLE knowledge_chunks ADD COLUMN clause_label VARCHAR(255) DEFAULT NULL AFTER article_label', 'SELECT 1');
+PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+
+SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'knowledge_chunks' AND COLUMN_NAME = 'page_no');
+SET @s := IF(@c = 0, 'ALTER TABLE knowledge_chunks ADD COLUMN page_no INT UNSIGNED DEFAULT NULL AFTER clause_label', 'SELECT 1');
+PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+
+SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'knowledge_chunks' AND COLUMN_NAME = 'chunk_kind');
+SET @s := IF(@c = 0, 'ALTER TABLE knowledge_chunks ADD COLUMN chunk_kind VARCHAR(20) DEFAULT NULL AFTER page_no', 'SELECT 1');
+PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+
+SET @idx := (SELECT COUNT(*) FROM information_schema.STATISTICS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'knowledge_chunks' AND INDEX_NAME = 'idx_knowledge_chunk_article');
+SET @s := IF(@idx = 0, 'CREATE INDEX idx_knowledge_chunk_article ON knowledge_chunks (article_label)', 'SELECT 1');
+PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+
+-- ============================================================
+-- Folded from upgrade_v49.sql — additive, idempotent
+-- ============================================================
+
+-- ============================================================
+-- Mawatheq upgrade v49 — external integration readiness
+-- Non-destructive. Safe to re-run.
+-- ============================================================
+--
+-- External systems (a firm's own dashboard, an accounting tool, a mobile app) need a
+-- supported way in and out of Mawatheq that does not rely on scraping browser pages or
+-- on an operator pasting a shared secret into a script:
+--   * integration_api_tokens — scoped, revocable bearer tokens for the REST API, so a
+--     partner can read exactly the resources it was granted and nothing else.
+--   * integration_webhooks    — operator-defined outbound endpoints, each with its own
+--     signing secret so the receiver can verify the payload really came from Mawatheq.
+--   * integration_events / integration_deliveries — an append-only event log and a
+--     per-endpoint delivery record. The unique (webhook_id,event_id) key makes delivery
+--     idempotent: a retry can never double-post the same event.
+
+CREATE TABLE IF NOT EXISTS integration_api_tokens (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    firm_id INT UNSIGNED DEFAULT NULL,
+    label VARCHAR(150) NOT NULL DEFAULT '',
+    token_hash CHAR(64) NOT NULL,
+    scopes VARCHAR(500) NOT NULL DEFAULT '',
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    last_used_at DATETIME DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    revoked_at DATETIME DEFAULT NULL,
+    UNIQUE KEY uq_integration_token_hash (token_hash),
+    INDEX idx_integration_token_firm (firm_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS integration_webhooks (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    firm_id INT UNSIGNED DEFAULT NULL,
+    label VARCHAR(150) NOT NULL DEFAULT '',
+    target_url VARCHAR(500) NOT NULL,
+    secret_enc TEXT DEFAULT NULL,
+    event_types VARCHAR(500) NOT NULL DEFAULT '*',
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_integration_webhook_firm (firm_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS integration_events (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    firm_id INT UNSIGNED DEFAULT NULL,
+    event_type VARCHAR(100) NOT NULL,
+    payload MEDIUMTEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_integration_event_firm_type (firm_id, event_type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS integration_deliveries (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    webhook_id BIGINT UNSIGNED NOT NULL,
+    event_id BIGINT UNSIGNED NOT NULL,
+    event_type VARCHAR(100) NOT NULL DEFAULT '',
+    payload MEDIUMTEXT NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    http_code INT DEFAULT NULL,
+    attempts INT UNSIGNED NOT NULL DEFAULT 0,
+    last_error VARCHAR(500) DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    delivered_at DATETIME DEFAULT NULL,
+    UNIQUE KEY uq_integration_delivery (webhook_id, event_id),
+    INDEX idx_integration_delivery_status (status),
+    FOREIGN KEY (webhook_id) REFERENCES integration_webhooks(id) ON DELETE CASCADE,
+    FOREIGN KEY (event_id) REFERENCES integration_events(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+-- ============================================================
+-- Folded from upgrade_v52.sql (Executive 09) — additive, idempotent
+-- Mirrors database/upgrade_v52.sql so a fresh install is complete. Every
+-- statement is CREATE TABLE IF NOT EXISTS, so re-running the schema against
+-- an existing database is harmless.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS sso_configs (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    firm_id INT UNSIGNED NOT NULL,
+    provider_type ENUM('saml') NOT NULL DEFAULT 'saml',
+    enabled TINYINT(1) NOT NULL DEFAULT 0,
+    display_name VARCHAR(190) DEFAULT NULL,
+    idp_entity_id VARCHAR(500) DEFAULT NULL,
+    idp_sso_url VARCHAR(500) DEFAULT NULL,
+    idp_slo_url VARCHAR(500) DEFAULT NULL,
+    idp_x509_cert MEDIUMTEXT DEFAULT NULL,
+    sp_entity_id VARCHAR(500) DEFAULT NULL,
+    name_id_format VARCHAR(190) DEFAULT NULL,
+    attribute_email VARCHAR(120) NOT NULL DEFAULT 'email',
+    attribute_name VARCHAR(120) NOT NULL DEFAULT 'displayName',
+    attribute_role VARCHAR(120) DEFAULT NULL,
+    jit_provisioning TINYINT(1) NOT NULL DEFAULT 0,
+    allowed_domains VARCHAR(500) DEFAULT NULL,
+    require_signed_response TINYINT(1) NOT NULL DEFAULT 1,
+    created_by_lawyer_id INT UNSIGNED DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_sso_firm (firm_id),
+    INDEX idx_sso_enabled (enabled)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Append-only authentication trail. `ip_hash` is a salted hash, never the raw address, and
+-- no assertion body or session token is ever written here.
+CREATE TABLE IF NOT EXISTS sso_login_attempts (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    firm_id INT UNSIGNED DEFAULT NULL,
+    email VARCHAR(190) DEFAULT NULL,
+    outcome ENUM('success','failed','denied','error') NOT NULL,
+    reason VARCHAR(190) DEFAULT NULL,
+    name_id_hash CHAR(64) DEFAULT NULL,
+    ip_hash CHAR(64) DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_sso_attempt_firm (firm_id, created_at),
+    INDEX idx_sso_attempt_outcome (outcome, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- 2. AUTOMATIC SSL PROVISIONING (for VERIFIED custom domains only)
+-- ============================================================
+
+-- One provisioning record per domain attempt. `provider='acme'` is used only when an ACME
+-- account is configured for the deployment; otherwise the job is recorded as
+-- `manual_required` and the UI states plainly that HTTPS is an operator step.
+CREATE TABLE IF NOT EXISTS domain_ssl_jobs (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    firm_id INT UNSIGNED NOT NULL,
+    domain_id INT UNSIGNED NOT NULL,
+    provider ENUM('acme','manual') NOT NULL DEFAULT 'manual',
+    status ENUM('queued','pending_dns','issued','failed','manual_required') NOT NULL DEFAULT 'queued',
+    detail VARCHAR(500) DEFAULT NULL,
+    attempts SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+    last_attempt_at DATETIME DEFAULT NULL,
+    issued_at DATETIME DEFAULT NULL,
+    expires_at DATETIME DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_ssl_domain (domain_id),
+    INDEX idx_ssl_firm_status (firm_id, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- 3. AI COURT-ORDER EXTRACTION (mandatory human verification)
+-- ============================================================
+
+-- `verified_json` holds fields read deterministically from the document metadata/structure.
+-- `suggested_json` holds the model reading and is ALWAYS labelled as a suggestion. A row is
+-- only visible to the case's client after a lawyer sets status='approved'.
+CREATE TABLE IF NOT EXISTS court_order_extractions (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    firm_id INT UNSIGNED NOT NULL,
+    case_id INT UNSIGNED NOT NULL,
+    document_id INT UNSIGNED DEFAULT NULL,
+    status ENUM('pending','processing','extracted','failed','approved','rejected') NOT NULL DEFAULT 'pending',
+    verified_json MEDIUMTEXT DEFAULT NULL,
+    suggested_json MEDIUMTEXT DEFAULT NULL,
+    citations_json MEDIUMTEXT DEFAULT NULL,
+    unsupported_json MEDIUMTEXT DEFAULT NULL,
+    confidence DECIMAL(4,3) DEFAULT NULL,
+    requires_review TINYINT(1) NOT NULL DEFAULT 1,
+    reviewed_by_lawyer_id INT UNSIGNED DEFAULT NULL,
+    reviewed_at DATETIME DEFAULT NULL,
+    review_note VARCHAR(500) DEFAULT NULL,
+    model VARCHAR(120) DEFAULT NULL,
+    error VARCHAR(500) DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_co_case (case_id, created_at),
+    INDEX idx_co_firm_status (firm_id, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- 4. LEGACY `.doc` CONVERSION
+-- ============================================================
+
+-- Extracted plain text for a stored document. Kept separate from `documents` so a failed or
+-- unavailable conversion never blocks the document itself from being stored.
+CREATE TABLE IF NOT EXISTS document_text (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    document_id INT UNSIGNED NOT NULL,
+    firm_id INT UNSIGNED DEFAULT NULL,
+    source_extension VARCHAR(16) DEFAULT NULL,
+    converter VARCHAR(40) DEFAULT NULL,
+    content MEDIUMTEXT DEFAULT NULL,
+    char_count INT UNSIGNED NOT NULL DEFAULT 0,
+    status ENUM('ok','unsupported','failed','too_large') NOT NULL DEFAULT 'ok',
+    detail VARCHAR(500) DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_document_text_doc (document_id),
+    INDEX idx_document_text_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================
+-- 5. LEGACY AI CHAT MIGRATION
+-- ============================================================
+
+-- One archive per migrated legacy conversation. `user_id` is carried over unchanged so the
+-- archive keeps exactly the original owner; `firm_id` is derived from that user's firm at
+-- migration time. A NULL firm_id means the owner has no firm and the archive stays
+-- user-private.
+CREATE TABLE IF NOT EXISTS ai_chat_archives (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    firm_id INT UNSIGNED DEFAULT NULL,
+    user_id INT UNSIGNED NOT NULL,
+    legacy_conversation_id INT UNSIGNED NOT NULL,
+    title VARCHAR(255) DEFAULT NULL,
+    message_count INT UNSIGNED NOT NULL DEFAULT 0,
+    migrated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_archive_legacy (legacy_conversation_id),
+    INDEX idx_archive_user (user_id),
+    INDEX idx_archive_firm (firm_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS ai_chat_archive_messages (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    archive_id INT UNSIGNED NOT NULL,
+    sender ENUM('user','assistant') NOT NULL,
+    message TEXT NOT NULL,
+    reference_law VARCHAR(255) DEFAULT NULL,
+    source_citations_json LONGTEXT DEFAULT NULL,
+    original_created_at DATETIME DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_archive_msg (archive_id, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Migration ledger so a re-run is a no-op and every action is auditable.
+CREATE TABLE IF NOT EXISTS legacy_chat_migration_log (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    run_by VARCHAR(60) NOT NULL DEFAULT 'cli',
+    conversations_seen INT UNSIGNED NOT NULL DEFAULT 0,
+    conversations_migrated INT UNSIGNED NOT NULL DEFAULT 0,
+    messages_migrated INT UNSIGNED NOT NULL DEFAULT 0,
+    conversations_skipped INT UNSIGNED NOT NULL DEFAULT 0,
+    detail VARCHAR(500) DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -42,7 +42,7 @@ $tl = [];
 foreach ($consultations as $c) $tl[] = ['t' => $c['scheduled_at'], 'i' => 'message', 'b' => adm('استشارة مع ', 'Consultation with ') . $c['lawyer_name'], 's' => $c['status']];
 foreach ($cases as $c) $tl[] = ['t' => $c['created_at'], 'i' => 'briefcase', 'b' => adm('قضية: ', 'Case: ') . $c['title'], 's' => $c['lawyer_name']];
 foreach ($documents as $d) $tl[] = ['t' => $d['created_at'], 'i' => 'file', 'b' => adm('مستند: ', 'Document: ') . $d['original_name'], 's' => $d['status']];
-foreach ($invoices as $i) $tl[] = ['t' => $i['paid_at'] ?: $i['created_at'], 'i' => 'receipt', 'b' => adm('فاتورة: ', 'Invoice: ') . $i['description'] . ' — ' . number_format($i['amount'], 3), 's' => $i['status']];
+foreach ($invoices as $i) $tl[] = ['t' => $i['paid_at'] ?: $i['created_at'], 'i' => 'receipt', 'b' => adm('فاتورة: ', 'Invoice: ') . $i['description'] . ' — ' . money_text($i['amount']), 's' => $i['status']];
 foreach ($notes as $n) $tl[] = ['t' => $n['created_at'], 'i' => 'edit', 'b' => adm('ملاحظة داخلية', 'Internal note'), 's' => mb_substr($n['note'], 0, 90, 'UTF-8')];
 foreach ($crmActs as $a) $tl[] = ['t' => $a['created_at'], 'i' => 'phone', 'b' => 'CRM · ' . $a['activity_type'], 's' => $a['summary']];
 $tl[] = ['t' => $client['created_at'], 'i' => 'user', 'b' => adm('انضم إلى المنصة', 'Joined the platform'), 's' => ''];
@@ -73,7 +73,7 @@ $stageLbl = ['new' => adm('جديدة', 'New'), 'qualified' => adm('مؤهَّل
   <div class="grid g-4" style="margin-bottom:18px">
     <div class="kpi"><div class="kpi-top"><span class="kpi-ic"><?= adm_icon('briefcase') ?></span></div><div class="kpi-val"><?= $openCases ?> <small style="font-size:14px;color:var(--muted)">/ <?= count($cases) ?></small></div><div class="kpi-lbl"><?= h(adm('القضايا (مفتوحة / الكل)', 'Cases (open / all)')) ?></div></div>
     <div class="kpi"><div class="kpi-top"><span class="kpi-ic teal"><?= adm_icon('message') ?></span></div><div class="kpi-val"><?= count($consultations) ?></div><div class="kpi-lbl"><?= h(adm('الاستشارات', 'Consultations')) ?></div></div>
-    <div class="kpi"><div class="kpi-top"><span class="kpi-ic green"><?= adm_icon('receipt') ?></span></div><div class="kpi-val"><?= number_format($paid, 3) ?></div><div class="kpi-lbl"><?= h(adm('المدفوع (د.ب)', 'Paid (BHD)')) ?> · <b style="color:var(--danger)"><?= number_format($unpaid, 3) ?></b> <?= h(adm('مستحق', 'due')) ?></div></div>
+    <div class="kpi"><div class="kpi-top"><span class="kpi-ic green"><?= adm_icon('receipt') ?></span></div><div class="kpi-val"><?= money($paid) ?></div><div class="kpi-lbl"><?= h(adm('المدفوع', 'Paid')) ?> · <b style="color:var(--danger)"><?= money($unpaid) ?></b> <?= h(adm('مستحق', 'due')) ?></div></div>
     <div class="kpi"><div class="kpi-top"><span class="kpi-ic gold"><?= adm_icon('file') ?></span></div><div class="kpi-val"><?= count($documents) ?></div><div class="kpi-lbl"><?= h(adm('المستندات', 'Documents')) ?> · <?= count($contracts) ?> <?= h(adm('عقود', 'contracts')) ?></div></div>
   </div>
 
@@ -116,12 +116,12 @@ $stageLbl = ['new' => adm('جديدة', 'New'), 'qualified' => adm('مؤهَّل
       <?php if (!$documents): ?><tr><td colspan="4" class="empty"><?= h(adm('لا توجد مستندات', 'No documents')) ?></td></tr><?php endif; ?></tbody></table></div></div>
 
     <div class="tab-pane" id="billing"><div class="table-wrap"><table class="admin-table"><thead><tr><th><?= h(adm('الوصف', 'Description')) ?></th><th><?= h(adm('المحامي', 'Lawyer')) ?></th><th><?= h(adm('المبلغ', 'Amount')) ?></th><th><?= h(adm('الاستحقاق', 'Due')) ?></th><th><?= h(adm('الحالة', 'Status')) ?></th></tr></thead><tbody>
-      <?php foreach ($invoices as $i): ?><tr><td><?= h($i['description']) ?></td><td><?= h($i['lawyer_name'] ?: '—') ?></td><td><b><?= number_format($i['amount'], 3) ?></b></td><td><?= h($i['due_date'] ?: '—') ?></td><td><span class="status-pill status-<?= h($i['status']) ?>"><?= h($i['status']) ?></span></td></tr><?php endforeach; ?>
+      <?php foreach ($invoices as $i): ?><tr><td><?= h($i['description']) ?></td><td><?= h($i['lawyer_name'] ?: '—') ?></td><td><b><?= money($i['amount']) ?></b></td><td><?= h($i['due_date'] ?: '—') ?></td><td><span class="status-pill status-<?= h($i['status']) ?>"><?= h($i['status']) ?></span></td></tr><?php endforeach; ?>
       <?php if (!$invoices): ?><tr><td colspan="5" class="empty"><?= h(adm('لا توجد فواتير', 'No invoices')) ?></td></tr><?php endif; ?></tbody></table></div></div>
 
     <div class="tab-pane" id="crm"><div class="grid g-2">
-      <div class="card"><div class="card-h"><h3><?= h(adm('الفرص', 'Opportunities')) ?></h3><b><?= number_format($oppValue, 0) ?> BHD</b></div>
-        <ul class="rowlist"><?php foreach ($opps as $o): ?><li><div class="grow"><b><?= h($o['title']) ?></b><small><?= number_format($o['value'], 0) ?> BHD</small></div><span class="pill blue"><?= h($stageLbl[$o['stage']] ?? $o['stage']) ?></span></li><?php endforeach; ?><?php if (!$opps): ?><li class="empty"><?= h(adm('لا توجد فرص', 'No opportunities')) ?></li><?php endif; ?></ul></div>
+      <div class="card"><div class="card-h"><h3><?= h(adm('الفرص', 'Opportunities')) ?></h3><b><?= money($oppValue) ?></b></div>
+        <ul class="rowlist"><?php foreach ($opps as $o): ?><li><div class="grow"><b><?= h($o['title']) ?></b><small><?= money($o['value']) ?></small></div><span class="pill blue"><?= h($stageLbl[$o['stage']] ?? $o['stage']) ?></span></li><?php endforeach; ?><?php if (!$opps): ?><li class="empty"><?= h(adm('لا توجد فرص', 'No opportunities')) ?></li><?php endif; ?></ul></div>
       <div class="card"><div class="card-h"><h3><?= h(adm('تسجيل نشاط', 'Log activity')) ?></h3></div>
         <form method="post" action="/admin/crm.php"><input type="hidden" name="csrf_token" value="<?= h(csrf_token()) ?>"><input type="hidden" name="action" value="add_activity"><input type="hidden" name="entity_type" value="client"><input type="hidden" name="entity_id" value="<?= $cid ?>"><input type="hidden" name="return" value="/admin/client-detail.php?id=<?= $cid ?>#crm">
           <div class="field"><select name="activity_type"><option value="call"><?= h(adm('اتصال', 'Call')) ?></option><option value="email"><?= h(adm('بريد', 'Email')) ?></option><option value="meeting"><?= h(adm('اجتماع', 'Meeting')) ?></option><option value="whatsapp">WhatsApp</option><option value="note"><?= h(adm('ملاحظة', 'Note')) ?></option></select></div>

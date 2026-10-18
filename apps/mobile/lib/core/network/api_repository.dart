@@ -1,0 +1,423 @@
+import 'dart:io';
+
+import 'api_client.dart';
+import 'api_exception.dart';
+import 'models.dart';
+
+/// Reads and writes through the platform's existing `/api/v1/` endpoints.
+///
+/// Each method maps to exactly one documented endpoint. Nothing here invents a
+/// capability the backend does not already provide — where an endpoint is missing
+/// (drafting, firm HR/CRM, 2FA) the app documents the gap instead of faking it.
+class ApiRepository {
+  ApiRepository({ApiClient? client}) : _client = client ?? ApiClient();
+
+  final ApiClient _client;
+
+  ApiClient get client => _client;
+
+  // ---------------------------------------------------------------- auth
+
+  /// `POST /api/v1/auth/login.php`
+  ///
+  /// Returns `null` when the server answered 202 (email verification still
+  /// required): there is no token in that case by design.
+  Future<LoginOutcome> login({
+    required String email,
+    required String password,
+    String deviceLabel = 'Flutter',
+  }) async {
+    final json = await _client.post(
+      '/auth/login.php',
+      auth: false,
+      body: {
+        'email': email,
+        'password': password,
+        'device_label': deviceLabel,
+      },
+    );
+
+    final token = json['token']?.toString();
+    if (token == null || token.isEmpty) {
+      return LoginOutcome(verificationRequired: true, user: SessionUser.empty);
+    }
+    return LoginOutcome(
+      verificationRequired: false,
+      token: token,
+      user: SessionUser.fromJson(json),
+    );
+  }
+
+  /// `POST /api/v1/auth/lawyer-login.php`
+  Future<LoginOutcome> lawyerLogin({
+    required String email,
+    required String password,
+    String deviceLabel = 'Flutter',
+  }) async {
+    final json = await _client.post(
+      '/auth/lawyer-login.php',
+      auth: false,
+      body: {
+        'email': email,
+        'password': password,
+        'device_label': deviceLabel,
+      },
+    );
+    return LoginOutcome(
+      verificationRequired: false,
+      token: json['token']?.toString(),
+      user: SessionUser.fromJson(json),
+    );
+  }
+
+  /// `POST /api/v1/auth/register.php` (client accounts)
+  ///
+  /// `accountType` must be `individual` or `company` — the endpoint rejects
+  /// anything else, so it is a required argument here rather than a default.
+  /// No token is returned: the backend requires email verification first.
+  Future<LoginOutcome> register({
+    required String fullName,
+    required String email,
+    required String password,
+    required String accountType,
+    String? phone,
+  }) async {
+    final json = await _client.post(
+      '/auth/register.php',
+      auth: false,
+      body: {
+        'full_name': fullName,
+        'email': email,
+        'password': password,
+        'account_type': accountType,
+        if (phone != null && phone.isNotEmpty) 'phone': phone,
+      },
+    );
+    return LoginOutcome(
+      verificationRequired: json['verification_required'] == true,
+      token: json['token']?.toString(),
+      user: SessionUser.fromJson(json),
+      emailSent: json['email_sent'] is bool ? json['email_sent'] as bool : null,
+    );
+  }
+
+  /// `GET /api/v1/me.php` — validates the stored token on app start.
+  Future<SessionUser> me() async {
+    final json = await _client.get('/me.php');
+    return SessionUser.fromJson(json);
+  }
+
+  /// `POST /api/v1/auth/forgot-password.php`
+  ///
+  /// Always succeeds from the caller's point of view: the endpoint gives the same
+  /// answer whether or not the address exists, so the app must not branch on the
+  /// result. The reset link is only ever emailed.
+  Future<void> requestPasswordReset({
+    required String email,
+    String accountType = 'client',
+  }) async {
+    await _client.post(
+      '/auth/forgot-password.php',
+      auth: false,
+      body: {'email': email, 'account_type': accountType},
+    );
+  }
+
+  /// `POST /api/v1/auth/reset-password.php`
+  ///
+  /// Consumes the single-use token from the reset email and sets the new password.
+  /// Throws [ApiException] carrying `invalid_token`, `weak_password`, `too_long`
+  /// or `mismatch` when the server refuses.
+  Future<void> resetPassword({
+    required String token,
+    required String password,
+    required String passwordConfirm,
+    String accountType = 'client',
+  }) async {
+    await _client.post(
+      '/auth/reset-password.php',
+      auth: false,
+      body: {
+        'token': token,
+        'password': password,
+        'password_confirm': passwordConfirm,
+        'account_type': accountType,
+      },
+    );
+  }
+
+  /// `POST /api/v1/revoke-token.php` — server-side logout.
+  Future<void> revokeToken() async {
+    try {
+      await _client.post('/revoke-token.php');
+    } on ApiException {
+      // Even if the server call fails the local token is cleared by the caller,
+      // so the device never keeps a usable token it has asked to discard.
+    }
+  }
+
+  /// `POST /api/v1/rotate-token.php` — issue a new token for this device.
+  Future<String?> rotateToken(String deviceLabel) async {
+    final json = await _client.post(
+      '/rotate-token.php',
+      body: {'device_label': deviceLabel},
+    );
+    return json['token']?.toString();
+  }
+
+  // ------------------------------------------------------------- cases
+
+  Future<List<CaseSummary>> cases() async {
+    final json = await _client.get('/cases.php');
+    return json['cases'] is List
+        ? (json['cases'] as List)
+            .whereType<Map>()
+            .map((e) => CaseSummary.fromJson(Map<String, dynamic>.from(e)))
+            .toList()
+        : <CaseSummary>[];
+  }
+
+  /// `GET /api/v1/cases.php?id=` — includes timeline, parties, claims, tasks.
+  Future<Map<String, dynamic>> caseDetail(int id) =>
+      _client.get('/cases.php', query: {'id': id});
+
+  // --------------------------------------------------------- documents
+
+  Future<List<DocumentSummary>> documents() async {
+    final json = await _client.get('/documents.php');
+    return json['documents'] is List
+        ? (json['documents'] as List)
+            .whereType<Map>()
+            .map((e) => DocumentSummary.fromJson(Map<String, dynamic>.from(e)))
+            .toList()
+        : <DocumentSummary>[];
+  }
+
+  Future<Map<String, dynamic>> documentDetail(int id) =>
+      _client.get('/documents.php', query: {'id': id});
+
+  /// Upload + AI analysis. Consent is mandatory server-side: without
+  /// `aiConsent: true` the endpoint refuses to send the file to the AI provider.
+  ///
+  /// Lawyers must pass `caseId` — their documents are reached through the case they
+  /// belong to, and the server rejects an upload that is not inside their tenant.
+  Future<Map<String, dynamic>> uploadDocument({
+    required File file,
+    required bool aiConsent,
+    String? documentType,
+    String? caseId,
+  }) =>
+      _client.uploadDocument(
+        file: file,
+        aiConsent: aiConsent,
+        documentType: documentType,
+        caseId: caseId,
+      );
+
+  // ------------------------------------------------------ consultations
+
+  Future<List<Consultation>> consultations() async {
+    final json = await _client.get('/consultations.php');
+    return json['consultations'] is List
+        ? (json['consultations'] as List)
+            .whereType<Map>()
+            .map((e) => Consultation.fromJson(Map<String, dynamic>.from(e)))
+            .toList()
+        : <Consultation>[];
+  }
+
+  /// `POST /api/v1/consultations.php` (client accounts only).
+  Future<int> bookConsultation({
+    required int lawyerId,
+    required String consultationType,
+    required String date,
+    required String time,
+    String? topic,
+  }) async {
+    final json = await _client.post(
+      '/consultations.php',
+      body: {
+        'lawyer_id': lawyerId,
+        'consultation_type': consultationType,
+        'date': date,
+        'time': time,
+        if (topic != null && topic.isNotEmpty) 'topic': topic,
+      },
+    );
+    return Json(json).intg('consultation_id');
+  }
+
+  // ------------------------------------------------------------ lawyers
+
+  /// Public directory — no token required.
+  Future<List<LawyerProfile>> lawyers({
+    String? jurisdiction,
+    String? specialization,
+    String? query,
+  }) async {
+    final json = await _client.get(
+      '/lawyers.php',
+      auth: false,
+      query: {
+        if (jurisdiction != null && jurisdiction.isNotEmpty) 'jurisdiction': jurisdiction,
+        if (specialization != null && specialization.isNotEmpty) 'specialization': specialization,
+        if (query != null && query.isNotEmpty) 'q': query,
+      },
+    );
+    return json['lawyers'] is List
+        ? (json['lawyers'] as List)
+            .whereType<Map>()
+            .map((e) => LawyerProfile.fromJson(Map<String, dynamic>.from(e)))
+            .toList()
+        : <LawyerProfile>[];
+  }
+
+  /// Public slot list for booking.
+  Future<List<String>> availableSlots({
+    required int lawyerId,
+    required String date,
+  }) async {
+    final json = await _client.get(
+      '/available-slots.php',
+      auth: false,
+      query: {'lawyer_id': lawyerId, 'date': date},
+    );
+    return json['slots'] is List
+        ? (json['slots'] as List).map((e) => e.toString()).toList()
+        : <String>[];
+  }
+
+  // ----------------------------------------------------------- calendar
+
+  Future<List<CalendarEvent>> calendar() async {
+    final json = await _client.get('/calendar.php');
+    final list = json['events'] ?? json['calendar_events'];
+    return list is List
+        ? list
+            .whereType<Map>()
+            .map((e) => CalendarEvent.fromJson(Map<String, dynamic>.from(e)))
+            .toList()
+        : <CalendarEvent>[];
+  }
+
+  // ----------------------------------------------------------- invoices
+
+  Future<List<Invoice>> invoices() async {
+    final json = await _client.get('/invoices.php');
+    return json['invoices'] is List
+        ? (json['invoices'] as List)
+            .whereType<Map>()
+            .map((e) => Invoice.fromJson(Map<String, dynamic>.from(e)))
+            .toList()
+        : <Invoice>[];
+  }
+
+  /// `POST /api/v1/pay-invoice.php` — returns the gateway URL to open in a WebView.
+  Future<String?> payInvoice(int invoiceId) async {
+    final json = await _client.post('/pay-invoice.php', body: {'invoice_id': invoiceId});
+    return json['payment_url']?.toString();
+  }
+
+  /// `GET /api/v1/payment-status.php` — the real gateway state, not the cached one.
+  Future<String> paymentStatus(int invoiceId) async {
+    final json = await _client.get('/payment-status.php', query: {'invoice_id': invoiceId});
+    return Json(json).str('status', fallback: 'unpaid');
+  }
+
+  // ------------------------------------------------------ notifications
+
+  Future<NotificationPage> notifications() async {
+    final json = await _client.get('/notifications.php');
+    final list = json['notifications'];
+    return NotificationPage(
+      unreadCount: Json(json).intg('unread_count'),
+      items: list is List
+          ? list
+              .whereType<Map>()
+              .map((e) => AppNotification.fromJson(Map<String, dynamic>.from(e)))
+              .toList()
+          : <AppNotification>[],
+    );
+  }
+
+  Future<void> markAllNotificationsRead() =>
+      _client.post('/notifications.php', body: {'mark_all_read': true});
+
+  // ---------------------------------------------------------------- AI
+
+  /// `POST /api/v1/ai-chat.php`
+  ///
+  /// The app calls the platform; the platform performs laws-first retrieval and
+  /// calls the configured provider. The app never contacts the model directly.
+  Future<AiReply> askAssistant({
+    required String message,
+    int? conversationId,
+  }) async {
+    final json = await _client.post(
+      '/ai-chat.php',
+      body: {
+        'message': message,
+        if (conversationId != null) 'conversation_id': conversationId,
+      },
+    );
+    return AiReply.fromJson(json);
+  }
+
+  /// `GET /api/v1/ai-status.php` — the real provider state, so the home screen
+  /// can show "available / needs configuration" instead of a fixed indicator.
+  Future<AiStatus> aiStatus({bool probe = false}) async {
+    final json = await _client.get(
+      '/ai-status.php',
+      query: probe ? {'probe': 1} : null,
+    );
+    return AiStatus.fromJson(json);
+  }
+
+  // ------------------------------------------------- contract comparison
+
+  Future<Map<String, dynamic>> contractComparisons() =>
+      _client.get('/contract-comparisons.php');
+
+  // -------------------------------------------------------------- plans
+
+  /// `GET /api/v1/plans.php` — the published plans, no token required. The
+  /// mobile pricing screen reads prices from here rather than hardcoding them.
+  Future<List<Plan>> plans() async {
+    final json = await _client.get('/plans.php', auth: false);
+    return json['plans'] is List
+        ? (json['plans'] as List)
+            .whereType<Map>()
+            .map((e) => Plan.fromJson(Map<String, dynamic>.from(e)))
+            .toList()
+        : <Plan>[];
+  }
+}
+
+/// Result of a login/register attempt.
+class LoginOutcome {
+  const LoginOutcome({
+    required this.verificationRequired,
+    this.token,
+    required this.user,
+    this.emailSent,
+  });
+
+  /// True when the server accepted the credentials but the email is unverified;
+  /// the backend deliberately issues no token in that case.
+  final bool verificationRequired;
+  final String? token;
+  final SessionUser user;
+
+  /// For registration: whether the server reported the verification mail was
+  /// handed off for delivery (`email_sent`). Null when the endpoint does not
+  /// report it, so the UI never claims a delivery that did not happen.
+  final bool? emailSent;
+}
+
+/// Notifications plus the server-computed unread count.
+class NotificationPage {
+  const NotificationPage({required this.unreadCount, required this.items});
+
+  final int unreadCount;
+  final List<AppNotification> items;
+}

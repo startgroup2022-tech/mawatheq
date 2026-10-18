@@ -4,7 +4,40 @@ require_once __DIR__ . '/includes/admin_header.php';
 require_once __DIR__ . '/../includes/ai_provider.php';
 require_once __DIR__ . '/../includes/audit_log.php';
 require_once __DIR__ . '/../includes/ngenius.php';
-$saved = false; $pwError = null; $secretError=null;
+// The SMTP transport is an optional module: a deployment that did not ship `smtp.php`
+// must still render this page and keep sending mail through the legacy mail() path.
+$smtpModuleFile = __DIR__ . '/../includes/smtp.php';
+$mailModuleAvailable = false;
+if (is_file($smtpModuleFile)) {
+    require_once $smtpModuleFile;
+    $mailModuleAvailable = function_exists('smtp_settings');
+}
+$saved = false; $pwError = null; $secretError=null; $mailTestResult=null;
+
+// Fallbacks so the page still renders (and reports the legacy transport) when the
+// optional `includes/smtp.php` module is not present in the deployment.
+if (!$mailModuleAvailable) {
+    if (!function_exists('smtp_settings')) {
+        function smtp_settings(PDO $pdo): array { return []; }
+    }
+    if (!function_exists('smtp_configured')) {
+        function smtp_configured(array $settings): bool { return false; }
+    }
+    if (!function_exists('mail_diagnostics')) {
+        function mail_diagnostics(PDO $pdo): array {
+            $sendmailPath = (string)ini_get('sendmail_path');
+            $binary = trim(strtok($sendmailPath, ' ') ?: '');
+            return [
+                'transport' => 'mail', 'smtp_enabled' => false, 'host' => '', 'port' => 0,
+                'secure' => 'none', 'username_set' => false, 'password_set' => false,
+                'from_email' => defined('MAIL_FROM_EMAIL') ? (string)MAIL_FROM_EMAIL : '',
+                'from_name' => defined('MAIL_FROM_NAME') ? (string)MAIL_FROM_NAME : 'Mawatheq',
+                'reachable' => null,
+                'error' => ($binary === '' || !is_file($binary)) ? 'PHP mail() has no local sendmail binary to hand off to' : null,
+            ];
+        }
+    }
+}
 
 /** حفظ آمن لأي مفتاح إعداد: يحدّث القيمة إن وُجد المفتاح، وإلا يُنشئه (يمنع فشل الحفظ الصامت). */
 function save_setting(PDO $pdo, string $key, string $value): void {
@@ -16,26 +49,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'setti
     foreach (['whatsapp_number','contact_email','site_name_ar','site_name_en'] as $key) {
         save_setting($pdo, $key, $_POST[$key] ?? '');
     }
+    $newCurrency = currency_normalize($_POST['site_currency'] ?? '');
+    save_setting($pdo, 'site_currency', $newCurrency);
+    currency_forget_cache();
     log_action($pdo, 'تحديث إعدادات الموقع العامة');
     $saved = true;
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'ai_settings') {
-    $provider=in_array($_POST['ai_provider'] ?? '',['','openai','anthropic'],true)?($_POST['ai_provider'] ?? ''):'';
+    $provider=in_array($_POST['ai_provider'] ?? '',['','openai','anthropic','openai_compatible'],true)?($_POST['ai_provider'] ?? ''):'';
     save_setting($pdo,'ai_provider',$provider); save_setting($pdo,'ai_model',trim($_POST['ai_model'] ?? ''));
     $newKey=trim($_POST['ai_api_key'] ?? '');
     if (isset($_POST['revoke_ai_key'])) { if(!secret_store_setting($pdo,'ai_api_key',''))$secretError='ضع مفتاح MAWATHEQ_ENCRYPTION_KEY بطول 32 حرفاً أو أكثر في config/secrets.php أولاً.'; }
     elseif($newKey!=='') { if(strlen($newKey)>500 || !secret_store_setting($pdo,'ai_api_key',$newKey))$secretError='تعذر تشفير المفتاح. اضبط MAWATHEQ_ENCRYPTION_KEY وتأكد من توفر OpenSSL.'; }
-    foreach(['ai_endpoint','ai_backup_model','ai_max_tokens','ai_temperature','ai_timeout','ai_retries','ai_rate_limit'] as $key) if(isset($_POST[$key])) save_setting($pdo,$key,trim($_POST[$key]));
+    foreach(['ai_backup_model','ai_max_tokens','ai_temperature','ai_timeout','ai_retries','ai_rate_limit'] as $key) if(isset($_POST[$key])) save_setting($pdo,$key,trim($_POST[$key]));
+    // A self-hosted OpenAI-compatible base URL is validated before it is stored, so a
+    // malformed value can never be saved and then pointed at an unintended host.
+    if(isset($_POST['ai_endpoint'])){
+        $ep=trim((string)$_POST['ai_endpoint']);
+        if($ep!=='' && ai_endpoint_normalize($ep)===null)$secretError='عنوان المزوّد المحلي غير صالح؛ يجب أن يبدأ بـ http:// أو https:// ويتضمن مضيفاً صحيحاً.';
+        else save_setting($pdo,'ai_endpoint',$ep);
+    }
     save_setting($pdo, 'ai_enabled', isset($_POST['ai_enabled']) ? '1' : '0');
     if(!$secretError){log_action($pdo,'تحديث إعدادات مزوّد الذكاء الاصطناعي (' . $provider . ')');$saved=true;}
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'embedding_settings') {
-    $embProvider = in_array($_POST['embedding_provider']??'', ['openai','disabled'], true) ? $_POST['embedding_provider'] : '';
+    $embProvider = in_array($_POST['embedding_provider']??'', ['openai','openai_compatible','disabled'], true) ? $_POST['embedding_provider'] : '';
     $embModel = trim((string)($_POST['embedding_model'] ?? 'text-embedding-3-small'));
-    if (!preg_match('/^[A-Za-z0-9._-]{1,100}$/',$embModel)) $embModel='text-embedding-3-small';
+    if (!preg_match('/^[A-Za-z0-9._:\/-]{1,100}$/',$embModel)) $embModel='text-embedding-3-small';
     save_setting($pdo,'embedding_provider',$embProvider); save_setting($pdo,'embedding_model',$embModel);
+    if(isset($_POST['embedding_endpoint'])){
+        $eep=trim((string)$_POST['embedding_endpoint']);
+        if($eep!=='' && ai_endpoint_normalize($eep)===null)$secretError='عنوان خدمة المتجهات غير صالح؛ يجب أن يبدأ بـ http:// أو https://.';
+        else save_setting($pdo,'embedding_endpoint',$eep);
+    }
     $newEmbKey=trim((string)($_POST['embedding_api_key'] ?? ''));
     if (isset($_POST['revoke_embedding_key'])) { save_setting($pdo,'embedding_provider','disabled'); if(!secret_store_setting($pdo,'embedding_api_key',''))$secretError='اضبط MAWATHEQ_ENCRYPTION_KEY في config/secrets.php أولاً.'; }
     elseif($newEmbKey!=='') { if(strlen($newEmbKey)>500 || !secret_store_setting($pdo,'embedding_api_key',$newEmbKey))$secretError='تعذر تشفير مفتاح المتجهات؛ تحقق من مفتاح التشفير وOpenSSL.'; }
@@ -52,6 +100,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'ngeni
         if($webhookSecret!=='' && !secret_store_setting($pdo,'ngenius_webhook_secret',$webhookSecret))$secretError='تعذر تشفير بيانات الدفع؛ اضبط مفتاح التشفير أولاً.';
     }
     save_setting($pdo, 'ngenius_realm_name', trim($_POST['ngenius_realm_name'] ?? 'ni'));
+    $gatewayCurrency = currency_normalize($_POST['ngenius_currency'] ?? NGENIUS_DEFAULT_CURRENCY);
+    save_setting($pdo, 'ngenius_currency', $gatewayCurrency);
     save_setting($pdo, 'ngenius_enabled', isset($_POST['ngenius_enabled']) ? '1' : '0');
     log_action($pdo, 'تحديث إعدادات بوابة الدفع N-Genius (' . ($_POST['ngenius_environment'] ?? '') . ')');
     if(!$secretError)$saved = true;
@@ -68,21 +118,68 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'passw
     }
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'mailer_settings') {
+    save_setting($pdo, 'smtp_enabled', isset($_POST['smtp_enabled']) ? '1' : '0');
+    save_setting($pdo, 'smtp_host', trim($_POST['smtp_host'] ?? ''));
+    save_setting($pdo, 'smtp_port', (string)max(0, (int)($_POST['smtp_port'] ?? 0)));
+    save_setting($pdo, 'smtp_secure', in_array($_POST['smtp_secure'] ?? '', ['ssl','tls','none'], true) ? $_POST['smtp_secure'] : 'tls');
+    save_setting($pdo, 'smtp_username', trim($_POST['smtp_username'] ?? ''));
+    save_setting($pdo, 'smtp_from_email', trim($_POST['smtp_from_email'] ?? ''));
+    save_setting($pdo, 'smtp_from_name', trim($_POST['smtp_from_name'] ?? ''));
+    $smtpPassword = trim($_POST['smtp_password'] ?? '');
+    if (isset($_POST['revoke_smtp_password'])) {
+        secret_store_setting($pdo, 'smtp_password', '');
+    } elseif ($smtpPassword !== '' && !secret_store_setting($pdo, 'smtp_password', $smtpPassword)) {
+        $secretError = 'تعذر تشفير كلمة مرور البريد؛ اضبط مفتاح MAWATHEQ_ENCRYPTION_KEY في config/secrets.php أولاً.';
+    }
+    log_action($pdo, 'تحديث إعدادات إرسال البريد');
+    if (!$secretError) $saved = true;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'mailer_test') {
+    $target = trim($_POST['test_recipient'] ?? '');
+    if (!filter_var($target, FILTER_VALIDATE_EMAIL)) {
+        $mailTestResult = ['ok' => false, 'message' => 'أدخل بريداً إلكترونياً صحيحاً لاختبار الإرسال.'];
+    } else {
+        require_once __DIR__ . '/../includes/mailer.php';
+        // Render through the same template used for real verification mail, so a
+        // successful test exercises the true production path end to end.
+        $html = render_mail_template(
+            is_rtl() ? 'اختبار إرسال البريد' : 'Mail delivery test',
+            is_rtl()
+                ? '<p>هذه رسالة اختبار من لوحة تحكم مواثيق. إن وصلتك، فإرسال البريد يعمل بنجاح.</p>'
+                : '<p>This is a test message from the Mawatheq admin panel. If you received it, outbound mail is working.</p>'
+        );
+        $subject = is_rtl() ? 'اختبار إرسال البريد - مواثيق' : 'Mawatheq mail delivery test';
+        $ok = send_mail($target, $subject, $html);
+        $mailTestResult = ['ok' => $ok, 'message' => $ok
+            ? 'تم الإرسال بنجاح عبر ' . (mail_diagnostics($pdo)['transport'] === 'smtp' ? 'SMTP' : 'mail()') . ' — تحقق من صندوق الوارد والبريد المزعج.'
+            : 'فشل الإرسال. السبب: ' . (mail_last_error() ?: 'غير معروف')];
+    }
+}
+
 $settings = [];
 foreach ($pdo->query('SELECT * FROM site_settings')->fetchAll() as $s) $settings[$s['setting_key']] = $s['setting_value'];
 $aiSecureSettings=ai_load_settings($pdo); $settings=array_merge($settings,$aiSecureSettings);
 $embSecureSettings=embedding_load_settings($pdo); $settings['embedding_provider']=$embSecureSettings['embedding_provider']; $settings['embedding_model']=$embSecureSettings['embedding_model'];
-$embKeyConfigured=($embSecureSettings['embedding_provider']==='openai'&&!empty($embSecureSettings['embedding_api_key']));
+  $embKeyConfigured=($embSecureSettings['embedding_provider']==='openai'&&!empty($embSecureSettings['embedding_api_key']));
+  $settings['embedding_endpoint']=$embSecureSettings['embedding_endpoint'] ?? ($settings['embedding_endpoint'] ?? '');
+  $embLocalConfigured=($embSecureSettings['embedding_provider']==='openai_compatible'&&ai_endpoint_normalize($settings['embedding_endpoint'])!==null);
 $embKnowledgePending=(int)$pdo->query("SELECT COUNT(*) FROM knowledge_sources WHERE status='active' AND processing_status='completed' AND embedding_status IN ('pending','not_configured','failed')")->fetchColumn();
 $embLawPending=(int)$pdo->query('SELECT COUNT(*) FROM law_articles WHERE embedding IS NULL')->fetchColumn();
 $ngeniusSecureSettings=ngenius_settings($pdo); $aiKeyConfigured=!empty($settings['ai_api_key']); $ngeniusKeyConfigured=!empty($ngeniusSecureSettings['ngenius_api_key']);
 $settings['ngenius_api_key']=''; $settings['ngenius_webhook_secret']='';
 $aiEnabledFlag = ($settings['ai_enabled'] ?? '1') !== '0';
-$aiConfigured = !empty($settings['ai_provider']) && !empty($settings['ai_api_key']);
+  $aiConfigured = ai_settings_configured($settings);
 $aiActive = $aiConfigured && $aiEnabledFlag;
 
 $ngeniusConfigured = !empty($settings['ngenius_outlet_ref']) && $ngeniusKeyConfigured;
 $ngeniusActive = ngenius_is_enabled($ngeniusSecureSettings);
+
+$mailSettings = smtp_settings($pdo);
+$mailDiag = mail_diagnostics($pdo);
+$mailConfigured = smtp_configured($mailSettings);
+$settings['smtp_password'] = '';
 ?>
 <div class="app-content">
   <div class="pg-head"><div><h1>الإعدادات</h1><p>إعدادات المنصة، مزوّد الذكاء الاصطناعي، بوابة الدفع، وحسابك الشخصي</p></div></div>
@@ -97,8 +194,115 @@ $ngeniusActive = ngenius_is_enabled($ngeniusSecureSettings);
       <div class="field"><label>اسم الموقع (إنجليزي)</label><input type="text" name="site_name_en" value="<?= htmlspecialchars($settings['site_name_en'] ?? '') ?>"></div>
       <div class="field"><label>رقم واتساب (بدون +)</label><input type="text" name="whatsapp_number" value="<?= htmlspecialchars($settings['whatsapp_number'] ?? '') ?>"></div>
       <div class="field"><label>بريد التواصل</label><input type="email" name="contact_email" value="<?= htmlspecialchars($settings['contact_email'] ?? '') ?>"></div>
+      <div class="field"><label>عملة الموقع</label>
+        <select name="site_currency">
+          <?php foreach (currency_options() as $code => $meta): ?>
+            <option value="<?= htmlspecialchars($code) ?>" <?= currency_code() === $code ? 'selected' : '' ?>>
+              <?= htmlspecialchars($meta['ar'] . ' (' . $meta['symbol_ar'] . ') — ' . $code) ?>
+            </option>
+          <?php endforeach; ?>
+        </select>
+        <small class="field-hint">تُستخدم في الأسعار والفواتير وكل المبالغ المعروضة على الموقع. العملة الافتراضية: ريال سعودي (SAR).</small>
+      </div>
     </div>
     <button class="btn btn-primary" type="submit">حفظ الإعدادات</button>
+  </form>
+
+  <form class="dash-card" method="post" id="mailerForm"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
+    <input type="hidden" name="action" value="mailer_settings">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+      <h3 style="margin:0">إرسال البريد (تفعيل الحساب واستعادة كلمة المرور)</h3>
+      <span class="status-pill status-<?= $mailConfigured ? 'confirmed' : 'pending' ?>">
+        <?= $mailConfigured ? '✓ SMTP موثّق' : '— mail() المحلي' ?>
+      </span>
+    </div>
+    <p style="font-size:.85rem;margin-bottom:16px">
+      ترسل المنصة رسائل تفعيل الحساب وإعادة تعيين كلمة المرور من بريد النظام. اضبط الإرسال عبر SMTP
+      الخاص بمزوّد بريدك (نفس المزوّد الذي يملك سجلات SPF/DKIM لمجال موقعك) لضمان وصول الرسائل بدل
+      الاعتماد على <code>mail()</code> المحلي الذي كثيراً ما يفشل بصمت على الاستضافة المشتركة.
+      بيانات SMTP تجدها عند مزوّد البريد؛ وإن كان البريد مستضافاً في cPanel فاستخدم الخادم الذي
+      يظهر في <b>Email Accounts ← Connect Devices</b>.
+    </p>
+
+    <label style="display:flex;align-items:center;gap:8px;margin:14px 0;font-weight:700;font-size:.9rem">
+      <input type="checkbox" name="smtp_enabled" value="1" <?= ($mailSettings['smtp_enabled'] ?? '0') === '1' ? 'checked' : '' ?>>
+      إرسال الرسائل عبر SMTP الموثّق
+    </label>
+
+    <div class="grid-2">
+      <div class="field">
+        <label>خادم SMTP</label>
+        <input type="text" name="smtp_host" value="<?= htmlspecialchars($mailSettings['smtp_host'] ?? '') ?>" placeholder="mail.mawatheq.com">
+      </div>
+      <div class="field">
+        <label>المنفذ</label>
+        <input type="number" name="smtp_port" value="<?= htmlspecialchars((string)($mailSettings['smtp_port'] ?? '587')) ?>" min="1" max="65535" placeholder="587">
+      </div>
+      <div class="field">
+        <label>نوع التشفير</label>
+        <div class="select-wrap"><select name="smtp_secure" class="pro-select">
+          <?php $sec = $mailSettings['smtp_secure'] ?? 'tls'; ?>
+          <option value="tls" <?= $sec === 'tls' ? 'selected' : '' ?>>STARTTLS (منفذ 587 — الأكثر استخداماً)</option>
+          <option value="ssl" <?= $sec === 'ssl' ? 'selected' : '' ?>>SSL/TLS (منفذ 465)</option>
+          <option value="none" <?= $sec === 'none' ? 'selected' : '' ?>>بدون تشفير (خادم داخلي فقط)</option>
+        </select></div>
+      </div>
+      <div class="field">
+        <label>اسم المستخدم (البريد الكامل)</label>
+        <input type="text" name="smtp_username" value="<?= htmlspecialchars($mailSettings['smtp_username'] ?? '') ?>" placeholder="info@mawatheq.com">
+      </div>
+      <div class="field">
+        <label>كلمة مرور البريد</label>
+        <input type="password" name="smtp_password" value="" autocomplete="new-password" placeholder="<?= ($mailSettings['smtp_password'] ?? '') !== '' ? 'محفوظة — أدخل قيمة جديدة للتدوير' : 'أدخل كلمة مرور البريد' ?>">
+        <?php if(($mailSettings['smtp_password'] ?? '') !== ''): ?><label><input type="checkbox" name="revoke_smtp_password" value="1"> حذف كلمة المرور المحفوظة</label><?php endif; ?>
+      </div>
+      <div class="field">
+        <label>بريد المُرسِل (From)</label>
+        <input type="email" name="smtp_from_email" value="<?= htmlspecialchars($mailSettings['smtp_from_email'] ?? (defined('MAIL_FROM_EMAIL') ? MAIL_FROM_EMAIL : '')) ?>" placeholder="info@mawatheq.com">
+        <p class="field-hint">يفضّل أن يكون نفس اسم مستخدم SMTP ليطابق نطاق SPF/DKIM.</p>
+      </div>
+      <div class="field">
+        <label>اسم المُرسِل الظاهر</label>
+        <input type="text" name="smtp_from_name" value="<?= htmlspecialchars($mailSettings['smtp_from_name'] ?? 'مواثيق') ?>">
+      </div>
+    </div>
+
+    <div class="dash-card" style="background:var(--surface-2,#f7f8fa);margin:6px 0 16px">
+      <h4 style="margin:0 0 10px">تشخيص إرسال البريد</h4>
+      <table class="table" style="width:100%">
+        <tr><th style="text-align:start">وسيلة الإرسال الحالية</th><td><?= $mailDiag['transport'] === 'smtp' ? 'SMTP الموثّق' : 'mail() المحلي (sendmail/Exim)' ?></td></tr>
+        <?php if ($mailDiag['transport'] === 'smtp'): ?>
+          <tr><th style="text-align:start">الخادم</th><td><?= htmlspecialchars($mailDiag['host'] . ':' . $mailDiag['port'] . ' (' . $mailDiag['secure'] . ')') ?></td></tr>
+          <tr><th style="text-align:start">بيانات الدخول</th><td><?= $mailDiag['username_set'] ? 'اسم مستخدم محفوظ' : 'بلا اسم مستخدم' ?> — <?= $mailDiag['password_set'] ? 'كلمة مرور محفوظة' : 'بلا كلمة مرور' ?></td></tr>
+          <tr><th style="text-align:start">إمكانية الوصول للخادم</th><td><?= $mailDiag['reachable'] ? '✓ الخادم قابل للوصول' : ('✗ ' . htmlspecialchars((string)$mailDiag['error'])) ?></td></tr>
+        <?php else: ?>
+          <tr><th style="text-align:start">تسليم sendmail المحلي</th><td><?= $mailDiag['error'] ? ('⚠ ' . htmlspecialchars((string)$mailDiag['error'])) : 'المتاح' ?></td></tr>
+        <?php endif; ?>
+        <tr><th style="text-align:start">بريد المُرسِل الفعلي</th><td><?= htmlspecialchars($mailDiag['from_email']) ?> (<?= htmlspecialchars($mailDiag['from_name']) ?>)</td></tr>
+      </table>
+      <?php if ($mailDiag['transport'] !== 'smtp'): ?>
+        <p class="field-hint" style="margin-top:10px">إن لم تصل رسائل التفعيل، فعّل SMTP أعلاه. تأكد أيضاً من سجلات SPF وDKIM للمجال (لمنع تصنيف الرسائل كبريد مزعج) ومن مجلد الرسائل غير المرغوبة.</p>
+      <?php endif; ?>
+    </div>
+
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <button class="btn btn-primary" type="submit">حفظ إعدادات البريد</button>
+    </div>
+  </form>
+
+  <form class="dash-card" method="post">
+    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
+    <input type="hidden" name="action" value="mailer_test">
+    <h3 style="margin-bottom:6px">إرسال رسالة اختبار</h3>
+    <p style="font-size:.85rem;margin-bottom:14px">أرسل رسالة فعلية للتأكد من وصول البريد قبل تفعيل التسجيل للعملاء. تُستخدم نفس وسيلة الإرسال المحفوظة أعلاه.</p>
+    <?php if ($mailTestResult !== null): ?>
+      <div class="form-alert <?= $mailTestResult['ok'] ? 'success' : 'error' ?>"><?= htmlspecialchars($mailTestResult['message']) ?></div>
+    <?php endif; ?>
+    <div class="field" style="max-width:420px">
+      <label>البريد المستلِم للاختبار</label>
+      <input type="email" name="test_recipient" placeholder="you@example.com" required>
+    </div>
+    <button class="btn btn-outline" type="submit">إرسال رسالة اختبار</button>
   </form>
 
   <form class="dash-card" method="post" id="aiForm"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
@@ -115,7 +319,7 @@ $ngeniusActive = ngenius_is_enabled($ngeniusSecureSettings);
     </div>
 
     <label style="display:flex;align-items:center;gap:8px;margin:14px 0;font-weight:700;font-size:.9rem">
-      <input type="checkbox" name="ai_enabled" value="1" <?= $aiEnabledFlag ? 'checked' : '' ?> style="width:20px;height:20px">
+      <input type="checkbox" name="ai_enabled" value="1" <?= $aiEnabledFlag ? 'checked' : '' ?>>
       تفعيل التكامل (يمكنك إيقافه مؤقتاً هنا دون حذف المفتاح)
     </label>
 
@@ -127,8 +331,10 @@ $ngeniusActive = ngenius_is_enabled($ngeniusSecureSettings);
           <option value="" <?= empty($settings['ai_provider']) ? 'selected' : '' ?>>— اختر —</option>
           <option value="anthropic" <?= ($settings['ai_provider'] ?? '') === 'anthropic' ? 'selected' : '' ?>>Anthropic (Claude)</option>
           <option value="openai" <?= ($settings['ai_provider'] ?? '') === 'openai' ? 'selected' : '' ?>>OpenAI (GPT)</option>
+          <option value="openai_compatible" <?= ($settings['ai_provider'] ?? '') === 'openai_compatible' ? 'selected' : '' ?>>نموذج محلي / متوافق مع OpenAI (vLLM · Ollama · llama.cpp)</option>
         </select>
         </div>
+        <small class="field-hint">المزوّد المحلي لا يحتاج مفتاحاً ولا تُرسل بياناته خارج المنصة؛ يكفي ضبط عنوان الخادم أدناه.</small>
       </div>
       <div class="field">
         <label>نموذج جاهز (اختياري)</label>
@@ -157,6 +363,11 @@ $ngeniusActive = ngenius_is_enabled($ngeniusSecureSettings);
       <input type="password" name="ai_api_key" value="" autocomplete="new-password" placeholder="<?= $aiKeyConfigured ? 'مفتاح محفوظ — أدخل قيمة جديدة للتدوير' : 'أدخل مفتاح API' ?>">
       <?php if($aiKeyConfigured): ?><label><input type="checkbox" name="revoke_ai_key" value="1"> إلغاء وحذف المفتاح المحفوظ</label><?php endif; ?>
       <small>المفتاح محفوظ مشفراً ولا يُعاد عرضه. أدخل مفتاحاً جديداً لتدويره. يتطلب ذلك MAWATHEQ_ENCRYPTION_KEY في config/secrets.php.</small>
+    </div>
+    <div class="field">
+      <label>عنوان المزوّد المحلي / المتوافق مع OpenAI (اختياري)</label>
+      <input type="text" name="ai_endpoint" dir="ltr" value="<?= htmlspecialchars($settings['ai_endpoint'] ?? '') ?>" placeholder="http://127.0.0.1:11434/v1">
+      <small>يُستخدم فقط عند اختيار «نموذج محلي / متوافق مع OpenAI». أدخل العنوان الأساسي لخدمة v1 (vLLM · Ollama · llama.cpp). لا يُرسل أي مفتاح إلى خادم محلي.</small>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
       <button class="btn btn-primary" type="submit">حفظ</button>
@@ -196,6 +407,7 @@ $ngeniusActive = ngenius_is_enabled($ngeniusSecureSettings);
           <option value="disabled" <?= ($settings['embedding_provider']??'') === 'disabled' ? 'selected' : '' ?>>— إيقاف البحث الدلالي —</option>
           <option value="" <?= empty($settings['embedding_provider']) ? 'selected' : '' ?>>استخدم مفتاح دردشة OpenAI إن كان متاحاً</option>
           <option value="openai" <?= ($settings['embedding_provider'] ?? '') === 'openai' ? 'selected' : '' ?>>OpenAI</option>
+          <option value="openai_compatible" <?= ($settings['embedding_provider'] ?? '') === 'openai_compatible' ? 'selected' : '' ?>>خادم متجهات محلي / متوافق مع OpenAI</option>
 
         </select>
 
@@ -211,6 +423,11 @@ $ngeniusActive = ngenius_is_enabled($ngeniusSecureSettings);
 
       </div>
 
+    </div>
+    <div class="field">
+      <label>عنوان خدمة المتجهات المحلية (اختياري)</label>
+      <input type="text" name="embedding_endpoint" dir="ltr" value="<?= htmlspecialchars($settings['embedding_endpoint'] ?? '') ?>" placeholder="http://127.0.0.1:11434/v1">
+      <small>يُستخدم عند اختيار «خادم متجهات محلي». إن تُرك فارغاً يُستخدم عنوان المزوّد المحلي للدردشة نفسه.</small>
     </div>
 
     <div class="field">
@@ -253,6 +470,10 @@ $ngeniusActive = ngenius_is_enabled($ngeniusSecureSettings);
     var provider = document.getElementById('aiProvider').value;
     document.getElementById('grp-anthropic').style.display = provider === 'anthropic' ? '' : 'none';
     document.getElementById('grp-openai').style.display = provider === 'openai' ? '' : 'none';
+    // The local provider is named by the operator, so no preset group applies; the free
+    // text model field is the source of truth for it.
+    var preset = document.getElementById('aiModelPreset');
+    if (preset) { var local = provider === 'openai_compatible'; preset.disabled = local; if (local) preset.value = ''; }
   }
   syncModelOptions();
 
@@ -321,7 +542,7 @@ $ngeniusActive = ngenius_is_enabled($ngeniusSecureSettings);
     <p style="font-size:.85rem;margin-bottom:16px">اربط حساب N-Genius الخاص بكم ليتمكن العملاء من دفع الفواتير مباشرة ببطاقتهم (مدى/فيزا/ماستركارد) من الموقع والتطبيق. بيانات الاتصال (Outlet Reference ومفتاح API) تجدونها من بوابة N-Genius: Settings ← Integrations ← Service Accounts، و Settings ← Organizational Hierarchy للـ Outlet Reference.</p>
 
     <label style="display:flex;align-items:center;gap:8px;margin:14px 0;font-weight:700;font-size:.9rem">
-      <input type="checkbox" name="ngenius_enabled" value="1" <?= ($settings['ngenius_enabled'] ?? '0') === '1' ? 'checked' : '' ?> style="width:20px;height:20px">
+      <input type="checkbox" name="ngenius_enabled" value="1" <?= ($settings['ngenius_enabled'] ?? '0') === '1' ? 'checked' : '' ?>>
       تفعيل الدفع الإلكتروني عبر N-Genius
     </label>
 
@@ -345,6 +566,15 @@ $ngeniusActive = ngenius_is_enabled($ngeniusSecureSettings);
         <label>Realm Name</label>
         <input type="text" name="ngenius_realm_name" value="<?= htmlspecialchars($settings['ngenius_realm_name'] ?? 'ni') ?>" placeholder="ni">
         <p class="field-hint">القيمة الافتراضية "ni" — إن لم تعمل، تأكد من القيمة الصحيحة مع دعم N-Genius.</p>
+      </div>
+      <div class="field">
+        <label>عملة التسوية لدى البوابة</label>
+        <div class="select-wrap"><select name="ngenius_currency" class="pro-select">
+          <?php foreach (currency_options() as $code => $opt): ?>
+            <option value="<?= htmlspecialchars($code) ?>" <?= ngenius_currency($ngeniusSecureSettings) === $code ? 'selected' : '' ?>><?= htmlspecialchars($code . ' — ' . $opt['ar']) ?></option>
+          <?php endforeach; ?>
+        </select></div>
+        <p class="field-hint">يجب أن تطابق عملة حساب التاجر/Outlet لدى N-Genius. لن تُقبل الفواتير بعملة مختلفة عبر البوابة.</p>
       </div>
     </div>
     <div class="field">

@@ -169,7 +169,7 @@ function ai_tool_write(PDO $pdo, string $tool, string $ownerType, int $ownerId, 
             }
             $number = finance_next_invoice_number($pdo, $ctx['firm_id'], $ownerId);
             $pdo->prepare('INSERT INTO invoices (invoice_number,lawyer_id,created_by_lawyer_id,firm_id,user_id,description,amount,currency,status,is_draft,issue_date) VALUES (?,?,?,?,?,?,?,?,?,1,NOW())')
-                ->execute([$number, $ownerId, $ownerId, $ctx['firm_id'], $clientId, mb_substr($desc, 0, 255, 'UTF-8'), $amount, FINANCE_CURRENCY, 'unpaid']);
+                ->execute([$number, $ownerId, $ownerId, $ctx['firm_id'], $clientId, mb_substr($desc, 0, 255, 'UTF-8'), $amount, finance_currency(), 'unpaid']);
             return ['ok' => true, 'result' => ['id' => (int)$pdo->lastInsertId(), 'invoice_number' => $number]];
 
         case 'create_draft':

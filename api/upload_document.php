@@ -10,6 +10,10 @@ if (empty($_SESSION['user_id'])) {
     exit;
 }
 
+// Defense in depth: config.php also enforces CSRF for session-backed POSTs, but this
+// endpoint spends AI quota and writes files, so verify the token again before doing work.
+if (!csrf_is_valid($_POST['csrf_token'] ?? null)) { http_response_code(403); exit('Invalid request'); }
+
 // تطبيق حد الباقة الفعلي على عدد تحليلات المستندات شهرياً (إن كانت الباقة تحدد ذلك)
 $quota = check_document_upload_allowed($pdo, (int)$_SESSION['user_id']);
 if (!$quota['allowed']) {
@@ -43,10 +47,31 @@ if (!move_uploaded_file($file['tmp_name'], $destination)) {
     exit;
 }
 
-$stmt = $pdo->prepare('INSERT INTO documents (user_id, original_name, stored_path, file_type, document_type, status) VALUES (?,?,?,?,?,?)');
+// Optional case filing. The client may only file against a case they own, so an
+// arbitrary case_id in the form cannot attach a document to someone else's matter
+// (same scope as my-cases.php).
+$caseId = (int)($_POST['case_id'] ?? 0);
+if ($caseId) {
+    $caseCheck = $pdo->prepare('SELECT id FROM cases WHERE id=? AND user_id=?');
+    $caseCheck->execute([$caseId, (int)$_SESSION['user_id']]);
+    if (!$caseCheck->fetch()) { $caseId = 0; }
+}
+
+$stmt = $pdo->prepare('INSERT INTO documents (user_id, case_id, original_name, stored_path, file_type, document_type, status) VALUES (?,?,?,?,?,?,?)');
 $originalName = basename(str_replace('\\', '/', (string)$file['name']));
-$stmt->execute([$_SESSION['user_id'], $originalName, 'uploads/documents/' . $storedName, $ext, $documentType, 'processing']);
+$stmt->execute([$_SESSION['user_id'], $caseId ?: null, $originalName, 'uploads/documents/' . $storedName, $ext, $documentType, 'processing']);
 $docId = $pdo->lastInsertId();
+
+// Audit the upload (metadata only — never the file contents) and tell the client's
+// lawyers that a new document is available for their cases.
+require_once __DIR__ . '/../includes/audit_log.php';
+require_once __DIR__ . '/../includes/notifications.php';
+log_action($pdo, 'رفع مستند: ' . $originalName, 'document', (int)$docId);
+$lawyerRecipients = $pdo->prepare('SELECT DISTINCT lawyer_id FROM cases WHERE user_id=?');
+$lawyerRecipients->execute([(int)$_SESSION['user_id']]);
+foreach ($lawyerRecipients->fetchAll(PDO::FETCH_COLUMN) as $caseLawyerId) {
+    notify($pdo, 'lawyer', (int)$caseLawyerId, is_rtl() ? 'رفع العميل مستنداً جديداً' : 'Client uploaded a new document', $originalName, '/lawyer/cases.php');
+}
 
 /**
  * ============================================================
@@ -57,7 +82,7 @@ $docId = $pdo->lastInsertId();
  * ============================================================
  */
 $settings = ai_load_settings($pdo);
-$aiEnabled = !empty($settings['ai_provider']) && !empty($settings['ai_api_key']) && ($settings['ai_enabled'] ?? '1') !== '0';
+$aiEnabled = ai_chat_provider_configured($settings);
 $isArabic = current_lang() === 'ar';
 
 if (!$aiEnabled) {
@@ -65,6 +90,15 @@ if (!$aiEnabled) {
         $isArabic
             ? 'بانتظار تفعيل مزوّد الذكاء الاصطناعي من لوحة تحكم الإدارة (الإعدادات) لتحليل هذا المستند تلقائياً.'
             : 'Awaiting AI provider activation from the admin settings to analyze this document automatically.',
+        $docId
+    ]);
+} elseif (!ai_vision_provider_configured($settings)) {
+    // The configured provider answers chat but cannot read a file directly. Say so
+    // plainly instead of recording a generic analysis failure.
+    $pdo->prepare("UPDATE documents SET status='pending', summary=? WHERE id=?")->execute([
+        $isArabic
+            ? 'المزوّد المفعّل لا يدعم تحليل الملفات مباشرة (PDF/صور)؛ يتطلب ذلك OpenAI أو Anthropic.'
+            : 'The active provider does not read files directly (PDF/images); that needs OpenAI or Anthropic.',
         $docId
     ]);
 } else {

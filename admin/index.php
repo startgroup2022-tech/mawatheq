@@ -60,7 +60,7 @@ usort($agenda, fn($a, $b) => strcmp($a['t'], $b['t'])); $agenda = array_slice($a
 $topLawyers = $rows("SELECT l.id,l.full_name,l.rating,l.specialization, COUNT(c.id) total_c, COALESCE(SUM(c.status='completed'),0) done_c FROM lawyers l LEFT JOIN consultations c ON c.lawyer_id=l.id WHERE l.status='approved' GROUP BY l.id ORDER BY done_c DESC, l.rating DESC LIMIT 5");
 $recentLeads = $rows('SELECT * FROM contact_leads ORDER BY id DESC LIMIT 5');
 $recentBookings = $rows('SELECT c.*, u.full_name user_name, l.full_name lawyer_name FROM consultations c JOIN users u ON u.id=c.user_id JOIN lawyers l ON l.id=c.lawyer_id ORDER BY c.id DESC LIMIT 5');
-$money = fn($v) => number_format((float)$v, 3);
+$money = fn($v) => money($v);
 $j = fn($a) => h(json_encode($a, JSON_UNESCAPED_UNICODE));
 $hour = (int)date('G'); $greet = $hour < 12 ? adm('صباح الخير', 'Good morning') : ($hour < 18 ? adm('مساء الخير', 'Good afternoon') : adm('مساء الخير', 'Good evening'));
 $leadLabels = ['contact' => adm('تواصل عام', 'General'), 'join_lawyer' => adm('انضمام محامٍ', 'Lawyer application'), 'corporate' => adm('باقة مؤسسية', 'Corporate')];
@@ -89,7 +89,7 @@ $stCol = ['open' => '#2547b8', 'in_review' => '#c39a3e', 'closed_won' => '#12805
 
   <div class="grid g-4" style="margin-bottom:18px">
     <a class="kpi" href="/admin/invoices.php"><div class="kpi-top"><span class="kpi-ic green"><?= adm_icon('receipt') ?></span><span class="kpi-delta <?= $cRev ?>"><?= $dRev ?></span></div>
-      <div class="kpi-val"><?= $money($tot['revenue']) ?></div><div class="kpi-lbl"><?= h(adm('الإيرادات المحصّلة (د.ب)', 'Collected revenue (BHD)')) ?></div>
+      <div class="kpi-val"><?= $money($tot['revenue']) ?></div><div class="kpi-lbl"><?= h(adm('الإيرادات المحصّلة', 'Collected revenue')) ?> (<?= currency_symbol() ?>)</div>
       <div class="chart" data-chart="<?= $j(['type' => 'spark', 'data' => $revenueSeries, 'color' => '#12805c']) ?>"></div></a>
     <a class="kpi" href="/admin/users.php"><div class="kpi-top"><span class="kpi-ic"><?= adm_icon('users') ?></span><span class="kpi-delta <?= $cCli ?>"><?= $dCli ?></span></div>
       <div class="kpi-val"><?= number_format($tot['clients']) ?></div><div class="kpi-lbl"><?= h(adm('العملاء', 'Clients')) ?></div>
@@ -103,15 +103,15 @@ $stCol = ['open' => '#2547b8', 'in_review' => '#c39a3e', 'closed_won' => '#12805
     <a class="kpi" href="/admin/reports.php"><div class="kpi-top"><span class="kpi-ic"><?= adm_icon('briefcase') ?></span><span class="kpi-delta <?= $cCase ?>"><?= $dCase ?></span></div>
       <div class="kpi-val"><?= number_format($tot['cases_open']) ?> <small style="font-size:14px;color:var(--muted)">/ <?= number_format($tot['cases']) ?></small></div><div class="kpi-lbl"><?= h(adm('القضايا (مفتوحة / الإجمالي)', 'Cases (open / total)')) ?></div></a>
     <a class="kpi" href="/admin/crm.php"><div class="kpi-top"><span class="kpi-ic gold"><?= adm_icon('target') ?></span><span class="kpi-delta flat"><?= $tot['opp_open'] ?> <?= h(adm('فرصة', 'open')) ?></span></div>
-      <div class="kpi-val"><?= number_format($tot['opp_value'], 0) ?></div><div class="kpi-lbl"><?= h(adm('قيمة الـ Pipeline (د.ب)', 'Pipeline value (BHD)')) ?></div></a>
+      <div class="kpi-val"><?= money($tot['opp_value']) ?></div><div class="kpi-lbl"><?= h(adm('قيمة الـ Pipeline', 'Pipeline value')) ?></div></a>
     <a class="kpi" href="/admin/invoices.php"><div class="kpi-top"><span class="kpi-ic red"><?= adm_icon('clock') ?></span><span class="kpi-delta <?= $tot['overdue'] ? 'down' : 'flat' ?>"><?= $tot['overdue'] ?> <?= h(adm('متأخرة', 'overdue')) ?></span></div>
-      <div class="kpi-val"><?= $money($tot['outstanding']) ?></div><div class="kpi-lbl"><?= h(adm('مستحقات غير محصّلة (د.ب)', 'Outstanding (BHD)')) ?></div></a>
+      <div class="kpi-val"><?= $money($tot['outstanding']) ?></div><div class="kpi-lbl"><?= h(adm('مستحقات غير محصّلة', 'Outstanding')) ?> (<?= currency_symbol() ?>)</div></a>
     <a class="kpi" href="/admin/crm.php#tasks"><div class="kpi-top"><span class="kpi-ic teal"><?= adm_icon('check') ?></span><span class="kpi-delta <?= $tot['leads_new'] ? 'up' : 'flat' ?>"><?= $tot['leads_new'] ?> <?= h(adm('طلب جديد', 'new leads')) ?></span></div>
       <div class="kpi-val"><?= number_format($tot['tasks_due']) ?></div><div class="kpi-lbl"><?= h(adm('مهام ومتابعات مستحقة', 'Tasks & follow-ups due')) ?></div></a>
   </div>
 
   <div class="grid g-21" style="margin-bottom:18px">
-    <div class="card"><div class="card-h"><h3><?= h(adm('الإيرادات خلال 12 شهراً', 'Revenue — last 12 months')) ?></h3><small>BHD</small></div>
+    <div class="card"><div class="card-h"><h3><?= h(adm('الإيرادات خلال 12 شهراً', 'Revenue — last 12 months')) ?></h3><small><?= currency_symbol() ?></small></div>
       <div class="chart" data-chart="<?= $j(['type' => 'area', 'labels' => $mLabels, 'fmt' => 'money', 'series' => [['name' => adm('الإيرادات', 'Revenue'), 'data' => $revenueSeries, 'color' => '#2547b8']]]) ?>"></div></div>
     <div class="card"><div class="card-h"><h3><?= h(adm('توزيع القضايا', 'Cases by status')) ?></h3></div>
       <div class="donut-wrap"><div class="chart" data-chart="<?= $j(['type' => 'donut', 'labels' => array_values($caseStatus), 'data' => array_values($cs), 'colors' => array_values($stCol), 'center' => adm('قضية', 'cases')]) ?>"></div>
