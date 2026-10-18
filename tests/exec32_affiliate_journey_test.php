@@ -77,6 +77,18 @@ check('rejected cannot sign in', !affiliate_can_login(['status' => 'rejected']))
 check('closed cannot sign in', !affiliate_can_login(['status' => 'closed']));
 check('null affiliate cannot sign in', !affiliate_can_login(null));
 
+// Earning is a separate question from signing in, and it is the one that protects the
+// money. Only `active` AND compliance-cleared may earn; every finished or un-cleared
+// state must be refused. Checked here as well as through the conversion path below,
+// because a status that can sign in (suspended) must still not be able to earn.
+echo "\n1b. Earning policy\n";
+foreach (['rejected', 'closed', 'suspended', 'pending', 'under_review', 'approved'] as $status) {
+    check("$status cannot earn", !affiliate_can_earn(['status' => $status, 'compliance_status' => 'approved']));
+}
+check('active but compliance not cleared cannot earn', !affiliate_can_earn(['status' => 'active', 'compliance_status' => 'pending']));
+check('active and compliance cleared can earn', affiliate_can_earn(['status' => 'active', 'compliance_status' => 'approved']));
+check('null affiliate cannot earn', !affiliate_can_earn(null));
+
 echo "\n2. Registration\n";
 // affiliate_register() reads the client IP for the consent record.
 $_SERVER['REMOTE_ADDR'] = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
