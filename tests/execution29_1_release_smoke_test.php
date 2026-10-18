@@ -137,10 +137,13 @@ foreach ([
     'database/schema.sql',
     'database/upgrade_v42.sql',
     'database/upgrade_v55.sql',
+    'database/upgrade_v56.sql',
     'database/repair/00_preflight_check.php',
     'database/repair/01_repair_reset_columns.sql',
     'database/repair/02_migration_ledger.php',
     'database/repair/migration_verify.php',
+    'MAWATHEQ_EXECUTION_30_DEPLOYMENT_AR.md',
+    'MAWATHEQ_EXECUTION_30_REPORT.md',
     'MAWATHEQ_EXECUTION_29_1_DEPLOYMENT_AR.md',
     'MAWATHEQ_EXECUTION_29_1_MIGRATION_REPORT.md',
     'MAWATHEQ_EXECUTION_29_1_VERIFICATION_RUNBOOK.md',
@@ -245,6 +248,16 @@ try {
 check('every packaged upgrade applies in order', $applyErr === null, (string)$applyErr);
 $post2 = e291_run_script_pkg($pkg, 'database/repair/00_preflight_check.php', $scratch, ['--postflight']);
 check('the packaged postflight passes once the migration is complete', $post2['exit'] === 0, "exit={$post2['exit']}\n" . $post2['output']);
+
+// Execution 30's migration is part of "every packaged upgrade", so the attachments table
+// must exist in the scratch database the operator ends up with. Asserting the table and its
+// tenant column proves the shipped file ran, not merely that it was present in the archive.
+check('the packaged Execution 30 migration created consultation_attachments',
+    e291_has_table($admin, $scratch, 'consultation_attachments'));
+check('consultation_attachments carries the tenant column',
+    e291_has_column($admin, $scratch, 'consultation_attachments', 'firm_id'));
+$settingCount = (int)$admin->query("SELECT COUNT(*) FROM `$scratch`.site_settings WHERE setting_key LIKE 'consultation_attachment_%'")->fetchColumn();
+check("the packaged Execution 30 migration seeded the limits ($settingCount rows)", $settingCount === 5);
 
 // ---------------------------------------------------------------------------
 echo "\n== 5. the reset flow works against the packaged result ==\n";

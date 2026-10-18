@@ -142,6 +142,21 @@ $requestPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 
 $isBearerApi = strpos($requestPath, '/api/v1/') === 0;
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && !$isBearerApi && !in_array($requestPath, $csrfExemptPaths, true)) {
+    // A body larger than post_max_size is discarded by PHP before any script runs, so $_POST
+    // arrives empty and the token check below can never pass. Answering "Invalid request"
+    // there sends the user hunting for a form bug; the real cause is the size. Detecting it
+    // here means every upload form in the app reports the honest reason.
+    if (empty($_POST) && empty($_FILES) && (int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+        http_response_code(413);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode([
+            'ok' => false,
+            'code' => 'request_too_large',
+            'error' => 'حجم الطلب تجاوز الحد المسموح على الخادم. ارفع الملفات واحداً واحداً أو صغّر حجمها.',
+            'error_en' => 'The request exceeded the server size limit. Upload files one at a time or reduce their size.',
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) { http_response_code(403); exit('Invalid request'); }
     $source = $_SERVER['HTTP_ORIGIN'] ?? ($_SERVER['HTTP_REFERER'] ?? '');
     if ($source !== '') {
@@ -161,3 +176,21 @@ if (strpos($requestPath,'/admin/')===0 || strpos($requestPath,'/lawyer/')===0 ||
 // تتبع مصدر الزائر (حملة / قناة / صفحة الدخول) — أول لمسة فقط، لعرضها لاحقاً في لوحة التحكم
 require_once __DIR__ . '/../includes/lead_source.php';
 capture_lead_source();
+
+// Affiliate referral capture (Execution 31). Runs after the session is open and
+// after the lead source is recorded, because a referral is a stricter, consent-aware
+// form of the same idea and the two must not fight over the request.
+//
+// Guarded and fail-soft: the affiliate tables are absent on a database that has not
+// run upgrade_v57.sql, and a referral that cannot be recorded must never stop a page
+// from rendering. affiliate_track_request() returns early when there is no ?ref= and
+// no visitor cookie, which is the overwhelmingly common case, so the cost on the hot
+// path is two string checks.
+if (is_file(__DIR__ . '/../includes/affiliate_tracking.php')) {
+    try {
+        require_once __DIR__ . '/../includes/affiliate_tracking.php';
+        affiliate_track_request($pdo);
+    } catch (Throwable $affiliateTrackError) {
+        error_log('Affiliate tracking failed: ' . $affiliateTrackError->getMessage());
+    }
+}

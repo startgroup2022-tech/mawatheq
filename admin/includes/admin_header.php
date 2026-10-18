@@ -24,6 +24,7 @@ $adminNavGroups = [
         'lawyers' => ['i' => 'scale', 'ar' => 'المحامون', 'en' => 'Lawyers', 'href' => '/admin/lawyers.php', 'badge' => 'lawyers'],
         'firms' => ['i' => 'building', 'ar' => 'المكاتب القانونية', 'en' => 'Law firms', 'href' => '/admin/firms.php'],
         'consultations' => ['i' => 'message', 'ar' => 'الاستشارات', 'en' => 'Consultations', 'href' => '/admin/consultations.php'],
+        'consultation-attachments' => ['i' => 'file', 'ar' => 'مرفقات الاستشارات', 'en' => 'Consultation attachments', 'href' => '/admin/consultation-attachments.php'],
         'documents' => ['i' => 'file', 'ar' => 'المستندات', 'en' => 'Documents', 'href' => '/admin/documents.php'],
     ]],
     ['t' => adm('المالية والتحليلات', 'Finance & insights'), 'items' => [
@@ -32,6 +33,14 @@ $adminNavGroups = [
         'gateway-transactions' => ['i' => 'receipt', 'ar' => 'عمليات الدفع', 'en' => 'Gateway transactions', 'href' => '/admin/gateway-transactions.php'],
         'plans' => ['i' => 'card', 'ar' => 'الباقات', 'en' => 'Plans', 'href' => '/admin/plans.php'],
         'reports' => ['i' => 'chart', 'ar' => 'التقارير والتحليلات', 'en' => 'Reports', 'href' => '/admin/reports.php'],
+    ]],
+    ['t' => adm('برنامج الشركاء', 'Affiliate programme'), 'items' => [
+        'affiliates' => ['i' => 'users', 'ar' => 'المسوّقون', 'en' => 'Affiliates', 'href' => '/admin/affiliates.php'],
+        'affiliate-commissions' => ['i' => 'wallet', 'ar' => 'العمولات', 'en' => 'Commissions', 'href' => '/admin/affiliate-commissions.php'],
+        'affiliate-payouts' => ['i' => 'receipt', 'ar' => 'طلبات الصرف', 'en' => 'Payout requests', 'href' => '/admin/affiliate-payouts.php'],
+        'affiliate-campaigns' => ['i' => 'target', 'ar' => 'الحملات', 'en' => 'Campaigns', 'href' => '/admin/affiliate-campaigns.php'],
+        'affiliate-fraud' => ['i' => 'shield', 'ar' => 'مكافحة الاحتيال', 'en' => 'Fraud review', 'href' => '/admin/affiliate-fraud.php'],
+        'affiliate-settings' => ['i' => 'settings', 'ar' => 'إعدادات البرنامج', 'en' => 'Programme settings', 'href' => '/admin/affiliate-settings.php'],
     ]],
     ['t' => adm('المعرفة والذكاء الاصطناعي', 'Knowledge & AI'), 'items' => [
         'ai-control' => ['i' => 'shield', 'ar' => 'التحكم في AI والخصوصية', 'en' => 'AI control & privacy', 'href' => '/admin/ai-control.php'],

@@ -1025,3 +1025,199 @@ secrets/tests/docs/.git, unpacks both archives, writes the documented `secrets.p
 overlays the migration package and applies it in the documented order to a scratch
 database. A test against the repository copy proves the repository is correct and says
 nothing about the bytes an operator actually downloads.
+
+## Execution 30 — consultation attachments
+
+### The attachment file lives outside the web root, and the route is the only door
+
+`includes/consultation_attachments.php` resolves the storage root to a sibling of the
+application root (`../mawatheq-private/consultation-attachments`, sharded by consultation
+id) and falls back to `<app>/storage/...` only when the parent is not writable. There is no
+public URL for a stored file: `download-consultation-attachment.php` re-checks ownership on
+every request instead of trusting a token in the URL. A signed link was the alternative and
+was rejected because it cannot be revoked when a consultation is reassigned or a lawyer
+leaves the firm, and it leaks access through history, proxies and referrers.
+
+The root guard is `02770` (group write + setgid), not `0750`. Apache writes the files but
+the maintenance sweeper and any cron job run as a different user, and both must be able to
+rename and unlink inside these directories; the setgid bit keeps the group stable as files
+are added instead of letting each writer's primary group take over and lock the other out.
+`tests/setup_test_env.sh` adds the CLI user to the `www-data` group for the same reason — a
+fresh clone otherwise uploads fine over HTTP and then fails every direct filesystem check.
+
+### Validation is three checks, not one
+
+`consultation_attachment_validate()` requires the extension to be in the catalog, the
+finfo-detected MIME to be one of the MIMEs that extension legitimately produces, and the
+body not to carry an executable signature. Each alone is defeated by an ordinary file: a
+`.pdf` whose bytes are a PNG passes the extension check, and a text file named `.php` passes
+a MIME sniff that trusts the extension. `consultation_attachment_has_executable_signature()`
+scans for PHP/open-tag and script markers rather than rejecting leading NUL bytes — an
+MP4/MOV/M4A is ISO-BMFF and its box size legitimately begins with `\x00`, so a NUL check
+rejects real media. `tests/execution30_consultation_attachments_probe.php` covers both
+directions (a PNG named `.pdf`, a PDF named `.txt`, and a PDF that is also valid PHP).
+
+### Limits are clamped to what PHP will actually accept
+
+`consultation_attachment_limits()` takes the configured values and clamps each per-file
+limit to `upload_max_filesize` and to `post_max_size` minus a multipart-envelope allowance,
+via `consultation_attachment_ini_bytes()` (which parses `2M`/`512K`/`1G`). Advertising the
+configured 100 MB video limit on a server with a 2 MB `upload_max_filesize` promises
+something the server discards before the script runs, which surfaces as an empty `$_FILES`
+rather than a size error. The probe reads the effective limit instead of asserting a
+constant, so it stays correct on any php.ini.
+
+Related: an oversized POST arrives with `$_POST` and `$_FILES` both empty. `config.php` used
+to answer that with a bare 403 "Invalid request", which reads as a CSRF failure and sends
+the uploader looking in the wrong place; it now returns a request-too-large answer, and both
+upload endpoints also check `CONTENT_LENGTH` to say the same thing in JSON.
+
+### Two-phase upload: stage now, claim at booking
+
+The booking form collects files before the consultation row exists, so an upload is written
+`status='staged'` with `consultation_id` NULL and a `draft_token`, then claimed by
+`booking.php` when the form is submitted. `consultation_id` is nullable for this reason. A
+staged row whose token is never claimed is an abandoned draft, reclaimed by
+`consultation_attachment_purge_drafts()`; a file with no row at all (a crash between
+`move_uploaded_file()` and the INSERT) is reclaimed by `consultation_attachment_purge_orphans()`,
+which reports rows whose file is missing rather than deleting them — the row is the user's
+record that the file once existed. `booking.php` accepts only the token this session was
+issued, so a crafted POST cannot adopt another client's staged uploads.
+
+### Do not run the PHP suite and Playwright at the same time
+
+`tests/password_reset_test.php` wraps its rate-limit section in a transaction and drives
+`auth_rate_limit_failure_key()`, whose `INSERT ... ON DUPLICATE KEY UPDATE` scans
+`auth_rate_limits`. A Playwright run logs in through the real app, which writes the same
+table, so the two together make InnoDB raise `SQLSTATE[HY000] 1020 Record has changed since
+last read in table 'auth_rate_limits'` and the suite exits 255. It reads like a regression in
+the rate limiter and is not one: run alone, the suite is green. Serialize them.
+
+### Test probes that mutate seeded rows must resolve them by identity, not by "newest"
+
+`tests/phase_firm_site_http_probe.php` used to snapshot `SELECT * FROM law_firms ORDER BY id
+DESC LIMIT 1` and assume that was owner-b's firm. That held until other suites seeded their
+own firms; the probe then published owner-b's site on a *different* firm's row, so
+`firm.php?firm=<slug>` kept returning 200 after the probe set `is_public=0` on the wrong row.
+It now joins `law_firm_members` through `owner-b@example.com`, which is the identity the
+probe actually drives. The same probe now clears `probe-page`/`draft-page` for that firm
+before it starts: it asserts an HTTP 302 after saving a page, and a run killed before its
+cleanup leaves the row behind, after which the unique key on `(firm_id, slug)` makes the next
+INSERT fail and the save render 200 instead of redirecting. Both bugs were invisible until
+the suite was run twice in a row.
+
+## Execution 31 — affiliate, referral and partner marketing (v57)
+
+The engine (attribution, commission, ledger, payout state machine, fraud signals) is in
+`includes/affiliate*.php` and `database/upgrade_v57.sql`. This section is the operational
+knowledge the UI work added.
+
+### Money is integer minor units, everywhere
+
+`affiliate_to_minor()` / `affiliate_from_minor()` convert at the edges; nothing in between
+is a float. A new affiliate surface that does `$amount * 100` is the bug, not the fix.
+
+### Programmatic callers of the payout service must pass a method
+
+`affiliate_request_payout()` fell back to a null method until Execution 31: the guard read
+`in_array($options['method'] ?? 'bank_transfer', [...]) ? $options['method'] : 'bank_transfer'`,
+so the true branch dereferenced the key the `??` had just defaulted. The web form always
+supplies `method`, which is why only direct service calls failed — with `create_failed`, not
+a useful message. It now normalises first. Anything else that defaults a value inside the
+condition it also reads needs the same look.
+
+### Admin consoles call the service, never write state directly
+
+`admin/affiliate-detail.php` and `admin/affiliate-payout.php` route every change through
+`affiliate_set_status()`, `affiliate_set_compliance()` and `affiliate_payout_transition()`.
+Those functions own the transition table, the second-approver rule (`second_approver_required`
+when the same admin approves twice) and the evidence rule (`evidence_required` before `paid`).
+An `UPDATE ... SET status=` in a page bypasses all three, which is how a payout gets paid with
+no transfer reference.
+
+The admin pages need `affiliate_payout.php` and `affiliate_conversion.php` included as well as
+`affiliate_admin.php`: the helpers the list and detail pages call (`affiliate_payable_minor()`,
+`affiliate_earnings_summary()`) live there, and a missing include is an HTTP 500 that lints
+clean. Only an HTTP probe catches it.
+
+### RBAC: the nav filters, the list must too
+
+`includes/admin_rbac.php` holds the route→role map and a route absent from it defaults to
+`super_admin`. The nav is role-filtered automatically, but a page that links to a
+higher-privilege page is not — `admin/affiliates.php` hides the detail link from `support`,
+who may read the list but would otherwise be offered a button that 403s.
+
+### The affiliate probe is order-sensitive; seed settings with an upsert
+
+`tests/exec31_admin_console_probe.php` turns the programme on and moves the payout thresholds.
+`UPDATE site_settings ... WHERE setting_key=?` matches nothing on a database that has never
+been configured, so the probe silently kept the defaults and reported a payout failure that
+had nothing to do with the code — it passed standalone and failed in the full run. It now
+upserts and restores the prior values in cleanup, so a later suite does not inherit its
+configuration as if it were the deployment's.
+
+### The www-data group is required for the full suite, not just attachments
+
+`tests/setup_test_env.sh` adds the CLI user to `www-data`, but the group only applies to a new
+login. In a session that predates the `usermod`, `execution30_consultation_attachments_probe`
+fails six filesystem checks with `scandir(...): Permission denied` while the same probe passes
+under `sg www-data -c '...'`. Run the suite as `sg www-data -c 'bash tests/run_all_tests.sh'`
+or expect those six and confirm they are the only ones.
+
+
+## Release preparation — the final consolidated build
+
+### PHP 8.4 is mandatory, not "8.3 or newer"
+
+`composer.json` requires `php >=8.4` and the bundled `onelogin/php-saml` writes that into
+`vendor/composer/platform_check.php` as `PHP_VERSION_ID >= 80400`, which **aborts** the
+autoloader below 8.4. So a cPanel host on 8.3 does not degrade gracefully — the site dies
+at first include, on every page. Check the version before starting a deploy. Nothing in the
+application uses 8.4-only syntax (no property hooks, no asymmetric visibility), so the floor
+comes from the dependency, not the code.
+
+### `tools/build_release.sh` ships two names per archive, on purpose
+
+The canonical names (`MAWATHEQ_WEBSITE_CPANEL_FINAL.zip`, `MAWATHEQ_DB_MIGRATIONS_SAFE.zip`)
+are what `tests/execution29_1_release_smoke_test.php` unpacks, so they are not renamed. The
+delivery names (`MAWATHEQ_WEBSITE_FINAL.zip`, `MAWATHEQ_DATABASE_MIGRATIONS.zip`) are
+**hardlinks** to the same inodes: no extra bytes, and they cannot drift from the canonical
+file. `SHA256SUMS.txt` lists all of them plus the deployment guide, so a download of either
+name verifies against the same digest. If a `SHA256SUMS.txt` check reports the canonical
+names as "No such file", that is a missing download, not a corrupt archive.
+
+### The build is byte-reproducible; verify it that way
+
+Everything is stamped with the commit time (`SOURCE_DATE_EPOCH` convention) and modes are
+normalized to 644/755, so two builds of the same ref produce identical bytes. After any
+change to the build inputs, confirm with a second build and `diff` of the two
+`SHA256SUMS.txt` files. A rebuild that differs means an input is carrying "now" or a mode.
+
+### Archive extensions are denied at the web layer
+
+`.htaccess` denies `.zip|tar|tgz|gz|rar|7z|bz2|apk|ipa`. The deployment steps upload
+`MAWATHEQ_WEBSITE_FINAL.zip` into `public_html` and extract it there; if the archive is left
+behind it is publicly downloadable and exposes the whole site tree. Nothing legitimate is
+served as a static archive — consultation attachments and affiliate CSV reports are streamed
+from PHP routes with `Content-Disposition`, and no template links to a `.zip`. Verified live:
+`.zip`/`.tar.gz`/`.apk` return 403 while ordinary files still return 200. The guide also
+tells the operator to delete the archive after extraction; the deny rule is a second layer,
+not a substitute.
+
+### Verify migrations by applying them, twice
+
+A fresh database plus `schema.sql` plus all 56 upgrades in **numeric** order yields 130
+tables, 22 of them `affiliate_*`, plus `consultation_attachments`. Running the whole set a
+second time is a no-op — that is the idempotency guarantee, and it is worth re-checking after
+touching any upgrade file. Sort numerically: a lexical sort puts `upgrade_v10.sql` before
+`upgrade_v2.sql`.
+
+### `git fetch` does not bring the stacked branches
+
+`remote.origin.fetch` is pinned to `+refs/heads/main:refs/remotes/origin/main`, so
+`git fetch origin --prune` silently omits `phase-3`, `phase-4`, `recovery/*` and any feature
+branch. Fetch them explicitly (`git fetch origin <branch>:refs/remotes/origin/<branch>`) or
+a branch that plainly exists on GitHub looks absent. Pushes go through
+`https://x-access-token:$GITHUB_TOKEN@github.com/...`; `GITHUB_PERSONAL_ACCESS_TOKEN` is not
+push-capable.
+

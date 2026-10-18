@@ -280,6 +280,46 @@ CREATE TABLE IF NOT EXISTS consultations (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ------------------------------------------------------------
+-- مرفقات الاستشارات (Execution 30)
+-- Files attached to a consultation. Stored outside the web root; reached only through
+-- download-consultation-attachment.php. A row is 'staged' while the booking form is
+-- still open (consultation_id NULL, bound by draft_token) and 'stored' once the booking
+-- is submitted and the file is claimed. See database/upgrade_v56.sql for the full note.
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS consultation_attachments (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    consultation_id INT UNSIGNED DEFAULT NULL,
+    draft_token CHAR(64) DEFAULT NULL,
+    firm_id INT UNSIGNED DEFAULT NULL,
+    uploaded_by_type ENUM('client','lawyer','admin') NOT NULL DEFAULT 'client',
+    uploaded_by_id INT UNSIGNED NOT NULL,
+    original_name VARCHAR(255) NOT NULL,
+    stored_name VARCHAR(191) NOT NULL,
+    stored_path VARCHAR(255) NOT NULL,
+    file_category ENUM('document','audio','video') NOT NULL DEFAULT 'document',
+    file_type VARCHAR(20) NOT NULL,
+    mime_type VARCHAR(127) NOT NULL,
+    file_size BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    checksum CHAR(64) DEFAULT NULL,
+    status ENUM('staged','stored','deleted') NOT NULL DEFAULT 'staged',
+    download_count INT UNSIGNED NOT NULL DEFAULT 0,
+    last_downloaded_at DATETIME DEFAULT NULL,
+    deleted_at DATETIME DEFAULT NULL,
+    deleted_by_type VARCHAR(16) DEFAULT NULL,
+    deleted_by_id INT UNSIGNED DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_consultation_attachment_stored (stored_name),
+    INDEX idx_consultation_attachments_consultation (consultation_id),
+    INDEX idx_consultation_attachments_draft (draft_token),
+    INDEX idx_consultation_attachments_firm (firm_id),
+    INDEX idx_consultation_attachments_status (status),
+    CONSTRAINT fk_consultation_attachments_consultation FOREIGN KEY (consultation_id)
+        REFERENCES consultations(id) ON DELETE CASCADE,
+    CONSTRAINT fk_consultation_attachments_firm FOREIGN KEY (firm_id)
+        REFERENCES law_firms(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ------------------------------------------------------------
 -- القضايا (إدارة القضايا للمحامين)
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS cases (
@@ -806,7 +846,15 @@ INSERT INTO site_settings (setting_key, setting_value) VALUES
 ('ngenius_webhook_secret', ''),
 ('sadad_enabled', '0'),
 ('sadad_environment', 'sandbox'),
-('sadad_currency', 'SAR');
+('sadad_currency', 'SAR'),
+-- Mirrors database/upgrade_v56.sql (Execution 30) so a fresh install is complete.
+-- user_total_mb is deliberately absent: it is a per-client ceiling the library defaults
+-- to 2048 MB and an operator sets from the admin console, not a seeded value.
+('consultation_attachment_document_mb', '20'),
+('consultation_attachment_audio_mb', '50'),
+('consultation_attachment_video_mb', '100'),
+('consultation_attachment_max_files', '10'),
+('consultation_attachment_total_mb', '500');
 
 INSERT INTO law_categories (name_ar, name_en, icon, sort_order) VALUES
 ('نظام العمل', 'Labor Law', 'work', 1),
