@@ -24,7 +24,7 @@ if ($role === 'super_admin' && empty($adminAccount['totp_enabled']) && $route !=
 // Route-level RBAC is enforced server-side, before endpoint logic runs.
 $routeRoles=[
     'index.php'=>['super_admin','editor','support'], 'users.php'=>['super_admin','support'],
-    'client-detail.php'=>['super_admin','support'], 'lawyers.php'=>['super_admin','support'],
+    'client-detail.php'=>['super_admin','support'], 'lawyers.php'=>['super_admin','support'], 'firms.php'=>['super_admin','support'],
     'consultations.php'=>['super_admin','support'], 'documents.php'=>['super_admin','support'],
     'leads.php'=>['super_admin','support'], 'articles.php'=>['super_admin','editor'],
     'laws.php'=>['super_admin','editor'], 'ai-knowledge.php'=>['super_admin','editor'], 'ai-orchestration.php'=>['super_admin'], 'ai-workflows.php'=>['super_admin'],

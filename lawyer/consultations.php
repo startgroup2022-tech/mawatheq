@@ -4,14 +4,19 @@ require_once __DIR__ . '/../lang/strings.php';
 require_once __DIR__ . '/includes/lawyer_guard.php';
 require_once __DIR__ . '/../includes/phone.php';
 require_once __DIR__ . '/../includes/audit_log.php';
+require_once __DIR__ . '/../includes/tenant.php';
 $lawyerId = $_SESSION['lawyer_id'];
+$firmId = tenant_write_firm_id($pdo);
 
 if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action'] ?? '')==='change_status') {
+    tenant_require($pdo, 'consultations.manage');
     $allowed = ['confirmed','completed','cancelled'];
     $status=$_POST['status'] ?? ''; $id=(int)($_POST['consultation_id'] ?? 0);
+    $scope = tenant_owner_where($pdo, 'consultations');
     if (in_array($status, $allowed,true) && $id>0) {
-        $pdo->prepare('UPDATE consultations SET status=? WHERE id=? AND lawyer_id=?')->execute([$status,$id,$lawyerId]);
-        log_action($pdo,'تغيير حالة استشارة المحامي إلى '.$status,'consultation',$id);
+        $upd = $pdo->prepare('UPDATE consultations SET status=? WHERE id=? AND ' . $scope['sql']);
+        $upd->execute(array_merge([$status,$id], $scope['params']));
+        if ($upd->rowCount()) log_action($pdo,'تغيير حالة استشارة المحامي إلى '.$status,'consultation',$id);
     }
     header('Location: /lawyer/consultations.php'); exit;
 }
@@ -19,8 +24,9 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action'] ?? '')==='change_st
 $activeLawyer = 'consultations';
 require_once __DIR__ . '/includes/lawyer_header.php';
 
-$rows = $pdo->prepare('SELECT c.*, u.full_name AS client_name, u.phone AS client_phone FROM consultations c JOIN users u ON u.id=c.user_id WHERE c.lawyer_id=? ORDER BY c.scheduled_at DESC');
-$rows->execute([$lawyerId]);
+$scope = tenant_owner_where($pdo, 'c');
+$rows = $pdo->prepare('SELECT c.*, u.full_name AS client_name, u.phone AS client_phone FROM consultations c JOIN users u ON u.id=c.user_id WHERE ' . $scope['sql'] . ' ORDER BY c.scheduled_at DESC');
+$rows->execute($scope['params']);
 $rows = $rows->fetchAll();
 ?>
 <div class="app-content">

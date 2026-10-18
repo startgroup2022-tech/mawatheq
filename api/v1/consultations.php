@@ -7,16 +7,19 @@
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/../../includes/availability.php';
 require_once __DIR__ . '/../../includes/notifications.php';
+require_once __DIR__ . '/../../includes/tenant.php';
 
 $auth = api_authenticate($pdo);
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     if ($auth['type'] === 'client') {
         $stmt = $pdo->prepare('SELECT c.*, l.full_name AS lawyer_name, l.photo_path AS lawyer_photo FROM consultations c JOIN lawyers l ON l.id=c.lawyer_id WHERE c.user_id=? ORDER BY c.scheduled_at DESC');
+        $stmt->execute([$auth['id']]);
     } else {
-        $stmt = $pdo->prepare('SELECT c.*, u.full_name AS client_name, u.phone AS client_phone FROM consultations c JOIN users u ON u.id=c.user_id WHERE c.lawyer_id=? ORDER BY c.scheduled_at DESC');
+        $scope = tenant_owner_where_for_lawyer($pdo, $auth['id'], 'c');
+        $stmt = $pdo->prepare('SELECT c.*, u.full_name AS client_name, u.phone AS client_phone FROM consultations c JOIN users u ON u.id=c.user_id WHERE ' . $scope['sql'] . ' ORDER BY c.scheduled_at DESC');
+        $stmt->execute($scope['params']);
     }
-    $stmt->execute([$auth['id']]);
     api_json(['ok' => true, 'consultations' => $stmt->fetchAll()]);
 }
 

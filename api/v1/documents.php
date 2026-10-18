@@ -70,7 +70,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $mediaTypes = ['pdf' => 'application/pdf', 'png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg'];
         $base64 = base64_encode(file_get_contents(UPLOAD_DIR . $storedName));
-        $result = analyze_document_with_ai($settings['ai_provider'], $settings['ai_api_key'], $settings['ai_model'] ?? '', $base64, $mediaTypes[$ext], true, $documentType);
+        require_once __DIR__ . '/../../includes/ai_gateway.php';
+        $aiTenant = ai_gateway_tenant_context($pdo, 'client', (int)$auth['id']);
+        $result = analyze_document_with_ai($settings['ai_provider'], $settings['ai_api_key'], $settings['ai_model'] ?? '', $base64, $mediaTypes[$ext], true, $documentType, [
+            'pdo' => $pdo, 'settings' => $settings, 'tenant' => $aiTenant,
+            'feature' => 'document-ai', 'data_category' => 'document_text',
+            'actor_id' => (int)$auth['id'], 'actor_type' => 'client',
+        ]);
 
         if (!$result['ok']) {
             $pdo->prepare("UPDATE documents SET status='failed', summary=? WHERE id=?")->execute([$result['error'], $docId]);

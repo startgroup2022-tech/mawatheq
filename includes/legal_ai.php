@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/law_search.php';
 require_once __DIR__ . '/ai_provider.php';
+require_once __DIR__ . '/ai_gateway.php';
 require_once __DIR__ . '/knowledge_center.php';
 require_once __DIR__ . '/semantic_search.php';
 
@@ -132,6 +133,7 @@ function generate_grounded_legal_answer(string $question, bool $isArabic, array 
     } else $context='';
 
     // --- المرحلة 2: المسودة ---
+    $tenantCtx = ai_gateway_tenant_context($pdo, $actorType, $actorId);
     if ($match || $knowledgeSources) {
         if ($match) {
         $systemPrompt = $basePrompt . ($isArabic
@@ -146,10 +148,11 @@ function generate_grounded_legal_answer(string $question, bool $isArabic, array 
             ? '\nلا يتوفر مصدر نظامي محلي موثوق مرتبط بالسؤال. لا تقدم أحكاماً نظامية محددة أو مواد مرقمة. وضّح أن الإجابة العامة غير موثقة في مكتبة المنصة.'
             : '\nNo relevant local primary source was retrieved. Do not state specific legal rules or numbered provisions. Clearly say that any general information is not verified against the platform law library.');
     }
-    $response = $settings['ai_provider'] === 'anthropic'
-        ? call_anthropic_raw($settings['ai_api_key'], $settings['ai_model'] ?? '', $systemPrompt, $question, 900)
-        : call_openai_raw($settings['ai_api_key'], $settings['ai_model'] ?? '', $systemPrompt, $question, 900);
-    if (!$response['ok'] || !$response['text']) {
+    // Prompt-injection boundary: retrieved law/knowledge text is untrusted data.
+    $systemPrompt .= "\n" . ai_gateway_injection_guard($isArabic) . "\n";
+    $draftDataCategory = $knowledgeSources ? 'firm_knowledge' : ($match ? 'legal_text' : 'user_prompt');
+    $response = ai_gateway_call($pdo, $settings, $tenantCtx, 'legal_core', $draftDataCategory, $actorId, $actorType, $systemPrompt, $question, 900, null, 'legal_core');
+    if ($response['denied'] || !$response['ok'] || !$response['text']) {
         $fallback = local_law_fallback($question, $isArabic);
         log_answer_review($pdo,$actorType,$actorId,'legal_core',$question,$retrievalMethod,$sourceCitations,'source_only','n_a',[],true);
         return $fallback;
@@ -165,9 +168,7 @@ function generate_grounded_legal_answer(string $question, bool $isArabic, array 
         ? 'أنت مراجع مستقل للدقة القانونية. قارن الإجابة المقترحة بسؤال المستخدم والنصوص المرفقة فقط. لا تستخدم معرفتك الخارجية. أرجع JSON فقط بالمفاتيح: supported (boolean)، answer (نص مصحح لا يتضمن أي ادعاء غير مسنود)، reason (نص قصير)، cited_sources (قائمة بأسماء المصادر المرفقة حرفياً التي تسند الإجابة)، unsupported_claims (قائمة نصية بأي ادعاء بالمسودة الأصلية لم يسنده أي مصدر مرفق)، hallucination_risk ("low" أو "medium" أو "high" حسب مدى اعتماد المسودة الأصلية على معلومات غير موجودة بالمصادر). لا تذكر مصدراً غير موجود في القائمة. إذا كان المصدر غير كافٍ، supported=false.'
         : 'You are an independent legal accuracy reviewer. Compare the proposed answer only with the question and supplied source texts. Do not use outside knowledge. Return JSON only with keys: supported (boolean), answer (corrected answer with no unsupported claims), reason, cited_sources (array of exact source names from the supplied sources that support the answer), unsupported_claims (array of unsupported claims), hallucination_risk ("low", "medium", or "high"). Never name a source absent from the supplied sources. If evidence is insufficient, set supported=false.';
     $reviewInput = json_encode(['question'=>$question,'sources'=>$sourceTexts,'proposed_answer'=>$reply], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    $review = $settings['ai_provider'] === 'anthropic'
-        ? call_anthropic_raw($settings['ai_api_key'], $settings['ai_model'] ?? '', $reviewPrompt, $reviewInput, 900)
-        : call_openai_raw($settings['ai_api_key'], $settings['ai_model'] ?? '', $reviewPrompt, $reviewInput, 900);
+    $review = ai_gateway_call($pdo, $settings, $tenantCtx, 'legal_core', $draftDataCategory, $actorId, $actorType, $reviewPrompt, $reviewInput, 900, null, 'legal_core');
     $reviewData = $review['ok'] ? json_decode(trim(preg_replace('/^```(?:json)?|```$/m', '', trim($review['text'] ?? ''))), true) : null;
     $unsupportedClaims = is_array($reviewData['unsupported_claims'] ?? null) ? $reviewData['unsupported_claims'] : [];
     $citedSources = is_array($reviewData['cited_sources'] ?? null) ? $reviewData['cited_sources'] : [];

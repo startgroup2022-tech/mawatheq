@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/ai_provider.php';
+require_once __DIR__ . '/ai_gateway.php';
 
 /** Compare two completed, user-owned contract analyses after explicit user consent. */
 function compare_user_contracts(PDO $pdo, int $userId, int $firstId, int $secondId, bool $consent): array {
@@ -26,9 +27,7 @@ function compare_user_contracts(PDO $pdo, int $userId, int $firstId, int $second
     $insert=$pdo->prepare('INSERT INTO contract_comparisons (user_id,first_document_id,second_document_id,comparison_status,model) VALUES (?,?,?,\'processing\',?)');
     $insert->execute([$userId,$firstId,$secondId,$settings['ai_model']??null]);
     $comparisonId=(int)$pdo->lastInsertId();
-    $response=$settings['ai_provider']==='anthropic'
-        ? call_anthropic_raw($settings['ai_api_key'],$settings['ai_model']??'',$system,$message,1800,0.1)
-        : call_openai_raw($settings['ai_api_key'],$settings['ai_model']??'',$system,$message,1800,0.1);
+    $response = ai_gateway_call($pdo, $settings, ai_gateway_tenant_context($pdo, 'client', $userId), 'contract-compare', 'document_text', $userId, 'client', $system, $message, 1800, 0.1, 'contract_comparison');
     if (empty($response['ok']) || !is_string($response['text']??null) || trim($response['text'])==='') {
         $pdo->prepare("UPDATE contract_comparisons SET comparison_status='failed' WHERE id=? AND user_id=?")->execute([$comparisonId,$userId]);
         return ['ok'=>false,'error'=>is_rtl()?'تعذرت مقارنة العقدين حالياً. تحقق من مزود AI وحاول لاحقاً.':'Contract comparison failed. Check the AI provider and try again.'];

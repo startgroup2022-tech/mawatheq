@@ -4,8 +4,9 @@ require_once __DIR__ . '/includes/lawyer_header.php';
 $role = 'lawyer';
 
 $id = (int)($_GET['id'] ?? 0);
-$stmt = $pdo->prepare('SELECT * FROM consultations WHERE id=? AND lawyer_id=?');
-$stmt->execute([$id, $_SESSION['lawyer_id']]);
+$lawyerScope = tenant_owner_where($pdo, 'consultations');
+$stmt = $pdo->prepare('SELECT * FROM consultations WHERE id=? AND ' . $lawyerScope['sql']);
+$stmt->execute(array_merge([$id], $lawyerScope['params']));
 $consultation = $stmt->fetch();
 ?>
 <div class="app-content">

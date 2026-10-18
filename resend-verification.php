@@ -7,6 +7,9 @@ $as = is_string($asInput) ? $asInput : 'client';
 if (!in_array($as, ['client','lawyer'], true)) $as = 'client';
 $sent = false;
 $error = null;
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && !csrf_is_valid($_POST['csrf_token'] ?? null)) {
+    http_response_code(403); exit('Invalid request');
+}
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $emailInput = $_POST['email'] ?? '';
     $email = is_string($emailInput) ? strtolower(trim($emailInput)) : '';

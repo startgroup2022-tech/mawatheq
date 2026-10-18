@@ -10,6 +10,7 @@
  */
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/../../includes/ngenius.php';
+require_once __DIR__ . '/../../includes/finance.php';
 
 $auth = api_authenticate($pdo);
 if ($auth['type'] !== 'client') api_error('only clients can pay invoices', 403);
@@ -23,7 +24,7 @@ $stmt->execute([$invoiceId, $auth['id']]);
 $invoice = $stmt->fetch();
 
 if (!$invoice) api_error('invoice not found', 404);
-if ($invoice['status'] !== 'unpaid') api_error('invoice is not payable', 409);
+if (!in_array($invoice['status'], ['unpaid','partially_paid','overdue'], true) || finance_invoice_balance($invoice) <= 0) api_error('invoice is not payable', 409);
 
 $settings = ngenius_settings($pdo);
 if (!ngenius_is_enabled($settings)) api_error('online payment is not enabled yet', 503);
@@ -36,13 +37,13 @@ $cancelUrl = rtrim(SITE_URL, '/') . '/invoices.php';
 
 $order = ngenius_create_order(
     $settings['ngenius_environment'], $settings['ngenius_outlet_ref'], $tokenResult['token'],
-    (float)$invoice['amount'], $invoice['email'], $invoice['full_name'],
+    finance_invoice_balance($invoice), $invoice['email'], $invoice['full_name'],
     $redirectUrl, $cancelUrl, 'INV-' . $invoiceId, 'ar'
 );
 if (!$order['ok']) api_error($order['error'], 502);
 
 $pdo->prepare('UPDATE invoices SET gateway=?, gateway_order_ref=? WHERE id=?')->execute(['ngenius', $order['order_reference'], $invoiceId]);
 $pdo->prepare('INSERT INTO payment_transactions (invoice_id, gateway, gateway_order_ref, event_type, amount) VALUES (?,?,?,?,?)')
-    ->execute([$invoiceId, 'ngenius', $order['order_reference'], 'ORDER_CREATED', $invoice['amount']]);
+    ->execute([$invoiceId, 'ngenius', $order['order_reference'], 'ORDER_CREATED', finance_invoice_balance($invoice)]);
 
 api_json(['ok' => true, 'payment_url' => $order['payment_url'], 'order_reference' => $order['order_reference']]);

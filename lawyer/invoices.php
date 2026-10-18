@@ -3,27 +3,68 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../lang/strings.php';
 require_once __DIR__ . '/includes/lawyer_guard.php';
 require_once __DIR__ . '/../includes/notifications.php';
+require_once __DIR__ . '/../includes/tenant.php';
+require_once __DIR__ . '/../includes/finance.php';
 $lawyerId = $_SESSION['lawyer_id'];
+$firmId = tenant_write_firm_id($pdo);
 require_once __DIR__ . '/../includes/audit_log.php';
+// نطاق الاستعلام: المكتب بأكمله (firm) أو المحامي المنفرد فقط.
+$invScope = tenant_owner_where($pdo, 'invoices');
+$invScopeI = tenant_owner_where($pdo, 'i');
+$timeScope = tenant_owner_where($pdo, 'case_time_entries');
+$timeScopeTe = tenant_owner_where($pdo, 'te');
 
-// تتغير حالة الفاتورة عبر POST محمي وضمن فواتير المحامي الحالي فقط.
+// تتغير حالة الفاتورة عبر POST محمي وضمن فواتير المستأجر الحالي فقط.
 if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action'] ?? '')==='mark_paid') {
+    tenant_require($pdo, 'finance.record_payments');
     $invoiceId=is_string($_POST['invoice_id'] ?? null) ? (filter_var($_POST['invoice_id'],FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]) ?: 0) : 0;
-    $paymentUpdate=$pdo->prepare("UPDATE invoices SET status='paid', paid_at=NOW(), payment_method='manual' WHERE id=? AND lawyer_id=? AND status='unpaid' AND is_draft=0");
-    $paymentUpdate->execute([$invoiceId,$lawyerId]);
-    if($paymentUpdate->rowCount()) log_action($pdo,'تسجيل استلام دفع فاتورة','invoice',$invoiceId);
+    // Settle through the finance core so amount_paid and the balance stay consistent with the
+    // payment history (a legacy direct status flip would leave the balance looking outstanding).
+    $ownerCheck=$pdo->prepare('SELECT * FROM invoices WHERE id=? AND ' . $invScope['sql'] . ' AND is_draft=0 AND status IN (\'unpaid\',\'partially_paid\',\'overdue\')');
+    $ownerCheck->execute(array_merge([$invoiceId], $invScope['params']));
+    $target=$ownerCheck->fetch();
+    if($target){
+        $balance=finance_invoice_balance($target);
+        if($balance>0){
+            $settled=finance_record_payment($pdo,(int)$invoiceId,$balance,['method'=>'manual','recorded_by_type'=>'lawyer','recorded_by_id'=>(int)$lawyerId,'notes'=>is_rtl()?'تسجيل استلام كامل المبلغ':'Full amount received']);
+            if(!empty($settled['ok'])) log_action($pdo,'تسجيل استلام دفع فاتورة','invoice',$invoiceId);
+        }
+    }
     header('Location: /lawyer/invoices.php'); exit;
 }
+// Phase 3: record a real (possibly partial) payment through the finance core, tenant-scoped.
+if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action'] ?? '')==='record_payment') {
+    tenant_require($pdo, 'finance.record_payments');
+    $invoiceId=is_string($_POST['invoice_id'] ?? null) ? (filter_var($_POST['invoice_id'],FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]) ?: 0) : 0;
+    $amountInput=is_string($_POST['amount'] ?? null) ? trim($_POST['amount']) : '';
+    $amount=is_numeric($amountInput) ? (float)$amountInput : 0.0;
+    $method=in_array(($_POST['method'] ?? ''),['manual','cash','bank_transfer','card','other'],true)?$_POST['method']:'manual';
+    $reference=is_string($_POST['reference'] ?? null) ? trim($_POST['reference']) : '';
+    $ownerCheck=$pdo->prepare('SELECT id FROM invoices WHERE id=? AND ' . $invScope['sql'] . ' AND is_draft=0 AND status IN (\'unpaid\',\'partially_paid\',\'overdue\')');
+    $ownerCheck->execute(array_merge([$invoiceId], $invScope['params']));
+    if (!$ownerCheck->fetchColumn()) { $error=is_rtl()?'الفاتورة غير متاحة لتسجيل دفعة.':'This invoice cannot accept a payment.'; }
+    else {
+        $recorded=finance_record_payment($pdo,(int)$invoiceId,$amount,[
+            'method'=>$method,'reference'=>$reference!==''?$reference:null,
+            'recorded_by_type'=>'lawyer','recorded_by_id'=>(int)$lawyerId,
+        ]);
+        if ($recorded['ok']) { $created=true; $createdMessage=is_rtl()?'تم تسجيل الدفعة وتحديث رصيد الفاتورة.':'Payment recorded and the invoice balance updated.'; }
+        else { $error=is_rtl()?'تعذّر تسجيل الدفعة. تحقق من المبلغ (أكبر من صفر ولا يتجاوز الرصيد المتبقي).':'Could not record the payment. Check the amount (> 0 and not exceeding the outstanding balance).'; }
+    }
+}
 if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action'] ?? '')==='cancel_invoice') {
+    tenant_require($pdo, 'finance.create_invoices');
     $invoiceId=is_string($_POST['invoice_id'] ?? null) ? (filter_var($_POST['invoice_id'],FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]) ?: 0) : 0;
     $pdo->beginTransaction();
     try {
-        $draftCheck=$pdo->prepare("SELECT is_draft FROM invoices WHERE id=? AND lawyer_id=? AND status='unpaid' FOR UPDATE");
-        $draftCheck->execute([$invoiceId,$lawyerId]); $draftRow=$draftCheck->fetch();
+        $draftCheck=$pdo->prepare("SELECT is_draft FROM invoices WHERE id=? AND " . $invScope['sql'] . " AND status='unpaid' FOR UPDATE");
+        $draftCheck->execute(array_merge([$invoiceId], $invScope['params'])); $draftRow=$draftCheck->fetch();
         if ($draftRow) {
-            $cancel=$pdo->prepare("UPDATE invoices SET status='cancelled' WHERE id=? AND lawyer_id=? AND status='unpaid'");
-            $cancel->execute([$invoiceId,$lawyerId]);
-            if ((int)$draftRow['is_draft']===1) $pdo->prepare('UPDATE case_time_entries SET invoice_id=NULL WHERE invoice_id=? AND lawyer_id=?')->execute([$invoiceId,$lawyerId]);
+            $cancel=$pdo->prepare("UPDATE invoices SET status='cancelled' WHERE id=? AND " . $invScope['sql'] . " AND status='unpaid'");
+            $cancel->execute(array_merge([$invoiceId], $invScope['params']));
+            if ((int)$draftRow['is_draft']===1) {
+                $pdo->prepare('UPDATE case_time_entries SET invoice_id=NULL WHERE invoice_id=? AND ' . $timeScope['sql'])->execute(array_merge([$invoiceId], $timeScope['params']));
+            }
             if ($cancel->rowCount()===0) $draftRow=false;
         }
         $pdo->commit();
@@ -34,21 +75,23 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action'] ?? '')==='cancel_in
 
 $error = null; $created = false; $createdMessage = null;
 
-// عملاء هذا المحامي (من القضايا والاستشارات) لاختيارهم عند إصدار فاتورة
+// عملاء هذا المستأجر (من القضايا والاستشارات والفواتير) لاختيارهم عند إصدار فاتورة
+$tenantClients = tenant_client_ids_subquery($pdo);
 $clientsStmt = $pdo->prepare('
     SELECT DISTINCT u.id, u.full_name FROM users u
-    WHERE u.id IN (SELECT user_id FROM cases WHERE lawyer_id=?)
-       OR u.id IN (SELECT user_id FROM consultations WHERE lawyer_id=?)
+    WHERE u.id IN (' . $tenantClients['sql'] . ')
     ORDER BY u.full_name
 ');
-$clientsStmt->execute([$lawyerId, $lawyerId]);
+$clientsStmt->execute($tenantClients['params']);
 $clients = $clientsStmt->fetchAll();
 
-$casesStmt = $pdo->prepare('SELECT id, title, user_id FROM cases WHERE lawyer_id=? ORDER BY created_at DESC');
-$casesStmt->execute([$lawyerId]);
+$caseScope = tenant_owner_where($pdo, 'c');
+$casesStmt = $pdo->prepare('SELECT c.id, c.title, c.user_id FROM cases c WHERE ' . $caseScope['sql'] . ' ORDER BY c.created_at DESC');
+$casesStmt->execute($caseScope['params']);
 $cases = $casesStmt->fetchAll();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'create') {
+    tenant_require($pdo, 'finance.create_invoices');
     $userInput = is_string($_POST['user_id'] ?? null) ? $_POST['user_id'] : '';
     $userId = filter_var($userInput,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]) ?: 0;
     $desc = is_string($_POST['description'] ?? null) ? trim($_POST['description']) : '';
@@ -60,21 +103,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'creat
 
     $dueDateObject = $dueDate ? DateTime::createFromFormat('!Y-m-d',(string)$dueDate) : null;
     $validDueDate = !$dueDate || ($dueDateObject && $dueDateObject->format('Y-m-d') === $dueDate);
-    $clientCheck=$pdo->prepare('SELECT id FROM users WHERE id=? AND (EXISTS(SELECT 1 FROM cases WHERE user_id=users.id AND lawyer_id=?) OR EXISTS(SELECT 1 FROM consultations WHERE user_id=users.id AND lawyer_id=?))');
-    $clientCheck->execute([$userId,$lawyerId,$lawyerId]);
+    $clientCheck=$pdo->prepare('SELECT id FROM users WHERE id=? AND id IN (' . $tenantClients['sql'] . ')');
+    $clientCheck->execute(array_merge([$userId], $tenantClients['params']));
     $validCase = $caseInput === '' || (bool)$caseId;
-    if ($caseId) { $caseCheck=$pdo->prepare('SELECT id FROM cases WHERE id=? AND lawyer_id=? AND user_id=?'); $caseCheck->execute([$caseId,$lawyerId,$userId]); $validCase=(bool)$caseCheck->fetchColumn(); }
+    if ($caseId) { $caseCheck=$pdo->prepare('SELECT c.id FROM cases c WHERE c.id=? AND c.user_id=? AND ' . $caseScope['sql']); $caseCheck->execute(array_merge([$caseId,$userId], $caseScope['params'])); $validCase=(bool)$caseCheck->fetchColumn(); }
     if (!$userId || !$clientCheck->fetchColumn() || !$desc || mb_strlen($desc,'UTF-8')>255 || !is_finite($amount) || $amount <= 0 || $amount > 99999999.99 || !$validDueDate || !$validCase) {
         $error = is_rtl() ? 'يرجى اختيار العميل وتعبئة الوصف والمبلغ (أكبر من صفر).' : 'Please choose a client and fill description and amount (> 0).';
     } else {
-        $pdo->prepare('INSERT INTO invoices (lawyer_id,user_id,case_id,description,amount,due_date) VALUES (?,?,?,?,?,?)')
-            ->execute([$lawyerId, $userId, $caseId, $desc, $amount, $dueDate ?: null]);
+        $pdo->prepare('INSERT INTO invoices (invoice_number,lawyer_id,created_by_lawyer_id,firm_id,user_id,case_id,description,amount,currency,status,issue_date,due_date) VALUES (?,?,?,?,?,?,?,?,?,?,NOW(),?)')
+            ->execute([finance_next_invoice_number($pdo, $firmId, (int)$lawyerId), $lawyerId, $lawyerId, $firmId, $userId, $caseId, $desc, $amount, FINANCE_CURRENCY, 'unpaid', $dueDate ?: null]);
         notify($pdo, 'client', $userId, is_rtl() ? 'فاتورة جديدة' : 'New invoice', $desc . ' — ' . number_format($amount,3) . (is_rtl()?' د.ب':' BHD'), '/invoices.php');
         $created = true; $createdMessage=is_rtl()?'تم إصدار الفاتورة بنجاح.':'Invoice issued successfully.';
     }
 }
 
 if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action'] ?? '')==='create_time_invoice') {
+    tenant_require($pdo, 'finance.create_invoices');
     $caseId=is_string($_POST['case_id'] ?? null) ? (filter_var($_POST['case_id'],FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]) ?: 0) : 0;
     $dueDate=is_string($_POST['due_date'] ?? null) ? trim($_POST['due_date']) : '';
     $date= $dueDate!=='' ? DateTime::createFromFormat('!Y-m-d',$dueDate) : null;
@@ -83,24 +127,24 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action'] ?? '')==='create_ti
     } else {
         try {
             $pdo->beginTransaction();
-            $caseLock=$pdo->prepare('SELECT c.id,c.user_id,c.title FROM cases c WHERE c.id=? AND c.lawyer_id=? FOR UPDATE');
-            $caseLock->execute([$caseId,$lawyerId]); $billingCase=$caseLock->fetch();
+            $caseLock=$pdo->prepare('SELECT c.id,c.user_id,c.title FROM cases c WHERE c.id=? AND ' . $caseScope['sql'] . ' FOR UPDATE');
+            $caseLock->execute(array_merge([$caseId], $caseScope['params'])); $billingCase=$caseLock->fetch();
             if (!$billingCase) throw new RuntimeException('Case not found.');
-            $entriesQuery=$pdo->prepare('SELECT id,minutes,hourly_rate FROM case_time_entries WHERE case_id=? AND lawyer_id=? AND billable=1 AND invoice_id IS NULL ORDER BY work_date,id LIMIT 500 FOR UPDATE');
-            $entriesQuery->execute([$caseId,$lawyerId]); $billableEntries=$entriesQuery->fetchAll();
+            $entriesQuery=$pdo->prepare('SELECT id,minutes,hourly_rate FROM case_time_entries WHERE case_id=? AND ' . $timeScope['sql'] . ' AND billable=1 AND invoice_id IS NULL ORDER BY work_date,id LIMIT 500 FOR UPDATE');
+            $entriesQuery->execute(array_merge([$caseId], $timeScope['params'])); $billableEntries=$entriesQuery->fetchAll();
             if (!$billableEntries) throw new RuntimeException('No unbilled entries.');
             $minutes=0; $amount=0.0;
             foreach($billableEntries as $entry){$minutes+=(int)$entry['minutes'];$amount+=round(((int)$entry['minutes']/60)*(float)$entry['hourly_rate'],3);}
             if (!is_finite($amount) || $amount<=0 || $amount>99999999.99) throw new RuntimeException('Invalid calculated amount.');
             $lineCount=count($billableEntries);
             $description=(is_rtl()?'مسودة أتعاب وقت عمل للقضية: ':'Draft time billing for case: ').mb_substr($billingCase['title'],0,170,'UTF-8').' · '.$lineCount.' '.(is_rtl()?'سجل':'entries').' / '.round($minutes/60,3).' '.(is_rtl()?'ساعة':'hours');
-            $pdo->prepare('INSERT INTO invoices (lawyer_id,user_id,case_id,description,amount,due_date,is_draft) VALUES (?,?,?,?,?,?,1)')
-                ->execute([$lawyerId,(int)$billingCase['user_id'],$caseId,mb_substr($description,0,255,'UTF-8'),$amount,$dueDate!==''?$dueDate:null]);
+            $pdo->prepare('INSERT INTO invoices (invoice_number,lawyer_id,created_by_lawyer_id,firm_id,user_id,case_id,description,amount,currency,status,is_draft,issue_date,due_date) VALUES (?,?,?,?,?,?,?,?,?,?,1,NOW(),?)')
+                ->execute([finance_next_invoice_number($pdo, $firmId, (int)$lawyerId),$lawyerId,$lawyerId,$firmId,(int)$billingCase['user_id'],$caseId,mb_substr($description,0,255,'UTF-8'),$amount,FINANCE_CURRENCY,'unpaid',$dueDate!==''?$dueDate:null]);
             $invoiceId=(int)$pdo->lastInsertId();
             $ids=array_map(static fn($entry)=>(int)$entry['id'],$billableEntries);
             $placeholders=implode(',',array_fill(0,count($ids),'?'));
-            $attach=$pdo->prepare("UPDATE case_time_entries SET invoice_id=? WHERE lawyer_id=? AND invoice_id IS NULL AND id IN ($placeholders)");
-            $attach->execute(array_merge([$invoiceId,$lawyerId],$ids));
+            $attach=$pdo->prepare("UPDATE case_time_entries SET invoice_id=? WHERE " . $timeScope['sql'] . " AND invoice_id IS NULL AND id IN ($placeholders)");
+            $attach->execute(array_merge([$invoiceId], $timeScope['params'], $ids));
             if ($attach->rowCount()!==$lineCount) throw new RuntimeException('Time entries changed during invoice creation.');
             $pdo->commit();
             log_action($pdo,'إنشاء مسودة فاتورة من سجل الوقت','invoice',$invoiceId);
@@ -114,15 +158,16 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action'] ?? '')==='create_ti
 }
 
 if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action'] ?? '')==='issue_time_invoice') {
+    tenant_require($pdo, 'finance.create_invoices');
     $invoiceId=is_string($_POST['invoice_id'] ?? null) ? (filter_var($_POST['invoice_id'],FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]) ?: 0) : 0; $issueData=null;
     try {
         $pdo->beginTransaction();
-        $draftLock=$pdo->prepare("SELECT id,user_id,description,amount FROM invoices WHERE id=? AND lawyer_id=? AND status='unpaid' AND is_draft=1 FOR UPDATE");
-        $draftLock->execute([$invoiceId,$lawyerId]); $issueData=$draftLock->fetch();
+        $draftLock=$pdo->prepare("SELECT id,user_id,description,amount FROM invoices WHERE id=? AND " . $invScope['sql'] . " AND status='unpaid' AND is_draft=1 FOR UPDATE");
+        $draftLock->execute(array_merge([$invoiceId], $invScope['params'])); $issueData=$draftLock->fetch();
         if (!$issueData) throw new RuntimeException('Draft not found.');
-        $entryCount=$pdo->prepare('SELECT COUNT(*) FROM case_time_entries WHERE invoice_id=? AND lawyer_id=?'); $entryCount->execute([$invoiceId,$lawyerId]);
+        $entryCount=$pdo->prepare('SELECT COUNT(*) FROM case_time_entries WHERE invoice_id=? AND ' . $timeScope['sql']); $entryCount->execute(array_merge([$invoiceId], $timeScope['params']));
         if ((int)$entryCount->fetchColumn()<1) throw new RuntimeException('Draft has no linked time.');
-        $pdo->prepare("UPDATE invoices SET is_draft=0 WHERE id=? AND lawyer_id=? AND is_draft=1")->execute([$invoiceId,$lawyerId]);
+        $pdo->prepare("UPDATE invoices SET is_draft=0 WHERE id=? AND " . $invScope['sql'] . " AND is_draft=1")->execute(array_merge([$invoiceId], $invScope['params']));
         notify($pdo,'client',(int)$issueData['user_id'],is_rtl()?'فاتورة أتعاب وقت جديدة':'New time billing invoice',$issueData['description'].' — '.number_format((float)$issueData['amount'],3).(is_rtl()?' د.ب':' BHD'),'/invoices.php');
         $pdo->commit();
         log_action($pdo,'إصدار فاتورة أتعاب وقت للعميل','invoice',$invoiceId);
@@ -142,22 +187,23 @@ $stmt = $pdo->prepare('
     FROM invoices i
     JOIN users u ON u.id = i.user_id
     LEFT JOIN cases c ON c.id = i.case_id
-    WHERE i.lawyer_id = ?
+    WHERE ' . $invScopeI['sql'] . '
     ORDER BY i.created_at DESC
 ');
-$stmt->execute([$lawyerId]);
+$stmt->execute($invScopeI['params']);
 $invoices = $stmt->fetchAll();
 
-$unbilledTimeQuery=$pdo->prepare("SELECT c.id AS case_id,c.title AS case_title,u.full_name AS client_name,COUNT(te.id) AS entry_count,SUM(te.minutes) AS total_minutes,SUM(ROUND(te.minutes*te.hourly_rate/60,3)) AS amount FROM case_time_entries te JOIN cases c ON c.id=te.case_id JOIN users u ON u.id=c.user_id WHERE te.lawyer_id=? AND te.billable=1 AND te.invoice_id IS NULL GROUP BY c.id,c.title,u.full_name ORDER BY c.title");
-$unbilledTimeQuery->execute([$lawyerId]); $unbilledTimeCases=$unbilledTimeQuery->fetchAll();
+$unbilledTimeQuery=$pdo->prepare("SELECT c.id AS case_id,c.title AS case_title,u.full_name AS client_name,COUNT(te.id) AS entry_count,SUM(te.minutes) AS total_minutes,SUM(ROUND(te.minutes*te.hourly_rate/60,3)) AS amount FROM case_time_entries te JOIN cases c ON c.id=te.case_id JOIN users u ON u.id=c.user_id WHERE " . $timeScopeTe['sql'] . " AND te.billable=1 AND te.invoice_id IS NULL GROUP BY c.id,c.title,u.full_name ORDER BY c.title");
+$unbilledTimeQuery->execute($timeScopeTe['params']); $unbilledTimeCases=$unbilledTimeQuery->fetchAll();
 $activeLawyer = 'invoices';
 require_once __DIR__ . '/includes/lawyer_header.php';
 
 $totalPaid = 0; $totalUnpaid = 0;
 foreach ($invoices as $inv) {
     if (!empty($inv['is_draft'])) continue;
-    if ($inv['status'] === 'paid') $totalPaid += $inv['amount'];
-    elseif ($inv['status'] !== 'cancelled') $totalUnpaid += $inv['amount'];
+    if ($inv['status'] === 'cancelled') continue;
+    $totalPaid += (float)$inv['amount_paid'];
+    $totalUnpaid += finance_invoice_balance($inv);
 }
 ?>
 <div class="app-content lawyer-invoices">
@@ -212,34 +258,59 @@ foreach ($invoices as $inv) {
 
   <div class="table-wrap">
     <table class="admin-table" id="invoiceTable">
-      <thead><tr><th><?= is_rtl() ? 'العميل' : 'Client' ?></th><th><?= is_rtl() ? 'الوصف' : 'Description' ?></th><th><?= is_rtl() ? 'القضية' : 'Case' ?></th><th><?= is_rtl() ? 'المبلغ' : 'Amount' ?></th><th><?= is_rtl() ? 'الاستحقاق' : 'Due' ?></th><th><?= is_rtl() ? 'الحالة' : 'Status' ?></th><th></th></tr></thead>
+      <thead><tr><th><?= is_rtl() ? 'الرقم' : 'No.' ?></th><th><?= is_rtl() ? 'العميل' : 'Client' ?></th><th><?= is_rtl() ? 'الوصف' : 'Description' ?></th><th><?= is_rtl() ? 'القضية' : 'Case' ?></th><th><?= is_rtl() ? 'المبلغ' : 'Amount' ?></th><th><?= is_rtl() ? 'المسدد' : 'Paid' ?></th><th><?= is_rtl() ? 'المتبقي' : 'Balance' ?></th><th><?= is_rtl() ? 'الاستحقاق' : 'Due' ?></th><th><?= is_rtl() ? 'الحالة' : 'Status' ?></th><th></th></tr></thead>
       <tbody>
         <?php foreach ($invoices as $inv):
-          $isOverdue = $inv['status'] === 'unpaid' && $inv['due_date'] && strtotime($inv['due_date']) < time();
-          $displayStatus = !empty($inv['is_draft']) ? 'draft' : ($isOverdue ? 'overdue' : $inv['status']);
-          $statusLabels = ['draft'=>is_rtl()?'مسودة غير مرسلة':'Unsent draft','unpaid' => (is_rtl()?'غير مدفوعة':'Unpaid'), 'paid' => (is_rtl()?'مدفوعة':'Paid'), 'overdue' => (is_rtl()?'متأخرة':'Overdue'), 'cancelled' => (is_rtl()?'ملغاة':'Cancelled')];
+          $displayStatus = finance_display_status($inv);
+          $statusLabels = ['draft'=>is_rtl()?'مسودة غير مرسلة':'Unsent draft','unpaid' => (is_rtl()?'غير مدفوعة':'Unpaid'), 'partially_paid' => (is_rtl()?'مدفوعة جزئياً':'Partially paid'), 'paid' => (is_rtl()?'مدفوعة':'Paid'), 'overdue' => (is_rtl()?'متأخرة':'Overdue'), 'cancelled' => (is_rtl()?'ملغاة':'Cancelled')];
+          $balance = finance_invoice_balance($inv);
         ?>
-        <tr data-invoice-status="<?= htmlspecialchars($displayStatus) ?>" data-invoice-search="<?= htmlspecialchars(mb_strtolower($inv['client_name'].' '.$inv['description'].' '.($inv['case_title']??''),'UTF-8')) ?>">
+        <tr data-invoice-status="<?= htmlspecialchars($displayStatus) ?>" data-invoice-search="<?= htmlspecialchars(mb_strtolower(($inv['invoice_number']??'').' '.$inv['client_name'].' '.$inv['description'].' '.($inv['case_title']??''),'UTF-8')) ?>">
+          <td><span class="field-hint"><?= htmlspecialchars($inv['invoice_number'] ?? '—') ?></span></td>
           <td><?= htmlspecialchars($inv['client_name']) ?></td>
           <td><?= htmlspecialchars($inv['description']) ?></td>
           <td><?php if($inv['case_id']): ?><a href="/lawyer/case-detail.php?id=<?= (int)$inv['case_id'] ?>"><?= htmlspecialchars($inv['case_title'] ?? '—') ?></a><?php else: ?><?= htmlspecialchars($inv['case_title'] ?? '—') ?><?php endif; ?></td>
           <td><?= number_format($inv['amount'], 3) ?> <?= is_rtl() ? 'د.ب' : 'BHD' ?></td>
+          <td><?= number_format((float)$inv['amount_paid'], 3) ?></td>
+          <td><?= number_format($balance, 3) ?></td>
           <td><?= $inv['due_date'] ? date('Y-m-d', strtotime($inv['due_date'])) : '—' ?></td>
-          <td><span class="status-pill status-<?= $displayStatus === 'paid' ? 'confirmed' : ($displayStatus === 'overdue' ? 'cancelled' : 'pending') ?>"><?= $statusLabels[$displayStatus] ?></span></td>
+          <td><span class="status-pill status-<?= $displayStatus === 'paid' ? 'confirmed' : (in_array($displayStatus, ['overdue','cancelled'], true) ? 'cancelled' : 'pending') ?>"><?= $statusLabels[$displayStatus] ?? $displayStatus ?></span></td>
           <td><div class="invoice-actions">
             <?php if ($inv['status'] === 'unpaid' && !empty($inv['is_draft'])): ?>
               <form method="post" style="display:inline" onsubmit="return confirm('<?= is_rtl()?'تأكيد إصدار الفاتورة وإشعار العميل؟':'Issue this invoice and notify the client?' ?>')"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="issue_time_invoice"><input type="hidden" name="invoice_id" value="<?= (int)$inv['id'] ?>"><button class="icon-btn" type="submit"><?= is_rtl()?'مراجعة وإصدار':'Review & issue' ?></button></form>
               <form method="post" style="display:inline" onsubmit="return confirm('<?= is_rtl()?'حذف المسودة وإعادة الساعات إلى السجل غير المفوتر؟':'Delete draft and release its time entries?' ?>')"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="cancel_invoice"><input type="hidden" name="invoice_id" value="<?= (int)$inv['id'] ?>"><button class="icon-btn danger" type="submit"><?= is_rtl()?'حذف المسودة':'Discard draft' ?></button></form>
-            <?php elseif ($inv['status'] === 'unpaid'): ?>
-              <form method="post" onsubmit="return confirm('<?= is_rtl() ? 'تأكيد استلام الدفعة؟' : 'Confirm payment received?' ?>')"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="mark_paid"><input type="hidden" name="invoice_id" value="<?= (int)$inv['id'] ?>"><button class="icon-btn" type="submit"><?= is_rtl() ? 'تحديد كمدفوعة' : 'Mark paid' ?></button></form>
+            <?php elseif (in_array($inv['status'], ['unpaid','partially_paid','overdue'], true)): ?>
+              <?php if ($balance > 0): ?><button type="button" class="icon-btn" onclick="openRecordPayment(<?= (int)$inv['id'] ?>, '<?= htmlspecialchars(number_format($balance,3,'.',''), ENT_QUOTES) ?>', '<?= htmlspecialchars($inv['invoice_number'] ?? '', ENT_QUOTES) ?>')"><?= is_rtl() ? 'تسجيل دفعة' : 'Record payment' ?></button><?php endif; ?>
+              <form method="post" onsubmit="return confirm('<?= is_rtl() ? 'تأكيد استلام كامل المبلغ المتبقي؟' : 'Confirm the full remaining amount was received?' ?>')"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="mark_paid"><input type="hidden" name="invoice_id" value="<?= (int)$inv['id'] ?>"><button class="icon-btn" type="submit"><?= is_rtl() ? 'تحديد كمدفوعة' : 'Mark paid' ?></button></form>
               <form method="post" onsubmit="return confirm('<?= is_rtl() ? 'إلغاء الفاتورة؟' : 'Cancel invoice?' ?>')"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="cancel_invoice"><input type="hidden" name="invoice_id" value="<?= (int)$inv['id'] ?>"><button class="icon-btn danger" type="submit"><?= is_rtl() ? 'إلغاء' : 'Cancel' ?></button></form>
             <?php endif; ?>
           </div></td>
         </tr>
         <?php endforeach; ?>
-        <?php if (empty($invoices)): ?><tr><td colspan="7"><div class="empty-state"><div style="font-size:2rem">🧾</div><strong><?= is_rtl() ? 'لا توجد فواتير بعد' : 'No invoices yet' ?></strong><p><?= is_rtl()?'ابدأ بإنشاء فاتورة لعميل مرتبط بقضية أو استشارة.':'Create an invoice for a client linked to a case or consultation.' ?></p><button type="button" class="btn btn-outline btn-sm" onclick="openModal('addInvoiceModal')"><?= is_rtl()?'إصدار أول فاتورة':'Create first invoice' ?></button></div></td></tr><?php endif; ?>
+        <?php if (empty($invoices)): ?><tr><td colspan="10"><div class="empty-state"><div style="font-size:2rem">🧾</div><strong><?= is_rtl() ? 'لا توجد فواتير بعد' : 'No invoices yet' ?></strong><p><?= is_rtl()?'ابدأ بإنشاء فاتورة لعميل مرتبط بقضية أو استشارة.':'Create an invoice for a client linked to a case or consultation.' ?></p><button type="button" class="btn btn-outline btn-sm" onclick="openModal('addInvoiceModal')"><?= is_rtl()?'إصدار أول فاتورة':'Create first invoice' ?></button></div></td></tr><?php endif; ?>
       </tbody>
     </table>
+  </div>
+
+  <div class="modal-backdrop" id="recordPaymentModal">
+    <form class="modal-form" method="post" aria-labelledby="recordPaymentTitle"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
+    <button type="button" class="modal-close" onclick="closeModal('recordPaymentModal')" aria-label="<?= is_rtl()?'إغلاق':'Close' ?>">✕</button>
+    <input type="hidden" name="action" value="record_payment">
+    <input type="hidden" name="invoice_id" id="recordPaymentInvoiceId" value="">
+    <h3 id="recordPaymentTitle" style="margin-bottom:14px"><?= is_rtl() ? 'تسجيل دفعة' : 'Record a payment' ?></h3>
+    <p class="field-hint" id="recordPaymentHint" style="margin-bottom:10px"></p>
+    <div class="grid-2">
+      <div class="field"><label><?= is_rtl() ? 'المبلغ (د.ب)' : 'Amount (BHD)' ?></label><input type="number" step="0.001" min="0.001" name="amount" id="recordPaymentAmount" required></div>
+      <div class="field"><label><?= is_rtl() ? 'طريقة الدفع' : 'Method' ?></label><div class="select-wrap"><select name="method" class="pro-select">
+        <option value="cash"><?= is_rtl()?'نقداً':'Cash' ?></option>
+        <option value="bank_transfer"><?= is_rtl()?'تحويل بنكي':'Bank transfer' ?></option>
+        <option value="card"><?= is_rtl()?'بطاقة':'Card' ?></option>
+        <option value="manual"><?= is_rtl()?'أخرى':'Other' ?></option>
+      </select></div></div>
+      <div class="field"><label><?= is_rtl() ? 'مرجع (اختياري)' : 'Reference (optional)' ?></label><input type="text" name="reference" maxlength="120"></div>
+    </div>
+    <button class="btn btn-primary" type="submit"><?= is_rtl() ? 'تسجيل الدفعة' : 'Record payment' ?></button>
+    </form>
   </div>
 </div>
 <script>
@@ -248,5 +319,11 @@ foreach ($invoices as $inv) {
   function applyInvoiceFilters(){var q=(search.value||'').trim().toLocaleLowerCase(), status=filter.value; rows.forEach(function(row){var matchText=(row.dataset.invoiceSearch||'').toLocaleLowerCase().indexOf(q)!==-1, matchStatus=status==='all'||row.dataset.invoiceStatus===status; row.hidden=!(matchText&&matchStatus);});}
   search.addEventListener('input',applyInvoiceFilters); filter.addEventListener('change',applyInvoiceFilters);
 })();
+window.openRecordPayment=function(id, balance, number){
+  document.getElementById('recordPaymentInvoiceId').value=id;
+  var amount=document.getElementById('recordPaymentAmount'); amount.value=balance; amount.max=balance;
+  document.getElementById('recordPaymentHint').textContent='<?= is_rtl()?'الفاتورة ':'Invoice ' ?>'+(number||id)+' — <?= is_rtl()?'المتبقي ':'balance ' ?>'+balance;
+  openModal('recordPaymentModal');
+};
 </script>
 <?php require_once __DIR__ . '/includes/lawyer_footer.php'; ?>

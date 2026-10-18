@@ -3,10 +3,13 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../lang/strings.php';
 require_once __DIR__ . '/includes/lawyer_guard.php';
 require_once __DIR__ . '/../includes/notifications.php';
+require_once __DIR__ . '/../includes/tenant.php';
 $lawyerId = $_SESSION['lawyer_id'];
+$firmId = tenant_write_firm_id($pdo);
 $error = null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'create') {
+    tenant_require($pdo, 'cases.create');
     // البحث عن العميل بالبريد الإلكتروني (يجب أن يكون مسجّلاً في الموقع مسبقاً)
     $stmt = $pdo->prepare('SELECT id FROM users WHERE email=?');
     $stmt->execute([trim($_POST['client_email'])]);
@@ -14,8 +17,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'creat
     if (!$client) {
         $error = is_rtl() ? 'لا يوجد عميل مسجّل بهذا البريد الإلكتروني. يجب أن ينشئ العميل حساباً أولاً.' : 'No registered client found with this email. The client must create an account first.';
     } else {
-        $pdo->prepare('INSERT INTO cases (lawyer_id, user_id, title, case_type, description) VALUES (?,?,?,?,?)')
-            ->execute([$lawyerId, $client['id'], $_POST['title'], $_POST['case_type'], $_POST['description']]);
+        $pdo->prepare('INSERT INTO cases (lawyer_id, firm_id, user_id, title, case_type, description) VALUES (?,?,?,?,?,?)')
+            ->execute([$lawyerId, $firmId, $client['id'], $_POST['title'], $_POST['case_type'], $_POST['description']]);
         notify($pdo, 'client', $client['id'], is_rtl() ? 'تم فتح قضية جديدة لك' : 'A new case was opened for you', $_POST['title'], '/consultations.php');
         header('Location: /lawyer/cases.php'); exit;
     }
@@ -24,9 +27,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'creat
 $activeLawyer = 'cases';
 require_once __DIR__ . '/includes/lawyer_header.php';
 
-$cases = $pdo->prepare('SELECT c.*, u.full_name AS client_name FROM cases c JOIN users u ON u.id=c.user_id WHERE c.lawyer_id=? ORDER BY c.updated_at DESC');
-$cases->execute([$lawyerId]);
+$search = trim((string)($_GET['q'] ?? ''));
+$statusFilter = trim((string)($_GET['status'] ?? ''));
+$page = max(1, (int)($_GET['page'] ?? 1));
+$perPage = 20;
+$offset = ($page - 1) * $perPage;
+$scope = tenant_owner_where($pdo, 'c');
+$where = [$scope['sql']];
+$params = $scope['params'];
+if ($search !== '') {
+    $where[] = '(c.title LIKE ? OR u.full_name LIKE ? OR c.case_type LIKE ?)';
+    $like = '%' . $search . '%';
+    array_push($params, $like, $like, $like);
+}
+if ($statusFilter !== '') {
+    $where[] = 'c.status=?';
+    $params[] = $statusFilter;
+}
+$whereSql = implode(' AND ', $where);
+$countStmt = $pdo->prepare("SELECT COUNT(*) FROM cases c JOIN users u ON u.id=c.user_id WHERE $whereSql");
+$countStmt->execute($params);
+$totalCases = (int)$countStmt->fetchColumn();
+
+$cases = $pdo->prepare("SELECT c.*, u.full_name AS client_name FROM cases c JOIN users u ON u.id=c.user_id WHERE $whereSql ORDER BY c.updated_at DESC LIMIT $perPage OFFSET $offset");
+$cases->execute($params);
 $cases = $cases->fetchAll();
+$totalPages = max(1, (int)ceil($totalCases / $perPage));
 ?>
 <div class="app-content">
   <div class="toolbar"><h2><?= is_rtl() ? 'القضايا' : 'Cases' ?></h2><div style="display:flex;gap:8px;flex-wrap:wrap"><a href="/lawyer/export-cases.php" class="btn btn-outline btn-sm"><?= is_rtl()?'تصدير CSV':'Export CSV' ?></a><button type="button" class="btn btn-primary" onclick="openModal('addCaseModal')">＋ <?= is_rtl()?'إضافة قضية':'Add case' ?></button></div></div>
@@ -44,6 +70,16 @@ $cases = $cases->fetchAll();
   </form></div>
 
   <div class="table-wrap">
+    <form method="get" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <input type="search" name="q" value="<?= htmlspecialchars($search) ?>" placeholder="<?= is_rtl()?'بحث بالعنوان/العميل/النوع':'Search title, client, or type' ?>" style="flex:1;min-width:200px">
+      <select name="status">
+        <option value=""><?= is_rtl()?'كل الحالات':'All statuses' ?></option>
+        <?php foreach (['open','in_review','closed_won','closed_lost','closed_settled'] as $st): ?>
+        <option value="<?= $st ?>"<?= $statusFilter === $st ? ' selected' : '' ?>><?= htmlspecialchars($st) ?></option>
+        <?php endforeach; ?>
+      </select>
+      <button class="btn btn-outline btn-sm" type="submit"><?= is_rtl()?'تصفية':'Filter' ?></button>
+    </form>
     <table class="admin-table">
       <thead><tr><th><?= is_rtl() ? 'القضية' : 'Case' ?></th><th><?= is_rtl() ? 'العميل' : 'Client' ?></th><th><?= is_rtl() ? 'احتمالية الفوز' : 'Win probability' ?></th><th><?= is_rtl() ? 'الحالة' : 'Status' ?></th><th></th></tr></thead>
       <tbody>
@@ -59,6 +95,13 @@ $cases = $cases->fetchAll();
         <?php if (empty($cases)): ?><tr><td colspan="5" style="text-align:center;color:var(--text-muted)"><?= is_rtl() ? 'لا توجد قضايا بعد' : 'No cases yet' ?></td></tr><?php endif; ?>
       </tbody>
     </table>
+    <?php if ($totalPages > 1): ?>
+    <div style="display:flex;gap:8px;justify-content:center;margin-top:12px">
+      <?php for ($p = 1; $p <= $totalPages; $p++): ?>
+      <a class="icon-btn<?= $p === $page ? ' active' : '' ?>" href="?<?= htmlspecialchars(http_build_query(['q' => $search, 'status' => $statusFilter, 'page' => $p])) ?>"><?= $p ?></a>
+      <?php endfor; ?>
+    </div>
+    <?php endif; ?>
   </div>
 </div>
 <?php require_once __DIR__ . '/includes/lawyer_footer.php'; ?>
