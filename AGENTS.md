@@ -1106,3 +1106,61 @@ cleanup leaves the row behind, after which the unique key on `(firm_id, slug)` m
 INSERT fail and the save render 200 instead of redirecting. Both bugs were invisible until
 the suite was run twice in a row.
 
+## Execution 31 — affiliate, referral and partner marketing (v57)
+
+The engine (attribution, commission, ledger, payout state machine, fraud signals) is in
+`includes/affiliate*.php` and `database/upgrade_v57.sql`. This section is the operational
+knowledge the UI work added.
+
+### Money is integer minor units, everywhere
+
+`affiliate_to_minor()` / `affiliate_from_minor()` convert at the edges; nothing in between
+is a float. A new affiliate surface that does `$amount * 100` is the bug, not the fix.
+
+### Programmatic callers of the payout service must pass a method
+
+`affiliate_request_payout()` fell back to a null method until Execution 31: the guard read
+`in_array($options['method'] ?? 'bank_transfer', [...]) ? $options['method'] : 'bank_transfer'`,
+so the true branch dereferenced the key the `??` had just defaulted. The web form always
+supplies `method`, which is why only direct service calls failed — with `create_failed`, not
+a useful message. It now normalises first. Anything else that defaults a value inside the
+condition it also reads needs the same look.
+
+### Admin consoles call the service, never write state directly
+
+`admin/affiliate-detail.php` and `admin/affiliate-payout.php` route every change through
+`affiliate_set_status()`, `affiliate_set_compliance()` and `affiliate_payout_transition()`.
+Those functions own the transition table, the second-approver rule (`second_approver_required`
+when the same admin approves twice) and the evidence rule (`evidence_required` before `paid`).
+An `UPDATE ... SET status=` in a page bypasses all three, which is how a payout gets paid with
+no transfer reference.
+
+The admin pages need `affiliate_payout.php` and `affiliate_conversion.php` included as well as
+`affiliate_admin.php`: the helpers the list and detail pages call (`affiliate_payable_minor()`,
+`affiliate_earnings_summary()`) live there, and a missing include is an HTTP 500 that lints
+clean. Only an HTTP probe catches it.
+
+### RBAC: the nav filters, the list must too
+
+`includes/admin_rbac.php` holds the route→role map and a route absent from it defaults to
+`super_admin`. The nav is role-filtered automatically, but a page that links to a
+higher-privilege page is not — `admin/affiliates.php` hides the detail link from `support`,
+who may read the list but would otherwise be offered a button that 403s.
+
+### The affiliate probe is order-sensitive; seed settings with an upsert
+
+`tests/exec31_admin_console_probe.php` turns the programme on and moves the payout thresholds.
+`UPDATE site_settings ... WHERE setting_key=?` matches nothing on a database that has never
+been configured, so the probe silently kept the defaults and reported a payout failure that
+had nothing to do with the code — it passed standalone and failed in the full run. It now
+upserts and restores the prior values in cleanup, so a later suite does not inherit its
+configuration as if it were the deployment's.
+
+### The www-data group is required for the full suite, not just attachments
+
+`tests/setup_test_env.sh` adds the CLI user to `www-data`, but the group only applies to a new
+login. In a session that predates the `usermod`, `execution30_consultation_attachments_probe`
+fails six filesystem checks with `scandir(...): Permission denied` while the same probe passes
+under `sg www-data -c '...'`. Run the suite as `sg www-data -c 'bash tests/run_all_tests.sh'`
+or expect those six and confirm they are the only ones.
+
