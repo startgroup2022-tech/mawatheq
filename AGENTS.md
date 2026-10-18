@@ -1164,3 +1164,60 @@ fails six filesystem checks with `scandir(...): Permission denied` while the sam
 under `sg www-data -c '...'`. Run the suite as `sg www-data -c 'bash tests/run_all_tests.sh'`
 or expect those six and confirm they are the only ones.
 
+
+## Release preparation — the final consolidated build
+
+### PHP 8.4 is mandatory, not "8.3 or newer"
+
+`composer.json` requires `php >=8.4` and the bundled `onelogin/php-saml` writes that into
+`vendor/composer/platform_check.php` as `PHP_VERSION_ID >= 80400`, which **aborts** the
+autoloader below 8.4. So a cPanel host on 8.3 does not degrade gracefully — the site dies
+at first include, on every page. Check the version before starting a deploy. Nothing in the
+application uses 8.4-only syntax (no property hooks, no asymmetric visibility), so the floor
+comes from the dependency, not the code.
+
+### `tools/build_release.sh` ships two names per archive, on purpose
+
+The canonical names (`MAWATHEQ_WEBSITE_CPANEL_FINAL.zip`, `MAWATHEQ_DB_MIGRATIONS_SAFE.zip`)
+are what `tests/execution29_1_release_smoke_test.php` unpacks, so they are not renamed. The
+delivery names (`MAWATHEQ_WEBSITE_FINAL.zip`, `MAWATHEQ_DATABASE_MIGRATIONS.zip`) are
+**hardlinks** to the same inodes: no extra bytes, and they cannot drift from the canonical
+file. `SHA256SUMS.txt` lists all of them plus the deployment guide, so a download of either
+name verifies against the same digest. If a `SHA256SUMS.txt` check reports the canonical
+names as "No such file", that is a missing download, not a corrupt archive.
+
+### The build is byte-reproducible; verify it that way
+
+Everything is stamped with the commit time (`SOURCE_DATE_EPOCH` convention) and modes are
+normalized to 644/755, so two builds of the same ref produce identical bytes. After any
+change to the build inputs, confirm with a second build and `diff` of the two
+`SHA256SUMS.txt` files. A rebuild that differs means an input is carrying "now" or a mode.
+
+### Archive extensions are denied at the web layer
+
+`.htaccess` denies `.zip|tar|tgz|gz|rar|7z|bz2|apk|ipa`. The deployment steps upload
+`MAWATHEQ_WEBSITE_FINAL.zip` into `public_html` and extract it there; if the archive is left
+behind it is publicly downloadable and exposes the whole site tree. Nothing legitimate is
+served as a static archive — consultation attachments and affiliate CSV reports are streamed
+from PHP routes with `Content-Disposition`, and no template links to a `.zip`. Verified live:
+`.zip`/`.tar.gz`/`.apk` return 403 while ordinary files still return 200. The guide also
+tells the operator to delete the archive after extraction; the deny rule is a second layer,
+not a substitute.
+
+### Verify migrations by applying them, twice
+
+A fresh database plus `schema.sql` plus all 56 upgrades in **numeric** order yields 130
+tables, 22 of them `affiliate_*`, plus `consultation_attachments`. Running the whole set a
+second time is a no-op — that is the idempotency guarantee, and it is worth re-checking after
+touching any upgrade file. Sort numerically: a lexical sort puts `upgrade_v10.sql` before
+`upgrade_v2.sql`.
+
+### `git fetch` does not bring the stacked branches
+
+`remote.origin.fetch` is pinned to `+refs/heads/main:refs/remotes/origin/main`, so
+`git fetch origin --prune` silently omits `phase-3`, `phase-4`, `recovery/*` and any feature
+branch. Fetch them explicitly (`git fetch origin <branch>:refs/remotes/origin/<branch>`) or
+a branch that plainly exists on GitHub looks absent. Pushes go through
+`https://x-access-token:$GITHUB_TOKEN@github.com/...`; `GITHUB_PERSONAL_ACCESS_TOKEN` is not
+push-capable.
+
