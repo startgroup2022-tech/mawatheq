@@ -199,3 +199,12 @@
   .aff-section { padding: 40px 16px; }
   .aff-auth-card { padding: 24px 20px; }
 }
+
+/* ---- account-state banner on the dashboard ---- */
+/* Sits between the page heading and the figures so an applicant whose account is
+   still under review reads where they stand before reading numbers that are all zero. */
+.aff-state-banner { border-inline-start: 3px solid var(--aff-gold); }
+.aff-state-banner p { margin: 6px 0 0; line-height: 1.7; }
+.aff-state-banner .btn { margin-block-start: 10px; }
+.aff-state-banner.form-alert.error { border-inline-start-color: var(--aff-err); }
+

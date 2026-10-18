@@ -348,6 +348,7 @@ echo "\n9. Unauthenticated access\n";
 // ---------------------------------------------------------------------------
 foreach (['/admin/affiliates.php', '/admin/affiliate-detail.php?id=1', '/admin/affiliate-payouts.php',
           '/admin/affiliate-commissions.php', '/admin/affiliate-campaigns.php',
+          '/admin/affiliate-applications.php',
           '/admin/affiliate-fraud.php', '/admin/affiliate-settings.php'] as $path) {
     $ch = curl_init($base . $path);
     curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => false]);

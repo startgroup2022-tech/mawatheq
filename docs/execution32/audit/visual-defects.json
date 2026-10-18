@@ -1,0 +1,402 @@
+[
+  {
+    "site": "before",
+    "vp": "1440",
+    "lang": "ar",
+    "page": "home",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": 3,
+    "headerH": 79
+  },
+  {
+    "site": "before",
+    "vp": "1440",
+    "lang": "ar",
+    "page": "landing",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": 3,
+    "headerH": 79
+  },
+  {
+    "site": "before",
+    "vp": "1440",
+    "lang": "en",
+    "page": "home",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": 3,
+    "headerH": 79
+  },
+  {
+    "site": "before",
+    "vp": "1440",
+    "lang": "en",
+    "page": "landing",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": 3,
+    "headerH": 79
+  },
+  {
+    "site": "before",
+    "vp": "1280",
+    "lang": "ar",
+    "page": "home",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": 3,
+    "headerH": 79
+  },
+  {
+    "site": "before",
+    "vp": "1280",
+    "lang": "ar",
+    "page": "landing",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": 3,
+    "headerH": 79
+  },
+  {
+    "site": "before",
+    "vp": "1280",
+    "lang": "en",
+    "page": "home",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": 3,
+    "headerH": 79
+  },
+  {
+    "site": "before",
+    "vp": "1280",
+    "lang": "en",
+    "page": "landing",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": 3,
+    "headerH": 79
+  },
+  {
+    "site": "before",
+    "vp": "768",
+    "lang": "ar",
+    "page": "home",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": null,
+    "headerH": 65
+  },
+  {
+    "site": "before",
+    "vp": "768",
+    "lang": "ar",
+    "page": "landing",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": null,
+    "headerH": 65
+  },
+  {
+    "site": "before",
+    "vp": "768",
+    "lang": "en",
+    "page": "home",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": null,
+    "headerH": 65
+  },
+  {
+    "site": "before",
+    "vp": "768",
+    "lang": "en",
+    "page": "landing",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": null,
+    "headerH": 65
+  },
+  {
+    "site": "before",
+    "vp": "390",
+    "lang": "ar",
+    "page": "home",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": null,
+    "headerH": 65
+  },
+  {
+    "site": "before",
+    "vp": "390",
+    "lang": "ar",
+    "page": "landing",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": null,
+    "headerH": 65
+  },
+  {
+    "site": "before",
+    "vp": "390",
+    "lang": "en",
+    "page": "home",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": null,
+    "headerH": 65
+  },
+  {
+    "site": "before",
+    "vp": "390",
+    "lang": "en",
+    "page": "landing",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": null,
+    "headerH": 65
+  },
+  {
+    "site": "before",
+    "vp": "360",
+    "lang": "ar",
+    "page": "home",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": null,
+    "headerH": 65
+  },
+  {
+    "site": "before",
+    "vp": "360",
+    "lang": "ar",
+    "page": "landing",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": null,
+    "headerH": 65
+  },
+  {
+    "site": "before",
+    "vp": "360",
+    "lang": "en",
+    "page": "home",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": null,
+    "headerH": 65
+  },
+  {
+    "site": "before",
+    "vp": "360",
+    "lang": "en",
+    "page": "landing",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": null,
+    "headerH": 65
+  },
+  {
+    "site": "after",
+    "vp": "1440",
+    "lang": "ar",
+    "page": "home",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": 1,
+    "headerH": 79
+  },
+  {
+    "site": "after",
+    "vp": "1440",
+    "lang": "ar",
+    "page": "landing",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": 1,
+    "headerH": 79
+  },
+  {
+    "site": "after",
+    "vp": "1440",
+    "lang": "en",
+    "page": "home",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": 1,
+    "headerH": 79
+  },
+  {
+    "site": "after",
+    "vp": "1440",
+    "lang": "en",
+    "page": "landing",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": 1,
+    "headerH": 79
+  },
+  {
+    "site": "after",
+    "vp": "1280",
+    "lang": "ar",
+    "page": "home",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": 1,
+    "headerH": 79
+  },
+  {
+    "site": "after",
+    "vp": "1280",
+    "lang": "ar",
+    "page": "landing",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": 1,
+    "headerH": 79
+  },
+  {
+    "site": "after",
+    "vp": "1280",
+    "lang": "en",
+    "page": "home",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": 1,
+    "headerH": 79
+  },
+  {
+    "site": "after",
+    "vp": "1280",
+    "lang": "en",
+    "page": "landing",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": 1,
+    "headerH": 79
+  },
+  {
+    "site": "after",
+    "vp": "768",
+    "lang": "ar",
+    "page": "home",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": null,
+    "headerH": 69
+  },
+  {
+    "site": "after",
+    "vp": "768",
+    "lang": "ar",
+    "page": "landing",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": null,
+    "headerH": 69
+  },
+  {
+    "site": "after",
+    "vp": "768",
+    "lang": "en",
+    "page": "home",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": null,
+    "headerH": 69
+  },
+  {
+    "site": "after",
+    "vp": "768",
+    "lang": "en",
+    "page": "landing",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": null,
+    "headerH": 69
+  },
+  {
+    "site": "after",
+    "vp": "390",
+    "lang": "ar",
+    "page": "home",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": null,
+    "headerH": 69
+  },
+  {
+    "site": "after",
+    "vp": "390",
+    "lang": "ar",
+    "page": "landing",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": null,
+    "headerH": 69
+  },
+  {
+    "site": "after",
+    "vp": "390",
+    "lang": "en",
+    "page": "home",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": null,
+    "headerH": 69
+  },
+  {
+    "site": "after",
+    "vp": "390",
+    "lang": "en",
+    "page": "landing",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": null,
+    "headerH": 69
+  },
+  {
+    "site": "after",
+    "vp": "360",
+    "lang": "ar",
+    "page": "home",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": null,
+    "headerH": 69
+  },
+  {
+    "site": "after",
+    "vp": "360",
+    "lang": "ar",
+    "page": "landing",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": null,
+    "headerH": 69
+  },
+  {
+    "site": "after",
+    "vp": "360",
+    "lang": "en",
+    "page": "home",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": null,
+    "headerH": 69
+  },
+  {
+    "site": "after",
+    "vp": "360",
+    "lang": "en",
+    "page": "landing",
+    "overlaps": [],
+    "clipped": [],
+    "navWrapRows": null,
+    "headerH": 69
+  }
+]

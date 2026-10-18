@@ -31,6 +31,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($string('action') === 'accept') {
         if (empty($_POST['accepted_terms']) || empty($_POST['accepted_privacy'])) {
             $error = is_rtl() ? 'يجب الموافقة على الشروط وسياسة الخصوصية.' : 'You must accept the terms and the privacy policy.';
+        } elseif (!in_array((string)$affiliate['status'], ['approved', 'active'], true)) {
+            // The form is not rendered for a pending account; this stops a hand-made POST
+            // from recording acceptance before review, which would block activation later.
+            $error = is_rtl() ? 'لا يمكن اعتماد الشروط قبل اعتماد طلبك.' : 'The terms cannot be accepted before your application is approved.';
         } else {
             $okTerms = affiliate_accept_terms($pdo, $affiliateId, 'terms');
             $okPrivacy = affiliate_accept_terms($pdo, $affiliateId, 'privacy');
@@ -144,7 +148,15 @@ $obligations = is_rtl() ? [
     </div>
   </section>
 
-  <?php if (!$acceptedTerms || !$acceptedPrivacy): ?>
+  <?php
+  // Acceptance is only offered to an account that has passed review. Showing the form to
+  // an applicant whose application is still pending would let them agree to the programme
+  // terms before an operator has decided anything — and, because affiliate_activate() is
+  // keyed off the acceptance, it would leave the account unable to activate later: the
+  // approval would arrive, affiliate_has_accepted() would already be true, and the
+  // affiliate would be looking at a page with no way forward.
+  if (in_array((string)$affiliate['status'], ['approved', 'active'], true) && (!$acceptedTerms || !$acceptedPrivacy)):
+  ?>
   <section class="app-card">
     <div class="app-card-head"><h2><?= ui_e(is_rtl() ? 'اعتماد الشروط' : 'Accept the terms') ?></h2></div>
     <form method="post" class="aff-form">

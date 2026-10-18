@@ -74,20 +74,39 @@ img{ max-width:100%; display:block; }
 .btn-block{ width:100%; }
 
 /* ---------- Header ---------- */
+/* Three fixed zones — brand | nav | actions — on one row of a fixed height.
+   Every zone is `flex:none` and every label is `white-space:nowrap`, so the nav
+   can never be squeezed into wrapping its own text (which is what produced the
+   ragged three-line menu). When the row genuinely runs out of width the links
+   collapse into the mobile panel at the breakpoint below instead of shrinking. */
 .site-header{
-  position:sticky; top:0; z-index:50; background:rgba(246,248,250,.9); backdrop-filter:blur(8px);
+  position:sticky; top:0; z-index:50; background:rgba(246,248,250,.94); backdrop-filter:blur(8px);
   border-bottom:1px solid var(--border);
 }
-.site-header .container{ display:flex; align-items:center; justify-content:space-between; height:78px; gap:24px; }
+.site-header .container{ display:flex; align-items:center; justify-content:space-between; height:78px; gap:20px; }
 /* The mobile menu button ships here so the marketing header still opens its
    navigation when the enhancement layer (enterprise.css) is unavailable. */
 .nav-toggle{ display:none; }
-.brand{ display:flex; align-items:center; gap:10px; font-family:var(--serif); font-weight:800; font-size:1.25rem; color:var(--navy-dark); }
-.brand img{ height:34px; width:auto; }
-.main-nav{ display:flex; align-items:center; gap:30px; }
-.main-nav a{ font-weight:600; font-size:.93rem; color:var(--text); }
-.main-nav a:hover{ color:var(--teal); }
-.header-actions{ display:flex; align-items:center; gap:12px; }
+.brand{ display:flex; align-items:center; gap:10px; flex:none; font-family:var(--serif); font-weight:800; font-size:1.25rem; line-height:1; color:var(--navy-dark); }
+.brand img{ height:40px; width:auto; flex:none; }
+.main-nav{ display:flex; align-items:center; justify-content:center; flex:1 1 auto; min-width:0; gap:16px; }
+.main-nav a{
+  flex:none; white-space:nowrap; font-weight:600; font-size:.9rem; color:var(--text);
+  padding:7px 4px; border-radius:7px; border-bottom:2px solid transparent;
+  transition:color .18s ease, border-color .18s ease, background .18s ease;
+}
+.main-nav a:hover{ color:var(--teal); border-bottom-color:var(--teal); }
+.main-nav a[aria-current="page"], .main-nav a.is-active{ color:var(--navy-dark); border-bottom-color:var(--gold); }
+.main-nav a:focus-visible, .header-actions a:focus-visible, .nav-toggle:focus-visible{
+  outline:2px solid var(--teal); outline-offset:2px;
+}
+.header-actions{ display:flex; align-items:center; gap:10px; flex:none; }
+/* The social row is the widest single block in the header. It is sized down here
+   and dropped on narrower screens rather than allowed to squeeze the navigation;
+   the footer keeps the full-size version. */
+.header-actions .social-row{ gap:4px !important; }
+.header-actions .social-row a{ width:26px !important; height:26px !important; }
+.header-actions .social-row svg{ width:13px !important; height:13px !important; }
 .lang-switch{
   border:1.5px solid var(--border); border-radius:20px; padding:6px 14px; font-weight:700; font-size:.82rem; cursor:pointer; background:#fff;
 }
@@ -351,7 +370,9 @@ html[dir="ltr"] .pro-select{ background-position:right 14px center; }
 .social-row-dark a:hover{ background:var(--teal) !important; }
 .social-row-light a:hover{ background:var(--teal) !important; color:#fff !important; }
 .header-actions .social-row{ padding-inline-end:6px; margin-inline-end:6px; border-inline-end:1px solid var(--border); }
-@media (max-width: 860px){ .header-actions .social-row{ display:none; } }
+/* Below this width the header cannot hold the social row and the two call-to-action
+   buttons without squeezing the row; the social icons stay available in the footer. */
+@media (max-width: 1180px){ .header-actions .social-row{ display:none; } }
 
 /* تبويب اختيار نوع الحساب بصفحة التسجيل */
 .type-tabs{ display:flex; gap:8px; background:#F0F4F7; border-radius:10px; padding:4px; margin-bottom:22px; }
@@ -402,7 +423,11 @@ html[dir="ltr"] .pro-select{ background-position:right 14px center; }
 .password-toggle{border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--navy);padding:0 12px;font:inherit;font-size:.82rem;font-weight:700;cursor:pointer}
 .password-toggle:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
 
-@media (max-width: 900px){
+/* The links collapse into a panel below this width: eight nowrap labels plus the
+   brand and the two buttons need ~1080px, so anything narrower would otherwise have
+   to shrink or wrap them. The panel is absolutely positioned against `.site-header`
+   (which is the nearest positioned ancestor) so it can never widen the document. */
+@media (max-width: 1080px){
   .hero-grid, .split{ grid-template-columns:1fr; }
   .features-grid{ grid-template-columns:1fr; }
   .steps{ grid-template-columns:1fr 1fr; row-gap:36px; }
@@ -412,26 +437,40 @@ html[dir="ltr"] .pro-select{ background-position:right 14px center; }
   .main-nav{ display:none; }
   /* Marketing header on small screens: collapse the links into a dropdown that
      the menu button toggles, and keep the header actions on one row. */
-  .site-header .container{ height:64px; }
+  .site-header .container{ height:68px; gap:12px; }
   .nav-toggle{
-    display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px;
+    display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px; flex:none;
     border:1.5px solid var(--border); border-radius:11px; background:#fff; color:var(--navy-dark); cursor:pointer;
   }
   .nav-toggle svg{ width:20px; height:20px; stroke:currentColor; fill:none; stroke-width:1.9; stroke-linecap:round; }
   .main-nav{
     display:none; position:absolute; inset-inline:0; top:100%; flex-direction:column; align-items:stretch; gap:0;
     background:#fff; border-bottom:1px solid var(--border); box-shadow:0 6px 20px rgba(15,31,51,.07); padding:8px;
+    max-height:calc(100vh - 68px); overflow-y:auto;
   }
   .main-nav.is-open{ display:flex; }
-  .main-nav a{ padding:14px 16px; border-radius:11px; min-height:48px; display:flex; align-items:center; }
-  .main-nav a:hover{ background:#F8FAFC; }
+  .main-nav a{ padding:14px 16px; border-radius:11px; min-height:48px; display:flex; align-items:center; border-bottom:0; }
+  .main-nav a:hover{ background:#F8FAFC; color:var(--teal); }
+  .main-nav a[aria-current="page"], .main-nav a.is-active{ background:#F0F4F7; color:var(--navy-dark); }
   .header-actions .btn-outline{ display:none; }
+  /* The panel already fills the row; a half-height toggle and a 44px tap target
+     keep the control comfortable on a phone. */
+  .brand img{ height:36px; }
 }
 @media (max-width: 480px){
   .site-header .container{ gap:10px; }
   .header-actions{ gap:8px; }
   .brand span{ font-size:1rem; }
-  .header-actions .social-row{ display:none; }
+  /* At 360px and below the wordmark is the first thing to go: the logo mark and the
+     two call-to-action buttons are what the visitor needs, and the brand name is
+     still announced to assistive technology through the image alt text. */
+}
+@media (max-width: 400px){
+  .brand span{ display:none; }
+  .site-header .container{ gap:8px; }
+  .header-actions{ gap:6px; }
+  .header-actions .btn{ padding:11px 14px; font-size:.88rem; }
+  .lang-switch{ padding:6px 10px; font-size:.78rem; }
 }
 
 /* Auth screens on phones: the card fills the width, padding tightens and the
