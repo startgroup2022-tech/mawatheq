@@ -16,8 +16,15 @@ header('Content-Type: application/json; charset=utf-8');
 // display_errors is off, so the mobile app received a bare 500 with an empty body
 // and the failure was invisible. Repair the known additive columns up front, and
 // answer with parseable JSON (never a blank body) if anything still goes wrong.
-schema_ensure_column($pdo, 'lawyers', 'jurisdiction', "VARCHAR(100) NOT NULL DEFAULT 'السعودية'");
-schema_ensure_column($pdo, 'law_categories', 'jurisdiction', "VARCHAR(100) NOT NULL DEFAULT 'السعودية'");
+//
+// Repair is opt-in (MAWATHEQ_ALLOW_RUNTIME_SCHEMA_DDL=1). Off by default so an
+// ordinary API request cannot alter the schema as a side effect; the exception
+// handler below still turns a missing column into parseable JSON rather than a
+// blank 500, and database/repair/00_preflight_check.php reports the drift.
+if (getenv('MAWATHEQ_ALLOW_RUNTIME_SCHEMA_DDL') === '1') {
+    schema_ensure_column($pdo, 'lawyers', 'jurisdiction', "VARCHAR(100) NOT NULL DEFAULT 'السعودية'");
+    schema_ensure_column($pdo, 'law_categories', 'jurisdiction', "VARCHAR(100) NOT NULL DEFAULT 'السعودية'");
+}
 
 set_exception_handler(function (Throwable $e): void {
     error_log('api/v1 uncaught: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
@@ -94,8 +101,13 @@ function api_authenticate(PDO $pdo): array {
     if (!$profile || empty($profile['email_verified']) || ($row['user_type'] === 'client' && $profile['status'] !== 'active') || ($row['user_type'] === 'lawyer' && $profile['status'] !== 'approved')) {
         api_error('account is inactive or email is not verified', 403);
     }
-    if (hash_equals($token, $row['token'])) {
-        $pdo->prepare('UPDATE api_tokens SET token=? WHERE id=?')->execute([hash('sha256', $token), $row['id']]);
+    // Upgrade a legacy plaintext token to its hash on first use. The WHERE clause repeats
+    // the plaintext condition so the write only touches a row that is still plaintext —
+    // otherwise a concurrent request could rewrite an already-hashed row and the token
+    // would stop matching on the next call.
+    if (hash_equals($token, (string)$row['token'])) {
+        $pdo->prepare('UPDATE api_tokens SET token=? WHERE id=? AND token=?')
+            ->execute([hash('sha256', $token), $row['id'], $token]);
     }
     $pdo->prepare('UPDATE api_tokens SET last_used_at = NOW() WHERE id = ?')->execute([$row['id']]);
     return ['type' => $row['user_type'], 'id' => (int)$row['user_id'], 'token_id'=>(int)$row['id']];

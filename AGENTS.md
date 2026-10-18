@@ -198,7 +198,7 @@ Environment (local sandbox): install with
 `sudo apt-get install -y php-cli php-curl php-mysql php-mbstring mariadb-server`, start with
 `sudo service mariadb start`, and create the `mawatheq` DB/user matching `config/secrets.php`.
 Load `database/schema.sql` then every `database/upgrade_v*.sql` in order (currently
-through `upgrade_v52.sql`); the migrations are idempotent. `schema.sql` folds v50–v52, so a
+through `upgrade_v54.sql`); the migrations are idempotent. `schema.sql` folds v50–v52, so a
 clean install lands at **106 tables**, identical to a fully migrated database (verified
 table-by-table). Replaying the upgrades over `schema.sql` is harmless.
 
@@ -767,13 +767,25 @@ the mobile API uses, so the website and the app cannot drift apart:
   emails `SITE_URL/reset-password.php?as=<type>&token=<token>`. It returns the mail
   delivery result but **never** the token, and the page ignores the boolean so the
   response never reveals whether the address exists.
-- `consume_password_reset()` matches the raw token once, rejects
+- `consume_password_reset()` claims the token once, rejects
   `invalid_token`/`weak_password`/`too_long`/`mismatch`, clears the token, and
   revokes every `api_tokens` row for the account. Setting a password invalidates
   tokens issued before it, so a stolen session cannot outlive the reset.
-- The reset token is stored plaintext **by design** (the column is matched raw).
-  It is single-use, 1-hour, high-entropy and never logged. Do not "fix" it into a
-  hash without changing the lookup to match.
+- The reset token is stored as a SHA-256 hash, never plaintext (Execution 29). The
+  `reset_token` column keeps its name but now holds the hash, not the raw value. The
+  database is a copy that leaves the server in every backup, dump and support ticket,
+  so a plaintext reset token there is a usable credential for anyone who reads it.
+  `issue_password_reset()` writes `hash('sha256', $token)` and
+  `consume_password_reset()` hashes the presented token before matching, so the raw
+  value exists only in the email link.
+- Consumption is atomic: the claim is one conditional
+  `UPDATE ... SET reset_token=NULL, ... WHERE reset_token=? AND reset_expires>NOW()`,
+  and the affected-row count decides the winner. Two concurrent submissions of the same
+  link cannot both succeed. A read-then-check-then-write pair would let both requests
+  pass the check before either cleared the token.
+- A reset also stamps `session_invalidated_at` on the account. The session guard
+  compares it against the session's start time and ends sessions older than the reset,
+  so a reset logs out anyone already signed in — not only the API tokens.
 
 ### API auth endpoints
 
@@ -833,3 +845,183 @@ not verify against a release fingerprint. Emulator/device check:
 - `tests/seed_phase6.php` is idempotent: the firm-membership row is upserted on
   `uq_law_firm_member_lawyer` (a plain INSERT threw `SQLSTATE 1062` on the second run).
 
+
+## Execution 29 — security hardening and runtime database safety
+
+Four defects were found by writing probes that attack the app over real HTTP, not by
+reading it. Each fix below has a regression suite named beside it.
+
+### Runtime schema mutation is opt-in
+
+`config/config.php`, `api/v1/bootstrap.php` and `includes/jurisdiction.php` used to call
+`schema_ensure_column()` on every request, so a missing column was added as a side effect
+of serving a page. That means the schema was changed by whichever request arrived first,
+concurrently, with no ordering against the migration files and no record of what was
+applied — the reason a drift incident was hard to reason about. Self-healing now requires
+`MAWATHEQ_ALLOW_RUNTIME_SCHEMA_DDL=1`; the default path is
+`database/repair/00_preflight_check.php` to report drift and `database/upgrade_v*.sql` to
+fix it. `tests/execution29_runtime_ddl_test.php` drops a column, drives requests, and
+asserts it is not re-added. The helper still validates identifiers before interpolating
+them, so it can never become an injection point.
+
+### Admin RBAC is shared, and root-level routes must apply it
+
+The role map lived as a local variable inside `admin/includes/admin_guard.php`, so a route
+outside `/admin/` could not use it. `download-document.php` sits at the web root and its
+only check was "is an admin logged in" — an `editor`, a role the map refuses the documents
+console, could download any client's document by id. The map now lives in
+`includes/admin_rbac.php` (`admin_role_allows()`, `admin_can_access()`), and
+`download-document.php` re-reads the role from the database so a demoted operator loses
+access immediately rather than at the next console page load. **When adding a root-level
+route that an admin may reach, call `admin_can_access($pdo, '<console script>')`** — do not
+assume `admin_guard.php` ran.
+
+### File downloads
+
+`download-document.php` is the only route that serves a private document to a client, and
+it checks the document belongs to `$_SESSION['user_id']`, resolves the path with
+`realpath()` and requires it to sit under `UPLOAD_DIR` with a 40-hex filename, so a
+traversal-shaped `stored_path` or a hand-placed file is refused. `uploads/` denies the
+directory and any executable extension. `tests/execution29_file_security_probe.php`
+attacks all of it, including the cross-tenant and role cases.
+
+### Mobile API tokens
+
+- Integration tokens (`integration_api_tokens`) carry `expires_at` (v54, default 180 days).
+  Lookup treats an expired token exactly like an unknown one, so a token issued for a
+  one-off export does not stay valid forever.
+- `api/v1/logout.php` revokes exactly the token that authenticated the request. It is
+  idempotent and refuses an integration token, which has no session.
+- The legacy plaintext-to-hash upgrade in `api_authenticate()` was a write on a read path
+  with no guard; two concurrent requests could both match the plaintext row and rewrite it,
+  after which the token stopped working. The `UPDATE` repeats the plaintext condition so it
+  can only touch a row that is still plaintext.
+
+### Tenant isolation
+
+`api/v1/calendar.php` returned HTTP 500 for every caller completing an event: the `UPDATE`
+had no table alias while the tenant scope clause was written against `e`. A child table
+that inherits its tenant (`case_evidence`) must be scoped through a join on the parent case
+— see the Gotchas section. `tests/execution29_tenant_isolation_probe.php` seeds two firms
+and attacks every entity type as both lawyer and client.
+
+### Probe conventions
+
+Execution 29 probes (`tests/execution29_*`) need the app on `127.0.0.1:8080`, seed their own
+accounts and rows with a random suffix, and delete them in a `cleanup` section. If a probe
+is interrupted before cleanup, its rows survive — `tests/execution29_runtime_ddl_test.php`
+repairs its own schema baseline on start for exactly this reason.
+
+Run the whole suite with `bash tests/run_all_tests.sh` (optionally with a name filter, e.g.
+`bash tests/run_all_tests.sh execution29`). Do **not** hand-roll a `for` loop over
+`tests/*.php`: the probes authenticate over real HTTP and the app rate-limits repeated logins
+per account and IP, so a later suite inherits an earlier suite's throttle and reports login
+failures that have nothing to do with the code. The runner clears `auth_rate_limits` before
+each suite and starts the mock AI provider if it is down. A phantom failure is worse than no
+check, because it teaches everyone to ignore real ones.
+
+## Execution 29.1 - migration verification
+
+Five defects were fixed here, all with the same shape: **a check that could not fail
+reported success on a database that was broken.** When touching anything under
+`database/repair/`, keep that frame: a check that prints a row, or that tests one
+column on behalf of many, is not a check.
+
+### `database/upgrade_v42.sql`: guard every object on itself
+
+The original file guarded a multi-column `ALTER` on a single column:
+
+```sql
+IF legal_name absent THEN ALTER TABLE law_firms ADD legal_name, display_name, email, ...
+```
+
+MySQL stops a file at the first error. A run aborted after `legal_name` landed left
+`display_name` and nine others missing **forever**, because the guard now found
+`legal_name` present and skipped the whole statement. The same shape wrapped
+`ADD COLUMN firm_id` + `ADD INDEX` + `ADD CONSTRAINT` on every firm-owned table.
+
+Every column, index and constraint is now guarded on itself. Two consequences:
+
+- A re-run **completes** what an aborted run left unfinished. This is the supported way
+  to repair a partial migration - do not hand-write `ALTER` statements to patch a schema.
+- `AFTER <column>` must never appear. Naming a sibling column that does not exist is
+  `SQLSTATE 42S22`, and MySQL abandons the rest of the file. Column position has no
+  functional effect; leave the clause out.
+
+### `database/repair/migration_verify.php`: requirements come from the file
+
+Requirements are extracted from each `upgrade_v*.sql` by a quote-aware scanner.
+Quote-aware matters: `ENUM('active')` and `'...'` string bodies otherwise truncate naive
+splitting, and a truncated ALTER is a silently-empty requirement set - the worst possible
+failure mode for a verifier. Measured across all 54 files: 328 objects, 0 unparsed. A file
+the scanner cannot understand is reported `unknown`; never assume it applied.
+
+### `database/repair/02_migration_ledger.php`: record only proven work
+
+The v53 ledger recorded a migration on the strength of a single hand-mapped "proof
+column". `upgrade_v42.sql` declares 41 objects, so `audit_logs.firm_id` alone recorded it
+as applied. Now a file is recorded only when every declared object is present, with states
+`verified`/`partial`/`missing`/`unknown` and exit 1 when anything is incomplete. Two
+properties to preserve:
+
+- **A historical checksum is never overwritten.** `checksum` is what was applied;
+  `current_checksum` is the file on disk now. Drift is reported beside the record, not on
+  top of it.
+- **It exits non-zero.** A bare `SELECT` that prints a row nobody reads is not a check.
+
+### `database/repair/01_repair_reset_columns.sql`: 13, not 12
+
+The final check declared `12 AS expected` against a real requirement of 13 (users 5 +
+lawyers 5 + admins 3), over a predicate matching a column *name* on *any* of the three
+tables. So a database missing exactly one column counted 12, equalled the expectation, and
+**passed on the script that exists to catch a missing column**. It was also a bare
+`SELECT`, so it could not fail a deployment.
+
+The expectation is now derived from a requirement list (a session temporary table), and
+each column is verified by table, name **and type**, with `SIGNAL SQLSTATE '45000'` on
+failure. A count can only say "one is missing", never which one - and a database missing
+`lawyers.reset_token` but not `users.reset_token` satisfies any name-based predicate.
+
+### v42 backfill: never guess a tenant
+
+The old backfill joined `law_firm_members` directly. Correct today only because of
+`UNIQUE(lawyer_id)` in another table; relaxing that uniqueness would pick an arbitrary
+firm and move one tenant's records into another. Assignment now joins a derived table
+filtered to lawyers with exactly one distinct firm, every statement is
+`WHERE firm_id IS NULL` (an existing owner is never overwritten), and ambiguous rows stay
+`NULL` and are reported. Rows that cannot be resolved are surfaced for reconciliation,
+never guessed.
+
+### `00_preflight_check.php`: blockers vs warnings
+
+Preflight and postflight (`--postflight`), exit 0/1/2. A missing `ALTER` grant or a missing
+critical column is a **blocker** (stop the deployment); an unrecorded-but-verified
+migration is a **warning** (bookkeeping is behind; the ledger command fixes it with no
+schema change). It measures every migration against the **live schema**, not the ledger -
+the ledger can be wrong, the schema cannot.
+
+### Testing migrations: schema.sql is the consolidated CURRENT schema
+
+This will silently invert a test if you miss it. `database/schema.sql` already contains
+everything the migrations add, so loading it and measuring `upgrade_v42.sql` reports
+`verified` without the migration having done anything. Use
+`e291_build_without($admin, $db, $file)` from `tests/lib/migration_harness.php`, which
+loads `schema.sql` and then removes every object the file declares.
+
+Two related traps, both hit while writing these tests:
+
+- Truncating a migration to "simulate an interruption" at too few statements executes
+  nothing, producing a `missing` state that masquerades as a passing partial test.
+  Truncate **mid-file**, where some objects have landed and others have not.
+- `config.php` uses `if (!defined(...))`, so a `DB_NAME` define in a test `secrets.php`
+  **wins over `MAWATHEQ_DB_*`** and the tool connects to the wrong database. The tests
+  pass `--database=<name>` or set the environment and omit the DB defines.
+
+### Release artifact smoke test
+
+`tests/execution29_1_release_smoke_test.php` tests the **downloaded** artifact, not the
+working tree: it verifies checksums, asserts the site archive carries no
+secrets/tests/docs/.git, unpacks both archives, writes the documented `secrets.php`,
+overlays the migration package and applies it in the documented order to a scratch
+database. A test against the repository copy proves the repository is correct and says
+nothing about the bytes an operator actually downloads.

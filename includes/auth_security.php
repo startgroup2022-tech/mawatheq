@@ -8,6 +8,40 @@ function auth_rate_limit_keys(string $accountType, string $email): array {
     ];
 }
 
+/** Rate-limit bucket for the caller's IP alone, for endpoints with no account identifier. */
+function auth_rate_limit_ip_key(string $scope): string {
+    $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+    return hash('sha256', $scope . '|ip|' . $ip);
+}
+
+function auth_rate_limit_remaining_key(PDO $pdo, string $key): int {
+    $stmt = $pdo->prepare('SELECT MAX(TIMESTAMPDIFF(SECOND, NOW(), blocked_until)) FROM auth_rate_limits WHERE scope_key = ? AND blocked_until > NOW()');
+    $stmt->execute([$key]);
+    return max(0, (int)$stmt->fetchColumn());
+}
+
+/**
+ * Record a failed attempt against one bucket, blocking after $maxAttempts.
+ *
+ * The threshold is a parameter because the buckets have different costs: a login
+ * guess is cheap, while consuming a reset token runs bcrypt on every call, so that
+ * endpoint needs a bound that stops CPU exhaustion without locking a user out of
+ * their own reset link after a few typos.
+ */
+function auth_rate_limit_failure_key(PDO $pdo, string $key, int $maxAttempts = 5): void {
+    $sql = "INSERT INTO auth_rate_limits (scope_key, attempts, window_started_at, blocked_until) VALUES (?,1,NOW(),NULL)
+        ON DUPLICATE KEY UPDATE
+        blocked_until = IF(window_started_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE) OR (blocked_until IS NOT NULL AND blocked_until <= NOW()), NULL, IF(attempts + 1 >= ?, DATE_ADD(NOW(), INTERVAL 15 MINUTE), blocked_until)),
+        attempts = IF(window_started_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE) OR (blocked_until IS NOT NULL AND blocked_until <= NOW()), 1, attempts + 1),
+        window_started_at = IF(window_started_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE) OR (blocked_until IS NOT NULL AND blocked_until <= NOW()), NOW(), window_started_at)";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$key, max(1, $maxAttempts)]);
+}
+
+function auth_rate_limit_clear_key(PDO $pdo, string $key): void {
+    $pdo->prepare('DELETE FROM auth_rate_limits WHERE scope_key=?')->execute([$key]);
+}
+
 function auth_rate_limit_remaining(PDO $pdo, string $accountType, string $email): int {
     $keys = auth_rate_limit_keys($accountType, $email);
     $stmt = $pdo->prepare('SELECT MAX(TIMESTAMPDIFF(SECOND, NOW(), blocked_until)) FROM auth_rate_limits WHERE scope_key IN (?,?) AND blocked_until > NOW()');
@@ -16,14 +50,8 @@ function auth_rate_limit_remaining(PDO $pdo, string $accountType, string $email)
 }
 
 function auth_rate_limit_failure(PDO $pdo, string $accountType, string $email): void {
-    $sql = "INSERT INTO auth_rate_limits (scope_key, attempts, window_started_at, blocked_until) VALUES (?,1,NOW(),NULL)
-        ON DUPLICATE KEY UPDATE
-        blocked_until = IF(window_started_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE) OR (blocked_until IS NOT NULL AND blocked_until <= NOW()), NULL, IF(attempts + 1 >= 5, DATE_ADD(NOW(), INTERVAL 15 MINUTE), blocked_until)),
-        attempts = IF(window_started_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE) OR (blocked_until IS NOT NULL AND blocked_until <= NOW()), 1, attempts + 1),
-        window_started_at = IF(window_started_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE) OR (blocked_until IS NOT NULL AND blocked_until <= NOW()), NOW(), window_started_at)";
-    $stmt = $pdo->prepare($sql);
     foreach (auth_rate_limit_keys($accountType, $email) as $key) {
-        $stmt->execute([$key]);
+        auth_rate_limit_failure_key($pdo, $key);
     }
 }
 
@@ -31,8 +59,7 @@ function auth_rate_limit_clear(PDO $pdo, string $accountType, string $email): vo
     $keys = auth_rate_limit_keys($accountType, $email);
     // Clear the account bucket after success but keep the IP bucket to prevent
     // successful logins from resetting limits for other accounts on that address.
-    $stmt = $pdo->prepare('DELETE FROM auth_rate_limits WHERE scope_key=?');
-    $stmt->execute([$keys[1]]);
+    auth_rate_limit_clear_key($pdo, $keys[1]);
 }
 
 function create_email_verification(PDO $pdo, string $accountType, int $accountId, string $email, string $name): bool {
@@ -79,10 +106,12 @@ function issue_password_reset(PDO $pdo, string $accountType, int $accountId, str
     require_once __DIR__ . '/mailer.php';
     $cfg = password_reset_account_config($accountType);
     $token = bin2hex(random_bytes(32));
-    // Stored as plaintext by design: reset-password.php matches on the raw
-    // column. The token is single-use, 1-hour, high-entropy and never logged.
+    // Only the SHA-256 of the token is persisted, exactly as email verification already
+    // does. A leaked database dump, a backup, or a SELECT in a support session therefore
+    // yields no usable reset link: the plaintext exists only inside the email we send.
+    // Lookups hash the presented token and match on that, so nothing needs the raw value.
     $pdo->prepare("UPDATE {$cfg['table']} SET reset_token=?, reset_expires=DATE_ADD(NOW(), INTERVAL 1 HOUR) WHERE id=?")
-        ->execute([$token, $accountId]);
+        ->execute([hash('sha256', $token), $accountId]);
 
     $resetUrl = rtrim(SITE_URL, '/') . '/reset-password.php?as=' . $accountType . '&token=' . urlencode($token);
     $arabic = current_lang() === 'ar';
@@ -98,6 +127,58 @@ function issue_password_reset(PDO $pdo, string $accountType, int $accountId, str
     return send_mail($email, $arabic ? 'إعادة تعيين كلمة المرور - مواثيق' : 'Reset your Mawatheq password', $html);
 }
 
+/** SHA-256 of a reset token as stored; the raw token is never persisted. */
+function password_reset_token_hash(string $token): string {
+    return hash('sha256', $token);
+}
+
+/**
+ * Revoke every live API token for an account after a password change.
+ *
+ * Also stamps the account's `session_invalidated_at`, which the route guards compare
+ * against the session start time. Without that second step a password reset only
+ * closed the API: an attacker holding a stolen *browser session cookie* kept full
+ * access to the account until the cookie's 30-minute idle window elapsed, because the
+ * PHP session was never re-checked against the credential change.
+ */
+function invalidate_account_sessions(PDO $pdo, string $accountType, int $accountId): void {
+    $cfg = password_reset_account_config($accountType);
+    if ($accountType !== 'admin') {
+        $pdo->prepare('UPDATE api_tokens SET revoked_at=NOW() WHERE user_type=? AND user_id=? AND revoked_at IS NULL')
+            ->execute([$accountType, $accountId]);
+    }
+    try {
+        $pdo->prepare("UPDATE {$cfg['table']} SET session_invalidated_at=NOW() WHERE id=?")
+            ->execute([$accountId]);
+    } catch (Throwable $e) {
+        // Older schema without the column: the API-token revocation above still applied.
+        error_log('session invalidation stamp failed for ' . $accountType . ':' . $accountId . ': ' . $e->getMessage());
+    }
+}
+
+/**
+ * True when the account's password changed after this session was established, meaning
+ * the session predates the credential change and must be discarded.
+ *
+ * Fails open on a schema that predates `session_invalidated_at`, so a deployment that has
+ * not yet run upgrade_v53 keeps working instead of logging every user out.
+ */
+function account_session_is_stale(PDO $pdo, string $accountType, int $accountId): bool {
+    $cfg = password_reset_account_config($accountType);
+    try {
+        $stmt = $pdo->prepare("SELECT session_invalidated_at FROM {$cfg['table']} WHERE id=?");
+        $stmt->execute([$accountId]);
+        $stamp = $stmt->fetchColumn();
+    } catch (Throwable $e) {
+        return false;
+    }
+    if (empty($stamp)) return false;
+    $started = (int)($_SESSION['mawatheq_session_started_at'] ?? 0);
+    // No recorded start (a session created before this change shipped) counts as stale
+    // once the account has a stamp: the session is older than the credential change.
+    return $started === 0 || strtotime((string)$stamp) >= $started;
+}
+
 /**
  * Consumes a reset token exactly once and sets the new password.
  *
@@ -109,23 +190,32 @@ function consume_password_reset(PDO $pdo, string $accountType, string $token, st
     if ($token === '' || !preg_match('/^[a-f0-9]{64}$/', $token)) {
         return ['ok' => false, 'error' => 'invalid_token'];
     }
-    $stmt = $pdo->prepare("SELECT id FROM {$cfg['table']} WHERE reset_token=? AND reset_expires>NOW()");
-    $stmt->execute([$token]);
-    $account = $stmt->fetch();
-    if (!$account) return ['ok' => false, 'error' => 'invalid_token'];
 
+    // Validate the password before touching the token. Otherwise a mistyped confirmation
+    // would burn the single-use token and force the user to request a new link.
     if (strlen($password) < 8) return ['ok' => false, 'error' => 'weak_password'];
     if (strlen($password) > 72) return ['ok' => false, 'error' => 'too_long'];
     if ($password !== $confirm) return ['ok' => false, 'error' => 'mismatch'];
 
-    $pdo->prepare("UPDATE {$cfg['table']} SET password_hash=?, reset_token=NULL, reset_expires=NULL WHERE id=?")
-        ->execute([password_hash($password, PASSWORD_BCRYPT), $account['id']]);
-
-    // Setting a password is a security event: any token issued before the reset
-    // must stop working, so a stolen session cannot outlive the password change.
-    if ($accountType !== 'admin') {
-        $pdo->prepare('UPDATE api_tokens SET revoked_at=NOW() WHERE user_type=? AND user_id=? AND revoked_at IS NULL')
-            ->execute([$accountType, (int)$account['id']]);
+    // One atomic UPDATE claims the token, sets the password and stamps the invalidation
+    // time. Because it only matches while reset_token still holds this hash, two requests
+    // arriving together cannot both succeed: the loser sees rowCount()===0 and is refused.
+    // The previous SELECT-then-UPDATE let a replayed request through a second time.
+    //
+    // LAST_INSERT_ID(id) makes MySQL return the matched row's id on this connection, which
+    // is how the account id is recovered without a second SELECT that could pick the wrong
+    // row and revoke an unrelated account's tokens.
+    $claim = $pdo->prepare("UPDATE {$cfg['table']}
+        SET reset_token=NULL, reset_expires=NULL, password_hash=?, session_invalidated_at=NOW(), id=LAST_INSERT_ID(id)
+        WHERE reset_token=? AND reset_expires>NOW()");
+    $claim->execute([password_hash($password, PASSWORD_BCRYPT), password_reset_token_hash($token)]);
+    if ($claim->rowCount() !== 1) {
+        return ['ok' => false, 'error' => 'invalid_token'];
     }
+    $accountId = (int)$pdo->lastInsertId();
+
+    // Setting a password is a security event: every token and session issued before the
+    // reset must stop working, so a stolen one cannot outlive the credential change.
+    invalidate_account_sessions($pdo, $accountType, $accountId);
     return ['ok' => true, 'error' => null];
 }
