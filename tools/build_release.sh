@@ -86,6 +86,7 @@ cp "$STAGE/site/config/secrets.example.php" "$STAGE/migrations/config/" 2>/dev/n
 # 29 docs too: the 29.1 guide supersedes them but an operator mid-upgrade may still be
 # following the earlier one.
 for doc in \
+    MAWATHEQ_DEPLOYMENT_GUIDE_AR.md \
     MAWATHEQ_EXECUTION_30_DEPLOYMENT_AR.md \
     MAWATHEQ_EXECUTION_30_REPORT.md \
     MAWATHEQ_EXECUTION_29_1_DEPLOYMENT_AR.md \
@@ -105,8 +106,14 @@ done
 # mid-upgrade may still be following the earlier one.
 [ -f "$STAGE/migrations/MAWATHEQ_EXECUTION_30_DEPLOYMENT_AR.md" ] \
     || fail "MAWATHEQ_EXECUTION_30_DEPLOYMENT_AR.md is missing from the migration package"
+[ -f "$STAGE/migrations/MAWATHEQ_DEPLOYMENT_GUIDE_AR.md" ] \
+    || fail "MAWATHEQ_DEPLOYMENT_GUIDE_AR.md is missing from the migration package"
 [ -f "$STAGE/migrations/database/upgrade_v56.sql" ] \
     || fail "database/upgrade_v56.sql is missing from the migration package"
+# Execution 31's schema is the last migration in the chain. A package that stops at v56
+# would deploy the affiliate code against tables that do not exist.
+[ -f "$STAGE/migrations/database/upgrade_v57.sql" ] \
+    || fail "database/upgrade_v57.sql is missing from the migration package"
 
 # --- modes and timestamps --------------------------------------------------
 step "normalizing file modes and timestamps"
@@ -186,9 +193,34 @@ MIG_ZIP="$OUT/MAWATHEQ_DB_MIGRATIONS_SAFE.zip"
 (cd "$STAGE/site" && zip -r -X -q "$SITE_ZIP" .) || fail "zip of the site package failed"
 (cd "$STAGE/migrations" && zip -r -X -q "$MIG_ZIP" .) || fail "zip of the migration package failed"
 
+# The canonical names above are what tests/execution29_1_release_smoke_test.php unpacks, so
+# they are not renamed. The delivery also asks for shorter names; ship both by hardlinking,
+# which costs no extra bytes and cannot drift from the canonical file.
+SITE_ALT="$OUT/MAWATHEQ_WEBSITE_FINAL.zip"
+MIG_ALT="$OUT/MAWATHEQ_DATABASE_MIGRATIONS.zip"
+ln -f "$SITE_ZIP" "$SITE_ALT" || cp "$SITE_ZIP" "$SITE_ALT" || fail "could not create $SITE_ALT"
+ln -f "$MIG_ZIP" "$MIG_ALT" || cp "$MIG_ZIP" "$MIG_ALT" || fail "could not create $MIG_ALT"
+
+# The deployment guide is a deliverable in its own right, so it sits at the top level next
+# to the archives rather than only inside the migration package.
+if [ -f "$STAGE/migrations/MAWATHEQ_DEPLOYMENT_GUIDE_AR.md" ]; then
+    cp "$STAGE/migrations/MAWATHEQ_DEPLOYMENT_GUIDE_AR.md" "$OUT/MAWATHEQ_DEPLOYMENT_GUIDE_AR.md"
+else
+    fail "MAWATHEQ_DEPLOYMENT_GUIDE_AR.md is missing; cannot ship it as a deliverable"
+fi
+
 step "writing checksums"
-(cd "$OUT" && sha256sum "$(basename "$SITE_ZIP")" "$(basename "$MIG_ZIP")" > SHA256SUMS.txt) \
-    || fail "sha256sum failed"
+# One checksum line per distinct file. The hardlinked aliases are listed too, so a download
+# of either name verifies against the same digest.
+(
+    cd "$OUT" && sha256sum \
+        "$(basename "$SITE_ZIP")" \
+        "$(basename "$MIG_ZIP")" \
+        "$(basename "$SITE_ALT")" \
+        "$(basename "$MIG_ALT")" \
+        MAWATHEQ_DEPLOYMENT_GUIDE_AR.md \
+    > SHA256SUMS.txt
+) || fail "sha256sum failed"
 
 # --- manifest --------------------------------------------------------------
 {
