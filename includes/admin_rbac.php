@@ -29,6 +29,7 @@ function admin_route_roles(): array {
         'leads.php' => ['super_admin', 'support'],
         'articles.php' => ['super_admin', 'editor'],
         'laws.php' => ['super_admin', 'editor'],
+        'classification.php' => ['super_admin', 'editor'],
         'ai-knowledge.php' => ['super_admin', 'editor'],
         'ai-orchestration.php' => ['super_admin'],
         'ai-operations.php' => ['super_admin'],
@@ -56,6 +57,10 @@ function admin_route_roles(): array {
         // support task. A route absent from this map defaults to super_admin, so
         // omitting one of these would be safe but would break the intended role.
         'affiliates.php' => ['super_admin', 'support'],
+        // Deciding an application can create an affiliate account and is the step that
+        // lets someone start earning, so it is a super_admin action, like the rest of
+        // the affiliate money path.
+        'affiliate-applications.php' => ['super_admin'],
         'affiliate-detail.php' => ['super_admin'],
         'affiliate-payouts.php' => ['super_admin'],
         'affiliate-payout.php' => ['super_admin'],

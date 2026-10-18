@@ -45,9 +45,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($hasAvailability && !in_array($time, $validSlots, true)) {
         $error = is_rtl() ? 'هذا الموعد لم يعد متاحاً، يرجى اختيار وقت آخر.' : 'This slot is no longer available, please pick another.';
     } else {
-        $pdo->prepare('INSERT INTO consultations (user_id, lawyer_id, consultation_type, scheduled_at, topic, price) VALUES (?,?,?,?,?,?)')
-            ->execute([$_SESSION['user_id'], $lawyerId, $type, $scheduledAt, $topic, $lawyer['hourly_rate']]);
+        $najizTypeId = null;
+        $postedNajiz = (int)($_POST['najiz_case_type_id'] ?? 0);
+        if ($postedNajiz > 0) {
+            try {
+                $chk = $pdo->prepare('SELECT id FROM najiz_case_types WHERE id=? AND is_active=1');
+                $chk->execute([$postedNajiz]);
+                $najizTypeId = ($v = $chk->fetchColumn()) ? (int)$v : null;
+            } catch (Throwable $e) {
+                // Classification tables absent: the booking must still succeed.
+                $najizTypeId = null;
+            }
+        }
+        $pdo->prepare('INSERT INTO consultations (user_id, lawyer_id, consultation_type, scheduled_at, topic, price, najiz_case_type_id) VALUES (?,?,?,?,?,?,?)')
+            ->execute([$_SESSION['user_id'], $lawyerId, $type, $scheduledAt, $topic, $lawyer['hourly_rate'], $najizTypeId]);
         $consultationId = (int)$pdo->lastInsertId();
+
+        // Optional judicial requests. Re-validated against the chosen type so a posted id
+        // cannot attach a request that belongs to a different classification.
+        if ($najizTypeId && !empty($_POST['najiz_request_ids']) && is_array($_POST['najiz_request_ids'])) {
+            try {
+                $rc = $pdo->prepare('SELECT id FROM najiz_judicial_requests WHERE id=? AND case_type_id=? AND is_active=1');
+                $rl = $pdo->prepare('INSERT IGNORE INTO consultation_judicial_requests (consultation_id, request_id) VALUES (?,?)');
+                foreach (array_slice($_POST['najiz_request_ids'], 0, 50) as $rid) {
+                    $rc->execute([(int)$rid, $najizTypeId]);
+                    if ($rc->fetchColumn()) $rl->execute([$consultationId, (int)$rid]);
+                }
+            } catch (Throwable $e) {
+                error_log('booking najiz requests: ' . $e->getMessage());
+            }
+        }
 
         // Bind the files the client attached while filling the form. A failure here must not
         // lose the booking — the consultation exists and the lawyer will be notified — so the
@@ -132,6 +159,10 @@ $extraPageAssets = [
       <?php endif; ?>
 
       <div class="field"><label><?= is_rtl() ? 'موضوع الاستشارة' : 'Topic' ?></label><textarea name="topic" rows="3"></textarea></div>
+      <div class="field">
+        <label><?= is_rtl() ? 'تصنيف ناجز (اختياري — يساعد المحامي على فهم نوع النزاع)' : 'Najiz classification (optional — helps the lawyer understand the dispute)' ?></label>
+        <?php require_once __DIR__ . '/includes/najiz_selector.php'; render_najiz_selector('najiz_case_type_id', null, true, 'najiz_request_ids'); ?>
+      </div>
 
       <?php
       /*
