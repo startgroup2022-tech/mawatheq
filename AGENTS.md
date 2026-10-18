@@ -1221,3 +1221,41 @@ a branch that plainly exists on GitHub looks absent. Pushes go through
 `https://x-access-token:$GITHUB_TOKEN@github.com/...`; `GITHUB_PERSONAL_ACCESS_TOKEN` is not
 push-capable.
 
+
+## Merge topology — how the execution stack reached main
+
+The four branches were a **strict linear stack**, not four independent lines:
+
+```
+main 3587b0a
+ └─ phase-3-finance-ai-integrations   6508e68   (+3 commits)
+     └─ phase-4-enterprise-ui         47d40ab   (+31)
+         └─ recovery/execution-28-to-29 0ecd180 (+9)
+             └─ feature/affiliate-referral-system cd4ddc2 (+11)
+```
+
+Because each branch was an ancestor of the next, no rebase or conflict resolution was
+needed. PRs #1 and #3 targeted `main` directly; PRs #2 and #4 targeted their parent branch,
+so their **base had to be retargeted to `main` after the parent landed** — otherwise merging
+them would have put the commits on the parent branch, which was already merged, and the
+changes would never have reached `main`. PR #2 was also a **draft** and GitHub refuses to
+merge drafts; it had to be marked ready first.
+
+Merge commits on `main`, in order: `2884d93` (#1), `dcccf59` (#2), `b64acf0` (#3),
+`b5cc04c` (#4). Verify nothing was lost with
+`git rev-list --count <branch> --not main` → must be 0 for every branch, and
+`git merge-base --is-ancestor <branch-head> main` → must succeed for all four heads. All
+source branches keep their original SHAs, so a mistake here is recoverable by pointing
+`main` back at the pre-merge SHA; no force-push was used.
+
+### `ai_enabled` is seeded to `1`, but AI is inert until a provider is set
+
+`schema.sql` and `upgrade_v10.sql` seed `ai_enabled = '1'`, which looks like "AI is on".
+It is not: `ai_settings_configured()` also requires a chat-capable `ai_provider` plus either
+an API key (hosted) or a reachable endpoint (local), and `ai_provider` seeds to empty. With
+no provider, `ai_diagnostics()` reports `blocking = 'no_provider'` and every feature page
+treats AI as unconfigured. So "no AI/Ollama activation" holds on a fresh deploy without
+touching that seed — do not "fix" it to `0`, that would change behaviour for an operator who
+has legitimately configured a provider. The `127.0.0.1:11434` listener in the test
+environment is the mock at `/tmp/mockai/router.php`, not Ollama.
+
