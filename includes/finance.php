@@ -190,6 +190,21 @@ function finance_record_payment(PDO $pdo, int $invoiceId, float $amount, array $
         $release();
 
         log_action($pdo, 'تسجيل دفعة فاتورة (' . $method . ')', 'invoice_payment', $paymentId);
+
+        // Affiliate programme (Execution 31). Deliberately after the commit and
+        // outside the transaction above: the programme observes payments, it does not
+        // participate in them, so a problem there must not roll back a real payment.
+        // The call is guarded because the affiliate tables are absent on a database
+        // that has not run upgrade_v57.sql, and billing must keep working there.
+        if (is_file(__DIR__ . '/affiliate_payment.php')) {
+            try {
+                require_once __DIR__ . '/affiliate_payment.php';
+                affiliate_payment_hook($pdo, $invoiceId, $paymentId);
+            } catch (Throwable $affiliateError) {
+                error_log('Affiliate payment hook failed: ' . $affiliateError->getMessage());
+            }
+        }
+
         return ['ok' => true, 'payment_id' => $paymentId, 'status' => $newStatus, 'balance' => $newBalance, 'invoice_id' => $invoiceId];
     } catch (Throwable $e) {
         $undo();
