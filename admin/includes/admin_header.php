@@ -36,6 +36,7 @@ $adminNavGroups = [
     ]],
     ['t' => adm('برنامج الشركاء', 'Affiliate programme'), 'items' => [
         'affiliates' => ['i' => 'users', 'ar' => 'المسوّقون', 'en' => 'Affiliates', 'href' => '/admin/affiliates.php'],
+        'affiliate-applications' => ['i' => 'inbox', 'ar' => 'طلبات الانضمام', 'en' => 'Applications', 'href' => '/admin/affiliate-applications.php'],
         'affiliate-commissions' => ['i' => 'wallet', 'ar' => 'العمولات', 'en' => 'Commissions', 'href' => '/admin/affiliate-commissions.php'],
         'affiliate-payouts' => ['i' => 'receipt', 'ar' => 'طلبات الصرف', 'en' => 'Payout requests', 'href' => '/admin/affiliate-payouts.php'],
         'affiliate-campaigns' => ['i' => 'target', 'ar' => 'الحملات', 'en' => 'Campaigns', 'href' => '/admin/affiliate-campaigns.php'],

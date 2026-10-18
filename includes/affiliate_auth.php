@@ -192,6 +192,148 @@ function affiliate_create_account(PDO $pdo, array $data): array {
 }
 
 /**
+ * Register an affiliate account that can sign in immediately.
+ *
+ * This is the account-based registration path, as distinct from
+ * affiliate_submit_application() below. The distinction is the password: an account
+ * registered here gets a hash, so the applicant can sign in and watch their own
+ * application move through review; a bare application is only a queue entry with
+ * nobody able to sign in to it.
+ *
+ * The account is created `pending`, never `active`. Being able to sign in and being
+ * able to earn are separate decisions: `affiliate_can_earn()` requires `active` plus
+ * an approved compliance review, so a freshly registered affiliate can reach their
+ * dashboard and nothing else. Nothing here touches commission eligibility.
+ *
+ * @return array{ok:bool,affiliate_id?:int,code?:string,reference?:string,error?:string}
+ */
+function affiliate_register(PDO $pdo, array $data): array {
+    $email = strtolower(trim((string)($data['email'] ?? '')));
+    if (!affiliate_valid_email($email)) return ['ok' => false, 'error' => 'invalid_email'];
+
+    $fullName = trim((string)($data['full_name'] ?? ''));
+    if ($fullName === '' || mb_strlen($fullName, 'UTF-8') > 180) return ['ok' => false, 'error' => 'invalid_name'];
+
+    if (empty($data['accepted_terms']) || empty($data['accepted_privacy'])) {
+        return ['ok' => false, 'error' => 'consent_required'];
+    }
+
+    $passwordCheck = affiliate_validate_password((string)($data['password'] ?? ''), (string)($data['password_confirm'] ?? ''));
+    if (empty($passwordCheck['ok'])) return $passwordCheck;
+
+    // Two budgets. The strict one (per email and per source address, 5 per 15 minutes)
+    // is bumped only on a *failed* attempt, where it protects against enumeration and
+    // form spam — it is the same budget the login uses.
+    $ip = (string)($_SERVER['REMOTE_ADDR'] ?? '');
+    if (auth_rate_limit_remaining($pdo, 'affiliate-register', $email) > 0) {
+        return ['ok' => false, 'error' => 'rate_limited'];
+    }
+    // The generous one counts successful creations from a single address (20 per
+    // 15 minutes) so a script cannot mass-create accounts, without punishing an office
+    // where several real people sign up from one connection. Counting successes as
+    // failures on the strict budget would lock out a shared address after five genuine
+    // registrations, which is why this is a separate bucket with its own threshold.
+    $creationKey = auth_rate_limit_ip_key('affiliate-register-created');
+    if (auth_rate_limit_remaining_key($pdo, $creationKey) > 0) {
+        return ['ok' => false, 'error' => 'rate_limited'];
+    }
+
+    // One account per address. Checked before anything is written, and the INSERT is
+    // additionally protected by the unique index on affiliates.email — the check
+    // alone would be a race between two simultaneous submissions.
+    if (affiliate_find_by_email($pdo, $email)) {
+        auth_rate_limit_failure($pdo, 'affiliate-register', $email);
+        return ['ok' => false, 'error' => 'email_exists'];
+    }
+
+    $created = affiliate_create_account($pdo, [
+        'email' => $email,
+        'password' => (string)$data['password'],
+        'full_name' => $fullName,
+        'phone' => $data['phone'] ?? null,
+        'country' => (string)($data['country'] ?? 'BH'),
+        'city' => $data['city'] ?? null,
+        'affiliate_type' => (string)($data['affiliate_type'] ?? 'individual'),
+        'company_name' => $data['company_name'] ?? null,
+        'website' => $data['website'] ?? null,
+        'social_links' => $data['social_links'] ?? null,
+        'marketing_channels' => $data['marketing_channels'] ?? null,
+        'payout_method' => (string)($data['payout_method'] ?? 'none'),
+        // Deliberately not taken from the request: registration can never choose its
+        // own status or its own compliance verdict.
+        'status' => 'pending',
+        'compliance_status' => 'not_reviewed',
+    ]);
+    if (empty($created['ok'])) {
+        auth_rate_limit_failure($pdo, 'affiliate-register', $email);
+        return $created;
+    }
+
+    $affiliateId = (int)$created['affiliate_id'];
+    $affiliate = affiliate_find($pdo, $affiliateId);
+
+    // Record the registration as an application row so the existing review queue in
+    // the admin console lists it alongside every other applicant, and so approving it
+    // links to the account that already exists rather than creating a second one.
+    $reference = null;
+    try {
+        $reference = strtoupper(bin2hex(random_bytes(8)));
+        $pdo->prepare('INSERT INTO affiliate_applications
+            (reference, affiliate_id, full_name, email, phone, country, city, applicant_type, company_name,
+             website, social_links, marketing_channels, payout_method, accepted_terms, accepted_privacy,
+             terms_version, privacy_version, accepted_ip, accepted_at, status)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NOW(),?)
+            ON DUPLICATE KEY UPDATE affiliate_id=VALUES(affiliate_id), status=VALUES(status)')
+            ->execute([
+                $reference, $affiliateId, $fullName, $email,
+                affiliate_normalize_phone($data['phone'] ?? null),
+                strtoupper(substr((string)($data['country'] ?? 'BH'), 0, 2)),
+                isset($data['city']) && $data['city'] !== '' ? mb_substr((string)$data['city'], 0, 80, 'UTF-8') : null,
+                in_array((string)($data['affiliate_type'] ?? ''), ['individual', 'company', 'partner'], true) ? (string)$data['affiliate_type'] : 'individual',
+                isset($data['company_name']) && $data['company_name'] !== '' ? mb_substr((string)$data['company_name'], 0, 190, 'UTF-8') : null,
+                isset($data['website']) && $data['website'] !== '' ? mb_substr((string)$data['website'], 0, 255, 'UTF-8') : null,
+                isset($data['social_links']) && $data['social_links'] !== '' ? mb_substr((string)$data['social_links'], 0, 1000, 'UTF-8') : null,
+                isset($data['marketing_channels']) && $data['marketing_channels'] !== '' ? mb_substr((string)$data['marketing_channels'], 0, 1000, 'UTF-8') : null,
+                in_array((string)($data['payout_method'] ?? ''), ['bank_transfer', 'cheque', 'none'], true) ? (string)$data['payout_method'] : 'none',
+                1, 1, AFFILIATE_TERMS_VERSION, AFFILIATE_PRIVACY_VERSION,
+                affiliate_ip_hash(), 'submitted',
+            ]);
+    } catch (Throwable $e) {
+        // The account is the thing that matters and it already exists; a missing queue
+        // row is recoverable from the affiliates table, so this is logged, not fatal.
+        error_log('affiliate_register application row: ' . $e->getMessage());
+    }
+
+    // Consent to register is recorded on the application row above (flags, versions and
+    // a keyed IP hash). The `affiliate_agreements` rows are deliberately NOT written
+    // here: that table records acceptance of the programme terms, which is the separate
+    // act that activates an approved account (affiliate/terms.php -> affiliate_accept_terms).
+    // Writing them at registration would make affiliate_has_accepted() true before the
+    // affiliate ever saw the obligations, and would leave an approved account with no
+    // route to activation.
+
+    // Success is recorded against the creation bucket only; the strict budget stays
+    // clean so a genuine registrant is never throttled by their own successful sign-up.
+    auth_rate_limit_failure_key($pdo, $creationKey, 20);
+
+    affiliate_audit($pdo, 'affiliate_registered', [
+        'actor_type' => 'affiliate', 'actor_id' => $affiliateId,
+        'affiliate_id' => $affiliateId, 'subject_type' => 'affiliate', 'subject_id' => $affiliateId,
+        'to_state' => 'pending', 'detail' => 'reference=' . (string)$reference,
+    ]);
+    affiliate_notify($pdo, $affiliateId, 'registered:' . $affiliateId, 'account_pending',
+        is_rtl() ? 'تم إنشاء حسابك بنجاح' : 'Your account was created',
+        is_rtl()
+            ? 'حسابك قيد المراجعة. سنشعرك عند اتخاذ القرار.'
+            : 'Your account is under review. We will notify you when a decision is made.',
+        '/affiliate/dashboard.php');
+
+    if ($affiliate) affiliate_establish_session($affiliate);
+
+    return ['ok' => true, 'affiliate_id' => $affiliateId, 'code' => (string)$created['code'], 'reference' => (string)$reference];
+}
+
+/**
  * Submit a public application.
  *
  * The application is a separate row from the affiliate so the full submitted payload
@@ -297,9 +439,53 @@ function affiliate_approve_application(PDO $pdo, int $applicationId, array $opti
         return ['ok' => false, 'error' => 'already_reviewed'];
     }
 
-    // An application that already produced an affiliate (a re-approval) is linked, not duplicated.
+    // An application that already produced an affiliate is moved, not duplicated.
+    // This is the case for anyone who registered an account: affiliate_register()
+    // creates the `affiliates` row and the application row together, so approving must
+    // act on that existing account. Returning early here (as this function used to)
+    // reported success while changing nothing — the console said "approved" and the
+    // account stayed `pending` forever.
     if (!empty($application['affiliate_id'])) {
-        return ['ok' => true, 'affiliate_id' => (int)$application['affiliate_id']];
+        $affiliateId = (int)$application['affiliate_id'];
+        $affiliate = affiliate_find($pdo, $affiliateId);
+        if (!$affiliate) return ['ok' => false, 'error' => 'not_found'];
+
+        // No status change is needed if the account has already moved past review, but
+        // the application row is still stamped so the queue reflects the decision.
+        if (in_array((string)$affiliate['status'], ['pending', 'under_review'], true)) {
+            $moved = affiliate_set_status($pdo, $affiliateId, 'approved', [
+                'note' => (string)($options['note'] ?? ''),
+            ]);
+            if (empty($moved['ok'])) return ['ok' => false, 'error' => (string)($moved['error'] ?? 'update_failed')];
+        }
+
+        // Only an explicit compliance decision changes the compliance state; approving
+        // an application is not by itself a compliance ruling.
+        if (!empty($options['compliance_approved'])
+            && (string)$affiliate['compliance_status'] !== 'approved') {
+            affiliate_set_compliance($pdo, $affiliateId, 'approved', ['note' => (string)($options['note'] ?? '')]);
+        }
+
+        try {
+            $pdo->prepare("UPDATE affiliate_applications SET status='approved', reviewed_by=?, reviewed_at=NOW(), compliance_notes=? WHERE id=?")
+                ->execute([isset($_SESSION['admin_id']) ? (int)$_SESSION['admin_id'] : null,
+                    isset($options['note']) ? mb_substr((string)$options['note'], 0, 500, 'UTF-8') : null, $applicationId]);
+        } catch (Throwable $e) {
+            error_log('affiliate_approve_application link: ' . $e->getMessage());
+        }
+
+        affiliate_audit($pdo, 'application_approved', [
+            'affiliate_id' => $affiliateId, 'subject_type' => 'application', 'subject_id' => $applicationId,
+            'from_state' => (string)$application['status'], 'to_state' => 'approved',
+        ]);
+        affiliate_notify($pdo, $affiliateId, 'application_approved:' . $applicationId, 'application_approved',
+            is_rtl() ? 'تم اعتماد طلبك' : 'Your application was approved',
+            is_rtl()
+                ? 'يمكنك الآن تسجيل الدخول وقبول شروط البرنامج لتفعيل حسابك وبدء استخدام روابط الإحالة.'
+                : 'You can now sign in and accept the programme terms to activate your account and start using your referral links.',
+            '/affiliate/terms.php');
+
+        return ['ok' => true, 'affiliate_id' => $affiliateId, 'code' => (string)$affiliate['code'], 'existing' => true];
     }
 
     $created = affiliate_create_account($pdo, [
@@ -367,10 +553,26 @@ function affiliate_reject_application(PDO $pdo, int $applicationId, string $reas
 function affiliate_create_invitation(PDO $pdo, array $data): array {
     $email = strtolower(trim((string)($data['email'] ?? '')));
     if ($email !== '' && !affiliate_valid_email($email)) return ['ok' => false, 'error' => 'invalid_email'];
-    if ($email !== '' && affiliate_find_by_email($pdo, $email)) return ['ok' => false, 'error' => 'email_exists'];
+    // Inviting someone who is already an affiliate is normally a mistake, and is refused.
+    // The exception is an account with no password: that is the account created by
+    // approving a public-form application, and an invitation is the only way its owner can
+    // ever sign in. An account that can already sign in is still refused, so a leaked
+    // token cannot be turned into a password reset.
+    if ($email !== '') {
+        $existingAffiliate = affiliate_find_by_email($pdo, $email);
+        if ($existingAffiliate && !empty($existingAffiliate['password_hash'])) {
+            return ['ok' => false, 'error' => 'email_exists'];
+        }
+    }
 
     $token = bin2hex(random_bytes(32));
     $days = max(1, min(90, (int)($data['expires_days'] ?? 14)));
+    // Normalise into a local first: writing `$data['invite_type'] ?? 'individual'` in the
+    // test and then `$data['invite_type']` in the true branch yields null when the key is
+    // absent — the `??` guards the test, not the value that gets stored. The column is
+    // NOT NULL, so that made every invitation without an explicit type fail to create.
+    $inviteType = (string)($data['invite_type'] ?? 'individual');
+    if (!in_array($inviteType, ['individual', 'company', 'partner'], true)) $inviteType = 'individual';
     try {
         $pdo->prepare('INSERT INTO affiliate_invitations (token_hash, email, full_name, invite_type, invited_by, commission_plan_id, preapproved, personal_message, expires_at)
             VALUES (?,?,?,?,?,?,?,?,?)')
@@ -378,7 +580,7 @@ function affiliate_create_invitation(PDO $pdo, array $data): array {
                 hash('sha256', $token),
                 $email !== '' ? $email : null,
                 isset($data['full_name']) ? mb_substr((string)$data['full_name'], 0, 180, 'UTF-8') : null,
-                in_array($data['invite_type'] ?? 'individual', ['individual', 'company', 'partner'], true) ? $data['invite_type'] : 'individual',
+                $inviteType,
                 isset($_SESSION['admin_id']) ? (int)$_SESSION['admin_id'] : (int)($data['invited_by'] ?? 0),
                 isset($data['commission_plan_id']) ? (int)$data['commission_plan_id'] : null,
                 !empty($data['preapproved']) ? 1 : 0,
@@ -432,6 +634,16 @@ function affiliate_accept_invitation(PDO $pdo, string $token, array $data): arra
 
     if (empty($data['accepted_terms'])) return ['ok' => false, 'error' => 'consent_required'];
 
+    // An invitation is also how an account that has no password gets one. An application
+    // approved from the public form creates the account with no credentials (the
+    // applicant never chose a password), so without this branch that person is approved
+    // and permanently unable to sign in. The password is set here and the invitation is
+    // still claimed, so the token stays single-use.
+    $existing = affiliate_find_by_email($pdo, $email);
+    if ($existing) {
+        return affiliate_accept_invitation_for_existing($pdo, $invitation, $existing, $data, (string)$data['password']);
+    }
+
     $created = affiliate_create_account($pdo, [
         'email' => $email,
         'full_name' => (string)($data['full_name'] ?? ($invitation['full_name'] ?? '')),
@@ -469,22 +681,92 @@ function affiliate_accept_invitation(PDO $pdo, string $token, array $data): arra
         return ['ok' => false, 'error' => 'claim_failed'];
     }
 
-    // Record the agreement versions the affiliate accepted at sign-up.
-    foreach ([['terms', AFFILIATE_TERMS_VERSION], ['privacy', AFFILIATE_PRIVACY_VERSION]] as $agreement) {
-        try {
-            $pdo->prepare('INSERT INTO affiliate_agreements (affiliate_id, agreement_type, version, accepted_at, accepted_ip, accepted_user_agent)
-                VALUES (?,?,?,NOW(),?,?)')
-                ->execute([
-                    (int)$created['affiliate_id'], $agreement[0], $agreement[1],
-                    affiliate_ip_hash(), mb_substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255, 'UTF-8'),
-                ]);
-        } catch (Throwable $e) { /* the affiliate exists; the agreement record is best-effort here */ }
-    }
+    // The invitation form collects consent, and that consent is recorded against the
+    // account so there is a record of what was agreed at sign-up. It is deliberately NOT
+    // written to affiliate_agreements: that table is what affiliate_activate() reads, and
+    // pre-filling it left an invited partner permanently stuck at `approved` — the terms
+    // page saw the agreement as already accepted, rendered no form, and the activation
+    // that only runs from that form never fired.
+    affiliate_audit($pdo, 'invitation_consent', [
+        'affiliate_id' => (int)$created['affiliate_id'], 'subject_type' => 'invitation',
+        'subject_id' => (int)$invitation['id'],
+        'detail' => 'terms v' . AFFILIATE_TERMS_VERSION . ' accepted at invitation acceptance',
+    ]);
 
     affiliate_audit($pdo, 'invitation_accepted', [
         'affiliate_id' => (int)$created['affiliate_id'], 'subject_type' => 'invitation', 'subject_id' => (int)$invitation['id'],
     ]);
     return ['ok' => true, 'affiliate_id' => (int)$created['affiliate_id'], 'code' => $created['code']];
+}
+
+/**
+ * Accept an invitation for an account that already exists.
+ *
+ * This is the case for an application approved from the public landing form: the account
+ * is created without a password because the applicant never chose one, so the invitation
+ * is the only way for them to obtain credentials. The password is set here, the
+ * invitation is claimed single-use, and the account's existing review state is preserved
+ * — an invitation sets a password, it does not re-decide the application.
+ *
+ * @param array<string,mixed> $invitation
+ * @param array<string,mixed> $existing
+ * @param array<string,mixed> $data
+ * @return array{ok:bool,affiliate_id?:int,code?:string,error?:string}
+ */
+function affiliate_accept_invitation_for_existing(PDO $pdo, array $invitation, array $existing, array $data, string $password): array {
+    $affiliateId = (int)$existing['id'];
+
+    // Only an account that has not been given credentials yet may be claimed this way.
+    // Without this check a leaked invitation token would be a password reset for an
+    // established affiliate, which is a takeover rather than an onboarding.
+    if (!empty($existing['password_hash'])) {
+        return ['ok' => false, 'error' => 'account_active'];
+    }
+
+    try {
+        $claim = $pdo->prepare('UPDATE affiliate_invitations SET accepted_at=NOW(), affiliate_id=? WHERE id=? AND accepted_at IS NULL AND revoked_at IS NULL');
+        $claim->execute([$affiliateId, (int)$invitation['id']]);
+        if ($claim->rowCount() === 0) return ['ok' => false, 'error' => 'invitation_used'];
+    } catch (Throwable $e) {
+        error_log('affiliate_accept_invitation_for_existing claim: ' . $e->getMessage());
+        return ['ok' => false, 'error' => 'claim_failed'];
+    }
+
+    // Fill in whatever the applicant left blank at application time; never overwrite a
+    // value they already supplied.
+    $fullName = trim((string)($data['full_name'] ?? ''));
+    if ($fullName === '') $fullName = (string)$existing['full_name'];
+    try {
+        $pdo->prepare('UPDATE affiliates SET password_hash=?, full_name=?, phone=COALESCE(NULLIF(phone, \'\'), ?),
+                city=COALESCE(NULLIF(city, \'\'), ?), company_name=COALESCE(NULLIF(company_name, \'\'), ?),
+                commercial_registration=COALESCE(NULLIF(commercial_registration, \'\'), ?),
+                payout_method=CASE WHEN payout_method = \'none\' THEN ? ELSE payout_method END
+            WHERE id=?')
+            ->execute([
+                affiliate_hash_password($password),
+                mb_substr($fullName, 0, 180, 'UTF-8'),
+                affiliate_normalize_phone($data['phone'] ?? null),
+                isset($data['city']) ? mb_substr((string)$data['city'], 0, 80, 'UTF-8') : null,
+                isset($data['company_name']) ? mb_substr((string)$data['company_name'], 0, 190, 'UTF-8') : null,
+                isset($data['commercial_registration']) ? mb_substr((string)$data['commercial_registration'], 0, 60, 'UTF-8') : null,
+                in_array((string)($data['payout_method'] ?? ''), ['bank_transfer', 'cheque'], true) ? (string)$data['payout_method'] : 'none',
+                $affiliateId,
+            ]);
+    } catch (Throwable $e) {
+        error_log('affiliate_accept_invitation_for_existing update: ' . $e->getMessage());
+        return ['ok' => false, 'error' => 'update_failed'];
+    }
+
+    affiliate_audit($pdo, 'invitation_consent', [
+        'affiliate_id' => $affiliateId, 'subject_type' => 'invitation', 'subject_id' => (int)$invitation['id'],
+        'detail' => 'terms v' . AFFILIATE_TERMS_VERSION . ' accepted at invitation acceptance',
+    ]);
+    affiliate_audit($pdo, 'invitation_accepted', [
+        'affiliate_id' => $affiliateId, 'subject_type' => 'invitation', 'subject_id' => (int)$invitation['id'],
+        'detail' => 'credentials set for an existing account',
+    ]);
+
+    return ['ok' => true, 'affiliate_id' => $affiliateId, 'code' => (string)$existing['code'], 'existing' => true];
 }
 
 /**

@@ -349,10 +349,24 @@ function affiliate_can_earn(?array $affiliate): bool {
         && ($affiliate['compliance_status'] ?? '') === 'approved';
 }
 
-/** May this affiliate sign in and use the portal at all? */
+/**
+ * May this affiliate sign in and use the portal at all?
+ *
+ * Reaching the portal and being able to earn are deliberately separate questions.
+ * An applicant who registered an account (`pending` / `under_review`) may sign in so
+ * they can watch their own application move through review; what they must not do is
+ * earn, which is why `affiliate_can_earn()` is the gate that actually protects the
+ * money and is enforced independently on every link, campaign, payout and conversion
+ * path. Refusing them the login instead would leave an applicant with a password they
+ * cannot use and no way to see the status of their own request.
+ *
+ * `rejected` and `closed` are still refused: those accounts are finished, and the
+ * login page reports the reason rather than pretending the credentials were wrong.
+ * A suspended affiliate may sign in and read their history — they may be owed money.
+ */
 function affiliate_can_login(?array $affiliate): bool {
     if (!$affiliate) return false;
-    return in_array((string)($affiliate['status'] ?? ''), ['approved', 'active', 'suspended'], true);
+    return in_array((string)($affiliate['status'] ?? ''), ['pending', 'under_review', 'approved', 'active', 'suspended'], true);
 }
 
 /** Human label for a status, in the active language. */
