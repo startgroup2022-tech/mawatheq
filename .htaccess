@@ -26,6 +26,13 @@ Options -Indexes
     Require all denied
 </FilesMatch>
 
+# أرشيفات الإصدار: خطوات النشر ترفع MAWATHEQ_WEBSITE_FINAL.zip إلى public_html ثم تفكّه.
+# إن بقي الملف بعد الفكّ صار قابلاً للتنزيل العام، فيكشف شجرة الموقع كاملة. لا يخدم الموقع
+# أي أرشيف من جذر الويب (تقارير CSV والمرفقات تُرسل من مسارات PHP لا كملفات)، فمنعها آمن.
+<FilesMatch "\.(zip|tar|tgz|gz|rar|7z|bz2|apk|ipa)$">
+    Require all denied
+</FilesMatch>
+
 # ملفات البناء ومديري الحزم وبيانات الاختبار: تكشف إصدارات المكتبات وأدوات التطوير.
 # نُسمّيها صراحةً بدل منع كل ملفات .json، لأن .well-known/assetlinks.json وملف
 # تطبيق الجوال (manifest.json) يجب أن يبقيا متاحين للعامة.
