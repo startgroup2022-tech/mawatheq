@@ -280,6 +280,20 @@ function affiliate_ledger_verify(PDO $pdo, int $affiliateId, ?string $currency =
     ];
 }
 
+/** Human label for a ledger account, in the active language. */
+function affiliate_ledger_account_label(string $account): string {
+    $map = [
+        'commission_earned' => ['عمولة مكتسبة', 'Commission earned'],
+        'commission_payable' => ['التزام مستحق', 'Commission payable'],
+        'commission_paid' => ['عمولة مصروفة', 'Commission paid'],
+        'commission_reversed' => ['عمولة معكوسة', 'Commission reversed'],
+        'payout_clearing' => ['تسوية صرف', 'Payout clearing'],
+        'adjustment' => ['تسوية', 'Adjustment'],
+    ];
+    $row = $map[$account] ?? [$account, $account];
+    return is_rtl() ? $row[0] : $row[1];
+}
+
 /** Ledger entries for an affiliate, newest first. */
 function affiliate_ledger_entries(PDO $pdo, int $affiliateId, int $limit = 100): array {
     $limit = max(1, min(500, $limit));

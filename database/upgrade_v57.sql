@@ -839,9 +839,11 @@ CREATE TABLE IF NOT EXISTS affiliate_notification_log (
     link VARCHAR(255) DEFAULT NULL,
     channel ENUM('in_app','email','sms') NOT NULL DEFAULT 'in_app',
     status ENUM('queued','sent','failed','skipped') NOT NULL DEFAULT 'sent',
+    read_at DATETIME DEFAULT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_affiliate_notification_event (event_key, channel),
     INDEX idx_affiliate_notification_affiliate (affiliate_id, created_at),
+    INDEX idx_affiliate_notification_unread (affiliate_id, read_at),
     CONSTRAINT fk_affiliate_notification_affiliate FOREIGN KEY (affiliate_id) REFERENCES affiliates(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -962,3 +964,42 @@ WHERE NOT EXISTS (SELECT 1 FROM site_settings WHERE setting_key='affiliate_defau
 INSERT INTO affiliate_commission_plans (name, slug, version, plan_type, description, currency, revenue_base, percentage, first_payment_only, hold_days, effective_from, is_default, is_active, tax_treatment, notes)
 SELECT 'الخطة الافتراضية', 'default', 1, 'percentage', 'عمولة على صافي الإيراد المؤهل لخدمات المنصة فقط. لا تُطبَّق على الأتعاب المهنية المنظّمة.', 'BHD', 'eligible_net', 10.000, 1, 30, CURDATE(), 1, 1, 'not_applicable', 'الخطة الافتراضية للبرنامج. تخضع لموافقة الالتزام قبل أي صرف.'
 WHERE NOT EXISTS (SELECT 1 FROM affiliate_commission_plans WHERE slug='default' AND version=1);
+
+
+-- ---------------------------------------------------------------------------
+-- 27. Guarded additive ALTERs
+-- ---------------------------------------------------------------------------
+-- This file is applied by hand on a live server and may have been run once before
+-- being finalised, so the column and index below are added conditionally rather
+-- than assumed present. Every statement appends rather than positioning: a
+-- positional AFTER naming an absent column is what aborted upgrade_v56.sql in
+-- production and silently skipped every statement below it.
+
+SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS
+           WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='affiliate_notification_log' AND COLUMN_NAME='read_at');
+SET @s := IF(@c=0, "ALTER TABLE affiliate_notification_log ADD COLUMN read_at DATETIME DEFAULT NULL", 'SELECT 1');
+PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+
+SET @c := (SELECT COUNT(*) FROM information_schema.STATISTICS
+           WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='affiliate_notification_log' AND INDEX_NAME='idx_affiliate_notification_unread');
+SET @s := IF(@c=0, "ALTER TABLE affiliate_notification_log ADD INDEX idx_affiliate_notification_unread (affiliate_id, read_at)", 'SELECT 1');
+PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+
+
+-- ---------------------------------------------------------------------------
+-- 28. Migration ledger
+-- ---------------------------------------------------------------------------
+-- Written last, so its presence is evidence the whole file ran rather than
+-- evidence that it started. The repair tooling and the migration verifier read it.
+
+CREATE TABLE IF NOT EXISTS affiliate_migration_ledger (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    migration_key VARCHAR(80) NOT NULL,
+    applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    note VARCHAR(255) DEFAULT NULL,
+    UNIQUE KEY uq_affiliate_migration (migration_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO affiliate_migration_ledger (migration_key, note)
+VALUES ('upgrade_v57_affiliate_program', 'affiliate, referral and partner marketing system')
+ON DUPLICATE KEY UPDATE applied_at = applied_at;

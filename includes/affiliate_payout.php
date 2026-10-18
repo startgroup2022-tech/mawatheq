@@ -119,7 +119,8 @@ function affiliate_request_payout(PDO $pdo, int $affiliateId, ?string $requested
         return ['ok' => false, 'error' => 'below_minimum', 'minimum' => affiliate_from_minor($minMinor, $currency)];
     }
 
-    $method = in_array($options['method'] ?? 'bank_transfer', ['bank_transfer', 'cheque'], true) ? $options['method'] : 'bank_transfer';
+    $method = (string)($options['method'] ?? 'bank_transfer');
+    if (!in_array($method, ['bank_transfer', 'cheque'], true)) $method = 'bank_transfer';
     $reference = affiliate_next_payout_reference($pdo);
 
     // One transaction for the request row and the reservation of the commissions it

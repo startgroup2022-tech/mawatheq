@@ -176,3 +176,21 @@ if (strpos($requestPath,'/admin/')===0 || strpos($requestPath,'/lawyer/')===0 ||
 // تتبع مصدر الزائر (حملة / قناة / صفحة الدخول) — أول لمسة فقط، لعرضها لاحقاً في لوحة التحكم
 require_once __DIR__ . '/../includes/lead_source.php';
 capture_lead_source();
+
+// Affiliate referral capture (Execution 31). Runs after the session is open and
+// after the lead source is recorded, because a referral is a stricter, consent-aware
+// form of the same idea and the two must not fight over the request.
+//
+// Guarded and fail-soft: the affiliate tables are absent on a database that has not
+// run upgrade_v57.sql, and a referral that cannot be recorded must never stop a page
+// from rendering. affiliate_track_request() returns early when there is no ?ref= and
+// no visitor cookie, which is the overwhelmingly common case, so the cost on the hot
+// path is two string checks.
+if (is_file(__DIR__ . '/../includes/affiliate_tracking.php')) {
+    try {
+        require_once __DIR__ . '/../includes/affiliate_tracking.php';
+        affiliate_track_request($pdo);
+    } catch (Throwable $affiliateTrackError) {
+        error_log('Affiliate tracking failed: ' . $affiliateTrackError->getMessage());
+    }
+}

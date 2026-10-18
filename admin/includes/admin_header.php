@@ -34,6 +34,14 @@ $adminNavGroups = [
         'plans' => ['i' => 'card', 'ar' => 'الباقات', 'en' => 'Plans', 'href' => '/admin/plans.php'],
         'reports' => ['i' => 'chart', 'ar' => 'التقارير والتحليلات', 'en' => 'Reports', 'href' => '/admin/reports.php'],
     ]],
+    ['t' => adm('برنامج الشركاء', 'Affiliate programme'), 'items' => [
+        'affiliates' => ['i' => 'users', 'ar' => 'المسوّقون', 'en' => 'Affiliates', 'href' => '/admin/affiliates.php'],
+        'affiliate-commissions' => ['i' => 'wallet', 'ar' => 'العمولات', 'en' => 'Commissions', 'href' => '/admin/affiliate-commissions.php'],
+        'affiliate-payouts' => ['i' => 'receipt', 'ar' => 'طلبات الصرف', 'en' => 'Payout requests', 'href' => '/admin/affiliate-payouts.php'],
+        'affiliate-campaigns' => ['i' => 'target', 'ar' => 'الحملات', 'en' => 'Campaigns', 'href' => '/admin/affiliate-campaigns.php'],
+        'affiliate-fraud' => ['i' => 'shield', 'ar' => 'مكافحة الاحتيال', 'en' => 'Fraud review', 'href' => '/admin/affiliate-fraud.php'],
+        'affiliate-settings' => ['i' => 'settings', 'ar' => 'إعدادات البرنامج', 'en' => 'Programme settings', 'href' => '/admin/affiliate-settings.php'],
+    ]],
     ['t' => adm('المعرفة والذكاء الاصطناعي', 'Knowledge & AI'), 'items' => [
         'ai-control' => ['i' => 'shield', 'ar' => 'التحكم في AI والخصوصية', 'en' => 'AI control & privacy', 'href' => '/admin/ai-control.php'],
         'ai-knowledge' => ['i' => 'spark', 'ar' => 'مركز معرفة AI', 'en' => 'AI knowledge', 'href' => '/admin/ai-knowledge.php'],

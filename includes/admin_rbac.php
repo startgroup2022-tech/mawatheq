@@ -51,6 +51,18 @@ function admin_route_roles(): array {
         'calendar.php' => ['super_admin', 'editor', 'support'],
         'notifications.php' => ['super_admin', 'editor', 'support'],
         'search.php' => ['super_admin', 'support'],
+        // Affiliate programme. Commission and payout data is money, so the consoles
+        // that can move it are super_admin only; reading the affiliate list is a
+        // support task. A route absent from this map defaults to super_admin, so
+        // omitting one of these would be safe but would break the intended role.
+        'affiliates.php' => ['super_admin', 'support'],
+        'affiliate-detail.php' => ['super_admin'],
+        'affiliate-payouts.php' => ['super_admin'],
+        'affiliate-payout.php' => ['super_admin'],
+        'affiliate-commissions.php' => ['super_admin'],
+        'affiliate-campaigns.php' => ['super_admin'],
+        'affiliate-settings.php' => ['super_admin'],
+        'affiliate-fraud.php' => ['super_admin'],
     ];
 }
 
