@@ -1165,6 +1165,75 @@ under `sg www-data -c '...'`. Run the suite as `sg www-data -c 'bash tests/run_a
 or expect those six and confirm they are the only ones.
 
 
+## Execution 32 — affiliate onboarding journey (v58)
+
+`includes/affiliate_auth.php`, `affiliates.php`, `admin/affiliate-applications.php` and
+`database/upgrade_v58.sql`. Two independent paths reach an affiliate account, and only one of
+them was ever exercised before this execution:
+
+- **Registered** — `/affiliate/register.php` creates the account *with* a password, status
+  `pending`. The applicant can sign in immediately and watch the review.
+- **Public form** — `/affiliates.php` (and `affiliate_submit_application()`) only *queues* an
+  application. No account, no password. Approval then calls `affiliate_create_account()`,
+  which sets no `password_hash`.
+
+So an approved public-form applicant is an account nobody can sign into, and the invitation is
+the **only** route to credentials. Three defects met on that route and each is pinned by a test:
+
+### `??` used as a value, not a test
+
+```php
+// before: the value is read from a key that was only *tested* with ??, so it is null
+$inviteType = in_array($data['invite_type'] ?? 'individual', $allowed, true)
+    ? $data['invite_type'] : 'individual';
+```
+`$data['invite_type']` is undefined whenever the caller omits it (every caller did), so the
+ternary's true branch yields `null`, and the `NOT NULL` column rejected the insert — the
+function could not create an invitation at all. Normalise the value first, then use it.
+
+### An invitation must not be a password reset
+
+The original guard refused any email that already had an affiliate row. That is exactly the
+account the public-form path must reach, so it had to become "refuse only an account that
+already has credentials". Keep that condition when touching this function: a fresh token
+delivered to an address that can already sign in would otherwise reset its password.
+
+### Do not pre-record the formal agreement at invitation time
+
+`affiliate_accept_invitation()` wrote the `affiliate_agreements` rows itself. `terms.php`
+then found the agreement already accepted, rendered **no form**, and the activation that only
+runs from that form never fired — the partner stayed `approved` forever and could never earn.
+Consent at acceptance is still audited (`affiliate_audit(..., 'invitation_consent', ...)`),
+but the formal agreement is accepted by the applicant on the terms page, exactly as for a
+registrant. `affiliate_has_accepted()` must be false after accepting an invitation.
+
+### `accepted_ip` is a 64-char hash in a VARCHAR(45) column
+
+`affiliate_ip_hash()` returns a SHA-256 digest (64 chars). `affiliate_applications.accepted_ip`
+and `affiliate_agreements.accepted_ip` were `VARCHAR(45)` — the width of an IPv6 literal. Under
+`sql_mode=STRICT_TRANS_TABLES` every insert was refused with `SQLSTATE[22001] Data too long`,
+which `affiliate_submit_application()` catches and reports as the generic `create_failed`, so
+the public form silently did nothing. `affiliate_accept_terms()` failed the same way, and
+because `terms.php` only activates when both calls return true, an approved affiliate could
+never reach `active`. `upgrade_v58.sql` widens both columns; it is guarded and idempotent.
+
+### Tests must clear the rate-limit buckets they consume
+
+The public form and the login both count **successful** attempts against per-IP buckets, so a
+second run inside the 15-minute window reports `rate_limited` and reads like a regression.
+Worse, `auth_rate_limit_remaining()` takes a scope and checks two buckets, and
+`auth_rate_limit_keys()` derives **two** keys per scope (`auth-ip|` and `auth-account|`), so a
+single scope needs **four** keys cleared — clearing only the `auth-ip|` ones leaves the account
+bucket blocked. `auth_rate_limit_keys('affiliate-apply', '127.0.0.1')` hashes the *address* as
+if it were the email for the account key, which is why the account bucket fills even though no
+applicant email repeats. Both `tests/exec32_affiliate_journey_test.php` and
+`tests/e2e/affiliate-journey.spec.js` clear these in setup; keep that when adding cases.
+
+Verified on this execution: 636/636 browser tests, `exec32_affiliate_journey_test` 64/64,
+`exec31_affiliate_test` 105/105, `exec31_admin_console_probe` 100/100, 31 PHP suites (the one
+failure is the pre-existing `execution30` `www-data` group issue described above).
+
+
 ## Release preparation — the final consolidated build
 
 ### PHP 8.4 is mandatory, not "8.3 or newer"
