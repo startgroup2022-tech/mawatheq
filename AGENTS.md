@@ -1502,8 +1502,61 @@ Both bit this tool; check for them before trusting a visibility guard.
   transparent button keeps the base sheet's navy label. Any new element on a dark band needs
   its colour stated rather than inherited.
 
-Remaining known finding: `status-pending` (`enterprise.css`, via `--warning` `#B4780F` on
-`--warning-bg` `#FDF3E1`) measures **3.73:1**, below the 4.5:1 needed at its 12px size. It is
-left as-is deliberately: the token is shared by 33 call sites across admin, lawyer and public
-pages, so changing it is neither additive nor low-risk. Fix it as a deliberate,
-separately-tested change.
+Formerly-recorded finding, now **fixed**: `status-pending` (`enterprise.css`, via `--warning` on
+`--warning-bg` `#FDF3E1`) measured **3.73:1**, below the 4.5:1 needed at its 12px size. The
+token is shared by 33 call sites across admin, lawyer and public pages, so it was left for a
+deliberate change — that change is `--warning: #7A5409` (**6.16:1**), which is also the colour
+`.form-alert.warning` already used, so the two warning surfaces now agree. If you retune this
+token, re-measure; the badge text is 12px and needs 4.5:1, not 3:1.
+
+## Saudi Arabia is the platform default (v61)
+
+The platform was built Bahrain-first, and the old defaults were literals scattered across the
+affiliate module rather than one constant. If you are adding anything country-, currency-,
+dialling- or timezone-shaped, use these — do not reintroduce a literal.
+
+| Default | Where | Value |
+|---|---|---|
+| Country | `COUNTRY_DEFAULT`, `includes/country.php` | `'SA'` |
+| Currency | `CURRENCY_DEFAULT`, `includes/currency.php` | `'SAR'` |
+| Timezone | `SITE_TIMEZONE`, `config/config.php` | `'Asia/Riyadh'` (env `MAWATHEQ_TIMEZONE`) |
+| Language / direction | `current_lang()` / `is_rtl()` | `'ar'` / RTL |
+| Jurisdiction | `jurisdiction_options()[0]` | `'السعودية'` |
+
+* `includes/country.php` is the single source for the country list and
+  `render_country_select()`. The list used to be copy-pasted verbatim into
+  `affiliate/register.php`, `affiliate/profile.php` and `affiliates.php` — which is exactly how
+  `'BH'` stayed the default in all three. Add a country in one place now.
+* Normalise request input with `country_normalize()` / `currency_normalize()`, never
+  `substr($x, 0, 2)`. Both fall back to the default, so a missing or malformed field degrades
+  instead of storing garbage. `country_normalize()` takes `mixed` on purpose: a country field
+  submitted as an array must fall back, not raise a `TypeError`.
+* `config/config.php` sets the timezone because nothing did before — PHP followed the host, so
+  the same timestamp could differ by three hours between machines. Do not remove it.
+* `affiliate_settings_defaults()` is split out of `affiliate_settings()` so the *code* default
+  is assertable without reading `site_settings`. Tests run alphabetically and a previous suite
+  writes to `site_settings`, so a test that reads the table is testing the other suite's
+  leftovers, not the default. Assert against the defaults function.
+* `BHD`, `BH`, `+973` and `'البحرين'` are still *legitimate list entries* — the currency
+  selector, the dialling-code list and `jurisdiction_options()` all still offer Bahrain. They
+  must not be *defaults*. `tests/saudi_defaults_test.php` pins both halves of that.
+* `database/upgrade_v61.sql` moves ten column defaults `BH`/`BHD` → `SA`/`SAR`. It is
+  **defaults only** — no stored row is rewritten, and the seeded `affiliate_payout_currency` is
+  moved only while it still equals what `upgrade_v57.sql` seeded, so an operator override
+  survives. Guarded by `information_schema` and idempotent.
+* Gotcha: `information_schema.COLUMN_DEFAULT` for a `CHAR` column is stored **with quotes**
+  (`'BH'`, not `BH`). A guard comparing against an unquoted value matches nothing and the
+  migration silently does nothing while still looking applied.
+
+### Adding a new file: check its mode
+
+A file created through an editor landed as `0600` (`includes/country.php`), which Apache cannot
+read — every page including `affiliate.php` returned **500**, and four suites caught it. New
+files must be `0644` (`chmod 644 <file>`); the default umask is not applied by the editor. Same
+trap applies to new `.sql` files under `database/`.
+
+### Running the suites
+
+`bash tests/run_all_tests.sh` (background it; it takes ~5 minutes and the runtime reclaims idle
+foreground jobs). Suites are auto-discovered as `tests/*_test.php` and `tests/*_probe.php`.
+Playwright: `npx playwright test` (~5.5 minutes, 636 tests, six viewports).
