@@ -13,6 +13,7 @@
 
   var CATALOG = {
     document: { max: 20, ext: ['txt', 'doc', 'docx', 'pdf'] },
+    image: { max: 20, ext: ['png', 'jpg', 'jpeg'] },
     audio: { max: 50, ext: ['mp3', 'wav', 'm4a', 'ogg'] },
     video: { max: 100, ext: ['mp4', 'mov', 'webm'] }
   };

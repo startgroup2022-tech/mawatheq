@@ -43,6 +43,7 @@
 .ca-item-icon svg{ width:19px; height:19px; }
 .ca-cat-document{ background:#EFF4F8; color:var(--navy); }
 .ca-cat-audio{ background:#EAF7F1; color:#1E8E5A; }
+.ca-cat-image{ background:#F3EEFA; color:#6B46C1; }
 .ca-cat-video{ background:#FBEFE9; color:#C7492A; }
 .ca-item-body{ flex:1; min-width:0; display:flex; flex-direction:column; gap:3px; }
 .ca-item-name{
@@ -58,6 +59,7 @@
   background:#EFF4F8; color:var(--navy);
 }
 .ca-badge-audio{ background:#EAF7F1; color:#1E8E5A; }
+.ca-badge-image{ background:#F3EEFA; color:#6B46C1; }
 .ca-badge-video{ background:#FBEFE9; color:#C7492A; }
 .ca-item-actions{ display:flex; align-items:center; gap:4px; flex:0 0 auto; }
 .ca-btn{

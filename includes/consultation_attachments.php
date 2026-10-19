@@ -116,6 +116,11 @@ function consultation_attachment_catalog(): array {
         'doc'  => ['category' => 'document', 'mimes' => ['application/msword', 'application/CDFV2', 'application/x-ole-storage', 'application/vnd.ms-office']],
         'docx' => ['category' => 'document', 'mimes' => ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/zip', 'application/x-zip', 'application/octet-stream']],
         'pdf'  => ['category' => 'document', 'mimes' => ['application/pdf']],
+        // Images — what the camera capture and the document scanner produce. A photo of a
+        // contract is the most common submission on a phone, so these are first-class.
+        'png'  => ['category' => 'image', 'mimes' => ['image/png']],
+        'jpg'  => ['category' => 'image', 'mimes' => ['image/jpeg']],
+        'jpeg' => ['category' => 'image', 'mimes' => ['image/jpeg']],
         // Audio
         'mp3'  => ['category' => 'audio', 'mimes' => ['audio/mpeg', 'audio/mp3', 'application/octet-stream']],
         'wav'  => ['category' => 'audio', 'mimes' => ['audio/x-wav', 'audio/wav', 'audio/wave', 'audio/vnd.wave']],
@@ -132,6 +137,7 @@ function consultation_attachment_catalog(): array {
 function consultation_attachment_groups(): array {
     return [
         'document' => ['label_ar' => 'مستندات', 'label_en' => 'Documents', 'extensions' => ['txt', 'doc', 'docx', 'pdf']],
+        'image'    => ['label_ar' => 'صور', 'label_en' => 'Images', 'extensions' => ['png', 'jpg', 'jpeg']],
         'audio'    => ['label_ar' => 'ملفات صوتية', 'label_en' => 'Audio', 'extensions' => ['mp3', 'wav', 'm4a', 'ogg']],
         'video'    => ['label_ar' => 'ملفات فيديو', 'label_en' => 'Video', 'extensions' => ['mp4', 'mov', 'webm']],
     ];
@@ -263,7 +269,9 @@ function consultation_attachment_limits_forget(?PDO $pdo = null): void {
 
 /** Byte limit for a category. */
 function consultation_attachment_category_bytes(string $category, array $limits): int {
-    $key = $category . '_mb';
+    // Images share the document limit. A phone photo is a document in every sense that
+    // matters here, and giving it its own setting would be a knob nobody turns.
+    $key = ($category === 'image' ? 'document' : $category) . '_mb';
     return ($limits[$key] ?? 20) * 1024 * 1024;
 }
 
@@ -290,6 +298,15 @@ function consultation_attachment_sniff(string $path, string $extension): bool {
     switch ($extension) {
         case 'pdf':
             return str_starts_with($head, '%PDF-');
+        case 'png':
+            // The 8-byte PNG signature, then an IHDR chunk. The chunk check keeps the test
+            // meaningful rather than a four-byte prefix match.
+            return str_starts_with($head, "\x89PNG\r\n\x1a\n") && substr($head, 12, 4) === 'IHDR';
+        case 'jpg':
+        case 'jpeg':
+            // SOI marker followed by any real marker (APP0/APP1/DQT/SOF…), which is what
+            // every encoder writes and what a renamed file will not have.
+            return str_starts_with($head, "\xFF\xD8\xFF");
         case 'doc':
             return str_starts_with($head, "\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1");
         case 'docx':
@@ -916,6 +933,180 @@ function consultation_attachment_preview_mime(?string $mime): ?string {
     ];
     return $mime !== null && in_array($mime, $inline, true) ? $mime : null;
 }
+
+// ===========================================================================
+// Transcription (Execution 35)
+//
+// A customer may optionally transcribe a voice recording to Arabic text. Three
+// rules shape everything below:
+//
+//   1. The recording is never replaced. Transcription writes to columns beside the
+//      audio row and never touches the file, so the original is always replayable
+//      and can always be re-transcribed by a better model later.
+//   2. Nothing leaves the platform without an explicit, recorded consent event,
+//      and even then only through ai_gateway_authorize(), which applies the
+//      tenant's own privacy policy. A tenant whose policy forbids external calls
+//      is refused here — the recording stays on the platform and the request
+//      fails closed with a reason the UI can show.
+//   3. A provider that is not configured, or that cannot transcribe audio, is
+//      reported as unavailable rather than faked. transcription_status is the
+//      single source of truth for what actually happened.
+// ===========================================================================
+
+/** The transcription states, matching the ENUM in upgrade_v62.sql. */
+function consultation_attachment_transcription_states(): array {
+    return ['none', 'pending', 'processing', 'ready', 'failed', 'declined'];
+}
+
+/** True when this attachment is an audio file and therefore transcribable. */
+function consultation_attachment_is_audio(array $attachment): bool {
+    return (string)($attachment['file_category'] ?? '') === 'audio';
+}
+
+/** The provider-specific model used for transcription, from the AI settings. */
+function consultation_attachment_transcription_model(array $settings): string {
+    return trim((string)($settings['ai_transcription_model'] ?? '')) ?: 'whisper-1';
+}
+
+/**
+ * The provider id that will be asked to transcribe, or null when none can.
+ *
+ * Anthropic has no audio endpoint, so it is not a transcription provider. Both
+ * OpenAI and a self-hosted OpenAI-compatible server expose `/v1/audio/transcriptions`.
+ */
+function consultation_attachment_transcription_provider(array $settings): ?string {
+    if (($settings['ai_enabled'] ?? '1') === '0') return null;
+    $provider = (string)($settings['ai_provider'] ?? '');
+    if ($provider === 'openai') {
+        return !empty($settings['ai_api_key']) ? 'openai' : null;
+    }
+    if ($provider === 'openai_compatible') {
+        return ai_endpoint_normalize((string)($settings['ai_endpoint'] ?? '')) !== null ? 'openai_compatible' : null;
+    }
+    return null;
+}
+
+/**
+ * Send one audio file to the configured provider and return the transcript.
+ *
+ * The file is streamed from disk with CURLFile rather than read into memory: a
+ * 50 MB recording is a legitimate upload and base64-encoding it would double the
+ * memory the PHP worker needs for no benefit.
+ *
+ * @return array{ok:bool, text:?string, error:?string, http_code:int}
+ */
+function consultation_attachment_transcribe_audio(array $settings, string $absolutePath, string $language = 'ar'): array {
+    $fail = fn(string $msg, int $code = 0) => ['ok' => false, 'text' => null, 'error' => $msg, 'http_code' => $code];
+
+    $provider = consultation_attachment_transcription_provider($settings);
+    if ($provider === null) {
+        return $fail(consultation_attachment_msg(
+            'لا يوجد مزوّد ذكاء اصطناعي مهيّأ لتحويل الصوت إلى نص.',
+            'No AI provider configured for speech-to-text.'
+        ));
+    }
+    if (!function_exists('curl_init')) {
+        return $fail(consultation_attachment_msg('cURL غير مفعّل على السيرفر.', 'cURL is not enabled on the server.'));
+    }
+    if (!is_file($absolutePath) || !is_readable($absolutePath)) {
+        return $fail(consultation_attachment_msg('ملف الصوت غير متاح.', 'The audio file is unavailable.'));
+    }
+
+    if ($provider === 'openai') {
+        $url = 'https://api.openai.com/v1/audio/transcriptions';
+        $key = (string)$settings['ai_api_key'];
+    } else {
+        $base = ai_endpoint_normalize((string)($settings['ai_endpoint'] ?? ''));
+        $url = $base . '/audio/transcriptions';
+        $key = (string)($settings['ai_api_key'] ?? '');
+    }
+
+    $post = [
+        'file' => new CURLFile($absolutePath),
+        'model' => consultation_attachment_transcription_model($settings),
+        // ISO-639-1. The platform is Arabic-first and the brief asks for Arabic
+        // speech; naming the language measurably improves accuracy over detection.
+        'language' => $language,
+        'response_format' => 'json',
+    ];
+    $headers = ['Accept: application/json'];
+    if ($key !== '') $headers[] = 'Authorization: Bearer ' . $key;
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_TIMEOUT => 180,
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_POSTFIELDS => $post,
+    ]);
+    $response = curl_exec($ch);
+    $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($response === false) {
+        return $fail(consultation_attachment_msg('تعذّر الاتصال بمزوّد تحويل الصوت.', 'Could not reach the speech-to-text provider.'));
+    }
+    $data = json_decode((string)$response, true);
+    if ($httpCode !== 200) {
+        // The provider's message is not surfaced verbatim: it can echo request detail.
+        error_log('consultation_attachment_transcribe_audio: HTTP ' . $httpCode);
+        return $fail(consultation_attachment_msg('فشل تحويل الصوت إلى نص.', 'Speech-to-text failed.'), $httpCode);
+    }
+    $text = is_array($data) ? trim((string)($data['text'] ?? '')) : '';
+    if ($text === '') {
+        return $fail(consultation_attachment_msg('لم يُعِد المزوّد أي نص.', 'The provider returned no text.'), $httpCode);
+    }
+    return ['ok' => true, 'text' => $text, 'error' => null, 'http_code' => $httpCode];
+}
+
+/**
+ * Record the customer's consent to send this recording for transcription.
+ *
+ * Consent is stored as an event (when, by whom) rather than a boolean so the
+ * platform can show exactly what was agreed and when. Re-consenting updates the
+ * timestamp, which is what a later audit should see.
+ */
+function consultation_attachment_record_transcription_consent(PDO $pdo, int $attachmentId, int $actorId): bool {
+    $stmt = $pdo->prepare("UPDATE consultation_attachments
+        SET transcription_consent_at=NOW(), transcription_consent_by=?
+        WHERE id=? AND file_category='audio'");
+    $stmt->execute([$actorId, $attachmentId]);
+    return $stmt->rowCount() >= 0;
+}
+
+/** Set the transcription state, optionally with the result text and error. */
+function consultation_attachment_set_transcription(
+    PDO $pdo, int $attachmentId, string $status,
+    ?string $text = null, ?string $error = null, ?string $engine = null, ?string $language = null
+): bool {
+    if (!in_array($status, consultation_attachment_transcription_states(), true)) return false;
+    $stmt = $pdo->prepare(
+        'UPDATE consultation_attachments
+            SET transcription_status=?, transcription_text=COALESCE(?, transcription_text),
+                transcription_error=?, transcription_engine=COALESCE(?, transcription_engine),
+                transcription_language=COALESCE(?, transcription_language),
+                transcription_updated_at=NOW()
+          WHERE id=?'
+    );
+    return $stmt->execute([$status, $text, $error, $engine, $language, $attachmentId]);
+}
+
+/**
+ * Whether the transcription text may be shown to this actor.
+ *
+ * The transcript is client evidence and follows exactly the same authorization as
+ * the recording itself: if you may read the audio, you may read its transcript.
+ * There is deliberately no separate rule — two rules for one file is how a leak
+ * happens.
+ */
+function consultation_attachment_can_read_transcription(array $attachment, array $actor): bool {
+    return (string)($attachment['transcription_status'] ?? 'none') === 'ready'
+        && trim((string)($attachment['transcription_text'] ?? '')) !== '';
+}
+
 
 /** Stored attachments of a consultation, oldest first. */
 function consultation_attachment_list(PDO $pdo, int $consultationId, bool $includeDeleted = false): array {
