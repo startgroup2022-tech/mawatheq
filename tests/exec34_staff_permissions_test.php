@@ -290,6 +290,45 @@ check('the super_admin can open the staff console', $code, 200);
 check('the super_admin still sees the full dashboard', $code, 200);
 check('the super_admin dashboard links to the staff console', str_contains($html, '/admin/staff.php'), true);
 
+// The claim the whole design rests on: a restricted account must not merely be *denied*
+// the confidential figures, it must never receive them. A 403 on /admin/invoices.php is
+// worth nothing if the dashboard it *can* open embeds the same revenue totals, so this
+// compares the two response bodies rather than trusting the route gate.
+[$codeStaff, $staffDash] = http_get("$base/admin/index.php", $staffJar);
+[$codeSuper, $superDash] = http_get("$base/admin/index.php", $adminJar);
+check('the staff dashboard is served', $codeStaff, 200);
+check('the staff gets a different page from the administrator', $staffDash !== $superDash, true);
+check('the staff dashboard is the restricted one', str_contains($staffDash, 'ما يلي هو كل ما يمكنك الوصول إليه'), true);
+// These are the main dashboard's own panel headings, and each appears nowhere in the
+// header or the restricted page — verified against both files, so a match here would be
+// a real leak rather than a shared label. (An earlier draft used the menu group title
+// 'المعرفة والذكاء الاصطناعي', which is a navigation heading a staff member legitimately
+// sees when they hold the Articles page inside that group — a false positive.)
+$confidentialMarkers = [
+    'الإيرادات المحصّلة',            // collected revenue
+    'أفضل المحامين أداءً',            // lawyer performance
+    'قيمة الـ Pipeline',             // sales pipeline value
+    'توزيع القضايا',                 // case distribution
+    'الاستشارات والعملاء الجدد',      // consultations and new clients
+    'أحدث الطلبات الواردة',           // incoming requests
+];
+foreach ($confidentialMarkers as $marker) {
+    check("the staff dashboard does not contain the marker '$marker'", str_contains($staffDash, $marker), false);
+}
+// And the restricted page must be substantially smaller: if the main dashboard's queries
+// had run, its panels would be in the body whether or not they were displayed.
+check('the staff dashboard is materially smaller than the administrator one',
+    strlen($staffDash) < strlen($superDash) * 0.75, true);
+// Negative control for the markers above: if none of them appears in the administrator's
+// own dashboard either, "the staff page lacks them" proves nothing — the strings would
+// simply be wrong. Every marker must be present there for the absence to mean anything.
+$markerHits = 0;
+foreach ($confidentialMarkers as $marker) {
+    if (str_contains($superDash, $marker)) $markerHits++;
+}
+check('every confidential marker is real (all appear in the administrator dashboard)',
+    $markerHits, count($confidentialMarkers));
+
 // A POST needs the write action, not merely view.
 [$code, $html] = http_get("$base/admin/articles.php", $staffJar);
 $token = csrf_of($html);

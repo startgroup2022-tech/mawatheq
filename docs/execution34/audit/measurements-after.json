@@ -1,6 +1,6 @@
 {
   "phase": "after",
-  "base": "http://127.0.0.1:12000",
+  "base": "http://127.0.0.1:8080",
   "header": [
     {
       "vp": "360",
@@ -374,7 +374,7 @@
       "innerW": 360,
       "cards": 4,
       "wrappedButtons": 0,
-      "registerLinkPresent": false
+      "registerLinkPresent": true
     },
     {
       "vp": "360",
@@ -391,7 +391,7 @@
         "align": "center"
       },
       "hero": {
-        "h": 414,
+        "h": 476,
         "w": 360
       },
       "heroInner": {
@@ -406,7 +406,7 @@
       "innerW": 360,
       "cards": 4,
       "wrappedButtons": 0,
-      "registerLinkPresent": false
+      "registerLinkPresent": true
     },
     {
       "vp": "390",
@@ -438,7 +438,7 @@
       "innerW": 390,
       "cards": 4,
       "wrappedButtons": 0,
-      "registerLinkPresent": false
+      "registerLinkPresent": true
     },
     {
       "vp": "390",
@@ -455,7 +455,7 @@
         "align": "center"
       },
       "hero": {
-        "h": 384,
+        "h": 446,
         "w": 390
       },
       "heroInner": {
@@ -470,7 +470,7 @@
       "innerW": 390,
       "cards": 4,
       "wrappedButtons": 0,
-      "registerLinkPresent": false
+      "registerLinkPresent": true
     },
     {
       "vp": "768",
@@ -502,7 +502,7 @@
       "innerW": 768,
       "cards": 4,
       "wrappedButtons": 0,
-      "registerLinkPresent": false
+      "registerLinkPresent": true
     },
     {
       "vp": "768",
@@ -534,7 +534,7 @@
       "innerW": 768,
       "cards": 4,
       "wrappedButtons": 0,
-      "registerLinkPresent": false
+      "registerLinkPresent": true
     },
     {
       "vp": "1280",
@@ -566,7 +566,7 @@
       "innerW": 1280,
       "cards": 4,
       "wrappedButtons": 0,
-      "registerLinkPresent": false
+      "registerLinkPresent": true
     },
     {
       "vp": "1280",
@@ -598,7 +598,7 @@
       "innerW": 1280,
       "cards": 4,
       "wrappedButtons": 0,
-      "registerLinkPresent": false
+      "registerLinkPresent": true
     },
     {
       "vp": "1440",
@@ -630,7 +630,7 @@
       "innerW": 1440,
       "cards": 4,
       "wrappedButtons": 0,
-      "registerLinkPresent": false
+      "registerLinkPresent": true
     },
     {
       "vp": "1440",
@@ -662,13 +662,16 @@
       "innerW": 1440,
       "cards": 4,
       "wrappedButtons": 0,
-      "registerLinkPresent": false
+      "registerLinkPresent": true
     }
   ],
   "zoom": [
     {
       "zoom": 100,
       "lang": "ar",
+      "windowWidth": 1280,
+      "cssViewport": 1280,
+      "desktopNav": true,
       "headerH": 79,
       "containerW": 1180,
       "brand": {
@@ -703,6 +706,9 @@
     {
       "zoom": 100,
       "lang": "en",
+      "windowWidth": 1280,
+      "cssViewport": 1280,
+      "desktopNav": true,
       "headerH": 79,
       "containerW": 1180,
       "brand": {
@@ -737,136 +743,148 @@
     {
       "zoom": 125,
       "lang": "ar",
-      "headerH": 99,
-      "containerW": 1280,
+      "windowWidth": 1280,
+      "cssViewport": 1024,
+      "desktopNav": false,
+      "headerH": 69,
+      "containerW": 1024,
       "brand": {
-        "w": 127,
-        "h": 50,
-        "left": 1123
+        "w": 99,
+        "h": 36,
+        "left": 901
       },
       "brandImg": {
-        "w": 28,
-        "h": 50
+        "w": 20,
+        "h": 36
       },
       "nav": {
-        "w": 527,
-        "h": 50,
-        "left": 572,
-        "right": 1098
+        "w": 0,
+        "h": 0,
+        "left": 0,
+        "right": 0
       },
       "navCount": 8,
-      "navVisible": true,
-      "toggleVisible": false,
+      "navVisible": false,
+      "toggleVisible": true,
       "actions": {
-        "w": 517,
-        "left": 30,
-        "right": 547
+        "w": 143,
+        "left": 24,
+        "right": 167
       },
       "docOverflowX": false,
-      "scrollW": 1280,
-      "innerW": 1280,
+      "scrollW": 1024,
+      "innerW": 1024,
       "overlaps": [],
       "overflow": []
     },
     {
       "zoom": 125,
       "lang": "en",
-      "headerH": 99,
-      "containerW": 1280,
+      "windowWidth": 1280,
+      "cssViewport": 1024,
+      "desktopNav": false,
+      "headerH": 69,
+      "containerW": 1024,
       "brand": {
-        "w": 157,
-        "h": 50,
-        "left": 30
+        "w": 125,
+        "h": 36,
+        "left": 24
       },
       "brandImg": {
-        "w": 28,
-        "h": 50
+        "w": 20,
+        "h": 36
       },
       "nav": {
-        "w": 505,
-        "h": 50,
-        "left": 212,
-        "right": 717
+        "w": 0,
+        "h": 0,
+        "left": 0,
+        "right": 0
       },
       "navCount": 8,
-      "navVisible": true,
-      "toggleVisible": false,
+      "navVisible": false,
+      "toggleVisible": true,
       "actions": {
-        "w": 509,
-        "left": 742,
-        "right": 1250
+        "w": 185,
+        "left": 815,
+        "right": 1000
       },
       "docOverflowX": false,
-      "scrollW": 1280,
-      "innerW": 1280,
+      "scrollW": 1024,
+      "innerW": 1024,
       "overlaps": [],
       "overflow": []
     },
     {
       "zoom": 150,
       "lang": "ar",
-      "headerH": 118,
-      "containerW": 1280,
+      "windowWidth": 1280,
+      "cssViewport": 853,
+      "desktopNav": false,
+      "headerH": 69,
+      "containerW": 853,
       "brand": {
-        "w": 153,
-        "h": 60,
-        "left": 1091
+        "w": 99,
+        "h": 36,
+        "left": 730
       },
       "brandImg": {
-        "w": 34,
-        "h": 60
+        "w": 20,
+        "h": 36
       },
       "nav": {
-        "w": 366,
-        "h": 61,
-        "left": 695,
-        "right": 1061
+        "w": 0,
+        "h": 0,
+        "left": 0,
+        "right": 0
       },
       "navCount": 8,
-      "navVisible": true,
-      "toggleVisible": false,
+      "navVisible": false,
+      "toggleVisible": true,
       "actions": {
-        "w": 629,
-        "left": 36,
-        "right": 665
+        "w": 143,
+        "left": 24,
+        "right": 167
       },
       "docOverflowX": false,
-      "scrollW": 1280,
-      "innerW": 1280,
+      "scrollW": 853,
+      "innerW": 853,
       "overlaps": [],
       "overflow": []
     },
     {
       "zoom": 150,
       "lang": "en",
-      "headerH": 118,
-      "containerW": 1280,
+      "windowWidth": 1280,
+      "cssViewport": 853,
+      "desktopNav": false,
+      "headerH": 69,
+      "containerW": 853,
       "brand": {
-        "w": 189,
-        "h": 60,
-        "left": 36
+        "w": 125,
+        "h": 36,
+        "left": 24
       },
       "brandImg": {
-        "w": 34,
-        "h": 60
+        "w": 20,
+        "h": 36
       },
       "nav": {
-        "w": 336,
-        "h": 61,
-        "left": 255,
-        "right": 591
+        "w": 0,
+        "h": 0,
+        "left": 0,
+        "right": 0
       },
       "navCount": 8,
-      "navVisible": true,
-      "toggleVisible": false,
+      "navVisible": false,
+      "toggleVisible": true,
       "actions": {
-        "w": 623,
-        "left": 621,
-        "right": 1244
+        "w": 185,
+        "left": 644,
+        "right": 829
       },
       "docOverflowX": false,
-      "scrollW": 1280,
-      "innerW": 1280,
+      "scrollW": 853,
+      "innerW": 853,
       "overlaps": [],
       "overflow": []
     }
@@ -952,15 +970,215 @@
     }
   ],
   "findings": [],
+  "affiliateZoom": [
+    {
+      "zoom": 100,
+      "lang": "ar",
+      "cssViewport": 1280,
+      "affiliateCss": true,
+      "hasAffClass": true,
+      "h1": {
+        "text": "اربح من الإحالات، بوضوح وشفافية",
+        "fontSize": "43.2px",
+        "lineHeight": "56.16px",
+        "fontWeight": "800",
+        "width": 860,
+        "left": 210,
+        "align": "center"
+      },
+      "hero": {
+        "h": 386,
+        "w": 1280
+      },
+      "heroInner": {
+        "w": 860,
+        "left": 210,
+        "align": "center",
+        "maxW": "860px",
+        "padding": "0px"
+      },
+      "docOverflowX": false,
+      "scrollW": 1280,
+      "innerW": 1280,
+      "cards": 4,
+      "wrappedButtons": 0,
+      "registerLinkPresent": true
+    },
+    {
+      "zoom": 100,
+      "lang": "en",
+      "cssViewport": 1280,
+      "affiliateCss": true,
+      "hasAffClass": true,
+      "h1": {
+        "text": "Earn from referrals, clearly and transpa",
+        "fontSize": "43.2px",
+        "lineHeight": "56.16px",
+        "fontWeight": "800",
+        "width": 860,
+        "left": 210,
+        "align": "center"
+      },
+      "hero": {
+        "h": 387,
+        "w": 1280
+      },
+      "heroInner": {
+        "w": 860,
+        "left": 210,
+        "align": "center",
+        "maxW": "860px",
+        "padding": "0px"
+      },
+      "docOverflowX": false,
+      "scrollW": 1280,
+      "innerW": 1280,
+      "cards": 4,
+      "wrappedButtons": 0,
+      "registerLinkPresent": true
+    },
+    {
+      "zoom": 125,
+      "lang": "ar",
+      "cssViewport": 1024,
+      "affiliateCss": true,
+      "hasAffClass": true,
+      "h1": {
+        "text": "اربح من الإحالات، بوضوح وشفافية",
+        "fontSize": "40.96px",
+        "lineHeight": "53.248px",
+        "fontWeight": "800",
+        "width": 860,
+        "left": 82,
+        "align": "center"
+      },
+      "hero": {
+        "h": 383,
+        "w": 1024
+      },
+      "heroInner": {
+        "w": 860,
+        "left": 82,
+        "align": "center",
+        "maxW": "860px",
+        "padding": "0px"
+      },
+      "docOverflowX": false,
+      "scrollW": 1024,
+      "innerW": 1024,
+      "cards": 4,
+      "wrappedButtons": 0,
+      "registerLinkPresent": true
+    },
+    {
+      "zoom": 125,
+      "lang": "en",
+      "cssViewport": 1024,
+      "affiliateCss": true,
+      "hasAffClass": true,
+      "h1": {
+        "text": "Earn from referrals, clearly and transpa",
+        "fontSize": "40.96px",
+        "lineHeight": "53.248px",
+        "fontWeight": "800",
+        "width": 860,
+        "left": 82,
+        "align": "center"
+      },
+      "hero": {
+        "h": 384,
+        "w": 1024
+      },
+      "heroInner": {
+        "w": 860,
+        "left": 82,
+        "align": "center",
+        "maxW": "860px",
+        "padding": "0px"
+      },
+      "docOverflowX": false,
+      "scrollW": 1024,
+      "innerW": 1024,
+      "cards": 4,
+      "wrappedButtons": 0,
+      "registerLinkPresent": true
+    },
+    {
+      "zoom": 150,
+      "lang": "ar",
+      "cssViewport": 853,
+      "affiliateCss": true,
+      "hasAffClass": true,
+      "h1": {
+        "text": "اربح من الإحالات، بوضوح وشفافية",
+        "fontSize": "34.12px",
+        "lineHeight": "44.356px",
+        "fontWeight": "800",
+        "width": 813,
+        "left": 20,
+        "align": "center"
+      },
+      "hero": {
+        "h": 374,
+        "w": 853
+      },
+      "heroInner": {
+        "w": 813,
+        "left": 20,
+        "align": "center",
+        "maxW": "860px",
+        "padding": "0px"
+      },
+      "docOverflowX": false,
+      "scrollW": 853,
+      "innerW": 853,
+      "cards": 4,
+      "wrappedButtons": 0,
+      "registerLinkPresent": true
+    },
+    {
+      "zoom": 150,
+      "lang": "en",
+      "cssViewport": 853,
+      "affiliateCss": true,
+      "hasAffClass": true,
+      "h1": {
+        "text": "Earn from referrals, clearly and transpa",
+        "fontSize": "34.12px",
+        "lineHeight": "44.356px",
+        "fontWeight": "800",
+        "width": 813,
+        "left": 20,
+        "align": "center"
+      },
+      "hero": {
+        "h": 375,
+        "w": 853
+      },
+      "heroInner": {
+        "w": 813,
+        "left": 20,
+        "align": "center",
+        "maxW": "860px",
+        "padding": "0px"
+      },
+      "docOverflowX": false,
+      "scrollW": 853,
+      "innerW": 853,
+      "cards": 4,
+      "wrappedButtons": 0,
+      "registerLinkPresent": true
+    }
+  ],
   "register": [
     {
       "vp": "360",
       "lang": "ar",
       "http": 200,
       "status": "rendered",
-      "fieldCount": 0,
-      "gapMin": null,
-      "gapMax": null,
+      "fieldCount": 13,
+      "gapMin": 12,
+      "gapMax": 109,
       "docOverflowX": false,
       "affiliateCss": true
     },
@@ -969,9 +1187,9 @@
       "lang": "en",
       "http": 200,
       "status": "rendered",
-      "fieldCount": 0,
-      "gapMin": null,
-      "gapMax": null,
+      "fieldCount": 13,
+      "gapMin": 12,
+      "gapMax": 109,
       "docOverflowX": false,
       "affiliateCss": true
     },
@@ -980,9 +1198,9 @@
       "lang": "ar",
       "http": 200,
       "status": "rendered",
-      "fieldCount": 0,
-      "gapMin": null,
-      "gapMax": null,
+      "fieldCount": 13,
+      "gapMin": 12,
+      "gapMax": 109,
       "docOverflowX": false,
       "affiliateCss": true
     },
@@ -991,9 +1209,9 @@
       "lang": "en",
       "http": 200,
       "status": "rendered",
-      "fieldCount": 0,
-      "gapMin": null,
-      "gapMax": null,
+      "fieldCount": 13,
+      "gapMin": 12,
+      "gapMax": 109,
       "docOverflowX": false,
       "affiliateCss": true
     },
@@ -1002,9 +1220,9 @@
       "lang": "ar",
       "http": 200,
       "status": "rendered",
-      "fieldCount": 0,
-      "gapMin": null,
-      "gapMax": null,
+      "fieldCount": 13,
+      "gapMin": -98,
+      "gapMax": 109,
       "docOverflowX": false,
       "affiliateCss": true
     },
@@ -1013,9 +1231,9 @@
       "lang": "en",
       "http": 200,
       "status": "rendered",
-      "fieldCount": 0,
-      "gapMin": null,
-      "gapMax": null,
+      "fieldCount": 13,
+      "gapMin": -98,
+      "gapMax": 109,
       "docOverflowX": false,
       "affiliateCss": true
     },
@@ -1024,9 +1242,9 @@
       "lang": "ar",
       "http": 200,
       "status": "rendered",
-      "fieldCount": 0,
-      "gapMin": null,
-      "gapMax": null,
+      "fieldCount": 13,
+      "gapMin": -98,
+      "gapMax": 109,
       "docOverflowX": false,
       "affiliateCss": true
     },
@@ -1035,9 +1253,9 @@
       "lang": "en",
       "http": 200,
       "status": "rendered",
-      "fieldCount": 0,
-      "gapMin": null,
-      "gapMax": null,
+      "fieldCount": 13,
+      "gapMin": -98,
+      "gapMax": 109,
       "docOverflowX": false,
       "affiliateCss": true
     }

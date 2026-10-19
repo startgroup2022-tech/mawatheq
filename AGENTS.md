@@ -1452,8 +1452,58 @@ from `getent group www-data`, **not** `id -nG` (which reflects the stale login-t
 
 ### Current state
 
-* Full suite: **35/35 green** (`bash tests/run_all_tests.sh`).
-* `exec34_staff_permissions_test.php`: 107 checks. `exec34_affiliate_registration_test.php`:
+* Full suite: **36/36 green** (`bash tests/run_all_tests.sh`).
+* `exec34_staff_permissions_test.php`: 118 checks. `exec34_affiliate_registration_test.php`:
   43 checks (Parts A + C, including the closed-programme path).
+  `exec34_affiliate_e2e_workflow_test.php`: 43 checks (true HTTP E2E, cookie jar + CSRF).
 * `database/upgrade_v60.sql` is additive and idempotent — verified by applying it twice to a
   scratch database. 24 modules seeded, 13 marked `grantable = 0`.
+
+### Visual review: measure contrast from pixels, and beware these four traps
+
+`tools/visual_review_exec34.js` samples rendered pixels rather than reasoning about computed
+styles, because the DOM cannot answer the contrast question here: dark bands use
+`background: linear-gradient(...)`, which a DOM walk cannot resolve, so it falls through to
+the white body and reports white-on-white. Every one of these mistakes produced a confident
+wrong number at some point, so they are worth knowing before writing a similar tool:
+
+* **`page.screenshot({ clip: boundingBox })` mixes coordinate systems.** A bounding box is
+  viewport-relative, a clip is document-relative. Below the fold the sample lands on the
+  wrong region.
+* **`page.screenshot({ fullPage: true })` does not faithfully paint off-screen content.**
+  Rows below the fold came back as a single flat colour (1 distinct colour at y=3000 and
+  y=7441, against 968 for the same region scrolled into a normal viewport). Layout does not
+  shift, so it is the capture, not the page.
+* **`html { scroll-behavior: smooth }` (set in `style.css`) makes `scrollTo` animate**, so the
+  capture lands mid-flight. Inject `scroll-behavior:auto !important` before scrolling.
+* **Do not derive the rectangle from `docY - scrollY`.** The offset drifts (~45px at zoom
+  150%), enough to land the sample on blank space. Re-read `getBoundingClientRect()` from the
+  element *after* scrolling, in the same frame as the capture.
+
+Two guards keep the sampler honest. A region with fewer than 8 distinct colours carries no
+glyphs and is skipped rather than scored, and use true ink/paper extremes (min/max) rather
+than percentiles — a padded button or card heading can hold glyphs in well under 5% of its
+area, so the 5th/95th percentiles both land on the background and score a flat 1.00:1.
+
+### Two ways `getComputedStyle` says "visible" for something invisible
+
+Both bit this tool; check for them before trusting a visibility guard.
+
+* A collapsed `<details>` hides its contents with `content-visibility: hidden`, not
+  `display: none`. Those elements keep a real box and paint nothing, so sampling one reported
+  a confident 1.12:1 for text a visitor never sees. Check `contentVisibility`, and treat
+  anything in a closed `<details>` outside its own `<summary>` as hidden.
+* A colour declared on the element itself beats one it would otherwise inherit. The base
+  sheet's `h1,h2,h3,h4 { color: var(--navy-dark) }` is `#0F1F33` — the same colour as
+  `--aff-ink`, the dark end of `.aff-hero`'s own gradient. The affiliate hero title therefore
+  rendered navy on navy and was **completely invisible** (0 near-white pixels across the
+  heading band) while `.aff-hero`'s `color: #fff` looked correct in the stylesheet. `.aff-hero
+  h1` and `.aff-hero p` now state their colour; `.aff-hero .btn-outline` does too, since a
+  transparent button keeps the base sheet's navy label. Any new element on a dark band needs
+  its colour stated rather than inherited.
+
+Remaining known finding: `status-pending` (`enterprise.css`, via `--warning` `#B4780F` on
+`--warning-bg` `#FDF3E1`) measures **3.73:1**, below the 4.5:1 needed at its 12px size. It is
+left as-is deliberately: the token is shared by 33 call sites across admin, lawyer and public
+pages, so changing it is neither additive nor low-risk. Fix it as a deliberate,
+separately-tested change.

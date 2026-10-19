@@ -231,24 +231,68 @@ async function shoot(page, name) {
   console.log(`  captured ${report.affiliate.length} affiliate shots`);
 
   // ---- 4. Desktop browser zoom ----
-  console.log('\n4. Desktop zoom 100/125/150%');
+  //
+  // Browser zoom is NOT a CSS `zoom` on <html>. It shrinks the CSS viewport while the
+  // device pixels stay put, so a 1280px window at 150% gives a 853px CSS viewport. That
+  // matters here: the header's desktop/mobile breakpoint is at 1025px, so real zoom at
+  // 125% and 150% crosses into the mobile layout and shows the hamburger — behaviour the
+  // old CSS-zoom emulation could never reach, because `html { zoom: 1.5 }` leaves
+  // window.innerWidth at 1280 and every media query unmoved.
+  //
+  // Modelling it as a narrower viewport at a higher deviceScaleFactor reproduces both the
+  // reduced CSS width and the crisper rendering a real zoom produces.
+  console.log('\n4. Desktop zoom 100/125/150% (CSS viewport shrinks, device pixels fixed)');
+  const ZOOM_WINDOW = { width: 1280, height: 800 };
   for (const zoom of ZOOMS) {
     for (const lang of LANGS) {
-      const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+      const cssWidth = Math.round(ZOOM_WINDOW.width / (zoom / 100));
+      const page = await browser.newPage({
+        viewport: { width: cssWidth, height: Math.round(ZOOM_WINDOW.height / (zoom / 100)) },
+        deviceScaleFactor: zoom / 100,
+      });
       await page.goto(`${BASE}/?lang=${lang}`, { waitUntil: 'domcontentloaded' });
-      // Emulate zoom the way a browser applies it: CSS pixels per device pixel grows.
-      await page.addStyleTag({ content: `html { zoom: ${zoom / 100}; }` });
       await page.waitForTimeout(400);
       const m = await measureHeader(page);
-      report.zoom.push({ zoom, lang, ...m });
+      const layout = await page.evaluate(() => ({
+        cssViewport: window.innerWidth,
+        desktopNav: matchMedia('(min-width: 1025px)').matches,
+      }));
+      report.zoom.push({ zoom, lang, windowWidth: ZOOM_WINDOW.width, cssViewport: layout.cssViewport, desktopNav: layout.desktopNav, ...m });
       await shoot(page, `zoom-${zoom}-${lang}`);
       if (m.overlaps && m.overlaps.length) note('ZOOM-HEADER-OVERLAP', `${zoom}%/${lang}: ${m.overlaps.join(', ')}`);
       if (m.overflow && m.overflow.length) note('ZOOM-HEADER-OVERFLOW', `${zoom}%/${lang}: ${m.overflow.join(', ')}`);
       if (m.docOverflowX) note('ZOOM-PAGE-OVERFLOW-X', `${zoom}%/${lang}: scrollWidth ${m.scrollW} > innerWidth ${m.innerW}`);
+      // At a reduced CSS width the desktop nav must not still be on screen with the
+      // hamburger alongside it — that double-header is the classic zoom artefact.
+      if (m.navVisible && m.toggleVisible) note('ZOOM-BOTH-NAV-AND-TOGGLE', `${zoom}%/${lang}: desktop nav and toggle both visible at CSS width ${layout.cssViewport}`);
       await page.close();
     }
   }
   console.log(`  captured ${report.zoom.length} zoom shots`);
+
+  // ---- 4b. The affiliate landing page under the same zoom ----
+  // Part C is about the landing page, so it needs the same treatment the header gets.
+  console.log('\n4b. Affiliate landing page zoom 100/125/150%');
+  for (const zoom of ZOOMS) {
+    for (const lang of LANGS) {
+      const cssWidth = Math.round(ZOOM_WINDOW.width / (zoom / 100));
+      const page = await browser.newPage({
+        viewport: { width: cssWidth, height: Math.round(ZOOM_WINDOW.height / (zoom / 100)) },
+        deviceScaleFactor: zoom / 100,
+      });
+      await page.goto(`${BASE}/affiliates.php?lang=${lang}`, { waitUntil: 'domcontentloaded' });
+      await page.waitForTimeout(400);
+      const m = await measureAffiliate(page);
+      report.affiliateZoom = report.affiliateZoom || [];
+      report.affiliateZoom.push({ zoom, lang, cssViewport: cssWidth, ...m });
+      await shoot(page, `zoom-affiliate-${zoom}-${lang}`);
+      if (m.docOverflowX) note('ZOOM-AFF-PAGE-OVERFLOW-X', `${zoom}%/${lang}: scrollWidth ${m.scrollW} > innerWidth ${m.innerW}`);
+      if (m.wrappedButtons > 0) note('ZOOM-AFF-BUTTON-LABEL-WRAPS', `${zoom}%/${lang}: ${m.wrappedButtons} button(s) over 52px tall`);
+      if (!m.affiliateCss) note('ZOOM-AFFILIATE-CSS-MISSING', `${zoom}%/${lang}`);
+      await page.close();
+    }
+  }
+  console.log(`  captured ${report.affiliateZoom.length} affiliate zoom shots`);
 
   // ---- 5. Affiliate registration page (Part C3 form spacing) ----
   console.log('\n5. Affiliate registration form');

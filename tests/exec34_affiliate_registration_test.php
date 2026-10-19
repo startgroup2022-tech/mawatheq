@@ -136,7 +136,7 @@ check('a closed-programme registration did not create an account', (int)$pdo->qu
 // Restore the exact prior state, including removing the row when it was absent, so the next
 // suite in the run sees what it would have seen.
 if ($flagExisted) {
-    $setFlag($originalFlag === '1' ? '1' : '0');
+    $setFlag($originalFlag);
 } else {
     $pdo->exec("DELETE FROM site_settings WHERE setting_key='affiliate_program_enabled'");
     affiliate_settings_reload();
@@ -201,7 +201,11 @@ $still = $pdo->prepare('SELECT COUNT(*) FROM affiliates WHERE email = ?');
 $still->execute([$email]);
 check('the test affiliate was removed', (int)$still->fetchColumn(), 0);
 $finalFlag = $pdo->query("SELECT setting_value FROM site_settings WHERE setting_key='affiliate_program_enabled'")->fetchColumn();
-check('the programme flag was restored to its prior state', $flagExisted ? (string)$finalFlag : $finalFlag === false, true);
+// Compare against the prior state, and only when the row existed to begin with. When it did
+// not, the assertion is that it is still absent — a plain boolean, not a string compared to
+// one, which is a comparison that can never be true and would hide a failure to restore.
+check('the programme flag was restored to its prior state',
+    $flagExisted ? (string)$finalFlag === $originalFlag : $finalFlag === false, true);
 
 echo "\n----------------------------------------\n";
 echo "checks passed: $checks   failed: $failures\n";
