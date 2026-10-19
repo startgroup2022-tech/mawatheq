@@ -65,7 +65,7 @@ if ($lawyerId === 0 && !empty($resolved['provision'])) {
     // JIT provisioning: lowest role only, never owner/partner, and the account starts approved
     // because the IdP already vouched for the address.
     $pdo->prepare('INSERT INTO lawyers (full_name, email, password_hash, status, email_verified, jurisdiction) VALUES (?,?,?,?,1,?)')
-        ->execute([(string)$identity['name'], (string)$identity['email'], password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT), 'approved', 'البحرين']);
+        ->execute([(string)$identity['name'], (string)$identity['email'], password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT), 'approved', 'السعودية']);
     $lawyerId = (int)$pdo->lastInsertId();
     $pdo->prepare("INSERT INTO law_firm_members (firm_id, lawyer_id, member_role, status) VALUES (?,?, 'lawyer', 'active')")
         ->execute([$firmId, $lawyerId]);

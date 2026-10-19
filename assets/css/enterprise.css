@@ -24,7 +24,11 @@
 
   /* Semantic */
   --success:#1E8E5A; --success-bg:#E6F4ED;
-  --warning:#B4780F; --warning-bg:#FDF3E1;
+  /* #B4780F measured 3.73:1 on --warning-bg, under the 4.5:1 WCAG AA needs at
+     this token's 12px badge size. #7A5409 is the same amber, four steps darker,
+     at 6.16:1 — and it is already the colour .form-alert.warning uses, so the two
+     warning surfaces now agree instead of disagreeing by a shade. */
+  --warning:#7A5409; --warning-bg:#FDF3E1;
   --danger:#C7492A;  --danger-bg:#FBEAE5;
   --info:#2BA8C4;    --info-bg:#EAF6F9;
 

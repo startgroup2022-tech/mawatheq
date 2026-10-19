@@ -78,7 +78,7 @@ require_once __DIR__ . '/includes/admin_header.php';
     </select>
     <select name="currency">
       <option value="">كل العملات</option>
-      <?php foreach (['BHD', 'SAR', 'AED', 'KWD', 'QAR', 'OMR', 'USD'] as $cur): ?>
+      <?php foreach (['SAR', 'AED', 'KWD', 'QAR', 'OMR', 'BHD', 'USD'] as $cur): ?>
         <option value="<?= htmlspecialchars($cur) ?>" <?= ($filters['currency'] ?? '') === $cur ? 'selected' : '' ?>><?= htmlspecialchars($cur) ?></option>
       <?php endforeach; ?>
     </select>

@@ -39,15 +39,6 @@ $error = null;
 $fieldErrors = [];
 $old = [];
 
-$countryLabels = [
-    'BH' => is_rtl() ? 'البحرين' : 'Bahrain',
-    'SA' => is_rtl() ? 'السعودية' : 'Saudi Arabia',
-    'AE' => is_rtl() ? 'الإمارات' : 'UAE',
-    'KW' => is_rtl() ? 'الكويت' : 'Kuwait',
-    'QA' => is_rtl() ? 'قطر' : 'Qatar',
-    'OM' => is_rtl() ? 'عمان' : 'Oman',
-];
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) { http_response_code(403); exit('Invalid request'); }
 
@@ -62,7 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'full_name' => trim($postString('full_name')),
         'email' => strtolower(trim($postString('email'))),
         'phone' => trim($postString('phone')),
-        'country' => $postString('country', 'BH'),
+        'country' => country_normalize($postString('country', COUNTRY_DEFAULT)),
         'city' => trim($postString('city')),
         'affiliate_type' => $postString('affiliate_type', 'individual'),
         'company_name' => trim($postString('company_name')),
@@ -156,13 +147,9 @@ $rtl = is_rtl();
             <label class="field"><span><?= ui_e($rtl ? 'البريد الإلكتروني' : 'Email address') ?><span class="req">*</span></span>
               <input type="email" name="email" required maxlength="190" autocomplete="username" value="<?= ui_e($old['email'] ?? '') ?>"></label>
             <label class="field"><span><?= ui_e($rtl ? 'رقم الجوال' : 'Mobile number') ?></span>
-              <input type="tel" name="phone" maxlength="20" autocomplete="tel" placeholder="+973" value="<?= ui_e($old['phone'] ?? '') ?>"></label>
+              <input type="tel" name="phone" maxlength="20" autocomplete="tel" placeholder="+966" value="<?= ui_e($old['phone'] ?? '') ?>"></label>
             <label class="field"><span><?= ui_e($rtl ? 'الدولة' : 'Country') ?></span>
-              <select name="country">
-                <?php foreach ($countryLabels as $code => $label): ?>
-                  <option value="<?= ui_e($code) ?>" <?= ($old['country'] ?? 'BH') === $code ? 'selected' : '' ?>><?= ui_e($label) ?></option>
-                <?php endforeach; ?>
-              </select></label>
+              <?php render_country_select('country', $old['country'] ?? null); ?></label>
             <label class="field"><span><?= ui_e($rtl ? 'المدينة' : 'City') ?></span>
               <input type="text" name="city" maxlength="80" autocomplete="address-level2" value="<?= ui_e($old['city'] ?? '') ?>"></label>
             <label class="field"><span><?= ui_e($rtl ? 'نوع المسوّق' : 'Affiliate type') ?></span>

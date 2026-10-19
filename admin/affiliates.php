@@ -131,7 +131,7 @@ require_once __DIR__ . '/includes/admin_header.php';
         <?php if (!$affiliates): ?>
           <tr><td colspan="10" style="text-align:center;color:var(--muted);padding:28px">لا يوجد مسوّقون مطابقون.</td></tr>
         <?php else: foreach ($affiliates as $row):
-            $rowCurrency = (string)($row['payout_currency'] ?: 'BHD');
+            $rowCurrency = (string)($row['payout_currency'] ?: CURRENCY_DEFAULT);
             $payable = affiliate_payable_minor($pdo, (int)$row['id'], $rowCurrency);
             $openFlags = (int)($row['open_flags'] ?? 0);
         ?>

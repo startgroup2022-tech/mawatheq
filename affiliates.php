@@ -38,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'full_name' => trim($postString('full_name')),
         'email' => strtolower(trim($postString('email'))),
         'phone' => trim($postString('phone')),
-        'country' => $postString('country', 'BH'),
+        'country' => country_normalize($postString('country', COUNTRY_DEFAULT)),
         'city' => trim($postString('city')),
         'applicant_type' => $postString('applicant_type', 'individual'),
         'company_name' => trim($postString('company_name')),
@@ -135,8 +135,8 @@ require_once __DIR__ . '/includes/header.php';
     <div class="aff-section-inner">
       <h2><?= is_rtl() ? 'ما الذي تُحتسب عليه العمولة؟' : 'What earns commission?' ?></h2>
       <p class="aff-lead"><?= is_rtl()
-        ? 'نوضّح ذلك مسبقاً بدل أن تكتشفه لاحقاً. الأتعاب المهنية للمحامين منظّمة في مملكة البحرين، ولا يجوز تقاسمها مع طرف ثالث، لذلك تُسجَّل الإحالة لأغراض التتبع والتحليلات دون عمولة.'
-        : 'We state this up front rather than letting you discover it later. A lawyer\'s professional fee is regulated in the Kingdom of Bahrain and may not be shared with a third party, so those referrals are recorded for tracking and analytics without commission.' ?></p>
+        ? 'نوضّح ذلك مسبقاً بدل أن تكتشفه لاحقاً. الأتعاب المهنية للمحامين منظّمة في المملكة العربية السعودية، ولا يجوز تقاسمها مع طرف ثالث، لذلك تُسجَّل الإحالة لأغراض التتبع والتحليلات دون عمولة.'
+        : 'We state this up front rather than letting you discover it later. A lawyer\'s professional fee is regulated in the Kingdom of Saudi Arabia and may not be shared with a third party, so those referrals are recorded for tracking and analytics without commission.' ?></p>
       <div class="table-wrap">
         <table class="admin-table aff-services">
           <thead><tr>
@@ -208,11 +208,7 @@ require_once __DIR__ . '/includes/header.php';
                 <label class="field"><span><?= is_rtl() ? 'رقم الجوال' : 'Phone' ?></span>
                   <input type="tel" name="phone" maxlength="20" value="<?= ui_e($old['phone'] ?? '') ?>"></label>
                 <label class="field"><span><?= is_rtl() ? 'الدولة' : 'Country' ?></span>
-                  <select name="country">
-                    <?php foreach (['BH' => is_rtl() ? 'البحرين' : 'Bahrain', 'SA' => is_rtl() ? 'السعودية' : 'Saudi Arabia', 'AE' => is_rtl() ? 'الإمارات' : 'UAE', 'KW' => is_rtl() ? 'الكويت' : 'Kuwait', 'QA' => is_rtl() ? 'قطر' : 'Qatar', 'OM' => is_rtl() ? 'عمان' : 'Oman'] as $code => $label): ?>
-                      <option value="<?= ui_e($code) ?>" <?= ($old['country'] ?? 'BH') === $code ? 'selected' : '' ?>><?= ui_e($label) ?></option>
-                    <?php endforeach; ?>
-                  </select></label>
+                  <?php render_country_select('country', $old['country'] ?? null); ?></label>
                 <label class="field"><span><?= is_rtl() ? 'المدينة' : 'City' ?></span>
                   <input type="text" name="city" maxlength="80" value="<?= ui_e($old['city'] ?? '') ?>"></label>
                 <label class="field"><span><?= is_rtl() ? 'نوع المسوّق' : 'Affiliate type' ?></span>

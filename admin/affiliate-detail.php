@@ -79,7 +79,7 @@ if (!$affiliate) {
     exit;
 }
 
-$currency = (string)($affiliate['payout_currency'] ?: 'BHD');
+$currency = (string)($affiliate['payout_currency'] ?: CURRENCY_DEFAULT);
 $payableMinor = affiliate_payable_minor($pdo, $affiliateId, $currency);
 $earnings = affiliate_earnings_summary($pdo, $affiliateId, ['currency' => $currency]);
 $ledger = affiliate_ledger_verify($pdo, $affiliateId);

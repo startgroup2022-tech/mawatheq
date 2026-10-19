@@ -65,7 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'password_confirm' => $postString('password_confirm'),
             'accepted_terms' => true,
             'affiliate_type' => $postString('affiliate_type', (string)($invitation['invite_type'] ?? 'individual')),
-            'country' => $postString('country', 'BH'),
+            'country' => country_normalize($postString('country', COUNTRY_DEFAULT)),
         ]));
         if (!empty($result['ok'])) {
             $done = true;

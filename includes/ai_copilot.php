@@ -264,8 +264,8 @@ if (!function_exists('ai_copilot_run')) {
         $settings = ai_copilot_ai_settings($pdo);
         $tenant = ai_gateway_tenant_context($pdo, 'lawyer', $lawyerId, tenant_current($pdo));
         $system = ai_gateway_injection_guard($isArabic) . "\n" . ($isArabic
-            ? 'أنت مساعد قانوني داخل مكتب محاماة في مملكة البحرين. اعتمد فقط على الوقائع المعطاة. ميّز بوضوح بين ما هو مثبت وبين ما هو اقتراح. لا تخترع نصوصاً قانونية أو أرقام مواد.'
-            : 'You are a legal assistant inside a Bahrain law firm. Use only the facts supplied. Clearly separate established facts from suggestions. Never invent statutes or article numbers.');
+            ? 'أنت مساعد قانوني داخل مكتب محاماة في المملكة العربية السعودية. اعتمد فقط على الوقائع المعطاة. ميّز بوضوح بين ما هو مثبت وبين ما هو اقتراح. لا تخترع نصوصاً قانونية أو أرقام مواد.'
+            : 'You are a legal assistant inside a Saudi law firm. Use only the facts supplied. Clearly separate established facts from suggestions. Never invent statutes or article numbers.');
 
         $contextText = ai_copilot_context_text($case, $verified, $isArabic);
         $prompt = ai_copilot_prompt($kind, $contextText, $isArabic, $extra);

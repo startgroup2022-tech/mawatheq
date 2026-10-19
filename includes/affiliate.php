@@ -21,6 +21,7 @@
  *   oversight in one of the dozen screens that would otherwise each need to know.
  */
 require_once __DIR__ . '/currency.php';
+require_once __DIR__ . '/country.php';
 
 const AFFILIATE_TERMS_VERSION = '1.0';
 const AFFILIATE_PRIVACY_VERSION = '1.0';
@@ -101,6 +102,28 @@ function affiliate_states_excluded(): array {
 // ---------------------------------------------------------------------------
 
 /**
+ * The programme defaults, before any site_settings row is applied.
+ *
+ * Separate from affiliate_settings() so the code default is assertable without a
+ * database: a test that wants to know "what does a fresh install default to" must
+ * not be answered by whatever a previous suite happened to write to site_settings.
+ */
+function affiliate_settings_defaults(): array {
+    return [
+        'affiliate_program_enabled' => '0',
+        'affiliate_attribution_days' => '30',
+        'affiliate_attribution_model' => 'first_touch',
+        'affiliate_cookie_days' => '90',
+        'affiliate_require_consent' => '1',
+        'affiliate_min_payout' => '50.000',
+        'affiliate_payout_currency' => CURRENCY_DEFAULT,
+        'affiliate_dual_approval_threshold' => '500.000',
+        'affiliate_default_hold_days' => '30',
+        'affiliate_default_commission_percent' => '10.000',
+    ];
+}
+
+/**
  * Affiliate settings, read once per request from site_settings with defaults that
  * are safe on a database that has not run upgrade_v57.sql yet.
  *
@@ -113,18 +136,7 @@ function affiliate_settings(?PDO $pdo = null): array {
         return $GLOBALS['__affiliate_settings'];
     }
 
-    $defaults = [
-        'affiliate_program_enabled' => '0',
-        'affiliate_attribution_days' => '30',
-        'affiliate_attribution_model' => 'first_touch',
-        'affiliate_cookie_days' => '90',
-        'affiliate_require_consent' => '1',
-        'affiliate_min_payout' => '50.000',
-        'affiliate_payout_currency' => 'BHD',
-        'affiliate_dual_approval_threshold' => '500.000',
-        'affiliate_default_hold_days' => '30',
-        'affiliate_default_commission_percent' => '10.000',
-    ];
+    $defaults = affiliate_settings_defaults();
 
     $pdo = $pdo ?: ($GLOBALS['pdo'] ?? null);
     $out = $defaults;
