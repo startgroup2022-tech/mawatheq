@@ -1560,3 +1560,37 @@ trap applies to new `.sql` files under `database/`.
 `bash tests/run_all_tests.sh` (background it; it takes ~5 minutes and the runtime reclaims idle
 foreground jobs). Suites are auto-discovered as `tests/*_test.php` and `tests/*_probe.php`.
 Playwright: `npx playwright test` (~5.5 minutes, 636 tests, six viewports).
+
+### Multimodal attachments (Execution 35)
+
+* `consultations.firm_id` is the column that authorizes a firm-scoped lawyer
+  (`tenant_owner_where_for_lawyer` → `firm_id = ?`). `upgrade_v42.sql` backfilled it **once**.
+  Nothing set it afterwards, so every consultation booked since was `NULL` and invisible to the
+  whole firm — including the lawyer who owned it. **Any new INSERT into `consultations` must
+  resolve the firm**: `tenant_context_for_lawyer($pdo, $lawyerId)['firm_id']`. Two paths insert:
+  `booking.php` (web) and `api/v1/consultations.php` (REST). A solo lawyer resolves to `NULL`,
+  which is the correct "no firm" marker. `tests/exec35_multimodal_consultation_test.php` fails
+  loudly if either path regresses.
+* `booking.php` did **not** include `includes/tenant.php`; adding a `tenant_context_for_lawyer()`
+  call there without the `require_once` is a fatal error, not a warning.
+* `consultation_attachment_claim()` takes the firm id as its 4th argument. Passing `null` leaves
+  the claimed row's `firm_id` empty and the firm cannot see its own attachments.
+* `file_category` is an `ENUM`. Adding a category means adding the value to the ENUM **and** the
+  PHP catalog (`consultation_attachment_catalog()`). Appending to the END of the ENUM list keeps
+  existing values at their current index; re-ordering silently reinterprets stored data.
+* **Test-helper shape trap:** a cURL helper that returns the raw body string cannot be indexed as
+  `$resp['key']` — PHP reads that as a string offset and yields nonsense instead of erroring, so
+  every assertion built on it fails for a reason unrelated to the code under test. Decode JSON in
+  the helper (`json_decode`; return the string when it is not JSON, for binary downloads).
+* Integration tokens are `mwq_`-prefixed (`INTEGRATION_TOKEN_PREFIX`). A hand-built token without
+  the prefix is never recognized, so a "token is rejected" assertion passes for the wrong reason.
+  `api_integration_endpoint_scopes()` in `api/v1/bootstrap.php` is the allow-list; anything not
+  listed is closed to integration tokens by default.
+
+### `.gitignore` patterns must be anchored
+
+An unanchored `storage/` also matches `apps/mobile/lib/core/storage/`. That silently kept
+`token_storage.dart` (imported by five files) out of git and left the Flutter app unbuildable from
+a fresh clone — with no error anywhere, because the file existed on the developer's disk. Anchor
+directory patterns to the root (`/storage/`) unless the intent is truly "any directory by this
+name". `git check-ignore -v <path>` tells you which rule is responsible.

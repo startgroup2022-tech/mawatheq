@@ -4,6 +4,7 @@ require_once __DIR__ . '/includes/app_header.php';
 require_once __DIR__ . '/includes/availability.php';
 require_once __DIR__ . '/includes/notifications.php';
 require_once __DIR__ . '/includes/consultation_attachments.php';
+require_once __DIR__ . '/includes/tenant.php';
 
 $lawyerId = (int)($_GET['lawyer_id'] ?? 0);
 $stmt = $pdo->prepare("SELECT * FROM lawyers WHERE id=? AND status='approved'");
@@ -57,8 +58,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $najizTypeId = null;
             }
         }
-        $pdo->prepare('INSERT INTO consultations (user_id, lawyer_id, consultation_type, scheduled_at, topic, price, najiz_case_type_id) VALUES (?,?,?,?,?,?,?)')
-            ->execute([$_SESSION['user_id'], $lawyerId, $type, $scheduledAt, $topic, $lawyer['hourly_rate'], $najizTypeId]);
+        // Tag the booking with the lawyer's firm, for the same reason the REST API does:
+        // firm-scoped lawyers are authorized through consultations.firm_id, and nothing else
+        // sets it. A solo lawyer resolves to NULL, which is the correct "no firm" marker.
+        $firmId = tenant_context_for_lawyer($pdo, $lawyerId)['firm_id'];
+        $pdo->prepare('INSERT INTO consultations (user_id, lawyer_id, firm_id, consultation_type, scheduled_at, topic, price, najiz_case_type_id) VALUES (?,?,?,?,?,?,?,?)')
+            ->execute([$_SESSION['user_id'], $lawyerId, $firmId, $type, $scheduledAt, $topic, $lawyer['hourly_rate'], $najizTypeId]);
         $consultationId = (int)$pdo->lastInsertId();
 
         // Optional judicial requests. Re-validated against the chosen type so a posted id

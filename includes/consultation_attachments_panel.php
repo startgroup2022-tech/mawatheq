@@ -34,6 +34,7 @@ $iconFor = static function (string $category): string {
     $paths = [
         'document' => '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>',
         'audio' => '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+        'image' => '<rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>',
         'video' => '<polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>',
     ];
     $path = $paths[$category] ?? $paths['document'];
@@ -43,6 +44,7 @@ $iconFor = static function (string $category): string {
 $categoryLabel = static function (string $category): string {
     return match ($category) {
         'audio' => consultation_attachment_msg('صوت', 'Audio'),
+        'image' => consultation_attachment_msg('صورة', 'Image'),
         'video' => consultation_attachment_msg('فيديو', 'Video'),
         default => consultation_attachment_msg('مستند', 'Document'),
     };
@@ -118,7 +120,7 @@ $categoryLabel = static function (string $category): string {
       <label class="ca-drop" data-ca-drop tabindex="0" role="button"
              aria-label="<?= consultation_attachment_msg('اسحب الملفات هنا أو اضغط لاختيار الملفات', 'Drag files here or press to choose files') ?>">
         <input type="file" data-ca-input multiple hidden
-               accept=".txt,.doc,.docx,.pdf,.mp3,.wav,.m4a,.ogg,.mp4,.mov,.webm">
+               accept=".txt,.doc,.docx,.pdf,.png,.jpg,.jpeg,.mp3,.wav,.m4a,.ogg,.mp4,.mov,.webm">
         <span class="ca-drop-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         </span>
@@ -126,10 +128,12 @@ $categoryLabel = static function (string $category): string {
         <span class="ca-drop-hint">
           <?= consultation_attachment_msg(
               'مستندات (TXT, DOC, DOCX, PDF) حتى ' . $limits['document_mb'] . ' ميجابايت · '
+              . 'صور (PNG, JPG) حتى ' . $limits['document_mb'] . ' ميجابايت · '
               . 'صوت (MP3, WAV, M4A, OGG) حتى ' . $limits['audio_mb'] . ' ميجابايت · '
               . 'فيديو (MP4, MOV, WEBM) حتى ' . $limits['video_mb'] . ' ميجابايت · '
               . 'بحد أقصى ' . $limits['max_files'] . ' ملفات',
               'Documents (TXT, DOC, DOCX, PDF) up to ' . $limits['document_mb'] . ' MB · '
+              . 'Images (PNG, JPG) up to ' . $limits['document_mb'] . ' MB · '
               . 'Audio (MP3, WAV, M4A, OGG) up to ' . $limits['audio_mb'] . ' MB · '
               . 'Video (MP4, MOV, WEBM) up to ' . $limits['video_mb'] . ' MB · '
               . 'up to ' . $limits['max_files'] . ' files'

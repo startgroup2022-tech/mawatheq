@@ -18,8 +18,11 @@ uploads/knowledge/*
 node_modules/
 vendor/
 
-# Runtime backups (created by cron/backup.php; may contain the full database dump)
-storage/
+# Runtime backups (created by cron/backup.php; may contain the full database dump).
+# Anchored to the repository root: an unanchored `storage/` also matched
+# apps/mobile/lib/core/storage/, which silently kept token_storage.dart out of git and
+# left the Flutter app unbuildable from a fresh clone.
+/storage/
 
 # Browser test output (screenshots, traces, HTML report)
 tests/e2e/.artifacts/
