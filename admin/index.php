@@ -2,6 +2,17 @@
 $activeAdmin = 'dashboard';
 require_once __DIR__ . '/includes/admin_header.php';
 
+// A restricted staff account gets its own dashboard. The main one below is built around
+// confidential figures — revenue, outstanding invoices, client and case counts, the
+// opportunity pipeline, lawyer performance and the audit trail — none of which a restricted
+// employee may see. Rendering a separate page rather than hiding panels with CSS keeps those
+// figures out of the response body entirely, so they cannot be read from the page source.
+if (($_SESSION['admin_role'] ?? '') === 'staff') {
+    require_once __DIR__ . '/dashboard-staff.php';
+    require_once __DIR__ . '/includes/admin_footer.php';
+    exit;
+}
+
 /** Safe query helpers: a missing optional table must never break the dashboard. */
 $rows = function (string $sql, array $p = []) use ($pdo): array { try { $s = $pdo->prepare($sql); $s->execute($p); return $s->fetchAll(); } catch (Throwable $e) { return []; } };
 $val = function (string $sql, array $p = [], $def = 0) use ($pdo) { try { $s = $pdo->prepare($sql); $s->execute($p); $v = $s->fetchColumn(); return $v === false || $v === null ? $def : $v; } catch (Throwable $e) { return $def; } };

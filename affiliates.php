@@ -17,7 +17,6 @@ require_once __DIR__ . '/includes/affiliate.php';
 require_once __DIR__ . '/includes/affiliate_service.php';
 require_once __DIR__ . '/includes/affiliate_auth.php';
 require_once __DIR__ . '/includes/ui.php';
-require_once __DIR__ . '/includes/header.php';
 
 $settings = affiliate_settings($pdo);
 $programEnabled = $settings['program_enabled'];
@@ -82,6 +81,11 @@ $pageSubtitle = is_rtl()
     ? 'اربح مقابل كل عميل تحيله إلى خدمات المنصة.'
     : 'Earn for every customer you refer to the platform\'s services.';
 $commissionable = affiliate_service_catalog($pdo);
+
+// The programme page is built from the .aff-* component layer, which nothing else loads.
+// Without this the whole page renders unstyled: full-bleed hero, no card grid, no rhythm.
+$pageStyles = ['/assets/css/affiliate.css'];
+require_once __DIR__ . '/includes/header.php';
 ?>
 <div class="aff-public">
   <section class="aff-hero">
@@ -92,7 +96,11 @@ $commissionable = affiliate_service_catalog($pdo);
         ? 'شارك رابط الإحالة الخاص بك، وتابع كل زيارة وتحويل، واحصل على عمولة على إيرادات المنصة المؤهلة. لا رسوم ولا التزامات.'
         : 'Share your referral link, track every click and conversion, and earn commission on eligible platform revenue. No fees, no obligation.' ?></p>
       <div class="aff-hero-actions">
-        <a class="btn btn-gold btn-lg" href="#apply"><?= is_rtl() ? 'تقدّم بطلب' : 'Apply now' ?></a>
+        <?php if ($programEnabled): ?>
+          <a class="btn btn-gold btn-lg" href="/affiliate/register.php"><?= is_rtl() ? 'أنشئ حساب مسوّق' : 'Create an affiliate account' ?></a>
+        <?php else: ?>
+          <a class="btn btn-gold btn-lg" href="#apply"><?= is_rtl() ? 'تقدّم بطلب' : 'Apply now' ?></a>
+        <?php endif; ?>
         <a class="btn btn-outline btn-lg" href="/affiliate/login.php"><?= is_rtl() ? 'دخول المسوّقين' : 'Affiliate sign-in' ?></a>
       </div>
     </div>

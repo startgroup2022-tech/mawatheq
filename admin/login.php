@@ -14,16 +14,34 @@ $completeAdminLogin = function(array $admin) use ($pdo): void {
     unset($_SESSION['pending_admin_2fa_id'],$_SESSION['pending_admin_2fa_at'],$_SESSION['pending_admin_2fa_email']);
     $_SESSION['admin_id']=(int)$admin['id']; $_SESSION['admin_name']=$admin['full_name']; $_SESSION['admin_role']=$admin['role'] ?? 'editor';
     $_SESSION['admin_2fa_verified']=!empty($admin['totp_enabled']);
+    // Restart the session clock on every successful sign-in. config.php sets this once and
+    // carries it for the life of the session, and the guard treats a session that started
+    // before the account's session_invalidated_at as stale. Without this line a session that
+    // was revoked keeps its original start time through session_regenerate_id(), so the next
+    // sign-in is judged stale as well and the account loops between login and the guard.
+    $_SESSION['mawatheq_session_started_at']=time();
+    // Record the sign-in so an operator can see when a staff account was last used. A
+    // failure here must not block a legitimate login.
+    try { $pdo->prepare('UPDATE admins SET last_login_at=NOW() WHERE id=?')->execute([(int)$admin['id']]); } catch (Throwable $e) { error_log('last_login_at update failed: '.$e->getMessage()); }
     try { log_action($pdo,'تسجيل دخول إداري ناجح'); } catch (Throwable $e) { error_log('Admin login audit failed: '.$e->getMessage()); }
     header('Location: /admin/index.php'); exit;
 };
+
+// A deactivated account must not be able to start a session at all. The console guard also
+// refuses it, but answering here means the employee sees why instead of being bounced in a
+// loop. Applies to both the password step and the 2FA step.
+$adminIsDisabled = static function(?array $admin): bool {
+    return $admin !== null && array_key_exists('is_active', $admin) && (int)$admin['is_active'] !== 1;
+};
+$disabledMessage = 'تم إيقاف هذا الحساب. تواصل مع مدير النظام.';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) { http_response_code(403); exit('Invalid request'); }
     if ($twoFactorPending) {
         $id=(int)$_SESSION['pending_admin_2fa_id']; $email=(string)($_SESSION['pending_admin_2fa_email'] ?? '');
         $stmt=$pdo->prepare('SELECT * FROM admins WHERE id=? AND totp_enabled=1'); $stmt->execute([$id]); $admin=$stmt->fetch();
-        if (!$admin || auth_rate_limit_remaining($pdo,'admin-2fa',$email)>0) $error='تعذر التحقق. ابدأ تسجيل الدخول من جديد بعد الانتظار.';
+        if ($adminIsDisabled($admin)) { unset($_SESSION['pending_admin_2fa_id'],$_SESSION['pending_admin_2fa_at'],$_SESSION['pending_admin_2fa_email']); $twoFactorPending=false; $error=$disabledMessage; }
+        elseif (!$admin || auth_rate_limit_remaining($pdo,'admin-2fa',$email)>0) $error='تعذر التحقق. ابدأ تسجيل الدخول من جديد بعد الانتظار.';
         else {
             $code=trim($_POST['totp_code'] ?? ''); $valid=totp_verify((string)$admin['totp_secret'],$code);
             if (!$valid && $code!=='' && !empty($admin['totp_recovery_hashes'])) {
@@ -39,7 +57,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         elseif (auth_rate_limit_remaining($pdo,'admin',$email)>0) $error='محاولات كثيرة. يرجى الانتظار 15 دقيقة قبل المحاولة مجدداً.';
         else {
             $stmt=$pdo->prepare('SELECT * FROM admins WHERE email=?'); $stmt->execute([$email]); $admin=$stmt->fetch();
-            if ($admin && password_verify($password,$admin['password_hash'])) {
+            if ($adminIsDisabled($admin)) { $error=$disabledMessage; }
+            elseif ($admin && password_verify($password,$admin['password_hash'])) {
                 auth_rate_limit_clear($pdo,'admin',$email);
                 if (!empty($admin['totp_enabled'])) {
                     $_SESSION['pending_admin_2fa_id']=(int)$admin['id']; $_SESSION['pending_admin_2fa_email']=$email; $_SESSION['pending_admin_2fa_at']=time(); $twoFactorPending=true;

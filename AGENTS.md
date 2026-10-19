@@ -1404,3 +1404,56 @@ editors.
 Files written by the editor tool land as `0660`, which Apache cannot read, and every new page
 returns **HTTP 500** with `Failed to open stream: Permission denied` in the Apache log — not a
 PHP error. `chmod 644` every new file (and `755` for directories) before testing over HTTP.
+
+## Execution 34 — affiliate registration, restricted staff, landing page
+
+### `admin/index.php` branches before the confidential dashboard renders
+
+A restricted `staff` account must never receive the main dashboard's figures. Hiding panels
+with CSS is not enough — the numbers are in the response body and readable from page source.
+`admin/index.php` therefore `require`s `dashboard-staff.php` and `exit`s *before* the main
+dashboard queries run. Keep that branch first if you touch the file.
+
+### Two session bugs worth remembering
+
+* **A login must refresh `mawatheq_session_started_at`.** `admin/login.php` originally did not,
+  so after a password reset the guard compared the new session against the account's
+  `session_invalidated_at` stamp, judged it stale, and the user looped between login and the
+  guard with no way out.
+* **`account_session_is_stale()` must use strict `>`, not `>=`.** The stamp means "sessions
+  beginning *before* this instant are invalid", so a session created in the same second is a
+  new session. With `>=`, revoke-then-sign-in within one second loops forever.
+
+### Test-suite isolation: restore what you found, don't delete it
+
+`exec31_affiliate_test.php` used to `DELETE FROM site_settings WHERE
+setting_key='affiliate_program_enabled'` in cleanup. The row is part of the shipped seed
+(`upgrade_v57.sql`), and the application treats a *missing* row as "off" via its in-code
+defaults — so the deletion was invisible to the app but broke the next suite that asserted the
+seeded state. Tests now capture the prior state and restore it (deleting only if the row was
+absent to begin with). **Rule: a test restores the state it found; it does not assume it owns
+the row.**
+
+### `tests/exec33_najiz_classification_test.php` is self-seeding
+
+`setup_test_env.sh` builds the schema but nothing seeds the Najiz classification, so on a fresh
+clone exec33 saw 0 rows and failed on data, not code. It now imports when `najiz_categories` is
+empty and leaves a populated database alone. It also reads `category_id` from the API response
+instead of hardcoding `2`, since seed ids are not part of the contract.
+
+### Running the suites: the `www-data` group matters
+
+Apache writes consultation attachments as `www-data` under a group-only private root
+(`../mawatheq-private`). A login shell's supplementary groups are fixed at login, so a user
+added to `www-data` by `setup_test_env.sh` afterwards still cannot read those files and
+`execution30_consultation_attachments_probe` fails on a file it is entitled to read.
+`run_all_tests.sh` re-enters the group per suite with `sg www-data -c` and detects membership
+from `getent group www-data`, **not** `id -nG` (which reflects the stale login-time groups).
+
+### Current state
+
+* Full suite: **35/35 green** (`bash tests/run_all_tests.sh`).
+* `exec34_staff_permissions_test.php`: 107 checks. `exec34_affiliate_registration_test.php`:
+  43 checks (Parts A + C, including the closed-programme path).
+* `database/upgrade_v60.sql` is additive and idempotent — verified by applying it twice to a
+  scratch database. 24 modules seeded, 13 marked `grantable = 0`.

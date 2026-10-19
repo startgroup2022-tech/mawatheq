@@ -176,7 +176,13 @@ function account_session_is_stale(PDO $pdo, string $accountType, int $accountId)
     $started = (int)($_SESSION['mawatheq_session_started_at'] ?? 0);
     // No recorded start (a session created before this change shipped) counts as stale
     // once the account has a stamp: the session is older than the credential change.
-    return $started === 0 || strtotime((string)$stamp) >= $started;
+    if ($started === 0) return true;
+    // Strictly greater, not greater-or-equal. The stamp means "sessions that began before
+    // this instant are invalid", so a session that begins in the same second is a new one
+    // and must be allowed. With >=, revoking an account's sessions and signing straight back
+    // in lands in the same second, the fresh session is judged stale, and the account loops
+    // between the login page and the guard with no way out.
+    return strtotime((string)$stamp) > $started;
 }
 
 /**

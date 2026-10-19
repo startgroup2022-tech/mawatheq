@@ -68,6 +68,13 @@ function admin_route_roles(): array {
         'affiliate-campaigns.php' => ['super_admin'],
         'affiliate-settings.php' => ['super_admin'],
         'affiliate-fraud.php' => ['super_admin'],
+        // Restricted administrative staff (Execution 34). Creating an employee or editing
+        // what they may do is the step that hands out access, so both are super_admin only.
+        // The `staff` role resolves through includes/admin_permissions.php instead of this
+        // map, and the module behind these two scripts is marked non-grantable, so no
+        // employee can reach them however they are configured.
+        'staff.php' => ['super_admin'],
+        'staff-edit.php' => ['super_admin'],
     ];
 }
 

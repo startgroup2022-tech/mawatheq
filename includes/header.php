@@ -40,6 +40,20 @@ $dir  = is_rtl() ? 'rtl' : 'ltr';
 <link rel="stylesheet" href="/assets/css/style.css">
 <link rel="stylesheet" href="/assets/css/enterprise.css">
 <link rel="stylesheet" href="/assets/css/landing.css">
+<?php
+// Page-specific stylesheets. A page sets $pageStyles before including this header, so the
+// link lands in <head> rather than being emitted mid-body. Public pages that carry their own
+// component CSS (the affiliate programme page, for example) rely on this — without it their
+// markup renders unstyled, because nothing else loads those rules.
+foreach (($pageStyles ?? []) as $pageStyle) {
+    $href = is_string($pageStyle) ? $pageStyle : (string)($pageStyle['href'] ?? '');
+    if ($href === '') continue;
+    // Only same-origin asset paths are emitted, so a variable cannot inject an off-site
+    // stylesheet or break out of the attribute.
+    if (!preg_match('#^/assets/[A-Za-z0-9._/-]+\.css$#', $href)) continue;
+    echo '<link rel="stylesheet" href="' . htmlspecialchars($href, ENT_QUOTES) . '">' . "\n";
+}
+?>
 <script type="application/ld+json">
 <?= json_encode([
     '@context' => 'https://schema.org',

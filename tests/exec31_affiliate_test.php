@@ -58,6 +58,13 @@ function make_affiliate(PDO $pdo, string $suffix, array $overrides = []): array 
 }
 
 // The programme must be on for conversions to be recorded at all.
+// Remember whether the row pre-existed: cleanup restores what it found rather than deleting,
+// because removing a row this suite did not create breaks whichever suite runs next. The
+// application reads a missing row as "off" through its in-code defaults, so the difference
+// is invisible to the app and very visible to a test that asserts the shipped default.
+$progRowBefore = $pdo->query("SELECT setting_value FROM site_settings WHERE setting_key='affiliate_program_enabled'")->fetchColumn();
+$progRowExisted = $progRowBefore !== false;
+$progRowValue = $progRowExisted ? (string)$progRowBefore : '0';
 $pdo->prepare("INSERT INTO site_settings (setting_key, setting_value) VALUES ('affiliate_program_enabled','1')
     ON DUPLICATE KEY UPDATE setting_value='1'")->execute();
 affiliate_settings_reload();
@@ -483,7 +490,12 @@ foreach ($createdPlans as $planIdToDrop) {
 // Restore the compliance gate to its shipped state so a later suite sees the real seed.
 $pdo->exec("UPDATE affiliate_service_catalog SET attribution_mode='disabled', commission_permitted=0, compliance_approved=0 WHERE service_key='subscription_plan'");
 $pdo->exec("UPDATE affiliate_service_catalog SET attribution_mode='prohibited', commission_permitted=0, compliance_approved=0 WHERE service_key='legal_invoice_fee'");
-$pdo->exec("DELETE FROM site_settings WHERE setting_key='affiliate_program_enabled'");
+if ($progRowExisted) {
+    $pdo->prepare("UPDATE site_settings SET setting_value=? WHERE setting_key='affiliate_program_enabled'")->execute([$progRowValue]);
+} else {
+    $pdo->exec("DELETE FROM site_settings WHERE setting_key='affiliate_program_enabled'");
+}
+affiliate_settings_reload();
 
 echo "\n----------------------------------------\n";
 printf("checks passed: %d   failed: %d\n", $pass, $fail);
