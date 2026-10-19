@@ -56,6 +56,7 @@ $adminNavGroups = [
     ['t' => adm('النظام', 'System'), 'items' => [
         'integrations' => ['i' => 'external', 'ar' => 'التكاملات الخارجية', 'en' => 'External integrations', 'href' => '/admin/integrations.php'],
         'audit-log' => ['i' => 'shield', 'ar' => 'سجل التدقيق', 'en' => 'Audit log', 'href' => '/admin/audit-log.php'],
+        'staff' => ['i' => 'users', 'ar' => 'الموظفون والصلاحيات', 'en' => 'Staff & permissions', 'href' => '/admin/staff.php'],
         'settings' => ['i' => 'settings', 'ar' => 'الإعدادات', 'en' => 'Settings', 'href' => '/admin/settings.php'],
     ]],
 ];
@@ -76,11 +77,19 @@ try {
 
 $pageTitle = $pageTitle ?? '';
 foreach ($adminNavGroups as $g) if (isset($g['items'][$activeAdmin]) && $pageTitle === '') $pageTitle = adm($g['items'][$activeAdmin]['ar'], $g['items'][$activeAdmin]['en']);
-$canSee = function (string $href) use ($adminRole): bool {
-    return admin_role_allows(basename($href), $adminRole);
+// Menu visibility. For the legacy roles this is the route map, unchanged. For a `staff`
+// account it is the same permission check the guard applies, so a link is shown only when
+// following it would actually be allowed. Hiding a link is a convenience, not the control:
+// the guard refuses the route regardless of what the menu renders.
+$canSee = function (string $href) use ($adminRole, $pdo): bool {
+    $route = basename($href);
+    if ($adminRole === 'staff') {
+        return admin_staff_can_view_route($pdo, $route, (int)($_SESSION['admin_id'] ?? 0));
+    }
+    return admin_role_allows($route, $adminRole);
 };
 $initial = mb_strtoupper(mb_substr((string)($_SESSION['admin_name'] ?? 'A'), 0, 1, 'UTF-8'), 'UTF-8');
-$roleLabels = ['super_admin' => adm('مدير عام', 'Super admin'), 'editor' => adm('محرر', 'Editor'), 'support' => adm('دعم', 'Support')];
+$roleLabels = ['super_admin' => adm('مدير عام', 'Super admin'), 'editor' => adm('محرر', 'Editor'), 'support' => adm('دعم', 'Support'), 'staff' => adm('موظف بصلاحيات محددة', 'Restricted staff')];
 $langToggleUrl = '?' . http_build_query(array_merge($_GET, ['lang' => $admLang === 'ar' ? 'en' : 'ar']));
 ?>
 <!DOCTYPE html>

@@ -115,11 +115,7 @@ try {
         <label class="field"><span><?= ui_e(is_rtl() ? 'رقم الجوال' : 'Phone') ?></span>
           <input type="tel" name="phone" maxlength="20" value="<?= ui_e((string)($affiliate['phone'] ?? '')) ?>"></label>
         <label class="field"><span><?= ui_e(is_rtl() ? 'الدولة' : 'Country') ?></span>
-          <select name="country">
-            <?php foreach (['BH' => is_rtl() ? 'البحرين' : 'Bahrain', 'SA' => is_rtl() ? 'السعودية' : 'Saudi Arabia', 'AE' => is_rtl() ? 'الإمارات' : 'UAE', 'KW' => is_rtl() ? 'الكويت' : 'Kuwait', 'QA' => is_rtl() ? 'قطر' : 'Qatar', 'OM' => is_rtl() ? 'عمان' : 'Oman'] as $code => $label): ?>
-              <option value="<?= ui_e($code) ?>" <?= (string)$affiliate['country'] === $code ? 'selected' : '' ?>><?= ui_e($label) ?></option>
-            <?php endforeach; ?>
-          </select></label>
+          <?php render_country_select('country', (string)($affiliate['country'] ?? '')); ?></label>
         <label class="field"><span><?= ui_e(is_rtl() ? 'المدينة' : 'City') ?></span>
           <input type="text" name="city" maxlength="80" value="<?= ui_e((string)($affiliate['city'] ?? '')) ?>"></label>
         <label class="field"><span><?= ui_e(is_rtl() ? 'الموقع الإلكتروني' : 'Website') ?></span>

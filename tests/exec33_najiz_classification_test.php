@@ -129,6 +129,14 @@ check('no positional AFTER clause in the migration',
 // ---------------------------------------------------------------------------
 section('4. Import fidelity and idempotency');
 // ---------------------------------------------------------------------------
+// A fresh checkout has the tables but no rows: setup_test_env.sh builds the schema and nothing
+// seeds the classification. Import when empty so the suite is reproducible from a clone rather
+// than depending on an import that happened out of band. A populated database is left alone, so
+// the assertions below still describe the shipped data.
+if ((int)$pdo->query('SELECT COUNT(*) FROM najiz_categories')->fetchColumn() === 0) {
+    najiz_import($pdo, ['source' => $source]);
+}
+
 $before = [];
 foreach (['najiz_categories','najiz_subcategories','najiz_case_types','najiz_judicial_requests'] as $t) {
     $before[$t] = (int)$pdo->query("SELECT COUNT(*) FROM `$t`")->fetchColumn();
@@ -293,7 +301,13 @@ check('stats reports 640 judicial requests', ($json['stats']['judicial_requests'
 $json = json_decode($body, true);
 check('categories endpoint returns 7', count($json['categories'] ?? []) === 7);
 
-[$code, $body] = http_get("$BASE/api/najiz_classify.php?action=subcategories&category_id=2");
+// Take the id from the response rather than assuming 2. The seed order is not part of the
+// contract — a database that has been re-imported carries whatever AUTO_INCREMENT it reached,
+// and hardcoding an id here fails on correct data for a reason that has nothing to do with
+// the cascade.
+$categoryId = (int)($json['categories'][0]['id'] ?? 0);
+check('the categories response exposes ids', $categoryId > 0);
+[$code, $body] = http_get("$BASE/api/najiz_classify.php?action=subcategories&category_id=$categoryId");
 $json = json_decode($body, true);
 check('cascade level 2 returns subcategories', count($json['subcategories'] ?? []) > 0);
 

@@ -48,16 +48,55 @@
   function initSiteNav() {
     var btn = $('[data-nav-toggle]'), nav = $('.main-nav');
     if (!btn || !nav) return;
+    var PANEL_BREAKPOINT = 1080;
+
+    function setOpen(open) {
+      nav.classList.toggle('is-open', open);
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
     btn.setAttribute('aria-expanded', 'false');
     btn.addEventListener('click', function () {
-      var isOpen = nav.classList.toggle('is-open');
-      btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      setOpen(!nav.classList.contains('is-open'));
     });
     doc.addEventListener('keydown', function (e) {
       if (e.key === 'Escape' && nav.classList.contains('is-open')) {
-        nav.classList.remove('is-open'); btn.setAttribute('aria-expanded', 'false'); btn.focus();
+        setOpen(false); btn.focus();
       }
     });
+    // Tapping outside the panel dismisses it, which is what a phone user expects.
+    doc.addEventListener('click', function (e) {
+      if (!nav.classList.contains('is-open')) return;
+      if (nav.contains(e.target) || btn.contains(e.target)) return;
+      setOpen(false);
+    });
+    // Crossing back to the desktop layout must not leave a stale `is-open` panel.
+    window.addEventListener('resize', function () {
+      if (window.innerWidth > PANEL_BREAKPOINT && nav.classList.contains('is-open')) setOpen(false);
+    });
+    initNavScrollSpy(nav);
+  }
+
+  /* Marks the nav link whose section is currently in view. The links all point at
+     `/#anchor`, so this only ever lights up on the home page — on any other page
+     no section matches and no link is marked. */
+  function initNavScrollSpy(nav) {
+    if (!nav.hasAttribute('data-nav-spy')) return;
+    var links = $$('a[href*="#"]', nav).filter(function (a) {
+      return a.pathname === window.location.pathname;
+    });
+    if (!links.length) return;
+    var sections = links.map(function (a) {
+      return doc.getElementById(a.hash.replace('#', ''));
+    });
+    function mark(active) {
+      links.forEach(function (a, i) { a.classList.toggle('is-active', sections[i] === active && !!active); });
+    }
+    if (!('IntersectionObserver' in window)) return;
+    var observer = new IntersectionObserver(function (entries) {
+      var visible = entries.filter(function (en) { return en.isIntersecting; });
+      if (visible.length) mark(visible[0].target);
+    }, { rootMargin: '-30% 0px -60% 0px' });
+    sections.forEach(function (s) { if (s) observer.observe(s); });
   }
 
   /* --------------------------------------------------------------- modals --- */

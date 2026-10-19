@@ -29,6 +29,20 @@ clear_throttle() {
     $MARIADB "$DB_NAME" -e "DELETE FROM auth_rate_limits;" >/dev/null 2>&1
 }
 
+# Apache writes consultation attachments as www-data under a group-only private root
+# (see setup_test_env.sh). This shell's supplementary groups are fixed at login, so a user
+# added to www-data afterwards reads those files with "Permission denied" and
+# execution30_consultation_attachments_probe fails on a file it is entitled to read.
+# Re-entering the group per suite keeps the run self-consistent.
+# Membership is read from the group database, not from `id -nG`: this shell's supplementary
+# groups were fixed when it logged in, so a user added to www-data by setup_test_env.sh does
+# not show the group here even though `sg` can still enter it.
+if command -v sg >/dev/null 2>&1 && getent group www-data 2>/dev/null | grep -qw "$(id -un)"; then
+    run_suite() { sg www-data -c "php $(printf '%q' "$1")"; }
+else
+    run_suite() { php "$1"; }
+fi
+
 # The mock provider backs execution12_ai_connectivity_test. Start it if absent rather
 # than reporting three failures for a server that is simply not running.
 if ! ss -lnt 2>/dev/null | grep -q ':11434 '; then
@@ -58,7 +72,7 @@ for file in tests/*_test.php tests/*_probe.php; do
     fi
 
     clear_throttle
-    out="$(php "$file" 2>&1)"
+    out="$(run_suite "$file" 2>&1)"
     rc=$?
     summary="$(printf '%s' "$out" | grep -iE 'checks|checks passed|failure' | tail -1)"
     if [ "$rc" -eq 0 ]; then

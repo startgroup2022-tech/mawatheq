@@ -35,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'affiliate_cookie_days' => (string)(int)($_POST['affiliate_cookie_days'] ?? 90),
         'affiliate_default_hold_days' => (string)(int)($_POST['affiliate_default_hold_days'] ?? 30),
         'affiliate_attribution_model' => in_array($_POST['affiliate_attribution_model'] ?? '', ['first_touch', 'last_touch'], true) ? $_POST['affiliate_attribution_model'] : 'first_touch',
-        'affiliate_payout_currency' => currency_normalize((string)($_POST['affiliate_payout_currency'] ?? 'BHD')),
+        'affiliate_payout_currency' => currency_normalize((string)($_POST['affiliate_payout_currency'] ?? CURRENCY_DEFAULT)),
         'affiliate_min_payout' => (string)($_POST['affiliate_min_payout'] ?? '50.000'),
         'affiliate_dual_approval_threshold' => (string)($_POST['affiliate_dual_approval_threshold'] ?? '500.000'),
         'affiliate_default_commission_percent' => (string)($_POST['affiliate_default_commission_percent'] ?? '10.000'),

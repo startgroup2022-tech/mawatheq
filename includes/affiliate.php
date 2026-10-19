@@ -21,6 +21,7 @@
  *   oversight in one of the dozen screens that would otherwise each need to know.
  */
 require_once __DIR__ . '/currency.php';
+require_once __DIR__ . '/country.php';
 
 const AFFILIATE_TERMS_VERSION = '1.0';
 const AFFILIATE_PRIVACY_VERSION = '1.0';
@@ -101,6 +102,28 @@ function affiliate_states_excluded(): array {
 // ---------------------------------------------------------------------------
 
 /**
+ * The programme defaults, before any site_settings row is applied.
+ *
+ * Separate from affiliate_settings() so the code default is assertable without a
+ * database: a test that wants to know "what does a fresh install default to" must
+ * not be answered by whatever a previous suite happened to write to site_settings.
+ */
+function affiliate_settings_defaults(): array {
+    return [
+        'affiliate_program_enabled' => '0',
+        'affiliate_attribution_days' => '30',
+        'affiliate_attribution_model' => 'first_touch',
+        'affiliate_cookie_days' => '90',
+        'affiliate_require_consent' => '1',
+        'affiliate_min_payout' => '50.000',
+        'affiliate_payout_currency' => CURRENCY_DEFAULT,
+        'affiliate_dual_approval_threshold' => '500.000',
+        'affiliate_default_hold_days' => '30',
+        'affiliate_default_commission_percent' => '10.000',
+    ];
+}
+
+/**
  * Affiliate settings, read once per request from site_settings with defaults that
  * are safe on a database that has not run upgrade_v57.sql yet.
  *
@@ -113,18 +136,7 @@ function affiliate_settings(?PDO $pdo = null): array {
         return $GLOBALS['__affiliate_settings'];
     }
 
-    $defaults = [
-        'affiliate_program_enabled' => '0',
-        'affiliate_attribution_days' => '30',
-        'affiliate_attribution_model' => 'first_touch',
-        'affiliate_cookie_days' => '90',
-        'affiliate_require_consent' => '1',
-        'affiliate_min_payout' => '50.000',
-        'affiliate_payout_currency' => 'BHD',
-        'affiliate_dual_approval_threshold' => '500.000',
-        'affiliate_default_hold_days' => '30',
-        'affiliate_default_commission_percent' => '10.000',
-    ];
+    $defaults = affiliate_settings_defaults();
 
     $pdo = $pdo ?: ($GLOBALS['pdo'] ?? null);
     $out = $defaults;
@@ -349,10 +361,24 @@ function affiliate_can_earn(?array $affiliate): bool {
         && ($affiliate['compliance_status'] ?? '') === 'approved';
 }
 
-/** May this affiliate sign in and use the portal at all? */
+/**
+ * May this affiliate sign in and use the portal at all?
+ *
+ * Reaching the portal and being able to earn are deliberately separate questions.
+ * An applicant who registered an account (`pending` / `under_review`) may sign in so
+ * they can watch their own application move through review; what they must not do is
+ * earn, which is why `affiliate_can_earn()` is the gate that actually protects the
+ * money and is enforced independently on every link, campaign, payout and conversion
+ * path. Refusing them the login instead would leave an applicant with a password they
+ * cannot use and no way to see the status of their own request.
+ *
+ * `rejected` and `closed` are still refused: those accounts are finished, and the
+ * login page reports the reason rather than pretending the credentials were wrong.
+ * A suspended affiliate may sign in and read their history — they may be owed money.
+ */
 function affiliate_can_login(?array $affiliate): bool {
     if (!$affiliate) return false;
-    return in_array((string)($affiliate['status'] ?? ''), ['approved', 'active', 'suspended'], true);
+    return in_array((string)($affiliate['status'] ?? ''), ['pending', 'under_review', 'approved', 'active', 'suspended'], true);
 }
 
 /** Human label for a status, in the active language. */

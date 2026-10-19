@@ -1,0 +1,1263 @@
+{
+  "phase": "after",
+  "base": "http://127.0.0.1:8080",
+  "header": [
+    {
+      "vp": "360",
+      "lang": "ar",
+      "headerH": 69,
+      "containerW": 360,
+      "brand": {
+        "w": 20,
+        "h": 36,
+        "left": 316
+      },
+      "brandImg": {
+        "w": 20,
+        "h": 36
+      },
+      "nav": {
+        "w": 0,
+        "h": 0,
+        "left": 0,
+        "right": 0
+      },
+      "navCount": 8,
+      "navVisible": false,
+      "toggleVisible": true,
+      "actions": {
+        "w": 132,
+        "left": 24,
+        "right": 156
+      },
+      "docOverflowX": false,
+      "scrollW": 360,
+      "innerW": 360,
+      "overlaps": [],
+      "overflow": []
+    },
+    {
+      "vp": "360",
+      "lang": "en",
+      "headerH": 69,
+      "containerW": 360,
+      "brand": {
+        "w": 20,
+        "h": 36,
+        "left": 24
+      },
+      "brandImg": {
+        "w": 20,
+        "h": 36
+      },
+      "nav": {
+        "w": 0,
+        "h": 0,
+        "left": 0,
+        "right": 0
+      },
+      "navCount": 8,
+      "navVisible": false,
+      "toggleVisible": true,
+      "actions": {
+        "w": 178,
+        "left": 158,
+        "right": 336
+      },
+      "docOverflowX": false,
+      "scrollW": 360,
+      "innerW": 360,
+      "overlaps": [],
+      "overflow": []
+    },
+    {
+      "vp": "390",
+      "lang": "ar",
+      "headerH": 69,
+      "containerW": 390,
+      "brand": {
+        "w": 20,
+        "h": 36,
+        "left": 346
+      },
+      "brandImg": {
+        "w": 20,
+        "h": 36
+      },
+      "nav": {
+        "w": 0,
+        "h": 0,
+        "left": 0,
+        "right": 0
+      },
+      "navCount": 8,
+      "navVisible": false,
+      "toggleVisible": true,
+      "actions": {
+        "w": 132,
+        "left": 24,
+        "right": 156
+      },
+      "docOverflowX": false,
+      "scrollW": 390,
+      "innerW": 390,
+      "overlaps": [],
+      "overflow": []
+    },
+    {
+      "vp": "390",
+      "lang": "en",
+      "headerH": 69,
+      "containerW": 390,
+      "brand": {
+        "w": 20,
+        "h": 36,
+        "left": 24
+      },
+      "brandImg": {
+        "w": 20,
+        "h": 36
+      },
+      "nav": {
+        "w": 0,
+        "h": 0,
+        "left": 0,
+        "right": 0
+      },
+      "navCount": 8,
+      "navVisible": false,
+      "toggleVisible": true,
+      "actions": {
+        "w": 178,
+        "left": 188,
+        "right": 366
+      },
+      "docOverflowX": false,
+      "scrollW": 390,
+      "innerW": 390,
+      "overlaps": [],
+      "overflow": []
+    },
+    {
+      "vp": "768",
+      "lang": "ar",
+      "headerH": 69,
+      "containerW": 768,
+      "brand": {
+        "w": 99,
+        "h": 36,
+        "left": 645
+      },
+      "brandImg": {
+        "w": 20,
+        "h": 36
+      },
+      "nav": {
+        "w": 0,
+        "h": 0,
+        "left": 0,
+        "right": 0
+      },
+      "navCount": 8,
+      "navVisible": false,
+      "toggleVisible": true,
+      "actions": {
+        "w": 143,
+        "left": 24,
+        "right": 167
+      },
+      "docOverflowX": false,
+      "scrollW": 768,
+      "innerW": 768,
+      "overlaps": [],
+      "overflow": []
+    },
+    {
+      "vp": "768",
+      "lang": "en",
+      "headerH": 69,
+      "containerW": 768,
+      "brand": {
+        "w": 125,
+        "h": 36,
+        "left": 24
+      },
+      "brandImg": {
+        "w": 20,
+        "h": 36
+      },
+      "nav": {
+        "w": 0,
+        "h": 0,
+        "left": 0,
+        "right": 0
+      },
+      "navCount": 8,
+      "navVisible": false,
+      "toggleVisible": true,
+      "actions": {
+        "w": 185,
+        "left": 559,
+        "right": 744
+      },
+      "docOverflowX": false,
+      "scrollW": 768,
+      "innerW": 768,
+      "overlaps": [],
+      "overflow": []
+    },
+    {
+      "vp": "1280",
+      "lang": "ar",
+      "headerH": 79,
+      "containerW": 1180,
+      "brand": {
+        "w": 101,
+        "h": 40,
+        "left": 1105
+      },
+      "brandImg": {
+        "w": 22,
+        "h": 40
+      },
+      "nav": {
+        "w": 578,
+        "h": 40,
+        "left": 507,
+        "right": 1085
+      },
+      "navCount": 8,
+      "navVisible": true,
+      "toggleVisible": false,
+      "actions": {
+        "w": 413,
+        "left": 74,
+        "right": 487
+      },
+      "docOverflowX": false,
+      "scrollW": 1280,
+      "innerW": 1280,
+      "overlaps": [],
+      "overflow": []
+    },
+    {
+      "vp": "1280",
+      "lang": "en",
+      "headerH": 79,
+      "containerW": 1180,
+      "brand": {
+        "w": 127,
+        "h": 40,
+        "left": 74
+      },
+      "brandImg": {
+        "w": 22,
+        "h": 40
+      },
+      "nav": {
+        "w": 556,
+        "h": 40,
+        "left": 221,
+        "right": 777
+      },
+      "navCount": 8,
+      "navVisible": true,
+      "toggleVisible": false,
+      "actions": {
+        "w": 409,
+        "left": 797,
+        "right": 1206
+      },
+      "docOverflowX": false,
+      "scrollW": 1280,
+      "innerW": 1280,
+      "overlaps": [],
+      "overflow": []
+    },
+    {
+      "vp": "1440",
+      "lang": "ar",
+      "headerH": 79,
+      "containerW": 1180,
+      "brand": {
+        "w": 101,
+        "h": 40,
+        "left": 1185
+      },
+      "brandImg": {
+        "w": 22,
+        "h": 40
+      },
+      "nav": {
+        "w": 578,
+        "h": 40,
+        "left": 587,
+        "right": 1165
+      },
+      "navCount": 8,
+      "navVisible": true,
+      "toggleVisible": false,
+      "actions": {
+        "w": 413,
+        "left": 154,
+        "right": 567
+      },
+      "docOverflowX": false,
+      "scrollW": 1440,
+      "innerW": 1440,
+      "overlaps": [],
+      "overflow": []
+    },
+    {
+      "vp": "1440",
+      "lang": "en",
+      "headerH": 79,
+      "containerW": 1180,
+      "brand": {
+        "w": 127,
+        "h": 40,
+        "left": 154
+      },
+      "brandImg": {
+        "w": 22,
+        "h": 40
+      },
+      "nav": {
+        "w": 556,
+        "h": 40,
+        "left": 301,
+        "right": 857
+      },
+      "navCount": 8,
+      "navVisible": true,
+      "toggleVisible": false,
+      "actions": {
+        "w": 409,
+        "left": 877,
+        "right": 1286
+      },
+      "docOverflowX": false,
+      "scrollW": 1440,
+      "innerW": 1440,
+      "overlaps": [],
+      "overflow": []
+    }
+  ],
+  "affiliate": [
+    {
+      "vp": "360",
+      "lang": "ar",
+      "affiliateCss": true,
+      "hasAffClass": true,
+      "h1": {
+        "text": "اربح من الإحالات، بوضوح وشفافية",
+        "fontSize": "27.2px",
+        "lineHeight": "35.36px",
+        "fontWeight": "800",
+        "width": 328,
+        "left": 16,
+        "align": "center"
+      },
+      "hero": {
+        "h": 383,
+        "w": 360
+      },
+      "heroInner": {
+        "w": 328,
+        "left": 16,
+        "align": "center",
+        "maxW": "860px",
+        "padding": "0px"
+      },
+      "docOverflowX": false,
+      "scrollW": 360,
+      "innerW": 360,
+      "cards": 4,
+      "wrappedButtons": 0,
+      "registerLinkPresent": true
+    },
+    {
+      "vp": "360",
+      "lang": "en",
+      "affiliateCss": true,
+      "hasAffClass": true,
+      "h1": {
+        "text": "Earn from referrals, clearly and transpa",
+        "fontSize": "27.2px",
+        "lineHeight": "35.36px",
+        "fontWeight": "800",
+        "width": 328,
+        "left": 16,
+        "align": "center"
+      },
+      "hero": {
+        "h": 476,
+        "w": 360
+      },
+      "heroInner": {
+        "w": 328,
+        "left": 16,
+        "align": "center",
+        "maxW": "860px",
+        "padding": "0px"
+      },
+      "docOverflowX": false,
+      "scrollW": 360,
+      "innerW": 360,
+      "cards": 4,
+      "wrappedButtons": 0,
+      "registerLinkPresent": true
+    },
+    {
+      "vp": "390",
+      "lang": "ar",
+      "affiliateCss": true,
+      "hasAffClass": true,
+      "h1": {
+        "text": "اربح من الإحالات، بوضوح وشفافية",
+        "fontSize": "27.2px",
+        "lineHeight": "35.36px",
+        "fontWeight": "800",
+        "width": 358,
+        "left": 16,
+        "align": "center"
+      },
+      "hero": {
+        "h": 383,
+        "w": 390
+      },
+      "heroInner": {
+        "w": 358,
+        "left": 16,
+        "align": "center",
+        "maxW": "860px",
+        "padding": "0px"
+      },
+      "docOverflowX": false,
+      "scrollW": 390,
+      "innerW": 390,
+      "cards": 4,
+      "wrappedButtons": 0,
+      "registerLinkPresent": true
+    },
+    {
+      "vp": "390",
+      "lang": "en",
+      "affiliateCss": true,
+      "hasAffClass": true,
+      "h1": {
+        "text": "Earn from referrals, clearly and transpa",
+        "fontSize": "27.2px",
+        "lineHeight": "35.36px",
+        "fontWeight": "800",
+        "width": 358,
+        "left": 16,
+        "align": "center"
+      },
+      "hero": {
+        "h": 446,
+        "w": 390
+      },
+      "heroInner": {
+        "w": 358,
+        "left": 16,
+        "align": "center",
+        "maxW": "860px",
+        "padding": "0px"
+      },
+      "docOverflowX": false,
+      "scrollW": 390,
+      "innerW": 390,
+      "cards": 4,
+      "wrappedButtons": 0,
+      "registerLinkPresent": true
+    },
+    {
+      "vp": "768",
+      "lang": "ar",
+      "affiliateCss": true,
+      "hasAffClass": true,
+      "h1": {
+        "text": "اربح من الإحالات، بوضوح وشفافية",
+        "fontSize": "30.72px",
+        "lineHeight": "39.936px",
+        "fontWeight": "800",
+        "width": 728,
+        "left": 20,
+        "align": "center"
+      },
+      "hero": {
+        "h": 370,
+        "w": 768
+      },
+      "heroInner": {
+        "w": 728,
+        "left": 20,
+        "align": "center",
+        "maxW": "860px",
+        "padding": "0px"
+      },
+      "docOverflowX": false,
+      "scrollW": 768,
+      "innerW": 768,
+      "cards": 4,
+      "wrappedButtons": 0,
+      "registerLinkPresent": true
+    },
+    {
+      "vp": "768",
+      "lang": "en",
+      "affiliateCss": true,
+      "hasAffClass": true,
+      "h1": {
+        "text": "Earn from referrals, clearly and transpa",
+        "fontSize": "30.72px",
+        "lineHeight": "39.936px",
+        "fontWeight": "800",
+        "width": 728,
+        "left": 20,
+        "align": "center"
+      },
+      "hero": {
+        "h": 371,
+        "w": 768
+      },
+      "heroInner": {
+        "w": 728,
+        "left": 20,
+        "align": "center",
+        "maxW": "860px",
+        "padding": "0px"
+      },
+      "docOverflowX": false,
+      "scrollW": 768,
+      "innerW": 768,
+      "cards": 4,
+      "wrappedButtons": 0,
+      "registerLinkPresent": true
+    },
+    {
+      "vp": "1280",
+      "lang": "ar",
+      "affiliateCss": true,
+      "hasAffClass": true,
+      "h1": {
+        "text": "اربح من الإحالات، بوضوح وشفافية",
+        "fontSize": "43.2px",
+        "lineHeight": "56.16px",
+        "fontWeight": "800",
+        "width": 860,
+        "left": 210,
+        "align": "center"
+      },
+      "hero": {
+        "h": 386,
+        "w": 1280
+      },
+      "heroInner": {
+        "w": 860,
+        "left": 210,
+        "align": "center",
+        "maxW": "860px",
+        "padding": "0px"
+      },
+      "docOverflowX": false,
+      "scrollW": 1280,
+      "innerW": 1280,
+      "cards": 4,
+      "wrappedButtons": 0,
+      "registerLinkPresent": true
+    },
+    {
+      "vp": "1280",
+      "lang": "en",
+      "affiliateCss": true,
+      "hasAffClass": true,
+      "h1": {
+        "text": "Earn from referrals, clearly and transpa",
+        "fontSize": "43.2px",
+        "lineHeight": "56.16px",
+        "fontWeight": "800",
+        "width": 860,
+        "left": 210,
+        "align": "center"
+      },
+      "hero": {
+        "h": 387,
+        "w": 1280
+      },
+      "heroInner": {
+        "w": 860,
+        "left": 210,
+        "align": "center",
+        "maxW": "860px",
+        "padding": "0px"
+      },
+      "docOverflowX": false,
+      "scrollW": 1280,
+      "innerW": 1280,
+      "cards": 4,
+      "wrappedButtons": 0,
+      "registerLinkPresent": true
+    },
+    {
+      "vp": "1440",
+      "lang": "ar",
+      "affiliateCss": true,
+      "hasAffClass": true,
+      "h1": {
+        "text": "اربح من الإحالات، بوضوح وشفافية",
+        "fontSize": "43.2px",
+        "lineHeight": "56.16px",
+        "fontWeight": "800",
+        "width": 860,
+        "left": 290,
+        "align": "center"
+      },
+      "hero": {
+        "h": 386,
+        "w": 1440
+      },
+      "heroInner": {
+        "w": 860,
+        "left": 290,
+        "align": "center",
+        "maxW": "860px",
+        "padding": "0px"
+      },
+      "docOverflowX": false,
+      "scrollW": 1440,
+      "innerW": 1440,
+      "cards": 4,
+      "wrappedButtons": 0,
+      "registerLinkPresent": true
+    },
+    {
+      "vp": "1440",
+      "lang": "en",
+      "affiliateCss": true,
+      "hasAffClass": true,
+      "h1": {
+        "text": "Earn from referrals, clearly and transpa",
+        "fontSize": "43.2px",
+        "lineHeight": "56.16px",
+        "fontWeight": "800",
+        "width": 860,
+        "left": 290,
+        "align": "center"
+      },
+      "hero": {
+        "h": 387,
+        "w": 1440
+      },
+      "heroInner": {
+        "w": 860,
+        "left": 290,
+        "align": "center",
+        "maxW": "860px",
+        "padding": "0px"
+      },
+      "docOverflowX": false,
+      "scrollW": 1440,
+      "innerW": 1440,
+      "cards": 4,
+      "wrappedButtons": 0,
+      "registerLinkPresent": true
+    }
+  ],
+  "zoom": [
+    {
+      "zoom": 100,
+      "lang": "ar",
+      "windowWidth": 1280,
+      "cssViewport": 1280,
+      "desktopNav": true,
+      "headerH": 79,
+      "containerW": 1180,
+      "brand": {
+        "w": 101,
+        "h": 40,
+        "left": 1105
+      },
+      "brandImg": {
+        "w": 22,
+        "h": 40
+      },
+      "nav": {
+        "w": 578,
+        "h": 40,
+        "left": 507,
+        "right": 1085
+      },
+      "navCount": 8,
+      "navVisible": true,
+      "toggleVisible": false,
+      "actions": {
+        "w": 413,
+        "left": 74,
+        "right": 487
+      },
+      "docOverflowX": false,
+      "scrollW": 1280,
+      "innerW": 1280,
+      "overlaps": [],
+      "overflow": []
+    },
+    {
+      "zoom": 100,
+      "lang": "en",
+      "windowWidth": 1280,
+      "cssViewport": 1280,
+      "desktopNav": true,
+      "headerH": 79,
+      "containerW": 1180,
+      "brand": {
+        "w": 127,
+        "h": 40,
+        "left": 74
+      },
+      "brandImg": {
+        "w": 22,
+        "h": 40
+      },
+      "nav": {
+        "w": 556,
+        "h": 40,
+        "left": 221,
+        "right": 777
+      },
+      "navCount": 8,
+      "navVisible": true,
+      "toggleVisible": false,
+      "actions": {
+        "w": 409,
+        "left": 797,
+        "right": 1206
+      },
+      "docOverflowX": false,
+      "scrollW": 1280,
+      "innerW": 1280,
+      "overlaps": [],
+      "overflow": []
+    },
+    {
+      "zoom": 125,
+      "lang": "ar",
+      "windowWidth": 1280,
+      "cssViewport": 1024,
+      "desktopNav": false,
+      "headerH": 69,
+      "containerW": 1024,
+      "brand": {
+        "w": 99,
+        "h": 36,
+        "left": 901
+      },
+      "brandImg": {
+        "w": 20,
+        "h": 36
+      },
+      "nav": {
+        "w": 0,
+        "h": 0,
+        "left": 0,
+        "right": 0
+      },
+      "navCount": 8,
+      "navVisible": false,
+      "toggleVisible": true,
+      "actions": {
+        "w": 143,
+        "left": 24,
+        "right": 167
+      },
+      "docOverflowX": false,
+      "scrollW": 1024,
+      "innerW": 1024,
+      "overlaps": [],
+      "overflow": []
+    },
+    {
+      "zoom": 125,
+      "lang": "en",
+      "windowWidth": 1280,
+      "cssViewport": 1024,
+      "desktopNav": false,
+      "headerH": 69,
+      "containerW": 1024,
+      "brand": {
+        "w": 125,
+        "h": 36,
+        "left": 24
+      },
+      "brandImg": {
+        "w": 20,
+        "h": 36
+      },
+      "nav": {
+        "w": 0,
+        "h": 0,
+        "left": 0,
+        "right": 0
+      },
+      "navCount": 8,
+      "navVisible": false,
+      "toggleVisible": true,
+      "actions": {
+        "w": 185,
+        "left": 815,
+        "right": 1000
+      },
+      "docOverflowX": false,
+      "scrollW": 1024,
+      "innerW": 1024,
+      "overlaps": [],
+      "overflow": []
+    },
+    {
+      "zoom": 150,
+      "lang": "ar",
+      "windowWidth": 1280,
+      "cssViewport": 853,
+      "desktopNav": false,
+      "headerH": 69,
+      "containerW": 853,
+      "brand": {
+        "w": 99,
+        "h": 36,
+        "left": 730
+      },
+      "brandImg": {
+        "w": 20,
+        "h": 36
+      },
+      "nav": {
+        "w": 0,
+        "h": 0,
+        "left": 0,
+        "right": 0
+      },
+      "navCount": 8,
+      "navVisible": false,
+      "toggleVisible": true,
+      "actions": {
+        "w": 143,
+        "left": 24,
+        "right": 167
+      },
+      "docOverflowX": false,
+      "scrollW": 853,
+      "innerW": 853,
+      "overlaps": [],
+      "overflow": []
+    },
+    {
+      "zoom": 150,
+      "lang": "en",
+      "windowWidth": 1280,
+      "cssViewport": 853,
+      "desktopNav": false,
+      "headerH": 69,
+      "containerW": 853,
+      "brand": {
+        "w": 125,
+        "h": 36,
+        "left": 24
+      },
+      "brandImg": {
+        "w": 20,
+        "h": 36
+      },
+      "nav": {
+        "w": 0,
+        "h": 0,
+        "left": 0,
+        "right": 0
+      },
+      "navCount": 8,
+      "navVisible": false,
+      "toggleVisible": true,
+      "actions": {
+        "w": 185,
+        "left": 644,
+        "right": 829
+      },
+      "docOverflowX": false,
+      "scrollW": 853,
+      "innerW": 853,
+      "overlaps": [],
+      "overflow": []
+    }
+  ],
+  "menu": [
+    {
+      "vp": "360",
+      "lang": "ar",
+      "toggleShown": true,
+      "opened": true,
+      "closed": true,
+      "navAfter": {
+        "h": 437,
+        "w": 360,
+        "scrollW": 360,
+        "clientW": 360
+      }
+    },
+    {
+      "vp": "360",
+      "lang": "en",
+      "toggleShown": true,
+      "opened": true,
+      "closed": true,
+      "navAfter": {
+        "h": 437,
+        "w": 360,
+        "scrollW": 360,
+        "clientW": 360
+      }
+    },
+    {
+      "vp": "390",
+      "lang": "ar",
+      "toggleShown": true,
+      "opened": true,
+      "closed": true,
+      "navAfter": {
+        "h": 437,
+        "w": 390,
+        "scrollW": 390,
+        "clientW": 390
+      }
+    },
+    {
+      "vp": "390",
+      "lang": "en",
+      "toggleShown": true,
+      "opened": true,
+      "closed": true,
+      "navAfter": {
+        "h": 437,
+        "w": 390,
+        "scrollW": 390,
+        "clientW": 390
+      }
+    },
+    {
+      "vp": "768",
+      "lang": "ar",
+      "toggleShown": true,
+      "opened": true,
+      "closed": true,
+      "navAfter": {
+        "h": 437,
+        "w": 768,
+        "scrollW": 768,
+        "clientW": 768
+      }
+    },
+    {
+      "vp": "768",
+      "lang": "en",
+      "toggleShown": true,
+      "opened": true,
+      "closed": true,
+      "navAfter": {
+        "h": 437,
+        "w": 768,
+        "scrollW": 768,
+        "clientW": 768
+      }
+    }
+  ],
+  "findings": [],
+  "affiliateZoom": [
+    {
+      "zoom": 100,
+      "lang": "ar",
+      "cssViewport": 1280,
+      "affiliateCss": true,
+      "hasAffClass": true,
+      "h1": {
+        "text": "اربح من الإحالات، بوضوح وشفافية",
+        "fontSize": "43.2px",
+        "lineHeight": "56.16px",
+        "fontWeight": "800",
+        "width": 860,
+        "left": 210,
+        "align": "center"
+      },
+      "hero": {
+        "h": 386,
+        "w": 1280
+      },
+      "heroInner": {
+        "w": 860,
+        "left": 210,
+        "align": "center",
+        "maxW": "860px",
+        "padding": "0px"
+      },
+      "docOverflowX": false,
+      "scrollW": 1280,
+      "innerW": 1280,
+      "cards": 4,
+      "wrappedButtons": 0,
+      "registerLinkPresent": true
+    },
+    {
+      "zoom": 100,
+      "lang": "en",
+      "cssViewport": 1280,
+      "affiliateCss": true,
+      "hasAffClass": true,
+      "h1": {
+        "text": "Earn from referrals, clearly and transpa",
+        "fontSize": "43.2px",
+        "lineHeight": "56.16px",
+        "fontWeight": "800",
+        "width": 860,
+        "left": 210,
+        "align": "center"
+      },
+      "hero": {
+        "h": 387,
+        "w": 1280
+      },
+      "heroInner": {
+        "w": 860,
+        "left": 210,
+        "align": "center",
+        "maxW": "860px",
+        "padding": "0px"
+      },
+      "docOverflowX": false,
+      "scrollW": 1280,
+      "innerW": 1280,
+      "cards": 4,
+      "wrappedButtons": 0,
+      "registerLinkPresent": true
+    },
+    {
+      "zoom": 125,
+      "lang": "ar",
+      "cssViewport": 1024,
+      "affiliateCss": true,
+      "hasAffClass": true,
+      "h1": {
+        "text": "اربح من الإحالات، بوضوح وشفافية",
+        "fontSize": "40.96px",
+        "lineHeight": "53.248px",
+        "fontWeight": "800",
+        "width": 860,
+        "left": 82,
+        "align": "center"
+      },
+      "hero": {
+        "h": 383,
+        "w": 1024
+      },
+      "heroInner": {
+        "w": 860,
+        "left": 82,
+        "align": "center",
+        "maxW": "860px",
+        "padding": "0px"
+      },
+      "docOverflowX": false,
+      "scrollW": 1024,
+      "innerW": 1024,
+      "cards": 4,
+      "wrappedButtons": 0,
+      "registerLinkPresent": true
+    },
+    {
+      "zoom": 125,
+      "lang": "en",
+      "cssViewport": 1024,
+      "affiliateCss": true,
+      "hasAffClass": true,
+      "h1": {
+        "text": "Earn from referrals, clearly and transpa",
+        "fontSize": "40.96px",
+        "lineHeight": "53.248px",
+        "fontWeight": "800",
+        "width": 860,
+        "left": 82,
+        "align": "center"
+      },
+      "hero": {
+        "h": 384,
+        "w": 1024
+      },
+      "heroInner": {
+        "w": 860,
+        "left": 82,
+        "align": "center",
+        "maxW": "860px",
+        "padding": "0px"
+      },
+      "docOverflowX": false,
+      "scrollW": 1024,
+      "innerW": 1024,
+      "cards": 4,
+      "wrappedButtons": 0,
+      "registerLinkPresent": true
+    },
+    {
+      "zoom": 150,
+      "lang": "ar",
+      "cssViewport": 853,
+      "affiliateCss": true,
+      "hasAffClass": true,
+      "h1": {
+        "text": "اربح من الإحالات، بوضوح وشفافية",
+        "fontSize": "34.12px",
+        "lineHeight": "44.356px",
+        "fontWeight": "800",
+        "width": 813,
+        "left": 20,
+        "align": "center"
+      },
+      "hero": {
+        "h": 374,
+        "w": 853
+      },
+      "heroInner": {
+        "w": 813,
+        "left": 20,
+        "align": "center",
+        "maxW": "860px",
+        "padding": "0px"
+      },
+      "docOverflowX": false,
+      "scrollW": 853,
+      "innerW": 853,
+      "cards": 4,
+      "wrappedButtons": 0,
+      "registerLinkPresent": true
+    },
+    {
+      "zoom": 150,
+      "lang": "en",
+      "cssViewport": 853,
+      "affiliateCss": true,
+      "hasAffClass": true,
+      "h1": {
+        "text": "Earn from referrals, clearly and transpa",
+        "fontSize": "34.12px",
+        "lineHeight": "44.356px",
+        "fontWeight": "800",
+        "width": 813,
+        "left": 20,
+        "align": "center"
+      },
+      "hero": {
+        "h": 375,
+        "w": 853
+      },
+      "heroInner": {
+        "w": 813,
+        "left": 20,
+        "align": "center",
+        "maxW": "860px",
+        "padding": "0px"
+      },
+      "docOverflowX": false,
+      "scrollW": 853,
+      "innerW": 853,
+      "cards": 4,
+      "wrappedButtons": 0,
+      "registerLinkPresent": true
+    }
+  ],
+  "register": [
+    {
+      "vp": "360",
+      "lang": "ar",
+      "http": 200,
+      "status": "rendered",
+      "fieldCount": 13,
+      "gapMin": 12,
+      "gapMax": 109,
+      "docOverflowX": false,
+      "affiliateCss": true
+    },
+    {
+      "vp": "360",
+      "lang": "en",
+      "http": 200,
+      "status": "rendered",
+      "fieldCount": 13,
+      "gapMin": 12,
+      "gapMax": 109,
+      "docOverflowX": false,
+      "affiliateCss": true
+    },
+    {
+      "vp": "390",
+      "lang": "ar",
+      "http": 200,
+      "status": "rendered",
+      "fieldCount": 13,
+      "gapMin": 12,
+      "gapMax": 109,
+      "docOverflowX": false,
+      "affiliateCss": true
+    },
+    {
+      "vp": "390",
+      "lang": "en",
+      "http": 200,
+      "status": "rendered",
+      "fieldCount": 13,
+      "gapMin": 12,
+      "gapMax": 109,
+      "docOverflowX": false,
+      "affiliateCss": true
+    },
+    {
+      "vp": "768",
+      "lang": "ar",
+      "http": 200,
+      "status": "rendered",
+      "fieldCount": 13,
+      "gapMin": -98,
+      "gapMax": 109,
+      "docOverflowX": false,
+      "affiliateCss": true
+    },
+    {
+      "vp": "768",
+      "lang": "en",
+      "http": 200,
+      "status": "rendered",
+      "fieldCount": 13,
+      "gapMin": -98,
+      "gapMax": 109,
+      "docOverflowX": false,
+      "affiliateCss": true
+    },
+    {
+      "vp": "1280",
+      "lang": "ar",
+      "http": 200,
+      "status": "rendered",
+      "fieldCount": 13,
+      "gapMin": -98,
+      "gapMax": 109,
+      "docOverflowX": false,
+      "affiliateCss": true
+    },
+    {
+      "vp": "1280",
+      "lang": "en",
+      "http": 200,
+      "status": "rendered",
+      "fieldCount": 13,
+      "gapMin": -98,
+      "gapMax": 109,
+      "docOverflowX": false,
+      "affiliateCss": true
+    }
+  ]
+}

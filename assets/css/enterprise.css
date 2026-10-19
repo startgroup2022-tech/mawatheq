@@ -24,7 +24,11 @@
 
   /* Semantic */
   --success:#1E8E5A; --success-bg:#E6F4ED;
-  --warning:#B4780F; --warning-bg:#FDF3E1;
+  /* #B4780F measured 3.73:1 on --warning-bg, under the 4.5:1 WCAG AA needs at
+     this token's 12px badge size. #7A5409 is the same amber, four steps darker,
+     at 6.16:1 — and it is already the colour .form-alert.warning uses, so the two
+     warning surfaces now agree instead of disagreeing by a shade. */
+  --warning:#7A5409; --warning-bg:#FDF3E1;
   --danger:#C7492A;  --danger-bg:#FBEAE5;
   --info:#2BA8C4;    --info-bg:#EAF6F9;
 
@@ -677,22 +681,27 @@ input[type=checkbox].lg, input[type=radio].lg{ width:22px; height:22px; min-heig
 .lawyer-avatar{ width:52px; height:52px; border-radius:50%; background:var(--navy); color:#fff; display:grid; place-items:center; font-weight:800; font-size:1.1rem; flex:none; }
 
 /* ------------------------------------------------------------ public site --- */
-/* Mobile navigation for the marketing header (the desktop nav is unchanged). */
+/* Mobile navigation for the marketing header (the desktop nav is unchanged).
+   The breakpoint must match the one in style.css: eight nowrap labels plus the
+   brand and the two call-to-action buttons need ~1080px, so the panel takes over
+   below that rather than letting the row compress. */
 .nav-toggle{ display:none; }
-@media (max-width:900px){
-  .site-header .container{ height:64px; }
+@media (max-width:1080px){
+  .site-header .container{ height:68px; }
   .nav-toggle{
-    display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px;
+    display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px; flex:none;
     border:1.5px solid var(--border); border-radius:var(--r-md); background:var(--surface); color:var(--navy-dark); cursor:pointer;
   }
   .nav-toggle svg{ width:20px; height:20px; stroke:currentColor; fill:none; stroke-width:1.9; stroke-linecap:round; }
   .main-nav{
     display:none; position:absolute; inset-inline:0; top:100%; flex-direction:column; align-items:stretch; gap:0;
     background:var(--surface); border-bottom:1px solid var(--border); box-shadow:var(--sh-md); padding:var(--s-2);
+    max-height:calc(100vh - 68px); overflow-y:auto;
   }
   .main-nav.is-open{ display:flex; }
-  .main-nav a{ padding:14px var(--s-4); border-radius:var(--r-md); min-height:48px; display:flex; align-items:center; }
+  .main-nav a{ padding:14px var(--s-4); border-radius:var(--r-md); min-height:48px; display:flex; align-items:center; border-bottom:0; }
   .main-nav a:hover{ background:var(--surface-2); }
+  .main-nav a[aria-current="page"], .main-nav a.is-active{ background:var(--surface-2); }
   .header-actions .btn-outline{ display:none; }
 }
 @media (max-width:480px){

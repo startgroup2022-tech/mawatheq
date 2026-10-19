@@ -8,10 +8,11 @@
  * THE RULE
  *   The platform serves legal services. A lawyer's professional fee — and a
  *   consultation fee, which is the same thing sold by the hour — is regulated in
- *   Bahrain. Sharing it with a third party who referred the client is not something
- *   this software may decide is fine. So a service marked `is_regulated_fee` is
- *   NEVER commissionable here, regardless of its `commission_permitted` flag, its
- *   `attribution_mode`, or anything an administrator types into a form.
+ *   Saudi Arabia. Sharing it with a third party who referred the client is not
+ *   something this software may decide is fine. So a service marked
+ *   `is_regulated_fee` is NEVER commissionable here, regardless of its
+ *   `commission_permitted` flag, its `attribution_mode`, or anything an
+ *   administrator types into a form.
  *
  *   That check is deliberately first and unconditional. Everything else in this
  *   file is about *non-regulated* platform revenue, where the decision is a

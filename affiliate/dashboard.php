@@ -48,6 +48,9 @@ try {
 $mainLink = affiliate_build_link($affiliate, '/');
 $canRequest = $payableMinor > 0 && !$openRequest && affiliate_can_earn($affiliate);
 $minPayoutMinor = affiliate_to_minor($settings['min_payout'], $currency);
+$affStatus = (string)$affiliate['status'];
+$affNeedsTerms = in_array($affStatus, ['approved', 'active'], true)
+    && !(affiliate_has_accepted($pdo, $affiliateId, 'terms') && affiliate_has_accepted($pdo, $affiliateId, 'privacy'));
 ?>
 <div class="app-page">
   <div class="app-page-head">
@@ -57,6 +60,35 @@ $minPayoutMinor = affiliate_to_minor($settings['min_payout'], $currency);
     </div>
     <span class="status-pill <?= ui_e(affiliate_status_class((string)$affiliate['status'])) ?>"><?= ui_e(affiliate_status_label((string)$affiliate['status'])) ?></span>
   </div>
+
+  <?php // An account that can sign in but cannot yet earn is told exactly where it stands
+        // and what happens next, rather than being shown figures that will stay at zero.
+  if ($affStatus === 'pending' || $affStatus === 'under_review'): ?>
+    <div class="form-alert aff-state-banner">
+      <strong><?= ui_e($affStatus === 'under_review'
+        ? (is_rtl() ? 'حسابك تحت المراجعة الآن' : 'Your account is being reviewed')
+        : (is_rtl() ? 'حسابك قيد المراجعة' : 'Your account is under review')) ?></strong>
+      <p><?= ui_e(is_rtl()
+        ? 'سيراجع فريق مواثيق بياناتك ويتواصل معك على بريدك المسجّل. حتى يتم الاعتماد لا تُفعّل روابط الإحالة ولا تُحتسب أي عمولات — لكن يمكنك تسجيل الدخول في أي وقت لمتابعة الحالة.'
+        : 'The Mawatheq team will review your details and contact you at the email you registered. Until the review is approved your referral links are not active and no commission can accrue — but you can sign in at any time to follow the status.') ?></p>
+      <p class="muted"><?= ui_e(is_rtl() ? 'رقم حسابك: ' : 'Your account number: ') ?><strong class="aff-mono"><?= ui_e((string)$affiliate['code']) ?></strong></p>
+    </div>
+  <?php elseif ($affStatus === 'approved' && $affNeedsTerms): ?>
+    <div class="form-alert aff-state-banner">
+      <strong><?= ui_e(is_rtl() ? 'تم اعتماد حسابك — تبقّت خطوة واحدة' : 'Your account is approved — one step left') ?></strong>
+      <p><?= ui_e(is_rtl()
+        ? 'اعتمد فريق مواثيق حسابك. اقبل شروط البرنامج وسياسة الخصوصية لتفعيل حسابك وبدء استخدام روابط الإحالة.'
+        : 'The Mawatheq team approved your account. Accept the programme terms and the privacy policy to activate it and start using your referral links.') ?></p>
+      <a class="btn btn-gold" href="/affiliate/terms.php"><?= ui_e(is_rtl() ? 'قبول الشروط والتفعيل' : 'Accept terms and activate') ?></a>
+    </div>
+  <?php elseif ($affStatus === 'suspended'): ?>
+    <div class="form-alert error aff-state-banner">
+      <strong><?= ui_e(is_rtl() ? 'حسابك موقوف مؤقتاً' : 'Your account is suspended') ?></strong>
+      <p><?= ui_e(is_rtl()
+        ? 'لا تُحتسب عمولات جديدة أثناء الإيقاف. سجلّك وأرباحك السابقة محفوظة. تواصل مع فريق البرنامج للمراجعة.'
+        : 'No new commission accrues while the account is suspended. Your history and previous earnings are preserved. Contact the programme team to review it.') ?></p>
+    </div>
+  <?php endif; ?>
 
   <?php if ($affiliateCanEarn): ?>
   <section class="aff-linkbox">

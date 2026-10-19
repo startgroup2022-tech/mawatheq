@@ -1165,6 +1165,75 @@ under `sg www-data -c '...'`. Run the suite as `sg www-data -c 'bash tests/run_a
 or expect those six and confirm they are the only ones.
 
 
+## Execution 32 — affiliate onboarding journey (v58)
+
+`includes/affiliate_auth.php`, `affiliates.php`, `admin/affiliate-applications.php` and
+`database/upgrade_v58.sql`. Two independent paths reach an affiliate account, and only one of
+them was ever exercised before this execution:
+
+- **Registered** — `/affiliate/register.php` creates the account *with* a password, status
+  `pending`. The applicant can sign in immediately and watch the review.
+- **Public form** — `/affiliates.php` (and `affiliate_submit_application()`) only *queues* an
+  application. No account, no password. Approval then calls `affiliate_create_account()`,
+  which sets no `password_hash`.
+
+So an approved public-form applicant is an account nobody can sign into, and the invitation is
+the **only** route to credentials. Three defects met on that route and each is pinned by a test:
+
+### `??` used as a value, not a test
+
+```php
+// before: the value is read from a key that was only *tested* with ??, so it is null
+$inviteType = in_array($data['invite_type'] ?? 'individual', $allowed, true)
+    ? $data['invite_type'] : 'individual';
+```
+`$data['invite_type']` is undefined whenever the caller omits it (every caller did), so the
+ternary's true branch yields `null`, and the `NOT NULL` column rejected the insert — the
+function could not create an invitation at all. Normalise the value first, then use it.
+
+### An invitation must not be a password reset
+
+The original guard refused any email that already had an affiliate row. That is exactly the
+account the public-form path must reach, so it had to become "refuse only an account that
+already has credentials". Keep that condition when touching this function: a fresh token
+delivered to an address that can already sign in would otherwise reset its password.
+
+### Do not pre-record the formal agreement at invitation time
+
+`affiliate_accept_invitation()` wrote the `affiliate_agreements` rows itself. `terms.php`
+then found the agreement already accepted, rendered **no form**, and the activation that only
+runs from that form never fired — the partner stayed `approved` forever and could never earn.
+Consent at acceptance is still audited (`affiliate_audit(..., 'invitation_consent', ...)`),
+but the formal agreement is accepted by the applicant on the terms page, exactly as for a
+registrant. `affiliate_has_accepted()` must be false after accepting an invitation.
+
+### `accepted_ip` is a 64-char hash in a VARCHAR(45) column
+
+`affiliate_ip_hash()` returns a SHA-256 digest (64 chars). `affiliate_applications.accepted_ip`
+and `affiliate_agreements.accepted_ip` were `VARCHAR(45)` — the width of an IPv6 literal. Under
+`sql_mode=STRICT_TRANS_TABLES` every insert was refused with `SQLSTATE[22001] Data too long`,
+which `affiliate_submit_application()` catches and reports as the generic `create_failed`, so
+the public form silently did nothing. `affiliate_accept_terms()` failed the same way, and
+because `terms.php` only activates when both calls return true, an approved affiliate could
+never reach `active`. `upgrade_v58.sql` widens both columns; it is guarded and idempotent.
+
+### Tests must clear the rate-limit buckets they consume
+
+The public form and the login both count **successful** attempts against per-IP buckets, so a
+second run inside the 15-minute window reports `rate_limited` and reads like a regression.
+Worse, `auth_rate_limit_remaining()` takes a scope and checks two buckets, and
+`auth_rate_limit_keys()` derives **two** keys per scope (`auth-ip|` and `auth-account|`), so a
+single scope needs **four** keys cleared — clearing only the `auth-ip|` ones leaves the account
+bucket blocked. `auth_rate_limit_keys('affiliate-apply', '127.0.0.1')` hashes the *address* as
+if it were the email for the account key, which is why the account bucket fills even though no
+applicant email repeats. Both `tests/exec32_affiliate_journey_test.php` and
+`tests/e2e/affiliate-journey.spec.js` clear these in setup; keep that when adding cases.
+
+Verified on this execution: 636/636 browser tests, `exec32_affiliate_journey_test` 64/64,
+`exec31_affiliate_test` 105/105, `exec31_admin_console_probe` 100/100, 31 PHP suites (the one
+failure is the pre-existing `execution30` `www-data` group issue described above).
+
+
 ## Release preparation — the final consolidated build
 
 ### PHP 8.4 is mandatory, not "8.3 or newer"
@@ -1335,3 +1404,159 @@ editors.
 Files written by the editor tool land as `0660`, which Apache cannot read, and every new page
 returns **HTTP 500** with `Failed to open stream: Permission denied` in the Apache log — not a
 PHP error. `chmod 644` every new file (and `755` for directories) before testing over HTTP.
+
+## Execution 34 — affiliate registration, restricted staff, landing page
+
+### `admin/index.php` branches before the confidential dashboard renders
+
+A restricted `staff` account must never receive the main dashboard's figures. Hiding panels
+with CSS is not enough — the numbers are in the response body and readable from page source.
+`admin/index.php` therefore `require`s `dashboard-staff.php` and `exit`s *before* the main
+dashboard queries run. Keep that branch first if you touch the file.
+
+### Two session bugs worth remembering
+
+* **A login must refresh `mawatheq_session_started_at`.** `admin/login.php` originally did not,
+  so after a password reset the guard compared the new session against the account's
+  `session_invalidated_at` stamp, judged it stale, and the user looped between login and the
+  guard with no way out.
+* **`account_session_is_stale()` must use strict `>`, not `>=`.** The stamp means "sessions
+  beginning *before* this instant are invalid", so a session created in the same second is a
+  new session. With `>=`, revoke-then-sign-in within one second loops forever.
+
+### Test-suite isolation: restore what you found, don't delete it
+
+`exec31_affiliate_test.php` used to `DELETE FROM site_settings WHERE
+setting_key='affiliate_program_enabled'` in cleanup. The row is part of the shipped seed
+(`upgrade_v57.sql`), and the application treats a *missing* row as "off" via its in-code
+defaults — so the deletion was invisible to the app but broke the next suite that asserted the
+seeded state. Tests now capture the prior state and restore it (deleting only if the row was
+absent to begin with). **Rule: a test restores the state it found; it does not assume it owns
+the row.**
+
+### `tests/exec33_najiz_classification_test.php` is self-seeding
+
+`setup_test_env.sh` builds the schema but nothing seeds the Najiz classification, so on a fresh
+clone exec33 saw 0 rows and failed on data, not code. It now imports when `najiz_categories` is
+empty and leaves a populated database alone. It also reads `category_id` from the API response
+instead of hardcoding `2`, since seed ids are not part of the contract.
+
+### Running the suites: the `www-data` group matters
+
+Apache writes consultation attachments as `www-data` under a group-only private root
+(`../mawatheq-private`). A login shell's supplementary groups are fixed at login, so a user
+added to `www-data` by `setup_test_env.sh` afterwards still cannot read those files and
+`execution30_consultation_attachments_probe` fails on a file it is entitled to read.
+`run_all_tests.sh` re-enters the group per suite with `sg www-data -c` and detects membership
+from `getent group www-data`, **not** `id -nG` (which reflects the stale login-time groups).
+
+### Current state
+
+* Full suite: **36/36 green** (`bash tests/run_all_tests.sh`).
+* `exec34_staff_permissions_test.php`: 118 checks. `exec34_affiliate_registration_test.php`:
+  43 checks (Parts A + C, including the closed-programme path).
+  `exec34_affiliate_e2e_workflow_test.php`: 43 checks (true HTTP E2E, cookie jar + CSRF).
+* `database/upgrade_v60.sql` is additive and idempotent — verified by applying it twice to a
+  scratch database. 24 modules seeded, 13 marked `grantable = 0`.
+
+### Visual review: measure contrast from pixels, and beware these four traps
+
+`tools/visual_review_exec34.js` samples rendered pixels rather than reasoning about computed
+styles, because the DOM cannot answer the contrast question here: dark bands use
+`background: linear-gradient(...)`, which a DOM walk cannot resolve, so it falls through to
+the white body and reports white-on-white. Every one of these mistakes produced a confident
+wrong number at some point, so they are worth knowing before writing a similar tool:
+
+* **`page.screenshot({ clip: boundingBox })` mixes coordinate systems.** A bounding box is
+  viewport-relative, a clip is document-relative. Below the fold the sample lands on the
+  wrong region.
+* **`page.screenshot({ fullPage: true })` does not faithfully paint off-screen content.**
+  Rows below the fold came back as a single flat colour (1 distinct colour at y=3000 and
+  y=7441, against 968 for the same region scrolled into a normal viewport). Layout does not
+  shift, so it is the capture, not the page.
+* **`html { scroll-behavior: smooth }` (set in `style.css`) makes `scrollTo` animate**, so the
+  capture lands mid-flight. Inject `scroll-behavior:auto !important` before scrolling.
+* **Do not derive the rectangle from `docY - scrollY`.** The offset drifts (~45px at zoom
+  150%), enough to land the sample on blank space. Re-read `getBoundingClientRect()` from the
+  element *after* scrolling, in the same frame as the capture.
+
+Two guards keep the sampler honest. A region with fewer than 8 distinct colours carries no
+glyphs and is skipped rather than scored, and use true ink/paper extremes (min/max) rather
+than percentiles — a padded button or card heading can hold glyphs in well under 5% of its
+area, so the 5th/95th percentiles both land on the background and score a flat 1.00:1.
+
+### Two ways `getComputedStyle` says "visible" for something invisible
+
+Both bit this tool; check for them before trusting a visibility guard.
+
+* A collapsed `<details>` hides its contents with `content-visibility: hidden`, not
+  `display: none`. Those elements keep a real box and paint nothing, so sampling one reported
+  a confident 1.12:1 for text a visitor never sees. Check `contentVisibility`, and treat
+  anything in a closed `<details>` outside its own `<summary>` as hidden.
+* A colour declared on the element itself beats one it would otherwise inherit. The base
+  sheet's `h1,h2,h3,h4 { color: var(--navy-dark) }` is `#0F1F33` — the same colour as
+  `--aff-ink`, the dark end of `.aff-hero`'s own gradient. The affiliate hero title therefore
+  rendered navy on navy and was **completely invisible** (0 near-white pixels across the
+  heading band) while `.aff-hero`'s `color: #fff` looked correct in the stylesheet. `.aff-hero
+  h1` and `.aff-hero p` now state their colour; `.aff-hero .btn-outline` does too, since a
+  transparent button keeps the base sheet's navy label. Any new element on a dark band needs
+  its colour stated rather than inherited.
+
+Formerly-recorded finding, now **fixed**: `status-pending` (`enterprise.css`, via `--warning` on
+`--warning-bg` `#FDF3E1`) measured **3.73:1**, below the 4.5:1 needed at its 12px size. The
+token is shared by 33 call sites across admin, lawyer and public pages, so it was left for a
+deliberate change — that change is `--warning: #7A5409` (**6.16:1**), which is also the colour
+`.form-alert.warning` already used, so the two warning surfaces now agree. If you retune this
+token, re-measure; the badge text is 12px and needs 4.5:1, not 3:1.
+
+## Saudi Arabia is the platform default (v61)
+
+The platform was built Bahrain-first, and the old defaults were literals scattered across the
+affiliate module rather than one constant. If you are adding anything country-, currency-,
+dialling- or timezone-shaped, use these — do not reintroduce a literal.
+
+| Default | Where | Value |
+|---|---|---|
+| Country | `COUNTRY_DEFAULT`, `includes/country.php` | `'SA'` |
+| Currency | `CURRENCY_DEFAULT`, `includes/currency.php` | `'SAR'` |
+| Timezone | `SITE_TIMEZONE`, `config/config.php` | `'Asia/Riyadh'` (env `MAWATHEQ_TIMEZONE`) |
+| Language / direction | `current_lang()` / `is_rtl()` | `'ar'` / RTL |
+| Jurisdiction | `jurisdiction_options()[0]` | `'السعودية'` |
+
+* `includes/country.php` is the single source for the country list and
+  `render_country_select()`. The list used to be copy-pasted verbatim into
+  `affiliate/register.php`, `affiliate/profile.php` and `affiliates.php` — which is exactly how
+  `'BH'` stayed the default in all three. Add a country in one place now.
+* Normalise request input with `country_normalize()` / `currency_normalize()`, never
+  `substr($x, 0, 2)`. Both fall back to the default, so a missing or malformed field degrades
+  instead of storing garbage. `country_normalize()` takes `mixed` on purpose: a country field
+  submitted as an array must fall back, not raise a `TypeError`.
+* `config/config.php` sets the timezone because nothing did before — PHP followed the host, so
+  the same timestamp could differ by three hours between machines. Do not remove it.
+* `affiliate_settings_defaults()` is split out of `affiliate_settings()` so the *code* default
+  is assertable without reading `site_settings`. Tests run alphabetically and a previous suite
+  writes to `site_settings`, so a test that reads the table is testing the other suite's
+  leftovers, not the default. Assert against the defaults function.
+* `BHD`, `BH`, `+973` and `'البحرين'` are still *legitimate list entries* — the currency
+  selector, the dialling-code list and `jurisdiction_options()` all still offer Bahrain. They
+  must not be *defaults*. `tests/saudi_defaults_test.php` pins both halves of that.
+* `database/upgrade_v61.sql` moves ten column defaults `BH`/`BHD` → `SA`/`SAR`. It is
+  **defaults only** — no stored row is rewritten, and the seeded `affiliate_payout_currency` is
+  moved only while it still equals what `upgrade_v57.sql` seeded, so an operator override
+  survives. Guarded by `information_schema` and idempotent.
+* Gotcha: `information_schema.COLUMN_DEFAULT` for a `CHAR` column is stored **with quotes**
+  (`'BH'`, not `BH`). A guard comparing against an unquoted value matches nothing and the
+  migration silently does nothing while still looking applied.
+
+### Adding a new file: check its mode
+
+A file created through an editor landed as `0600` (`includes/country.php`), which Apache cannot
+read — every page including `affiliate.php` returned **500**, and four suites caught it. New
+files must be `0644` (`chmod 644 <file>`); the default umask is not applied by the editor. Same
+trap applies to new `.sql` files under `database/`.
+
+### Running the suites
+
+`bash tests/run_all_tests.sh` (background it; it takes ~5 minutes and the runtime reclaims idle
+foreground jobs). Suites are auto-discovered as `tests/*_test.php` and `tests/*_probe.php`.
+Playwright: `npx playwright test` (~5.5 minutes, 636 tests, six viewports).

@@ -26,6 +26,11 @@ $error = null;
 $notice = null;
 $email = '';
 
+// Offer the self-service path only while the programme is open to it. When registration is
+// closed, "apply to join" is the honest alternative — sending someone to a registration form
+// that refuses them would just be a dead end.
+$registrationOpen = affiliate_settings($pdo)['program_enabled'];
+
 $statusParam = (string)($_GET['status'] ?? '');
 if ($statusParam !== '') {
     $notice = match ($statusParam) {
@@ -93,7 +98,11 @@ $dir = is_rtl() ? 'rtl' : 'ltr';
     </form>
 
     <div class="aff-auth-links">
-      <a href="/affiliates.php#apply"><?= ui_e(is_rtl() ? 'تقدّم بطلب انضمام' : 'Apply to join') ?></a>
+      <?php if ($registrationOpen): ?>
+        <a href="/affiliate/register.php"><?= ui_e(is_rtl() ? 'ليس لديك حساب؟ أنشئ حساب مسوّق' : 'No account yet? Create an affiliate account') ?></a>
+      <?php else: ?>
+        <a href="/affiliates.php#apply"><?= ui_e(is_rtl() ? 'تقدّم بطلب انضمام' : 'Apply to join') ?></a>
+      <?php endif; ?>
       <a href="/"><?= ui_e(is_rtl() ? 'الموقع الرئيسي' : 'Main site') ?></a>
     </div>
   </div>

@@ -17,7 +17,6 @@ require_once __DIR__ . '/includes/affiliate.php';
 require_once __DIR__ . '/includes/affiliate_service.php';
 require_once __DIR__ . '/includes/affiliate_auth.php';
 require_once __DIR__ . '/includes/ui.php';
-require_once __DIR__ . '/includes/header.php';
 
 $settings = affiliate_settings($pdo);
 $programEnabled = $settings['program_enabled'];
@@ -39,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'full_name' => trim($postString('full_name')),
         'email' => strtolower(trim($postString('email'))),
         'phone' => trim($postString('phone')),
-        'country' => $postString('country', 'BH'),
+        'country' => country_normalize($postString('country', COUNTRY_DEFAULT)),
         'city' => trim($postString('city')),
         'applicant_type' => $postString('applicant_type', 'individual'),
         'company_name' => trim($postString('company_name')),
@@ -82,6 +81,11 @@ $pageSubtitle = is_rtl()
     ? 'اربح مقابل كل عميل تحيله إلى خدمات المنصة.'
     : 'Earn for every customer you refer to the platform\'s services.';
 $commissionable = affiliate_service_catalog($pdo);
+
+// The programme page is built from the .aff-* component layer, which nothing else loads.
+// Without this the whole page renders unstyled: full-bleed hero, no card grid, no rhythm.
+$pageStyles = ['/assets/css/affiliate.css'];
+require_once __DIR__ . '/includes/header.php';
 ?>
 <div class="aff-public">
   <section class="aff-hero">
@@ -92,7 +96,11 @@ $commissionable = affiliate_service_catalog($pdo);
         ? 'شارك رابط الإحالة الخاص بك، وتابع كل زيارة وتحويل، واحصل على عمولة على إيرادات المنصة المؤهلة. لا رسوم ولا التزامات.'
         : 'Share your referral link, track every click and conversion, and earn commission on eligible platform revenue. No fees, no obligation.' ?></p>
       <div class="aff-hero-actions">
-        <a class="btn btn-gold btn-lg" href="#apply"><?= is_rtl() ? 'تقدّم بطلب' : 'Apply now' ?></a>
+        <?php if ($programEnabled): ?>
+          <a class="btn btn-gold btn-lg" href="/affiliate/register.php"><?= is_rtl() ? 'أنشئ حساب مسوّق' : 'Create an affiliate account' ?></a>
+        <?php else: ?>
+          <a class="btn btn-gold btn-lg" href="#apply"><?= is_rtl() ? 'تقدّم بطلب' : 'Apply now' ?></a>
+        <?php endif; ?>
         <a class="btn btn-outline btn-lg" href="/affiliate/login.php"><?= is_rtl() ? 'دخول المسوّقين' : 'Affiliate sign-in' ?></a>
       </div>
     </div>
@@ -127,8 +135,8 @@ $commissionable = affiliate_service_catalog($pdo);
     <div class="aff-section-inner">
       <h2><?= is_rtl() ? 'ما الذي تُحتسب عليه العمولة؟' : 'What earns commission?' ?></h2>
       <p class="aff-lead"><?= is_rtl()
-        ? 'نوضّح ذلك مسبقاً بدل أن تكتشفه لاحقاً. الأتعاب المهنية للمحامين منظّمة في مملكة البحرين، ولا يجوز تقاسمها مع طرف ثالث، لذلك تُسجَّل الإحالة لأغراض التتبع والتحليلات دون عمولة.'
-        : 'We state this up front rather than letting you discover it later. A lawyer\'s professional fee is regulated in the Kingdom of Bahrain and may not be shared with a third party, so those referrals are recorded for tracking and analytics without commission.' ?></p>
+        ? 'نوضّح ذلك مسبقاً بدل أن تكتشفه لاحقاً. الأتعاب المهنية للمحامين منظّمة في المملكة العربية السعودية، ولا يجوز تقاسمها مع طرف ثالث، لذلك تُسجَّل الإحالة لأغراض التتبع والتحليلات دون عمولة.'
+        : 'We state this up front rather than letting you discover it later. A lawyer\'s professional fee is regulated in the Kingdom of Saudi Arabia and may not be shared with a third party, so those referrals are recorded for tracking and analytics without commission.' ?></p>
       <div class="table-wrap">
         <table class="admin-table aff-services">
           <thead><tr>
@@ -200,11 +208,7 @@ $commissionable = affiliate_service_catalog($pdo);
                 <label class="field"><span><?= is_rtl() ? 'رقم الجوال' : 'Phone' ?></span>
                   <input type="tel" name="phone" maxlength="20" value="<?= ui_e($old['phone'] ?? '') ?>"></label>
                 <label class="field"><span><?= is_rtl() ? 'الدولة' : 'Country' ?></span>
-                  <select name="country">
-                    <?php foreach (['BH' => is_rtl() ? 'البحرين' : 'Bahrain', 'SA' => is_rtl() ? 'السعودية' : 'Saudi Arabia', 'AE' => is_rtl() ? 'الإمارات' : 'UAE', 'KW' => is_rtl() ? 'الكويت' : 'Kuwait', 'QA' => is_rtl() ? 'قطر' : 'Qatar', 'OM' => is_rtl() ? 'عمان' : 'Oman'] as $code => $label): ?>
-                      <option value="<?= ui_e($code) ?>" <?= ($old['country'] ?? 'BH') === $code ? 'selected' : '' ?>><?= ui_e($label) ?></option>
-                    <?php endforeach; ?>
-                  </select></label>
+                  <?php render_country_select('country', $old['country'] ?? null); ?></label>
                 <label class="field"><span><?= is_rtl() ? 'المدينة' : 'City' ?></span>
                   <input type="text" name="city" maxlength="80" value="<?= ui_e($old['city'] ?? '') ?>"></label>
                 <label class="field"><span><?= is_rtl() ? 'نوع المسوّق' : 'Affiliate type' ?></span>

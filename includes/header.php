@@ -40,6 +40,20 @@ $dir  = is_rtl() ? 'rtl' : 'ltr';
 <link rel="stylesheet" href="/assets/css/style.css">
 <link rel="stylesheet" href="/assets/css/enterprise.css">
 <link rel="stylesheet" href="/assets/css/landing.css">
+<?php
+// Page-specific stylesheets. A page sets $pageStyles before including this header, so the
+// link lands in <head> rather than being emitted mid-body. Public pages that carry their own
+// component CSS (the affiliate programme page, for example) rely on this — without it their
+// markup renders unstyled, because nothing else loads those rules.
+foreach (($pageStyles ?? []) as $pageStyle) {
+    $href = is_string($pageStyle) ? $pageStyle : (string)($pageStyle['href'] ?? '');
+    if ($href === '') continue;
+    // Only same-origin asset paths are emitted, so a variable cannot inject an off-site
+    // stylesheet or break out of the attribute.
+    if (!preg_match('#^/assets/[A-Za-z0-9._/-]+\.css$#', $href)) continue;
+    echo '<link rel="stylesheet" href="' . htmlspecialchars($href, ENT_QUOTES) . '">' . "\n";
+}
+?>
 <script type="application/ld+json">
 <?= json_encode([
     '@context' => 'https://schema.org',
@@ -58,12 +72,15 @@ $dir  = is_rtl() ? 'rtl' : 'ltr';
 
 <header class="site-header">
   <div class="container">
-    <a href="/" class="brand"><img src="/assets/img/logo.webp" alt="<?= SITE_NAME_AR ?>"><span><?= is_rtl() ? SITE_NAME_AR : SITE_NAME_EN ?></span></a>
+    <a href="/" class="brand" aria-label="<?= htmlspecialchars(is_rtl() ? SITE_NAME_AR : SITE_NAME_EN) ?>">
+      <img src="/assets/img/logo.webp" width="457" height="813" alt="" decoding="async">
+      <span><?= is_rtl() ? SITE_NAME_AR : SITE_NAME_EN ?></span>
+    </a>
     <button type="button" class="nav-toggle" data-nav-toggle aria-controls="mainNav"
             aria-expanded="false" aria-label="<?= is_rtl() ? 'فتح القائمة' : 'Open menu' ?>">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
     </button>
-    <nav class="main-nav" id="mainNav" aria-label="<?= is_rtl() ? 'القائمة الرئيسية' : 'Main navigation' ?>">
+    <nav class="main-nav" id="mainNav" data-nav-spy aria-label="<?= is_rtl() ? 'القائمة الرئيسية' : 'Main navigation' ?>">
       <a href="/#platform"><?= t('nav_platform') ?></a>
       <a href="/#features"><?= t('nav_features') ?></a>
       <a href="/#solutions"><?= t('nav_solutions') ?></a>
@@ -75,7 +92,8 @@ $dir  = is_rtl() ? 'rtl' : 'ltr';
     </nav>
     <div class="header-actions">
       <?php render_social_row('light', 14); ?>
-      <a class="lang-switch" href="?lang=<?= $lang === 'ar' ? 'en' : 'ar' ?>"><?= $lang === 'ar' ? 'EN' : 'عربي' ?></a>
+      <a class="lang-switch" href="?lang=<?= $lang === 'ar' ? 'en' : 'ar' ?>"
+         aria-label="<?= $lang === 'ar' ? 'Switch to English' : 'التبديل إلى العربية' ?>"><?= $lang === 'ar' ? 'EN' : 'عربي' ?></a>
       <a href="/login.php" class="btn btn-outline"><?= t('nav_login') ?></a>
       <a href="/register.php" class="btn btn-primary"><?= t('nav_get_started') ?></a>
     </div>

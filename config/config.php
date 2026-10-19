@@ -17,6 +17,15 @@ if (!defined('SITE_URL')) define('SITE_URL', getenv('MAWATHEQ_SITE_URL') ?: 'htt
 if (!defined('SITE_NAME_AR')) define('SITE_NAME_AR', 'مواثيق');
 if (!defined('SITE_NAME_EN')) define('SITE_NAME_EN', 'Mawatheq');
 
+// Site timezone. The platform is Saudi-first, so dates and times are computed in
+// Riyadh rather than in whatever zone the server happens to run in — an unset PHP
+// timezone silently follows the host, which shifted an invoice or an audit entry
+// by three hours depending on the machine. Sits with the other deployment-level
+// defaults (SITE_URL, SITE_NAME_*) and is overridable per install via the
+// MAWATHEQ_TIMEZONE environment variable, like the database credentials.
+if (!defined('SITE_TIMEZONE')) define('SITE_TIMEZONE', getenv('MAWATHEQ_TIMEZONE') ?: 'Asia/Riyadh');
+date_default_timezone_set(SITE_TIMEZONE);
+
 // البريد المرسل منه رسائل النظام (تفعيل الحساب، استعادة كلمة المرور...)
 if (!defined('MAIL_FROM_EMAIL')) define('MAIL_FROM_EMAIL', getenv('MAWATHEQ_MAIL_FROM') ?: 'info@mawatheq.com');
 if (!defined('MAIL_FROM_NAME')) define('MAIL_FROM_NAME', 'مواثيق');
