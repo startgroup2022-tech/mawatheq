@@ -1259,3 +1259,79 @@ touching that seed — do not "fix" it to `0`, that would change behaviour for a
 has legitimately configured a provider. The `127.0.0.1:11434` listener in the test
 environment is the mock at `/tmp/mockai/router.php`, not Ollama.
 
+
+## Execution 33 — Saudi Najiz legal classification (v59)
+
+### The source document is tracked in the repo, and the importer reads it at runtime
+
+`database/sources/Pasted text(3).txt` (the filename contains literal `%20`, `%28`, `%29`
+characters — quote it in every shell command) is the authoritative Najiz classification
+export: **125,912 bytes, SHA-256 `f6f5233153aac35684d9b6adae1fa98d7c5e8c07824d0dc5169f1ab13917b269`**.
+`includes/najiz_import.php` parses it at run time and writes the tables. No classification
+text is embedded in PHP anywhere — if you find yourself typing an Arabic lawsuit name into a
+source file, stop: the data belongs in the document.
+
+Re-verify the checksum before trusting a fresh checkout; a truncated fetch still parses but
+loses types silently.
+
+### The document's grammar is positional, and three traps cost real debugging time
+
+Labels repeat a fixed number of times and the parser walks them in order. Three things about
+the layout are not obvious from reading it:
+
+* **A definition can contain a line that looks like the next label.** The parser must stop
+  consuming a definition at the first *label* line, not at the first line that merely starts
+  like one, or types get swallowed.
+* **The document ends with a disclaimer paragraph.** It is prose, not a lawsuit type. It is
+  captured into `footer_notes` and must never become a row.
+* **Seven types are listed with no detail block at all.** They are real types; they carry a
+  `parse_note` and zero judicial requests. Do not "fix" the zero by inventing requests.
+
+The reconciliation that proves correctness: **234 parsed types = 234 declared** (the sum of
+the 38 subcategory counts the document itself prints), 38 subcategories, 640 judicial
+requests, 227 definitions, 7 types without detail.
+
+### Five lawsuit-type names repeat inside one parent — they are distinct records
+
+`ولي` x3, `النفقة` x2, `الحضانة` x2, `دعوى الإعسار أو الملاءمة` x2, `منازعات شكلية` x2.
+The idempotency key is therefore **occurrence-aware** (`source_key` = parent path + ordinal +
+name), not the name alone. Keying on the name collapses them and loses three real types.
+`tests/exec33_najiz_classification_test.php` fails if that regresses.
+
+### Import is idempotent and ids are stable; re-running is always safe
+
+The second import inserts nothing, updates in place, and every `najiz_case_types.id` is
+unchanged. Case and consultation rows point at those ids, so a re-import cannot repoint
+existing casework. `najiz_import_runs` records each execution with the source checksum.
+
+### Classification is optional everywhere, and the FK is RESTRICT on purpose
+
+`cases.najiz_case_type_id` and `consultations.najiz_case_type_id` are nullable, and every
+write path validates the posted id against `is_active = 1` before storing it. A stale or
+tampered id degrades to NULL instead of failing the insert. The FK is `ON DELETE RESTRICT`:
+**there is deliberately no delete anywhere in the admin console** — entries are retired with
+`is_active = 0`, because deleting a classification a case already references would either
+break the case or orphan its meaning. Do not add a delete button.
+
+### Adding a migration column: never use a positional `AFTER`
+
+Execution 29 was burned by this. `ALTER TABLE ... ADD COLUMN x AFTER some_column` aborts the
+whole migration file if `some_column` is absent in that database, and MySQL stops at the first
+error — so statements *below* it never run and the migration looks applied while the repair it
+existed to perform silently did not happen. All v59 columns are appended positionally. If you
+must place a column, guard on `information_schema.COLUMNS` first.
+
+### The public guide and API are unauthenticated; the console is not
+
+`/classification-guide.php` and `/api/najiz_classify.php` are public and read-only by design —
+the hierarchy is reference data. The API rejects unknown actions with 400 and never reflects
+input. `/admin/classification.php` sits behind the console guard and is registered in
+`includes/admin_rbac.php` as `super_admin` + `editor`. Adding an admin page means adding it to
+that map too — a route absent from the map is super_admin-only, which silently locks out
+editors.
+
+### Permission gotcha that bit this execution
+
+Files written by the editor tool land as `0660`, which Apache cannot read, and every new page
+returns **HTTP 500** with `Failed to open stream: Permission denied` in the Apache log — not a
+PHP error. `chmod 644` every new file (and `755` for directories) before testing over HTTP.

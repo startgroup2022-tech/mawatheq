@@ -5,9 +5,26 @@ require_once __DIR__ . '/includes/lawyer_guard.php';
 require_once __DIR__ . '/../includes/notifications.php';
 require_once __DIR__ . '/../includes/audit_log.php';
 require_once __DIR__ . '/../includes/tenant.php';
+require_once __DIR__ . '/../includes/najiz_selector.php';
 $lawyerId = $_SESSION['lawyer_id'];
 $firmId = tenant_write_firm_id($pdo);
 $error = null;
+
+/** Validate an optional Najiz classification before it is written, so a stale or
+ *  tampered id cannot reach the foreign key. Returns null when absent or unknown. */
+function najiz_valid_case_type(PDO $pdo, $id): ?int {
+    $id = (int)$id;
+    if ($id <= 0) return null;
+    try {
+        $s = $pdo->prepare('SELECT id FROM najiz_case_types WHERE id = ? AND is_active = 1');
+        $s->execute([$id]);
+        $v = $s->fetchColumn();
+        return $v ? (int)$v : null;
+    } catch (Throwable $e) {
+        // Migration not applied: classification is optional, so the case still saves.
+        return null;
+    }
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'create') {
     tenant_require($pdo, 'cases.create');
@@ -18,9 +35,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'creat
     if (!$client) {
         $error = is_rtl() ? 'لا يوجد عميل مسجّل بهذا البريد الإلكتروني. يجب أن ينشئ العميل حساباً أولاً.' : 'No registered client found with this email. The client must create an account first.';
     } else {
-        $pdo->prepare('INSERT INTO cases (lawyer_id, firm_id, user_id, title, case_type, description) VALUES (?,?,?,?,?,?)')
-            ->execute([$lawyerId, $firmId, $client['id'], $_POST['title'], $_POST['case_type'], $_POST['description']]);
+        $najizTypeId = najiz_valid_case_type($pdo, $_POST['najiz_case_type_id'] ?? 0);
+        $pdo->prepare('INSERT INTO cases (lawyer_id, firm_id, user_id, title, case_type, description, najiz_case_type_id) VALUES (?,?,?,?,?,?,?)')
+            ->execute([$lawyerId, $firmId, $client['id'], $_POST['title'], $_POST['case_type'], $_POST['description'], $najizTypeId]);
         $caseId = (int)$pdo->lastInsertId();
+        // Optional judicial requests chosen in the selector. Each id is re-validated and
+        // must belong to the selected type, so a posted id cannot attach an unrelated one.
+        if ($najizTypeId && !empty($_POST['najiz_request_ids']) && is_array($_POST['najiz_request_ids'])) {
+            $chk = $pdo->prepare('SELECT id FROM najiz_judicial_requests WHERE id = ? AND case_type_id = ? AND is_active = 1');
+            $link = $pdo->prepare('INSERT IGNORE INTO case_judicial_requests (case_id, request_id) VALUES (?,?)');
+            foreach (array_slice($_POST['najiz_request_ids'], 0, 50) as $rid) {
+                $chk->execute([(int)$rid, $najizTypeId]);
+                if ($chk->fetchColumn()) $link->execute([$caseId, (int)$rid]);
+            }
+        }
         notify($pdo, 'client', $client['id'], is_rtl() ? 'تم فتح قضية جديدة لك' : 'A new case was opened for you', $_POST['title'], '/consultations.php');
         // Firm-wide assignment notice for the rest of the tenant, skipping the creator.
         notify_tenant_except($pdo, $firmId, $lawyerId, $lawyerId, is_rtl() ? 'قضية جديدة في المكتب' : 'New case in the firm', $_POST['title'], '/lawyer/cases.php');
@@ -83,6 +111,10 @@ $totalPages = max(1, (int)ceil($totalCases / $perPage));
     <div class="field"><label><?= is_rtl() ? 'البريد الإلكتروني للعميل (يجب أن يملك حساباً في مواثيق)' : "Client's email (must already have a Mawatheq account)" ?></label><input type="email" name="client_email" required></div>
     <div class="field"><label><?= is_rtl() ? 'عنوان القضية' : 'Case title' ?></label><input type="text" name="title" required></div>
     <div class="field"><label><?= is_rtl() ? 'نوع القضية' : 'Case type' ?></label><input type="text" name="case_type" placeholder="<?= is_rtl() ? 'عمالي، تجاري، عقاري...' : 'Labor, Commercial, Real Estate...' ?>"></div>
+    <div class="field">
+      <label><?= is_rtl() ? 'تصنيف ناجز (اختياري)' : 'Najiz classification (optional)' ?></label>
+      <?php render_najiz_selector('najiz_case_type_id', null, true, 'najiz_request_ids'); ?>
+    </div>
     <div class="field"><label><?= is_rtl() ? 'تفاصيل' : 'Description' ?></label><textarea name="description" rows="3"></textarea></div>
     <button class="btn btn-primary" type="submit"><?= is_rtl() ? 'إضافة القضية' : 'Add case' ?></button>
   </form></div>

@@ -26,6 +26,7 @@ $adminNavGroups = [
         'consultations' => ['i' => 'message', 'ar' => 'الاستشارات', 'en' => 'Consultations', 'href' => '/admin/consultations.php'],
         'consultation-attachments' => ['i' => 'file', 'ar' => 'مرفقات الاستشارات', 'en' => 'Consultation attachments', 'href' => '/admin/consultation-attachments.php'],
         'documents' => ['i' => 'file', 'ar' => 'المستندات', 'en' => 'Documents', 'href' => '/admin/documents.php'],
+        'classification' => ['i' => 'scale', 'ar' => 'تصنيفات ناجز', 'en' => 'Najiz classifications', 'href' => '/admin/classification.php'],
     ]],
     ['t' => adm('المالية والتحليلات', 'Finance & insights'), 'items' => [
         'invoices' => ['i' => 'receipt', 'ar' => 'الفواتير والإيرادات', 'en' => 'Invoices & revenue', 'href' => '/admin/invoices.php'],
@@ -36,6 +37,7 @@ $adminNavGroups = [
     ]],
     ['t' => adm('برنامج الشركاء', 'Affiliate programme'), 'items' => [
         'affiliates' => ['i' => 'users', 'ar' => 'المسوّقون', 'en' => 'Affiliates', 'href' => '/admin/affiliates.php'],
+        'affiliate-applications' => ['i' => 'inbox', 'ar' => 'طلبات الانضمام', 'en' => 'Applications', 'href' => '/admin/affiliate-applications.php'],
         'affiliate-commissions' => ['i' => 'wallet', 'ar' => 'العمولات', 'en' => 'Commissions', 'href' => '/admin/affiliate-commissions.php'],
         'affiliate-payouts' => ['i' => 'receipt', 'ar' => 'طلبات الصرف', 'en' => 'Payout requests', 'href' => '/admin/affiliate-payouts.php'],
         'affiliate-campaigns' => ['i' => 'target', 'ar' => 'الحملات', 'en' => 'Campaigns', 'href' => '/admin/affiliate-campaigns.php'],
