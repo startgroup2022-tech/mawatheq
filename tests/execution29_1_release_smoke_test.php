@@ -302,6 +302,44 @@ check('the filled description is customer-facing prose, not the internal term',
 check('no customer description anywhere leaks the internal classification name',
     (int)$admin->query("SELECT COUNT(*) FROM `$scratch`.najiz_categories WHERE customer_desc_ar LIKE '%ناجز%'")->fetchColumn() === 0);
 
+// Execution 38's migration ships the customer home slider's table. The app reads
+// home_banners on every home-screen load, so a package that shipped the site files
+// without this table would 500 the moment a visitor opened the app. It must also be
+// EMPTY: the brief forbids fabricating a promotion, so a fresh install shows no slider
+// until an operator adds one.
+check('the packaged Execution 38 migration created home_banners',
+    e291_has_table($admin, $scratch, 'home_banners'));
+check('home_banners carries the scheduling window columns',
+    e291_has_column($admin, $scratch, 'home_banners', 'starts_at')
+    && e291_has_column($admin, $scratch, 'home_banners', 'ends_at'));
+check('home_banners carries the link_type/link_target destination pair',
+    e291_has_column($admin, $scratch, 'home_banners', 'link_type')
+    && e291_has_column($admin, $scratch, 'home_banners', 'link_target'));
+$hbCount = (int)$admin->query("SELECT COUNT(*) FROM `$scratch`.home_banners")->fetchColumn();
+check('home_banners ships empty — no promotion is invented', $hbCount === 0);
+
+// A fresh install must be able to re-run the migration. Assert it directly rather than
+// trusting CREATE TABLE IF NOT EXISTS, since a second run is exactly what a partially
+// applied deploy does.
+e291_apply_sql($admin, $scratch, $pkg . '/database/upgrade_v64.sql');
+check('re-running the packaged Execution 38 migration is a no-op',
+    e291_has_table($admin, $scratch, 'home_banners')
+    && (int)$admin->query("SELECT COUNT(*) FROM `$scratch`.home_banners")->fetchColumn() === 0);
+
+// A banner outside its window must not reach the customer. This mirrors the WHERE clause
+// in banner_active_rows() — the one place the rule lives.
+$admin->exec("INSERT INTO `$scratch`.home_banners (title_ar, title_en, image_path, status, starts_at, ends_at)
+              VALUES ('منتهي','Expired','uploads/banners/x.jpg','active','2020-01-01 00:00:00','2020-01-02 00:00:00'),
+                     ('نشط','Live','uploads/banners/y.jpg','active',NULL,NULL),
+                     ('مخفي','Hidden','uploads/banners/z.jpg','hidden',NULL,NULL)");
+$visible = (int)$admin->query(
+    "SELECT COUNT(*) FROM `$scratch`.home_banners
+      WHERE status = 'active'
+        AND (starts_at IS NULL OR starts_at <= NOW())
+        AND (ends_at   IS NULL OR ends_at   >= NOW())"
+)->fetchColumn();
+check('only the in-window, active banner is served to the customer', $visible === 1, "visible=$visible");
+
 // ---------------------------------------------------------------------------
 echo "\n== 5. the reset flow works against the packaged result ==\n";
 // ---------------------------------------------------------------------------
