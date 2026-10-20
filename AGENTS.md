@@ -1594,3 +1594,52 @@ An unanchored `storage/` also matches `apps/mobile/lib/core/storage/`. That sile
 a fresh clone — with no error anywhere, because the file existed on the developer's disk. Anchor
 directory patterns to the root (`/storage/`) unless the intent is truly "any directory by this
 name". `git check-ignore -v <path>` tells you which rule is responsible.
+
+### Browser capture (Execution 35 follow-up)
+
+* **A currency column and the programme default are not interchangeable.** PR #7 moved the
+  platform default to SAR. The payout path then resolved the *programme* currency
+  (`affiliate_payout_currency()`, SAR) instead of the affiliate's own `payout_currency` (BHD for
+  anyone registered earlier), summed a currency the commissions were never recorded in, and got
+  `0`. Payout requests were refused with `nothing_payable` while the dashboard showed a real
+  balance — the money existed and was unreachable. Use
+  `affiliate_payout_currency_for($affiliate)` for anything that sums a specific affiliate's
+  money; the programme-wide function is only right for display of the programme default. This is
+  the failure mode of a "default changed" refactor: it looks like a config change and behaves
+  like a data bug.
+* **`MediaRecorder` writes a voice note to `.webm`, which the catalog maps to video.** The file
+  uploaded fine and was then permanently untranscribable, because
+  `consultation_attachment_is_audio()` reads the stored category. The container has to be
+  inspected: `consultation_attachment_webm_is_audio_only()` requires a positively identified
+  audio track (`TrackType` 0x02) *and* no video track (`0x83\x81\x01`). Requiring the positive
+  audio track matters — an early version downgraded on "no video track" alone, which
+  reclassified `execution30`'s synthetic WebM fixture (a header with no tracks at all) and broke
+  that suite. Never guess a category from an absence.
+* `consultation_attachment_validate()` refuses any path that did not arrive as an HTTP upload
+  (`is_uploaded_file`). A unit-style call with a `tmpUpload()` path returns "not a valid upload",
+  not a classification result — test classification through the real endpoint instead.
+* The transcribe endpoint needs a `consultation_id`. A *draft* attachment has none, so the
+  request 404s before the audio check and the assertion passes for the wrong reason. Upload onto
+  the consultation when testing the audio gate.
+* Capture degrades in three steps, deliberately: `MediaRecorder` for in-page recording, the
+  `capture` input attribute on devices that support it, and the plain file picker otherwise. The
+  buttons are hidden until at least one route exists. Microphone and camera tracks are released
+  on stop, cancel and `pagehide` — a track left open keeps the recording indicator on.
+* `navigator.mediaDevices` requires a secure context. On the local test app (`http://127.0.0.1`)
+  it works because loopback is treated as secure; on a plain-HTTP production host it will not.
+
+### The deployment guide goes stale silently
+
+`MAWATHEQ_DEPLOYMENT_GUIDE_AR.md` is a *deliverable*, not documentation — the operator follows
+it literally. It described the 29.1/30/31 bundle while the site files already needed
+`upgrade_v62.sql` (a photo upload reads `'image'` from `file_category`, which the column rejects
+until v62 runs). Nothing failed; the guide simply did not mention the step. **When an execution
+adds a migration, update the guide's step list, checklist and troubleshooting table in the same
+change** — a missing step is invisible until a deploy fails.
+
+### Verifying a published download
+
+Checksum the build, then *download over the public URL and checksum again* — a local
+`sha256sum -c` proves the files on disk, not the ones served. Also confirm the served archive
+still contains the fix (`unzip -p site.zip <path> | grep <symbol>`): a stale download directory
+serves old bytes with a 200, which a status-code check cannot see.
