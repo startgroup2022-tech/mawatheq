@@ -1738,3 +1738,39 @@ Not on `PATH` by default. `export PATH="/workspace/flutter_sdk/bin:$PATH"` then
 churn is noise, not part of the change. Mobile tests use the same fake-transport pattern as the
 PHP contract tests: a fake `BaseClient` returns the endpoint's real JSON, and the production
 client, repository and widgets handle it.
+
+### Android release builds need three environment variables, and a full pub cache
+
+A fresh sandbox resets PHP/MariaDB/Apache, Java, the Android SDK *and* parts of
+`~/.pub-cache`. Each failure looks like a different bug, so check all of them before
+debugging the app:
+
+1. `flutter build apk --release` reports `No Android SDK found` — the SDK is at
+   `/workspace/android-sdk`, not on `PATH`. `export ANDROID_HOME=/workspace/android-sdk`
+   and `ANDROID_SDK_ROOT` to match. It ships platforms 34/35/36, build-tools 35.0.0 and
+   36.0.0, and NDK 27/28, so no download is needed.
+2. `Gradle task assembleRelease failed` with `JAVA_HOME is not set` — no JDK is
+   installed. AGP 8.11.1 + Gradle 8.14.3 are fine on JDK 21:
+   `sudo apt-get install -y openjdk-21-jdk-headless`, then
+   `export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64`. (The image has no
+   `openjdk-17-*` package; 21 is what `apt` offers.)
+3. Gradle fails reading `~/.pub-cache/hosted/pub.dev/provider-6.1.5+1/lib/provider.dart`
+   — the cache survived the reset with only the test-only packages. `flutter pub get`
+   restores the runtime set; `pubspec.lock` must come back unchanged, so verify with
+   `git status --short apps/mobile/pubspec.lock`.
+
+The build takes ~2 minutes and must run in the background: the terminal caps a foreground
+command at 1080s, and Gradle's process renames from `flutter` to `GradleWrapperMain`/
+`gradlew`, so poll on `pgrep -f GradleWrapperMain`, not on the `flutter` command name.
+
+### The Android artifacts are debug-signed unless `key.properties` exists
+
+`apps/mobile/android/app/build.gradle.kts` falls back to the debug keystore when
+`hasReleaseKeystore` is false, which is the state of a fresh checkout: there is no
+`key.properties` and no `.jks` in the repo. `apksigner verify --print-certs` then reports
+`CN=Android Debug`. That signature is fine for local testing but a Play upload needs the
+owner's upload key, so say so in the release notes rather than calling the artifact
+"release-signed". Verify with
+`apksigner verify --print-certs --verbose build/app/outputs/flutter-apk/app-release.apk`
+(binary at `/workspace/android-sdk/build-tools/35.0.0/`) and
+`jarsigner -verify` for the `.aab`.
