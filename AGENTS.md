@@ -1774,3 +1774,77 @@ owner's upload key, so say so in the release notes rather than calling the artif
 `apksigner verify --print-certs --verbose build/app/outputs/flutter-apk/app-release.apk`
 (binary at `/workspace/android-sdk/build-tools/35.0.0/`) and
 `jarsigner -verify` for the `.aab`.
+
+## Execution 38 — consumer-grade customer app and operator-managed home banners (v64)
+
+### The customer app opens on the product, not on a slideshow
+
+The unauthenticated route was a value-proposition slideshow (`OnboardingScreen`) that had to be
+dismissed before anything was visible, and the page behind it was a marketing page whose nav
+named destinations a guest cannot reach. Both are gone; `AuthStatus.guest` and the unauthenticated
+fallback now both resolve to `PublicGuestShell`, so the first screen is the home experience itself.
+`app.dart` no longer imports `onboarding_screen.dart` or `public_home_screen.dart` — if a future
+edit reintroduces a route to either, the file will not exist.
+
+### A bottom-nav index is not a page index
+
+`PublicGuestShell` fed the bottom-nav `selectedIndex` straight into `IndexedStack.index`. The nav
+lists "Consult" as a destination with no corresponding page, so the two lists are offset from
+"Consult" onward and `Account` indexed past the end of the children list — an assertion in debug,
+a blank body in release. `_navIndex` (what the bar highlights) and `_pageIndex` (what the stack
+shows) are now separate, and the mapping between them is explicit. Any shell that adds a nav entry
+which is an action rather than a page needs the same split; add the test that taps *every*
+destination, not just the first.
+
+### `Future.delayed` in a carousel outlives `dispose`
+
+`BannerCarousel`'s auto-advance re-armed itself with `Future.delayed` inside `initState`. The
+callback kept firing after the widget was gone, calling `setState` on a disposed state — the
+classic "test passes alone, flakes in a suite" failure, because a short-lived widget test finishes
+before the delay elapses. It is a cancellable `Timer?` cancelled in `dispose`, behind an
+`autoAdvance` flag, and it honours `MediaQuery.disableAnimations`. Widget tests for it disable
+animations rather than waiting, so they do not depend on timing.
+
+### `home_banners` ships empty, and that is the correct state
+
+Same rule as `lawyer_specialties` in v63: the brief forbids inventing a promotion, so
+`upgrade_v64.sql` creates the table and inserts nothing. An empty slider is what a fresh install
+shows until an operator adds a banner in `/admin/banners.php`. Do not "fix" the empty state by
+seeding a slide — `api/v1/banners.php` returning `{"ok":true,"banners":[]}` is correct.
+
+A banner's destination is a `link_type` (`none`/`category`/`specialty`/`url`) plus a
+`link_target`, not a free-text URL, because the app must not follow an arbitrary address. `url`
+must be absolute **https**; `category` and `specialty` must resolve to a real `najiz_categories`
+row. `banner_public_row()` degrades any destination that fails validation to `none`, so a banner
+whose specialty was deleted still renders — it just stops being tappable. Test that by pointing a
+banner at a nonexistent category id and asserting the API returns `link_type: "none"`; pointing it
+at `javascript:alert(1)` and asserting the same is the security half of the same check.
+
+`specialty` and `category` both resolve against `najiz_categories` — the customer-facing specialty
+cards and the journey's categories are one taxonomy. They stay distinct `link_type`s only because
+the app routes them to different screens.
+
+### `uploads/banners/` is public by design — and was not gitignored
+
+Unlike `uploads/documents/` and the other upload dirs, banner images are served to customers, so
+`banner_storage_dir()` deliberately writes **no** `.htaccess` deny guard (see the comment in
+`includes/banners.php`). Uploads are still validated by real MIME (`finfo`) *and* `getimagesize`,
+never by extension, because these files are web-served. `uploads/banners/*` is now in `.gitignore`
+like every sibling dir; without it an operator's uploaded image was committable.
+
+### The release build reads `git archive`, so untracked migrations do not ship
+
+`tools/build_release.sh` stages the site from `git archive "$COMMIT"`. A migration that exists in
+the working tree but is not committed is therefore absent from the package, and the smoke test's
+`BUILD FAILED: database/upgrade_v64.sql is missing from the migration package` is the correct
+signal — commit before building. The guard list in the script asserts the *current* head migration
+by name; when you add `upgrade_v65.sql`, move the assertion, do not add a second one, or the next
+build fails on a stale expectation.
+
+### Verifying the banner stack locally
+
+Apache serves the repo at `:8080` (docroot `/workspace/project/mawatheq`, DB from
+`config/secrets.php`). `curl -s localhost:8080/api/v1/banners.php` is the fastest end-to-end check.
+Seeding requires the admin DB user (`sudo mysql mawatheq_test`); note `najiz_categories` has
+`name_ar`/`name_en`, not `name`, and `lawyer_specialties` is a `(lawyer_id, category_id)` join
+table with no name column.
