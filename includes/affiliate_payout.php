@@ -48,7 +48,7 @@ function affiliate_next_payout_reference(PDO $pdo): string {
  * a payout.
  */
 function affiliate_payable_commissions(PDO $pdo, int $affiliateId, ?string $currency = null): array {
-    $currency = $currency ?: affiliate_settings($pdo)['payout_currency'];
+    $currency = $currency ?: affiliate_payout_currency_for($pdo, $affiliateId);
     try {
         $stmt = $pdo->prepare("SELECT * FROM affiliate_commissions
             WHERE affiliate_id=? AND currency=? AND status IN ('approved','payable') AND payout_id IS NULL
@@ -62,7 +62,7 @@ function affiliate_payable_commissions(PDO $pdo, int $affiliateId, ?string $curr
 
 /** The total the affiliate could request right now, as integer minor units. */
 function affiliate_payable_minor(PDO $pdo, int $affiliateId, ?string $currency = null): int {
-    $currency = $currency ?: affiliate_settings($pdo)['payout_currency'];
+    $currency = $currency ?: affiliate_payout_currency_for($pdo, $affiliateId);
     $total = 0;
     foreach (affiliate_payable_commissions($pdo, $affiliateId, $currency) as $commission) {
         $total += affiliate_to_minor($commission['commission_amount'], $currency) - affiliate_to_minor($commission['reversed_amount'], $currency);
@@ -97,7 +97,7 @@ function affiliate_request_payout(PDO $pdo, int $affiliateId, ?string $requested
     if (!$affiliate) return ['ok' => false, 'error' => 'not_found'];
     if (!affiliate_can_earn($affiliate)) return ['ok' => false, 'error' => 'affiliate_not_active'];
 
-    $currency = (string)($options['currency'] ?? $settings['payout_currency']);
+    $currency = (string)($options['currency'] ?? affiliate_payout_currency($pdo, $affiliate));
 
     // One open request at a time.
     if (affiliate_open_payout_request($pdo, $affiliateId)) {

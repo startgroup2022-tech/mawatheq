@@ -133,6 +133,59 @@
 }
 .ca-errors ul{ margin:0; padding-inline-start:18px; }
 
+/* ---------- capture (microphone, camera, photo) ---------- */
+.ca-capture{
+  display:flex; flex-wrap:wrap; gap:8px; margin-top:12px;
+}
+.ca-cap-btn{
+  display:inline-flex; align-items:center; gap:7px;
+  font:inherit; font-size:.82rem; font-weight:600; cursor:pointer;
+  padding:9px 13px; border-radius:9px; border:1px solid var(--border);
+  background:#fff; color:var(--navy-dark);
+}
+.ca-cap-btn:hover{ border-color:var(--teal); background:#F4FAFC; }
+.ca-cap-btn:focus-visible{ outline:2px solid var(--teal); outline-offset:2px; }
+.ca-cap-btn svg{ width:16px; height:16px; flex:0 0 auto; }
+.ca-cap-btn[disabled]{ opacity:.5; cursor:not-allowed; }
+.ca-cap-stop{ background:var(--teal); border-color:var(--teal); color:#fff; }
+.ca-cap-stop:hover{ background:var(--navy); border-color:var(--navy); }
+.ca-cap-cancel{ color:var(--danger,#C7492A); border-color:#E9C3B7; }
+.ca-cap-cancel:hover{ background:#FDF7F5; border-color:var(--danger,#C7492A); }
+
+.ca-recorder{
+  margin-top:12px; border:1px solid var(--border); border-radius:11px;
+  overflow:hidden; background:#0F1F33;
+}
+.ca-recorder-stage{
+  position:relative; min-height:96px; display:flex; align-items:center; justify-content:center;
+}
+.ca-recorder-stage video{ width:100%; max-height:320px; display:block; background:#0F1F33; }
+.ca-recorder-wave{ display:flex; align-items:flex-end; gap:4px; height:44px; }
+.ca-recorder-wave span{
+  width:5px; border-radius:3px; background:var(--teal); height:14px;
+  animation:ca-wave 1s ease-in-out infinite;
+}
+.ca-recorder-wave span:nth-child(2){ animation-delay:.15s; }
+.ca-recorder-wave span:nth-child(3){ animation-delay:.3s; }
+.ca-recorder-wave span:nth-child(4){ animation-delay:.45s; }
+.ca-recorder-wave span:nth-child(5){ animation-delay:.6s; }
+@keyframes ca-wave{ 0%,100%{ height:12px; } 50%{ height:40px; } }
+.ca-recorder-bar{
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  padding:10px 14px; background:#fff; border-top:1px solid var(--border);
+}
+.ca-rec-dot{
+  width:9px; height:9px; border-radius:50%; background:var(--danger,#C7492A);
+  animation:ca-blink 1.1s ease-in-out infinite; flex:0 0 auto;
+}
+@keyframes ca-blink{ 0%,100%{ opacity:1; } 50%{ opacity:.25; } }
+.ca-rec-time{ font-variant-numeric:tabular-nums; font-weight:700; font-size:.84rem; color:var(--navy-dark); }
+.ca-rec-hint{ font-size:.78rem; color:var(--text-muted); }
+.ca-recorder-actions{ margin-inline-start:auto; display:flex; gap:8px; }
+@media (prefers-reduced-motion:reduce){
+  .ca-recorder-wave span, .ca-rec-dot{ animation:none; }
+}
+
 /* ---------- preview lightbox ---------- */
 .ca-lightbox{
   position:fixed; inset:0; z-index:1200; background:rgba(15,31,51,.72);

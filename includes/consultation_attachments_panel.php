@@ -141,6 +141,51 @@ $categoryLabel = static function (string $category): string {
         </span>
       </label>
       <div class="ca-errors" data-ca-errors role="alert" aria-live="polite"></div>
+
+      <?php /* Capture row. Rendered always; the script hides the buttons whose API the
+               browser does not have, and the `capture` inputs below remain as the mobile
+               fallback (a phone opens its own recorder, which is the better experience
+               there anyway). A no-JS visitor keeps the plain file picker above. */ ?>
+      <div class="ca-capture" data-ca-capture hidden>
+        <button type="button" class="ca-cap-btn" data-ca-rec="audio">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+          <span><?= consultation_attachment_msg('تسجيل صوتي', 'Record voice') ?></span>
+        </button>
+        <button type="button" class="ca-cap-btn" data-ca-rec="video">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+          <span><?= consultation_attachment_msg('تسجيل فيديو', 'Record video') ?></span>
+        </button>
+        <button type="button" class="ca-cap-btn" data-ca-shot>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          <span><?= consultation_attachment_msg('التقاط صورة', 'Take photo') ?></span>
+        </button>
+      </div>
+      <?php /* Mobile fallback: the OS camera/recorder via the capture attribute. */ ?>
+      <input type="file" data-ca-capture-input="audio" accept="audio/*" capture hidden>
+      <input type="file" data-ca-capture-input="video" accept="video/*" capture hidden>
+      <input type="file" data-ca-capture-input="photo" accept="image/*" capture="environment" hidden>
+
+      <?php /* In-page recorder: a live preview for video, a timer for both, and the
+               stop/discard pair. Kept out of the flow until a capture starts. */ ?>
+      <div class="ca-recorder" data-ca-recorder hidden>
+        <div class="ca-recorder-stage">
+          <video data-ca-rec-stream playsinline muted hidden></video>
+          <div class="ca-recorder-wave" data-ca-rec-wave aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+        </div>
+        <div class="ca-recorder-bar">
+          <span class="ca-rec-dot" aria-hidden="true"></span>
+          <span class="ca-rec-time" data-ca-rec-time>0:00</span>
+          <span class="ca-rec-hint" data-ca-rec-hint></span>
+          <span class="ca-recorder-actions">
+            <button type="button" class="ca-cap-btn ca-cap-stop" data-ca-rec-stop>
+              <?= consultation_attachment_msg('إيقاف وإرفاق', 'Stop and attach') ?>
+            </button>
+            <button type="button" class="ca-cap-btn ca-cap-cancel" data-ca-rec-cancel>
+              <?= consultation_attachment_msg('إلغاء', 'Cancel') ?>
+            </button>
+          </span>
+        </div>
+      </div>
     </div>
   <?php elseif (!$isDraft && $actor['type'] !== 'admin'): ?>
     <p class="ca-closed">

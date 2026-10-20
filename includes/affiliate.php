@@ -169,6 +169,34 @@ function affiliate_settings(?PDO $pdo = null): array {
 }
 
 /**
+ * The currency an affiliate is paid in.
+ *
+ * The affiliate's own `payout_currency` wins, because that is the currency their
+ * commissions are recorded in and the currency their dashboard displays. The
+ * programme-wide setting is only a fallback for a record that predates the column.
+ *
+ * Resolving the programme setting FIRST is a defect: an affiliate paid in a currency
+ * other than the platform default then looks at a balance the payout engine cannot
+ * see, so every request is refused with `nothing_payable` while the page shows a
+ * non-zero balance. Moving the platform default to SAR is what made this reachable —
+ * a Bahraini affiliate's commissions stayed in BHD and their whole balance vanished
+ * from the payout path.
+ *
+ * @param array|null $affiliate a row from `affiliates`; its `payout_currency` is used
+ *                              when present and valid.
+ */
+function affiliate_payout_currency(PDO $pdo, ?array $affiliate = null): string {
+    $own = strtoupper(trim((string)($affiliate['payout_currency'] ?? '')));
+    if ($own !== '' && currency_is_valid($own)) return $own;
+    return (string)affiliate_settings($pdo)['payout_currency'];
+}
+
+/** Resolve the payout currency for an affiliate id, looking the row up. */
+function affiliate_payout_currency_for(PDO $pdo, int $affiliateId): string {
+    return affiliate_payout_currency($pdo, affiliate_find($pdo, $affiliateId));
+}
+
+/**
  * Re-read settings on the next call.
  *
  * The cache lives in a global precisely so this can clear it; a function static

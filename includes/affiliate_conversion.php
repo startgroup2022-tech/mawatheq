@@ -684,7 +684,7 @@ function affiliate_conversions(PDO $pdo, int $affiliateId, array $filters = []):
  * report a lie, so the exclusion is the default rather than an option.
  */
 function affiliate_earnings_summary(PDO $pdo, int $affiliateId, array $options = []): array {
-    $currency = (string)($options['currency'] ?? affiliate_settings($pdo)['payout_currency']);
+    $currency = (string)($options['currency'] ?? affiliate_payout_currency_for($pdo, $affiliateId));
     $includeDemo = !empty($options['include_demo']);
     $demoWhere = $includeDemo ? '' : ' AND m.is_demo = 0';
 

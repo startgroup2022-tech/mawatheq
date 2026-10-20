@@ -195,7 +195,7 @@ function affiliate_ledger_payout(PDO $pdo, array $payout, array $commissionIds, 
  * "how much the programme owes this affiliate right now".
  */
 function affiliate_ledger_balance(PDO $pdo, int $affiliateId, ?string $currency = null): array {
-    $currency = $currency ?: affiliate_settings($pdo)['payout_currency'];
+    $currency = $currency ?: affiliate_payout_currency_for($pdo, $affiliateId);
     $rows = [];
     try {
         $stmt = $pdo->prepare('SELECT account, direction, amount FROM affiliate_ledger_entries WHERE affiliate_id=? AND currency=?');
@@ -243,7 +243,7 @@ function affiliate_ledger_balance(PDO $pdo, int $affiliateId, ?string $currency 
  * @return array{ok:bool,unbalanced_groups:array<int,string>,expected_minor:int,actual_minor:int,difference_minor:int}
  */
 function affiliate_ledger_verify(PDO $pdo, int $affiliateId, ?string $currency = null): array {
-    $currency = $currency ?: affiliate_settings($pdo)['payout_currency'];
+    $currency = $currency ?: affiliate_payout_currency_for($pdo, $affiliateId);
     $unbalanced = [];
     try {
         $stmt = $pdo->prepare('SELECT entry_group, account, direction, amount FROM affiliate_ledger_entries WHERE affiliate_id=? AND currency=? ORDER BY entry_group, id');

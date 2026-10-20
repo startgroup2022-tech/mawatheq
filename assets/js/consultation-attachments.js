@@ -31,7 +31,15 @@
       removeFailed: 'تعذّر حذف الملف.',
       network: 'تعذّر الاتصال بالخادم. تحقق من اتصالك وأعد المحاولة.',
       confirmRemove: 'حذف هذا المرفق؟',
-      cancelled: 'أُلغي الرفع.'
+      cancelled: 'أُلغي الرفع.',
+      recVoice: 'مذكرة صوتية',
+      recVideo: 'مذكرة فيديو',
+      recPhoto: 'صورة',
+      recStart: 'جارٍ التسجيل…',
+      recDenied: 'تعذّر فتح الميكروفون أو الكاميرا. تحقق من إذن المتصفح.',
+      recUnsupported: 'هذا المتصفح لا يدعم التسجيل هنا. استخدم اختيار الملفات.',
+      recTooShort: 'التسجيل قصير جدًا.',
+      recFile: 'تسجيل'
     },
     en: {
       tooLarge: function (name, mb) { return '"' + name + '" is larger than the ' + mb + ' MB limit.'; },
@@ -45,7 +53,15 @@
       removeFailed: 'The file could not be removed.',
       network: 'Could not reach the server. Check your connection and try again.',
       confirmRemove: 'Remove this attachment?',
-      cancelled: 'The upload was cancelled.'
+      cancelled: 'The upload was cancelled.',
+      recVoice: 'Voice note',
+      recVideo: 'Video note',
+      recPhoto: 'Photo',
+      recStart: 'Recording…',
+      recDenied: 'The microphone or camera could not be opened. Check the browser permission.',
+      recUnsupported: 'This browser cannot record here. Use the file picker instead.',
+      recTooShort: 'The recording is too short.',
+      recFile: 'Recording'
     }
   };
 
@@ -406,6 +422,191 @@
         });
       });
     }
+
+    initCapture(uploader, handleFiles, showErrors);
+  }
+
+  /* ---------- capture: microphone, camera, photo ----------
+     Recording in the page is what the brief asks for on a desktop, where the `capture`
+     attribute does nothing and the file picker cannot reach a microphone. Every browser
+     that supports MediaRecorder gets the in-page recorder; the ones that do not (and
+     every no-JS visitor) keep the file picker and the mobile `capture` inputs, so the
+     feature degrades to "attach a recording you already made" rather than disappearing.
+     ------------------------------------------------------------------ */
+
+  // Map a recorder MIME type to the extension the server catalog accepts. A Chromium
+  // voice note is `audio/webm` with no video track: the server reclassifies that to
+  // audio from the container, which is what makes it transcribable.
+  function extensionForMime(mime) {
+    mime = String(mime || '').split(';')[0].toLowerCase();
+    var map = {
+      'audio/webm': 'webm', 'audio/ogg': 'ogg', 'audio/mp4': 'm4a', 'audio/mpeg': 'mp3',
+      'video/webm': 'webm', 'video/mp4': 'mp4', 'video/quicktime': 'mov'
+    };
+    return map[mime] || (mime.indexOf('video/') === 0 ? 'webm' : 'ogg');
+  }
+
+  function pickRecorderMime(kind) {
+    if (typeof window.MediaRecorder === 'undefined' || !window.MediaRecorder.isTypeSupported) return '';
+    var candidates = kind === 'video'
+      ? ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4']
+      : ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
+    for (var i = 0; i < candidates.length; i++) {
+      if (window.MediaRecorder.isTypeSupported(candidates[i])) return candidates[i];
+    }
+    return '';
+  }
+
+  function initCapture(uploader, handleFiles, showErrors) {
+    var bar = uploader.querySelector('[data-ca-capture]');
+    var recorderBox = uploader.querySelector('[data-ca-recorder]');
+    if (!bar || !recorderBox) return;
+
+    var canRecord = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia
+      && typeof window.MediaRecorder !== 'undefined');
+    var audioBtn = bar.querySelector('[data-ca-rec="audio"]');
+    var videoBtn = bar.querySelector('[data-ca-rec="video"]');
+    var shotBtn = bar.querySelector('[data-ca-shot]');
+
+    // Fallback inputs: on a phone these open the OS recorder/camera directly.
+    var fallback = {
+      audio: uploader.querySelector('[data-ca-capture-input="audio"]'),
+      video: uploader.querySelector('[data-ca-capture-input="video"]'),
+      photo: uploader.querySelector('[data-ca-capture-input="photo"]')
+    };
+    Object.keys(fallback).forEach(function (kind) {
+      if (!fallback[kind]) return;
+      fallback[kind].addEventListener('change', function () {
+        if (fallback[kind].files && fallback[kind].files.length) handleFiles(fallback[kind].files);
+        fallback[kind].value = '';
+      });
+    });
+
+    // Show the row when at least one capture route exists. Without MediaRecorder the
+    // buttons still work on a device that supports `capture`.
+    var hasCaptureAttr = 'capture' in document.createElement('input');
+    if (!canRecord && !hasCaptureAttr) return;
+    bar.hidden = false;
+
+    var stream = null, recorder = null, chunks = [], timer = null, startedAt = 0;
+    var currentKind = null, discard = false;
+
+    var stage = recorderBox.querySelector('[data-ca-rec-stream]');
+    var timeLabel = recorderBox.querySelector('[data-ca-rec-time]');
+    var hintLabel = recorderBox.querySelector('[data-ca-rec-hint]');
+
+    function stopStream() {
+      if (stream) { stream.getTracks().forEach(function (tr) { try { tr.stop(); } catch (e) {} }); }
+      stream = null;
+      stage.srcObject = null;
+      stage.hidden = true;
+    }
+
+    function resetRecorder() {
+      if (timer) { window.clearInterval(timer); timer = null; }
+      stopStream();
+      recorderBox.hidden = true;
+      recorder = null; chunks = []; currentKind = null;
+    }
+
+    function tick() {
+      var s = Math.floor((Date.now() - startedAt) / 1000);
+      timeLabel.textContent = Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
+    }
+
+    function begin(kind) {
+      if (!canRecord) { if (fallback[kind === 'video' ? 'video' : 'audio']) fallback[kind === 'video' ? 'video' : 'audio'].click(); return; }
+      var constraints = kind === 'video' ? { audio: true, video: { facingMode: 'user' } } : { audio: true };
+      navigator.mediaDevices.getUserMedia(constraints).then(function (s) {
+        stream = s;
+        var mime = pickRecorderMime(kind);
+        try {
+          recorder = mime ? new window.MediaRecorder(s, { mimeType: mime }) : new window.MediaRecorder(s);
+        } catch (e) {
+          recorder = new window.MediaRecorder(s);
+          mime = recorder.mimeType || '';
+        }
+        chunks = [];
+        discard = false;
+        currentKind = kind;
+        recorder.ondataavailable = function (ev) { if (ev.data && ev.data.size) chunks.push(ev.data); };
+        recorder.onstop = function () {
+          var type = (recorder && recorder.mimeType) || mime || (kind === 'video' ? 'video/webm' : 'audio/webm');
+          var blob = new Blob(chunks, { type: type });
+          var wasDiscard = discard;
+          var ext = extensionForMime(type);
+          resetRecorder();
+          if (wasDiscard || !blob.size) return;
+          // A recording under a second is almost always an accidental tap, and it makes
+          // a useless voice note; refusing it here saves a round trip.
+          if (Date.now() - startedAt < 900) { showErrors([t('recTooShort')]); return; }
+          var stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+          var label = kind === 'video' ? t('recVideo') : t('recVoice');
+          var file = new File([blob], label + '-' + stamp + '.' + ext, { type: type });
+          handleFiles([file]);
+        };
+        if (kind === 'video') { stage.srcObject = s; stage.hidden = false; }
+        hintLabel.textContent = kind === 'video' ? t('recVideo') : t('recVoice');
+        recorderBox.hidden = false;
+        startedAt = Date.now();
+        tick();
+        timer = window.setInterval(tick, 250);
+        recorder.start();
+      }).catch(function () {
+        resetRecorder();
+        showErrors([t('recDenied')]);
+      });
+    }
+
+    if (audioBtn) audioBtn.addEventListener('click', function () { begin('audio'); });
+    if (videoBtn) videoBtn.addEventListener('click', function () { begin('video'); });
+
+    // A photo is a single frame, so it is taken from the same camera stream and encoded
+    // on a canvas rather than recorded. Desktop browsers have no other route to it.
+    if (shotBtn) shotBtn.addEventListener('click', function () {
+      if (!canRecord) { if (fallback.photo) fallback.photo.click(); return; }
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false }).then(function (s) {
+        stream = s;
+        stage.srcObject = s;
+        stage.hidden = false;
+        recorderBox.hidden = false;
+        hintLabel.textContent = t('recPhoto');
+        timeLabel.textContent = '0:00';
+        currentKind = 'photo';
+        var shot = function () {
+          var vw = stage.videoWidth || 1280, vh = stage.videoHeight || 720;
+          var canvas = document.createElement('canvas');
+          canvas.width = vw; canvas.height = vh;
+          canvas.getContext('2d').drawImage(stage, 0, 0, vw, vh);
+          canvas.toBlob(function (blob) {
+            resetRecorder();
+            if (!blob || !blob.size) return;
+            var stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            var file = new File([blob], t('recPhoto') + '-' + stamp + '.jpg', { type: 'image/jpeg' });
+            handleFiles([file]);
+          }, 'image/jpeg', 0.92);
+        };
+        // Give the camera a moment to expose the first frame before grabbing it.
+        window.setTimeout(shot, 350);
+      }).catch(function () { resetRecorder(); showErrors([t('recDenied')]); });
+    });
+
+    var stopBtn = recorderBox.querySelector('[data-ca-rec-stop]');
+    if (stopBtn) stopBtn.addEventListener('click', function () {
+      if (currentKind === 'photo') { resetRecorder(); return; }
+      if (recorder && recorder.state !== 'inactive') recorder.stop();
+    });
+    var cancelBtn = recorderBox.querySelector('[data-ca-rec-cancel]');
+    if (cancelBtn) cancelBtn.addEventListener('click', function () {
+      discard = true;
+      if (recorder && recorder.state !== 'inactive') recorder.stop();
+      else resetRecorder();
+    });
+
+    // Leaving the page must release the camera and microphone; a track left open keeps
+    // the recording indicator on and is a privacy problem, not just a leak.
+    window.addEventListener('pagehide', stopStream);
+    window.addEventListener('beforeunload', stopStream);
   }
 
   function boot() {

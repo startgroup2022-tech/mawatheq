@@ -390,6 +390,48 @@ function consultation_attachment_is_iso_bmff(string $head): bool {
     return strlen($head) >= 12 && substr($head, 4, 4) === 'ftyp';
 }
 
+/**
+ * Whether a WebM/Matroska file carries a video track.
+ *
+ * `MediaRecorder` writes an audio-only recording to `.webm` on Chromium and Firefox, and a
+ * camera recording to the same container. The extension alone therefore cannot tell the two
+ * apart, and the catalog maps `.webm` to video — so without this check a voice note is filed
+ * as a video and `consultation_attachment_is_audio()` is false, which makes the recording
+ * impossible to transcribe. The brief requires voice recording, so the container has to be
+ * inspected rather than the name trusted.
+ *
+ * Every track declares its type in a `TrackType` element: id 0x83, then a one-byte size
+ * (0x81) and a one-byte value — 0x01 video, 0x02 audio. A file with neither is not a real
+ * recording (a truncated or synthetic header); it is treated as video, which is the
+ * catalog default and therefore changes nothing.
+ */
+function consultation_attachment_webm_has_video_track(string $path): bool {
+    $handle = @fopen($path, 'rb');
+    if (!$handle) return true; // Unreadable: keep the safer video classification.
+    // The Tracks element sits near the front, after the EBML header and Segment start.
+    // 64 KB is generous for a real recorder and still bounded.
+    $head = (string)fread($handle, 65536);
+    fclose($handle);
+    if ($head === '') return true;
+    return str_contains($head, "\x83\x81\x01");
+}
+
+/**
+ * Whether a WebM/Matroska file carries an audio track and no video track.
+ *
+ * This is the condition for reclassifying a `.webm` as audio: the audio track must be
+ * positively present, so a container that declares no track at all keeps the catalog's
+ * video classification rather than being guessed into audio.
+ */
+function consultation_attachment_webm_is_audio_only(string $path): bool {
+    $handle = @fopen($path, 'rb');
+    if (!$handle) return false;
+    $head = (string)fread($handle, 65536);
+    fclose($handle);
+    if ($head === '') return false;
+    return !str_contains($head, "\x83\x81\x01") && str_contains($head, "\x83\x81\x02");
+}
+
 /** Plain text: no NUL bytes and no control characters beyond tab/newline/return. */
 function consultation_attachment_looks_like_text(string $head): bool {
     if (str_contains($head, "\x00")) return false;
@@ -522,6 +564,22 @@ function consultation_attachment_validate(array $file, array $limits): array {
             'محتوى الملف لا يطابق صيغته المعلنة، أو أنه يحتوي على تعليمات برمجية.',
             'The file content does not match its declared format, or it contains executable code.'
         ));
+    }
+
+    // A browser voice recording is a `.webm` with no video track. The catalog maps the
+    // extension to video, so without this it would be filed as video and could never be
+    // transcribed. Reclassify from the container, and re-check the size against the audio
+    // limit, which is what this file really is.
+    if ($extension === 'webm' && consultation_attachment_webm_is_audio_only($file['tmp_name'])) {
+        $category = 'audio';
+        $maxBytes = consultation_attachment_category_bytes($category, $limits);
+        if ($size > $maxBytes) {
+            $maxMb = $limits[$category . '_mb'];
+            return $fail(consultation_attachment_msg(
+                "حجم الملف يتجاوز الحد المسموح لهذه الفئة ($maxMb ميجابايت).",
+                "The file exceeds the limit for this category ($maxMb MB)."
+            ));
+        }
     }
 
     return ['ok' => true, 'error' => null, 'extension' => $extension, 'category' => $category, 'mime' => $mime, 'size' => $size];

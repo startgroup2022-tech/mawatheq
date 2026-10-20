@@ -573,6 +573,71 @@ $auditRows = $pdo->query("SELECT COUNT(*) FROM audit_logs WHERE target_type='con
 check('attachment actions were written to the audit log', (int)$auditRows > 0);
 
 // ------------------------------------------------------------------
+echo "\n== 12) browser capture: an audio-only recording is classified as audio ==\n";
+// ------------------------------------------------------------------
+// The in-page recorder (voice notes, video notes) and the camera are new here. The one
+// server-side fact that makes them work is the classification: `MediaRecorder` writes an
+// audio-only voice note to `.webm`, and the catalogue maps `.webm` to video. If that
+// misclassification were left in place, a voice note would be stored as a video and
+// `consultation_attachment_is_audio()` would be false, so it could never be transcribed —
+// the recording would upload and then be permanently untranscribable.
+//
+// A real WebM is an EBML header followed by a Tracks element. Each track declares a
+// TrackType: id 0x83, one-byte size 0x81, one-byte value 0x01 (video) or 0x02 (audio).
+// These builders write exactly those bytes, so the classifier is exercised on structure
+// rather than on a filename.
+$webmHeader = "\x1A\x45\xDF\xA3" . "\x01\x00\x00\x00\x00\x00\x00\x1F"
+    . "\x42\x86\x81\x01" . "\x42\xF7\x81\x01" . "\x42\xF2\x81\x04" . "\x42\xF3\x81\x08"
+    . "\x42\x82\x84" . 'webm' . "\x42\x87\x81\x02" . "\x42\x85\x81\x02";
+$audioOnlyWebm = $webmHeader . "\x1F\x43\xB6\x75" . str_repeat("\x00", 24)
+    . "\x16\x54\xAE\x6B" . "\xAE" . "\xD7\x81\x02" . "\x83\x81\x02" . str_repeat("\x00", 300);
+$videoWebm = $webmHeader . "\x1F\x43\xB6\x75" . str_repeat("\x00", 24)
+    . "\x16\x54\xAE\x6B" . "\xAE" . "\xD7\x81\x01" . "\x83\x81\x01" . "\x83\x81\x02" . str_repeat("\x00", 300);
+// A container that declares no track at all. It must keep the catalogue's video category:
+// the downgrade to audio requires a positively identified audio track, so a truncated or
+// synthetic header is never guessed into a category that unlocks transcription.
+$tracklessWebm = $webmHeader . str_repeat("\x00", 400);
+
+check('the audio-only builder sniffs as WebM', consultation_attachment_sniff(tmpUpload('probe.webm', $audioOnlyWebm), 'webm'));
+check('the audio-only builder is recognised as audio-only', consultation_attachment_webm_is_audio_only(tmpUpload('probe.webm', $audioOnlyWebm)));
+check('the video builder is not audio-only', !consultation_attachment_webm_is_audio_only(tmpUpload('probe.webm', $videoWebm)));
+check('a track-less container is not reclassified as audio', !consultation_attachment_webm_is_audio_only(tmpUpload('probe.webm', $tracklessWebm)));
+
+// Validation refuses any path that did not arrive as an HTTP upload, so the classification
+// is proved through the real endpoint rather than by calling the validator directly.
+// Uploaded straight onto the consultation, not a draft: a draft has no consultation_id, so
+// the transcribe endpoint would answer 404 before it ever judged the file's category.
+// The recording the browser actually produces: .webm, no video track.
+[$code, $up] = upload($A['clientToken'], ['consultation_id' => $consultationId], 'voice-note.webm', $audioOnlyWebm);
+check('a browser voice note uploads (HTTP 201)', $code === 201);
+$captureId = (int)($up['attachment']['id'] ?? 0);
+$created['attachments'][] = $captureId;
+check('a browser voice note is stored as audio, not video', ($up['attachment']['category'] ?? '') === 'audio');
+
+// A camera recording in the same container stays a video.
+[$code, $up] = upload($A['clientToken'], ['consultation_id' => $consultationId], 'video-note.webm', $videoWebm);
+check('a camera recording uploads (HTTP 201)', $code === 201);
+$camId = (int)($up['attachment']['id'] ?? 0);
+$created['attachments'][] = $camId;
+check('a camera recording stays categorised as video', ($up['attachment']['category'] ?? '') === 'video');
+
+// The voice note passes the category gate. The provider is absent in the test environment,
+// so the documented "no provider configured" refusal is the expected answer — and it is only
+// reachable at all if the file was classified as audio.
+[$code, $tr] = http('POST', '/api/v1/consultation-attachments.php', [
+    'token' => $A['clientToken'],
+    'json' => ['action' => 'transcribe', 'attachment_id' => $captureId, 'consent' => true],
+]);
+check('the voice note passes the audio gate (not HTTP 422)', $code !== 422);
+
+// A video note must not be transcribable, so the classification is doing real work.
+[$code, $tr] = http('POST', '/api/v1/consultation-attachments.php', [
+    'token' => $A['clientToken'],
+    'json' => ['action' => 'transcribe', 'attachment_id' => $camId, 'consent' => true],
+]);
+check('a video note is refused for transcription (HTTP 422)', $code === 422);
+
+// ------------------------------------------------------------------
 echo "\n== cleanup ==\n";
 // ------------------------------------------------------------------
 // Remove the rows and files this probe created. Storage is deleted through the model's own
