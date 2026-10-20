@@ -123,10 +123,14 @@ printf '  removed %s root-level .md file(s) from the site package\n' "$removed_d
     || fail "MAWATHEQ_DEPLOYMENT_GUIDE_AR.md is missing from the migration package"
 [ -f "$STAGE/migrations/database/upgrade_v56.sql" ] \
     || fail "database/upgrade_v56.sql is missing from the migration package"
-# Execution 31's schema is the last migration in the chain. A package that stops at v56
-# would deploy the affiliate code against tables that do not exist.
 [ -f "$STAGE/migrations/database/upgrade_v57.sql" ] \
     || fail "database/upgrade_v57.sql is missing from the migration package"
+# upgrade_v63.sql is the last migration in the chain, and it carries the consultation
+# journey's schema (specialties, issue types, staged attachments). A package that stops
+# earlier deploys the journey code against tables that do not exist — the same failure the
+# v57 guard above exists to prevent. Assert the current head, not a remembered one.
+[ -f "$STAGE/migrations/database/upgrade_v63.sql" ] \
+    || fail "database/upgrade_v63.sql is missing from the migration package"
 
 # --- modes and timestamps --------------------------------------------------
 step "normalizing file modes and timestamps"
