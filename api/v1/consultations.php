@@ -9,6 +9,9 @@
  *           idempotency_key  a key the client keeps for the whole submission attempt, so a
  *                            retried request returns the consultation it already created
  *                            instead of booking a second one
+ *         optional journey fields (Execution 37), both validated server-side:
+ *           specialty_category_id  the legal specialty the customer chose
+ *           issue_type_id          the plain-language issue type within that specialty
  *
  * A consultation is accepted when it carries a written description OR at least one staged
  * attachment. "Audio only" is a valid submission, which is what the brief asks for.
@@ -18,6 +21,7 @@ require_once __DIR__ . '/../../includes/availability.php';
 require_once __DIR__ . '/../../includes/notifications.php';
 require_once __DIR__ . '/../../includes/tenant.php';
 require_once __DIR__ . '/../../includes/consultation_attachments.php';
+require_once __DIR__ . '/../../includes/legal_journey.php';
 
 $auth = api_authenticate($pdo);
 
@@ -34,12 +38,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     if ($auth['type'] === 'client') {
         $stmt = $pdo->prepare('SELECT c.*, ' . $attachmentStats . ', l.full_name AS lawyer_name, l.photo_path AS lawyer_photo FROM consultations c JOIN lawyers l ON l.id=c.lawyer_id WHERE c.user_id=? ORDER BY c.scheduled_at DESC');
         $stmt->execute([$auth['id']]);
+        // The internal legal classification is lawyer-side. The client must never receive
+        // it — not even as an id it could render — so it is stripped from the client's
+        // rows before they leave the server. A lawyer's own rows keep it, because
+        // classifying the request is part of the lawyer's work.
+        $rows = array_map(function (array $r): array {
+            unset($r['najiz_case_type_id'], $r['specialty_category_id']);
+            return $r;
+        }, $stmt->fetchAll());
     } else {
         $scope = tenant_owner_where_for_lawyer($pdo, $auth['id'], 'c');
         $stmt = $pdo->prepare('SELECT c.*, ' . $attachmentStats . ', u.full_name AS client_name, u.phone AS client_phone FROM consultations c JOIN users u ON u.id=c.user_id WHERE ' . $scope['sql'] . ' ORDER BY c.scheduled_at DESC');
         $stmt->execute($scope['params']);
+        $rows = $stmt->fetchAll();
     }
-    api_json(['ok' => true, 'consultations' => $stmt->fetchAll()]);
+    api_json(['ok' => true, 'consultations' => $rows]);
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -118,9 +131,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // member of the firm, including the lawyer who owns it.
     $firmId = tenant_context_for_lawyer($pdo, $lawyerId)['firm_id'];
 
+    // The journey's routing, validated against the real classification. The client sends the
+    // specialty and issue type it showed the customer in plain language; a value that does
+    // not exist, or an issue type from a different specialty, is dropped rather than stored.
+    // Both are optional — a client that skips the journey books exactly as before.
+    $choice = legal_journey_resolve_choice(
+        $pdo,
+        (int)($in['specialty_category_id'] ?? 0),
+        (int)($in['issue_type_id'] ?? $in['najiz_case_type_id'] ?? 0)
+    );
+
     try {
-        $pdo->prepare('INSERT INTO consultations (user_id, lawyer_id, firm_id, consultation_type, scheduled_at, topic, price, idempotency_key) VALUES (?,?,?,?,?,?,?,?)')
-            ->execute([$auth['id'], $lawyerId, $firmId, $type, $scheduledAt, $topic, $lawyer['hourly_rate'], $idempotencyKey !== '' ? $idempotencyKey : null]);
+        // The specialty column is written only when upgrade_v63.sql has run, so a client
+        // pointed at a not-yet-migrated server still books successfully.
+        if (legal_journey_specialty_column_ready($pdo)) {
+            $pdo->prepare('INSERT INTO consultations (user_id, lawyer_id, firm_id, consultation_type, scheduled_at, topic, price, idempotency_key, najiz_case_type_id, specialty_category_id) VALUES (?,?,?,?,?,?,?,?,?,?)')
+                ->execute([$auth['id'], $lawyerId, $firmId, $type, $scheduledAt, $topic, $lawyer['hourly_rate'], $idempotencyKey !== '' ? $idempotencyKey : null, $choice['najiz_case_type_id'], $choice['specialty_category_id']]);
+        } else {
+            $pdo->prepare('INSERT INTO consultations (user_id, lawyer_id, firm_id, consultation_type, scheduled_at, topic, price, idempotency_key, najiz_case_type_id) VALUES (?,?,?,?,?,?,?,?,?)')
+                ->execute([$auth['id'], $lawyerId, $firmId, $type, $scheduledAt, $topic, $lawyer['hourly_rate'], $idempotencyKey !== '' ? $idempotencyKey : null, $choice['najiz_case_type_id']]);
+        }
         $consultationId = (int)$pdo->lastInsertId();
     } catch (PDOException $e) {
         // Two retries raced and the unique key rejected the second. That is exactly the

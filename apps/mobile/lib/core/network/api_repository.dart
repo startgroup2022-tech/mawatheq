@@ -227,12 +227,18 @@ class ApiRepository {
   }
 
   /// `POST /api/v1/consultations.php` (client accounts only).
+  ///
+  /// `specialtyCategoryId` and `issueTypeId` carry the customer's journey choice so
+  /// the lawyer receives the internal legal classification. Both are optional: a
+  /// booking that skipped the journey is unchanged.
   Future<int> bookConsultation({
     required int lawyerId,
     required String consultationType,
     required String date,
     required String time,
     String? topic,
+    int? specialtyCategoryId,
+    int? issueTypeId,
   }) async {
     final json = await _client.post(
       '/consultations.php',
@@ -242,9 +248,77 @@ class ApiRepository {
         'date': date,
         'time': time,
         if (topic != null && topic.isNotEmpty) 'topic': topic,
+        if (specialtyCategoryId != null && specialtyCategoryId > 0)
+          'specialty_category_id': specialtyCategoryId,
+        if (issueTypeId != null && issueTypeId > 0) 'issue_type_id': issueTypeId,
       },
     );
     return Json(json).intg('consultation_id');
+  }
+
+  // ------------------------------------------------------- consultation journey
+
+  /// The legal specialties the customer chooses from.
+  ///
+  /// Public, like the lawyer directory. The response carries only customer-facing
+  /// names — never the internal classification.
+  Future<List<JourneySpecialty>> journeySpecialties({String? query}) async {
+    final json = await _client.get(
+      '/journey.php',
+      auth: false,
+      query: {
+        'action': 'specialties',
+        if (query != null && query.isNotEmpty) 'q': query,
+      },
+    );
+    return json['specialties'] is List
+        ? (json['specialties'] as List)
+            .whereType<Map>()
+            .map((e) => JourneySpecialty.fromJson(Map<String, dynamic>.from(e)))
+            .toList()
+        : <JourneySpecialty>[];
+  }
+
+  /// The plain-language issue types inside one specialty.
+  Future<List<JourneyIssueType>> journeyIssueTypes({
+    required int categoryId,
+    String? query,
+  }) async {
+    final json = await _client.get(
+      '/journey.php',
+      auth: false,
+      query: {
+        'action': 'issue-types',
+        'category_id': categoryId,
+        if (query != null && query.isNotEmpty) 'q': query,
+      },
+    );
+    return json['issue_types'] is List
+        ? (json['issue_types'] as List)
+            .whereType<Map>()
+            .map((e) => JourneyIssueType.fromJson(Map<String, dynamic>.from(e)))
+            .toList()
+        : <JourneyIssueType>[];
+  }
+
+  /// The approved lawyers who provide one specialty, with a fallback message when
+  /// there are none so the customer is never shown a dead end.
+  Future<JourneyMatch> journeyLawyers({
+    required int categoryId,
+    String? jurisdiction,
+    String? query,
+  }) async {
+    final json = await _client.get(
+      '/journey.php',
+      auth: false,
+      query: {
+        'action': 'lawyers',
+        'category_id': categoryId,
+        if (jurisdiction != null && jurisdiction.isNotEmpty) 'jurisdiction': jurisdiction,
+        if (query != null && query.isNotEmpty) 'q': query,
+      },
+    );
+    return JourneyMatch.fromJson(json);
   }
 
   // ------------------------------------------------------------ lawyers

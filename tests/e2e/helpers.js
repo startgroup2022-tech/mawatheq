@@ -7,7 +7,9 @@ const ACCOUNTS = {
   // Seeded by tests/seed_phase6.php + tests/seed_phase6_business.php.
   lawyer: process.env.MAWATHEQ_LAWYER_EMAIL || 'owner-a@example.com',
   lawyerB: 'owner-b@example.com',
-  client: 'client-firm17@example.com',
+  // seed_phase6.php creates client-a/client-b; the "firm<N>" clients only exist once
+  // seed_phase6_business.php has run, so the plain account is the safe default.
+  client: process.env.MAWATHEQ_CLIENT_EMAIL || 'client-a@example.com',
   admin: 'admin@mawatheq.com',
 };
 
@@ -19,6 +21,12 @@ async function login(page, loginPath, email, password = PASSWORD) {
     page.waitForLoadState('domcontentloaded'),
     page.click('button[type="submit"]'),
   ]);
+  // A rejected login leaves the browser on the login page, where every later assertion
+  // about "the dashboard renders" would pass for the wrong reason. Fail loudly instead.
+  expect(
+    page.url(),
+    `login as ${email} was rejected — still on ${loginPath}`,
+  ).not.toContain(loginPath);
 }
 
 // The dev server prints deprecations; a real PHP error must still fail the page.

@@ -106,6 +106,7 @@ if (!function_exists('nav_lawyer')) {
                     'cases'         => ['icon' => 'briefcase', 'label' => $rtl ? 'القضايا' : 'Cases', 'href' => '/lawyer/cases.php'],
                     'consultations' => ['icon' => 'calendar', 'label' => $rtl ? 'الاستشارات' : 'Consultations', 'href' => '/lawyer/consultations.php'],
                     'calendar'      => ['icon' => 'clock', 'label' => $rtl ? 'التقويم والجلسات' : 'Calendar & sessions', 'href' => '/lawyer/calendar.php'],
+                    'specialties'   => ['icon' => 'check-circle', 'label' => $rtl ? 'تخصصاتي' : 'My specialties', 'href' => '/lawyer/specialties.php'],
                 ],
             ],
             [

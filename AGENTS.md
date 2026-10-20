@@ -1559,7 +1559,9 @@ trap applies to new `.sql` files under `database/`.
 
 `bash tests/run_all_tests.sh` (background it; it takes ~5 minutes and the runtime reclaims idle
 foreground jobs). Suites are auto-discovered as `tests/*_test.php` and `tests/*_probe.php`.
-Playwright: `npx playwright test` (~5.5 minutes, 636 tests, six viewports).
+Playwright: `npx playwright test` (~6.3 minutes, 684 tests, six viewports).
+Flutter: `export PATH="/workspace/flutter_sdk/bin:$PATH"` then `flutter analyze && flutter test`
+(93 tests) — see "Flutter is at `/workspace/flutter_sdk`" below.
 
 ### Multimodal attachments (Execution 35)
 
@@ -1643,3 +1645,67 @@ Checksum the build, then *download over the public URL and checksum again* — a
 `sha256sum -c` proves the files on disk, not the ones served. Also confirm the served archive
 still contains the fix (`unzip -p site.zip <path> | grep <symbol>`): a stale download directory
 serves old bytes with a 200, which a status-code check cannot see.
+
+## Execution 37 — customer consultation journey, internal classification hidden
+
+### The internal classification has three exits, and each one needed closing
+
+`najiz_case_type_id` is the lawyer's taxonomy. The customer must never see it. There were three
+separate routes out and they had to be closed independently — closing one proves nothing about
+the others:
+
+* `includes/legal_journey.php` builds the customer vocabulary. It maps a customer-safe specialty
+  and issue-type onto the internal ids; the ids stay server-side.
+* `api/v1/journey.php` is the shared endpoint (website **and** Flutter app). Its `specialties`
+  action returns `id, name, description, icon_key, lawyer_count` and nothing else.
+* `api/v1/consultations.php` — the client branch used `SELECT c.*`, which shipped
+  `najiz_case_type_id` to the customer in their own consultation list. It now names its columns.
+
+The regression test asserts on all three, because a future `c.*` is exactly the kind of edit that
+looks harmless. The lawyer's own views keep the full classification — the rule protects the
+customer, it does not hide the taxonomy from the professional.
+
+### The empty match table is the correct state, not a bug
+
+`upgrade_v63.sql` creates `lawyer_specialties` **empty** and assigns no lawyer a specialty.
+Inventing an expertise the lawyer never claimed is a fabrication, and it would route a real
+customer to a lawyer who cannot help. So the journey must handle "no match" as a first-class
+outcome: the specialty still appears (with its real lawyer count, including zero) and the lawyer
+step shows a clear alternative sentence rather than an unrelated match or a dead end. When
+testing locally, an empty match list is expected until a lawyer fills `/lawyer/specialties.php`.
+
+### `_FakeTransport` returns a JSON string, and a stray quote fails as "server error"
+
+A malformed JSON literal in a Dart test does not fail where it is written. `ApiClient._decode`
+catches the `FormatException` and rethrows `ApiException(server, 'رد غير متوقع من الخادم.')`, so
+the failure surfaces as a 200-with-a-complaint and points at the client, not at the fixture. The
+cause here was a doubled quote (`}],"` + `"not_sure"` → `}],"",{`). When a Dart fixture test
+reports "unexpected response" against a 200, validate the literal before reading the client code:
+`dart run` a two-line file that `jsonDecode`s it.
+
+### The Playwright client account did not exist, so the suite passed vacuously
+
+`tests/e2e/helpers.js` logged in as `client-firm17@example.com`. `seed_phase6.php` creates
+`client-a`/`client-b`; `seed_phase6_business.php` creates `client-firm<N>` only for the firms it
+sees. With two firms seeded, `firm17` never existed. `login()` then silently stayed on the login
+page, and every "the dashboard renders for the client" assertion passed against the login form —
+eight tests green for a client who could not sign in. The helper now asserts the URL left the
+login page, so a rejected login fails loudly, and the default account is the plain seeded one.
+**A helper that swallows a failed login turns a whole spec file into a no-op.**
+
+### The customer journey submits on a button, not on picking an option
+
+Step 2's issue-type radio is `position:absolute;opacity:0` and only fills a hidden input; the
+navigation happens when the customer presses «عرض المحامين المتاحين». A test that clicks the
+label and waits for the URL stays on `consultation-journey.php`. Drive the form the way a person
+does — click the option, then click `#issueForm button[type="submit"]`.
+
+### Flutter is at `/workspace/flutter_sdk`
+
+Not on `PATH` by default. `export PATH="/workspace/flutter_sdk/bin:$PATH"` then
+`flutter pub get && flutter analyze && flutter test`. `flutter pub get` rewrites
+`apps/mobile/pubspec.lock` (7 packages resolve to newer versions); revert it with
+`git checkout -- apps/mobile/pubspec.lock` unless the dependency change is intended — the lock
+churn is noise, not part of the change. Mobile tests use the same fake-transport pattern as the
+PHP contract tests: a fake `BaseClient` returns the endpoint's real JSON, and the production
+client, repository and widgets handle it.

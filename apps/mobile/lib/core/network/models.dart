@@ -547,3 +547,87 @@ class AiReply {
     );
   }
 }
+
+/// One legal specialty the customer can choose, from `GET /api/v1/journey.php?action=specialties`.
+///
+/// These are the customer-facing names and descriptions. The internal legal
+/// classification behind them is deliberately absent from this model — the app
+/// never receives it, so it can never render it.
+class JourneySpecialty {
+  const JourneySpecialty({
+    required this.id,
+    required this.name,
+    this.description = '',
+    this.iconKey = '',
+    this.lawyerCount = 0,
+  });
+
+  final int id;
+  final String name;
+  final String description;
+  final String iconKey;
+  final int lawyerCount;
+
+  /// A specialty nobody currently covers is still shown — it just says so.
+  bool get hasLawyers => lawyerCount > 0;
+
+  factory JourneySpecialty.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return JourneySpecialty(
+      id: j.intg('id'),
+      name: j.str('name', fallback: j.str('name_ar')),
+      description: j.str('description', fallback: j.str('customer_desc_ar')),
+      iconKey: j.str('icon_key', fallback: j.str('customer_icon_key')),
+      lawyerCount: j.intg('lawyer_count'),
+    );
+  }
+}
+
+/// One plain-language issue type within a specialty, from
+/// `GET /api/v1/journey.php?action=issue-types&category_id=..`.
+class JourneyIssueType {
+  const JourneyIssueType({
+    required this.id,
+    required this.name,
+    this.definition = '',
+    this.group = '',
+  });
+
+  final int id;
+  final String name;
+  final String definition;
+  final String group;
+
+  factory JourneyIssueType.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return JourneyIssueType(
+      id: j.intg('id'),
+      name: j.str('name', fallback: j.str('name_ar')),
+      definition: j.str('definition'),
+      group: j.str('group'),
+    );
+  }
+}
+
+/// The result of the journey's lawyer lookup: the matches plus, when there are
+/// none, a customer-appropriate alternative sentence instead of an empty screen.
+class JourneyMatch {
+  const JourneyMatch({
+    this.lawyers = const [],
+    this.matched = false,
+    this.alternative = '',
+  });
+
+  final List<LawyerProfile> lawyers;
+  final bool matched;
+  final String alternative;
+
+  factory JourneyMatch.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return JourneyMatch(
+      lawyers: j.list('lawyers').map((e) => LawyerProfile.fromJson(e.asMap)).toList(),
+      matched: j.boolean('matched'),
+      alternative: j.str('alternative'),
+    );
+  }
+}

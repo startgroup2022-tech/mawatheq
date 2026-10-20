@@ -46,12 +46,17 @@ class BrandAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.actions = const [],
     this.showLogo = true,
     this.bottom,
+    this.leading,
   });
 
   final String? subtitle;
   final List<Widget> actions;
   final bool showLogo;
   final PreferredSizeWidget? bottom;
+
+  /// Optional leading widget. Left null, the AppBar keeps its default (an automatic
+  /// back button when the route can pop), so existing screens are unaffected.
+  final Widget? leading;
 
   @override
   Size get preferredSize => Size.fromHeight(kToolbarHeight + (bottom?.preferredSize.height ?? 0));
@@ -60,6 +65,7 @@ class BrandAppBar extends StatelessWidget implements PreferredSizeWidget {
   Widget build(BuildContext context) {
     return AppBar(
       titleSpacing: AppSpacing.s4,
+      leading: leading,
       title: Row(
         children: [
           if (showLogo) ...[

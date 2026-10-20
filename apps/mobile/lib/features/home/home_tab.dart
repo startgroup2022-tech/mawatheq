@@ -9,6 +9,7 @@ import '../../core/theme/app_colors.dart';
 import '../../shared/widgets/brand_widgets.dart';
 import '../account/account_screen.dart';
 import '../consultations/consultations_screen.dart';
+import '../consultations/journey_screen.dart';
 import '../notifications/notifications_screen.dart';
 import '../public/pricing_screen.dart';
 
@@ -203,6 +204,14 @@ class _HomeTabState extends State<HomeTab> {
                 label: 'الاستشارات',
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const ConsultationsScreen()),
+                ),
+              ),
+              FeatureTile(
+                icon: Icons.assignment_outlined,
+                label: 'احجز استشارة',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                      builder: (_) => const ConsultationJourneyScreen()),
                 ),
               ),
               FeatureTile(

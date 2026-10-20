@@ -47,12 +47,30 @@ lib/
     auth/                         login, register
     home/                         shell + dashboard tab
     cases/ documents/ consultations/ assistant/ notifications/ account/
+    consultations/journey_screen.dart  specialty → issue type → lawyer → book
   shared/widgets/brand_widgets.dart   18 shared components
   shared/widgets/auth_gate.dart       sign-in prompt for protected actions
 ```
 
 Layering rule: a screen depends on `ApiRepository`, never on `ApiClient` or on
 `http` directly. `ApiRepository` is the only place that knows endpoint paths.
+
+## The consultation journey
+
+`ConsultationJourneyScreen` walks the customer through four steps: specialty →
+issue type → lawyer → booking. It calls the same three `journey.php` actions the
+website does (`specialties`, `issue-types`, `lawyers`), so both clients show the
+same data and obey the same rules.
+
+The internal Najiz legal classification is never part of this journey. It is
+absent from `JourneySpecialty`, `JourneyIssueType` and `JourneyMatch`, it is never
+sent in the booking request, and it is never rendered. The customer chooses from
+plain-language vocabulary only; the classification stays server-side and is shown
+to the lawyer alone. `test/exec37_journey_test.dart` asserts this on the model,
+the request body and the rendered screen.
+
+A specialty with no registered lawyer still appears, marked as such, and the
+lawyer step shows a clear alternative instead of an unrelated match.
 
 ## Authentication
 
@@ -109,14 +127,20 @@ cope with it being absent:
 
 ```bash
 flutter analyze     # must be clean
-flutter test        # 79 tests: model parsing, error mapping, pricing, guest, splash,
-                    #            auth security, password reset, deep links
+flutter test        # 93 tests: model parsing, error mapping, pricing, guest, splash,
+                    #            auth security, password reset, deep links, consultation journey
 ```
 
 The tests use a fake transport that returns the same JSON and status codes the
 PHP endpoints return, so the production client, repository and widgets are all
 exercised for real. `_MemoryTokenStore` stands in for the platform keychain,
 which is not available in a unit-test process.
+
+`test/exec37_journey_test.dart` pins the customer consultation journey against the
+same `api/v1/journey.php` contract the website uses, and asserts the one rule the
+feature exists to enforce: the internal Najiz classification never reaches the
+customer. The model has no field for it, the request never sends it, and the
+rendered journey screen never prints it.
 
   ## Password reset and Android App Links
 

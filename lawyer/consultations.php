@@ -25,7 +25,18 @@ $activeLawyer = 'consultations';
 require_once __DIR__ . '/includes/lawyer_header.php';
 
 $scope = tenant_owner_where($pdo, 'c');
-$rows = $pdo->prepare('SELECT c.*, u.full_name AS client_name, u.phone AS client_phone FROM consultations c JOIN users u ON u.id=c.user_id WHERE ' . $scope['sql'] . ' ORDER BY c.scheduled_at DESC');
+// The internal classification is shown here on purpose: this is the lawyer's own view,
+// and the classification is the internal reference that helps the lawyer prepare. It is
+// never shown to the customer.
+$rows = $pdo->prepare('SELECT c.*, u.full_name AS client_name, u.phone AS client_phone,
+                              nct.name_ar AS internal_type, nsub.name_ar AS internal_subcategory,
+                              ncat.name_ar AS internal_category
+                         FROM consultations c
+                         JOIN users u ON u.id=c.user_id
+                         LEFT JOIN najiz_case_types nct ON nct.id=c.najiz_case_type_id
+                         LEFT JOIN najiz_subcategories nsub ON nsub.id=nct.subcategory_id
+                         LEFT JOIN najiz_categories ncat ON ncat.id=nsub.category_id
+                        WHERE ' . $scope['sql'] . ' ORDER BY c.scheduled_at DESC');
 $rows->execute($scope['params']);
 $rows = $rows->fetchAll();
 ?>
@@ -33,7 +44,7 @@ $rows = $rows->fetchAll();
   <div class="toolbar"><h2><?= is_rtl() ? 'استشاراتي' : 'My consultations' ?></h2></div>
   <div class="table-wrap">
     <table class="admin-table">
-      <thead><tr><th><?= is_rtl() ? 'العميل' : 'Client' ?></th><th><?= is_rtl() ? 'الموعد' : 'Date' ?></th><th><?= is_rtl() ? 'النوع' : 'Type' ?></th><th><?= is_rtl() ? 'الموضوع' : 'Topic' ?></th><th><?= is_rtl() ? 'الحالة' : 'Status' ?></th><th></th></tr></thead>
+      <thead><tr><th><?= is_rtl() ? 'العميل' : 'Client' ?></th><th><?= is_rtl() ? 'الموعد' : 'Date' ?></th><th><?= is_rtl() ? 'النوع' : 'Type' ?></th><th><?= is_rtl() ? 'الموضوع' : 'Topic' ?></th><th><?= is_rtl() ? 'التصنيف القانوني' : 'Legal classification' ?></th><th><?= is_rtl() ? 'الحالة' : 'Status' ?></th><th></th></tr></thead>
       <tbody>
         <?php foreach ($rows as $r): ?>
         <tr>
@@ -41,6 +52,14 @@ $rows = $rows->fetchAll();
           <td><?= date('Y-m-d H:i', strtotime($r['scheduled_at'])) ?></td>
           <td><?= htmlspecialchars($r['consultation_type']) ?></td>
           <td><?= htmlspecialchars($r['topic']) ?></td>
+          <td>
+            <?php if (!empty($r['internal_type'])): ?>
+              <span style="font-weight:700;color:var(--navy-dark)"><?= htmlspecialchars($r['internal_type']) ?></span>
+              <br><span style="color:var(--text-muted);font-size:.78rem"><?= htmlspecialchars($r['internal_category']) ?> › <?= htmlspecialchars($r['internal_subcategory']) ?></span>
+            <?php else: ?>
+              <span style="color:var(--text-muted)"><?= is_rtl() ? 'غير مصنّف' : 'Unclassified' ?></span>
+            <?php endif; ?>
+          </td>
           <td><span class="status-pill status-<?= $r['status'] ?>"><?= htmlspecialchars($r['status']) ?></span></td>
           <td>
             <?php if ($r['status'] === 'pending'): ?><form method="post" style="display:inline"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="change_status"><input type="hidden" name="consultation_id" value="<?= (int)$r['id'] ?>"><input type="hidden" name="status" value="confirmed"><button class="icon-btn" type="submit"><?= is_rtl() ? 'تأكيد' : 'Confirm' ?></button></form><?php endif; ?>
@@ -50,7 +69,7 @@ $rows = $rows->fetchAll();
           </td>
         </tr>
         <?php endforeach; ?>
-        <?php if (empty($rows)): ?><tr><td colspan="6" style="text-align:center;color:var(--text-muted)"><?= is_rtl() ? 'لا توجد استشارات بعد' : 'No consultations yet' ?></td></tr><?php endif; ?>
+        <?php if (empty($rows)): ?><tr><td colspan="7" style="text-align:center;color:var(--text-muted)"><?= is_rtl() ? 'لا توجد استشارات بعد' : 'No consultations yet' ?></td></tr><?php endif; ?>
       </tbody>
     </table>
   </div>

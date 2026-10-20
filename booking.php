@@ -5,8 +5,28 @@ require_once __DIR__ . '/includes/availability.php';
 require_once __DIR__ . '/includes/notifications.php';
 require_once __DIR__ . '/includes/consultation_attachments.php';
 require_once __DIR__ . '/includes/tenant.php';
+require_once __DIR__ . '/includes/legal_journey.php';
 
 $lawyerId = (int)($_GET['lawyer_id'] ?? 0);
+
+// The journey (consultation-journey.php) hands the chosen specialty and issue type to
+// this form through the query string, so the booking keeps the routing the customer
+// chose. Both are re-validated server-side below; a value that does not exist is
+// dropped rather than stored.
+//
+// The parameter is `issue_type_id`, the customer's own vocabulary. The legacy
+// `najiz_case_type_id` is still accepted so an older mobile build or a saved link keeps
+// working, but nothing the customer sees is named after the internal source.
+$journeyCategoryId = (int)($_GET['specialty_category_id'] ?? 0);
+$journeyIssueTypeId = (int)($_GET['issue_type_id'] ?? $_GET['najiz_case_type_id'] ?? 0);
+
+// The customer-facing summary of that choice. Resolved to names on the server, so the
+// page never renders an internal id and never needs the customer's browser to look the
+// classification up. Null when the choice does not exist or the journey was skipped.
+$journeyChoice = legal_journey_resolve_choice($pdo, $journeyCategoryId, $journeyIssueTypeId);
+$journeyCategoryName = legal_journey_specialty_name($pdo, (int)$journeyChoice['specialty_category_id']);
+$journeyIssueTypeName = legal_journey_issue_type_name($pdo, (int)$journeyChoice['najiz_case_type_id']);
+
 $stmt = $pdo->prepare("SELECT * FROM lawyers WHERE id=? AND status='approved'");
 $stmt->execute([$lawyerId]);
 $lawyer = $stmt->fetch();
@@ -46,24 +66,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($hasAvailability && !in_array($time, $validSlots, true)) {
         $error = is_rtl() ? 'هذا الموعد لم يعد متاحاً، يرجى اختيار وقت آخر.' : 'This slot is no longer available, please pick another.';
     } else {
-        $najizTypeId = null;
-        $postedNajiz = (int)($_POST['najiz_case_type_id'] ?? 0);
-        if ($postedNajiz > 0) {
-            try {
-                $chk = $pdo->prepare('SELECT id FROM najiz_case_types WHERE id=? AND is_active=1');
-                $chk->execute([$postedNajiz]);
-                $najizTypeId = ($v = $chk->fetchColumn()) ? (int)$v : null;
-            } catch (Throwable $e) {
-                // Classification tables absent: the booking must still succeed.
-                $najizTypeId = null;
-            }
-        }
+        // Resolve the journey choice against the real classification. A specialty or
+        // issue type that does not exist — or an issue type that belongs to a different
+        // specialty — is dropped rather than stored, so the consultation can only carry
+        // a relationship that is true.
+        $choice = legal_journey_resolve_choice(
+            $pdo,
+            (int)($_POST['specialty_category_id'] ?? $journeyCategoryId),
+            (int)($_POST['issue_type_id'] ?? $_POST['najiz_case_type_id'] ?? $journeyIssueTypeId)
+        );
+        $najizTypeId = $choice['najiz_case_type_id'];
+        $specialtyCategoryId = $choice['specialty_category_id'];
+
         // Tag the booking with the lawyer's firm, for the same reason the REST API does:
         // firm-scoped lawyers are authorized through consultations.firm_id, and nothing else
         // sets it. A solo lawyer resolves to NULL, which is the correct "no firm" marker.
         $firmId = tenant_context_for_lawyer($pdo, $lawyerId)['firm_id'];
-        $pdo->prepare('INSERT INTO consultations (user_id, lawyer_id, firm_id, consultation_type, scheduled_at, topic, price, najiz_case_type_id) VALUES (?,?,?,?,?,?,?,?)')
-            ->execute([$_SESSION['user_id'], $lawyerId, $firmId, $type, $scheduledAt, $topic, $lawyer['hourly_rate'], $najizTypeId]);
+
+        // The specialty column is written only when upgrade_v63.sql has run. Building the
+        // statement around the real schema keeps a not-yet-migrated database bookable.
+        if (legal_journey_specialty_column_ready($pdo)) {
+            $pdo->prepare('INSERT INTO consultations (user_id, lawyer_id, firm_id, consultation_type, scheduled_at, topic, price, najiz_case_type_id, specialty_category_id) VALUES (?,?,?,?,?,?,?,?,?)')
+                ->execute([$_SESSION['user_id'], $lawyerId, $firmId, $type, $scheduledAt, $topic, $lawyer['hourly_rate'], $najizTypeId, $specialtyCategoryId]);
+        } else {
+            $pdo->prepare('INSERT INTO consultations (user_id, lawyer_id, firm_id, consultation_type, scheduled_at, topic, price, najiz_case_type_id) VALUES (?,?,?,?,?,?,?,?)')
+                ->execute([$_SESSION['user_id'], $lawyerId, $firmId, $type, $scheduledAt, $topic, $lawyer['hourly_rate'], $najizTypeId]);
+        }
         $consultationId = (int)$pdo->lastInsertId();
 
         // Optional judicial requests. Re-validated against the chosen type so a posted id
@@ -164,10 +192,33 @@ $extraPageAssets = [
       <?php endif; ?>
 
       <div class="field"><label><?= is_rtl() ? 'موضوع الاستشارة' : 'Topic' ?></label><textarea name="topic" rows="3"></textarea></div>
-      <div class="field">
-        <label><?= is_rtl() ? 'تصنيف ناجز (اختياري — يساعد المحامي على فهم نوع النزاع)' : 'Najiz classification (optional — helps the lawyer understand the dispute)' ?></label>
-        <?php require_once __DIR__ . '/includes/najiz_selector.php'; render_najiz_selector('najiz_case_type_id', null, true, 'najiz_request_ids'); ?>
-      </div>
+
+      <?php
+      /*
+       * The customer's chosen specialty and issue type, carried from the journey.
+       *
+       * These are hidden fields, not a picker: the customer already made the choice in
+       * plain language (consultation-journey.php), and this form must never show the
+       * internal classification's name or taxonomy — that is an internal reference the
+       * lawyer sees, not the customer. The values are re-validated in the POST handler,
+       * so a crafted request cannot store a relationship that does not exist. When the
+       * customer arrives here directly (no journey), both are 0 and the booking is simply
+       * unclassified — the honest outcome.
+       */
+      ?>
+      <input type="hidden" name="specialty_category_id" value="<?= (int)$journeyCategoryId ?>">
+      <input type="hidden" name="issue_type_id" value="<?= (int)$journeyIssueTypeId ?>">
+      <?php if ($journeyCategoryName !== null): ?>
+        <div class="field">
+          <div class="dash-card" style="margin:0;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+            <div>
+              <div style="font-size:.76rem;color:var(--text-muted);font-weight:700"><?= is_rtl() ? 'موضوع الاستشارة المختار' : 'Selected consultation topic' ?></div>
+              <strong style="color:var(--navy-dark)"><?= htmlspecialchars($journeyCategoryName) ?><?php if ($journeyIssueTypeName !== null): ?> — <?= htmlspecialchars($journeyIssueTypeName) ?><?php endif; ?></strong>
+            </div>
+            <a href="/consultation-journey.php?category_id=<?= (int)$journeyChoice['specialty_category_id'] ?>" class="btn btn-outline btn-sm"><?= is_rtl() ? 'تعديل' : 'Edit' ?></a>
+          </div>
+        </div>
+      <?php endif; ?>
 
       <?php
       /*

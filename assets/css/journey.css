@@ -1,0 +1,112 @@
+/* ============================================================================
+   Customer consultation journey (Execution 37)
+   Specialty cards -> issue types -> lawyer comparison -> booking.
+   Premium Arabic RTL, with LTR support. Uses the platform's design tokens so it
+   matches the rest of the portal in both directions.
+   ============================================================================ */
+
+.journey-steps{ display:flex; flex-wrap:wrap; gap:8px; margin:0 0 18px; padding:0; list-style:none; }
+.journey-steps li{
+  display:flex; align-items:center; gap:8px; padding:7px 14px; border-radius:20px;
+  background:#fff; border:1px solid var(--border); color:var(--text-muted);
+  font-size:.82rem; font-weight:700;
+}
+.journey-steps li.is-current{ background:var(--navy); border-color:var(--navy); color:#fff; }
+.journey-steps li.is-done{ border-color:var(--teal); color:var(--navy); }
+.journey-steps .n{
+  display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px;
+  border-radius:50%; background:rgba(0,0,0,.06); font-size:.72rem;
+}
+.journey-steps li.is-current .n{ background:rgba(255,255,255,.22); }
+
+/* ---- specialty cards ---- */
+.journey-search{ display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; margin-bottom:18px; }
+.journey-search .field{ flex:1; min-width:220px; margin:0; }
+.journey-search input[type="search"]{
+  width:100%; min-height:44px; border:1px solid var(--border); border-radius:10px;
+  padding:10px 14px; background:#fff; font:inherit; color:var(--text);
+}
+.specialty-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:14px; }
+.specialty-card{
+  display:flex; flex-direction:column; gap:10px; padding:20px; border-radius:14px;
+  background:#fff; border:1px solid var(--border); color:inherit; text-align:start;
+  transition:border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+.specialty-card:hover{ border-color:var(--teal); box-shadow:0 8px 24px rgba(15,31,51,.08); transform:translateY(-2px); }
+.specialty-card .ico{
+  display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px;
+  border-radius:12px; background:#EFF8FA; color:var(--teal);
+}
+.specialty-card h3{ margin:0; font-size:1.02rem; color:var(--navy-dark); }
+.specialty-card p{ margin:0; font-size:.86rem; line-height:1.7; color:var(--text-muted); }
+.specialty-card .meta{
+  margin-top:auto; padding-top:10px; border-top:1px solid var(--border);
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  font-size:.8rem; color:var(--text-muted); font-weight:700;
+}
+.specialty-card .count{ color:var(--navy); }
+
+/* ---- issue types ---- */
+.issue-group{ margin:0 0 18px; }
+.issue-group > h4{
+  margin:0 0 10px; font-size:.86rem; font-weight:800; color:var(--text-muted);
+  letter-spacing:.01em;
+}
+.issue-list{ display:flex; flex-direction:column; gap:8px; }
+.issue-option{
+  display:flex; gap:12px; align-items:flex-start; padding:14px 16px; border-radius:11px;
+  background:#fff; border:1px solid var(--border); cursor:pointer; text-align:start;
+  transition:border-color .15s ease, background .15s ease;
+}
+.issue-option:hover{ border-color:var(--teal); background:#FBFDFE; }
+.issue-option.is-selected{ border-color:var(--navy); background:#F4F8FB; }
+.issue-option .dot{
+  flex:none; width:18px; height:18px; margin-top:2px; border-radius:50%;
+  border:2px solid var(--border); background:#fff;
+}
+.issue-option.is-selected .dot{ border-color:var(--navy); background:var(--navy); box-shadow:inset 0 0 0 3px #fff; }
+.issue-option .body{ min-width:0; }
+.issue-option strong{ display:block; font-size:.94rem; color:var(--navy-dark); }
+.issue-option span{ display:block; margin-top:4px; font-size:.83rem; line-height:1.65; color:var(--text-muted); }
+.issue-option.not-sure{ border-style:dashed; }
+.issue-option.not-sure .dot{ border-style:dashed; }
+
+/* ---- lawyer comparison ---- */
+.compare-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:14px; }
+.compare-card{
+  display:flex; flex-direction:column; gap:14px; padding:20px; border-radius:14px;
+  background:#fff; border:1px solid var(--border);
+}
+.compare-card.is-picked{ border-color:var(--navy); box-shadow:0 0 0 2px rgba(30,58,95,.12); }
+.compare-head{ display:flex; gap:14px; align-items:center; }
+.compare-head img{
+  width:56px; height:56px; border-radius:50%; object-fit:cover; background:#EAEFF3; flex:none;
+}
+.compare-head .who{ min-width:0; }
+.compare-head strong{ display:block; font-size:1rem; color:var(--navy-dark); }
+.compare-head .sub{ font-size:.82rem; color:var(--text-muted); }
+.compare-facts{ display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
+.compare-facts .fact{ background:#F8FAFC; border:1px solid var(--border); border-radius:10px; padding:10px 12px; }
+.compare-facts .fact .k{ font-size:.72rem; color:var(--text-muted); font-weight:700; }
+.compare-facts .fact .v{ font-size:.95rem; color:var(--navy-dark); font-weight:800; margin-top:3px; }
+.compare-facts .fact .v.ltr{ direction:ltr; text-align:start; unicode-bidi:isolate; }
+.avail-line{ font-size:.82rem; color:var(--text-muted); display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.avail-chip{
+  display:inline-block; padding:3px 9px; border-radius:14px; background:#EFF8FA;
+  border:1px solid var(--border); color:var(--navy); font-size:.76rem; font-weight:700;
+}
+.avail-chip.none{ background:#FFF8E6; color:#8A6D1D; }
+.compare-actions{ margin-top:auto; display:flex; gap:10px; }
+
+.journey-empty{
+  padding:36px 22px; text-align:center; border-radius:14px; background:#fff;
+  border:1px dashed var(--border);
+}
+.journey-empty .ico{ font-size:2rem; }
+.journey-empty h3{ margin:10px 0 6px; color:var(--navy-dark); }
+.journey-empty p{ margin:0 auto 14px; max-width:520px; }
+
+@media (max-width:640px){
+  .compare-facts{ grid-template-columns:1fr; }
+  .specialty-grid{ grid-template-columns:1fr; }
+}
