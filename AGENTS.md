@@ -1700,6 +1700,18 @@ navigation happens when the customer presses «عرض المحامين المت�
 label and waits for the URL stays on `consultation-journey.php`. Drive the form the way a person
 does — click the option, then click `#issueForm button[type="submit"]`.
 
+### `najiz_categories` is filled by the importer, not by a migration
+
+`includes/najiz_import.php` inserts the classification at runtime; `database/schema.sql` does not
+contain it and no upgrade seeds it. So a migration that derives data from category names (v63
+writes `customer_desc_ar` from `name_ar`) fills nothing on a fresh install, because at migration
+time the table is empty. It is not a bug in the migration — it is a real ordering dependency, and
+the fix is that v63 is idempotent and fills only rows that are still `NULL`, so **re-running it
+after the import** completes the data. The release smoke test asserted "descriptions were filled"
+against a scratch database and failed for exactly this reason; the useful assertion is the
+mechanism (insert a category, re-run v63, expect the description), not the count on an empty
+table. When a migration derives from data, test the derivation, not the row count.
+
 ### Flutter is at `/workspace/flutter_sdk`
 
 Not on `PATH` by default. `export PATH="/workspace/flutter_sdk/bin:$PATH"` then

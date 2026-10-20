@@ -259,6 +259,49 @@ check('consultation_attachments carries the tenant column',
 $settingCount = (int)$admin->query("SELECT COUNT(*) FROM `$scratch`.site_settings WHERE setting_key LIKE 'consultation_attachment_%'")->fetchColumn();
 check("the packaged Execution 30 migration seeded the limits ($settingCount rows)", $settingCount === 5);
 
+// Execution 37's migration is in the same loop. Assert its objects too: the journey reads
+// lawyer_specialties on every match query, so a package that shipped the site files without
+// this table would 500 on the customer's third step. The table must also be EMPTY — the
+// migration deliberately assigns no lawyer a specialty.
+check('the packaged Execution 37 migration created lawyer_specialties',
+    e291_has_table($admin, $scratch, 'lawyer_specialties'));
+check('lawyer_specialties carries both foreign keys',
+    e291_has_fk($admin, $scratch, 'lawyer_specialties', 'fk_lawyer_specialty_lawyer')
+    && e291_has_fk($admin, $scratch, 'lawyer_specialties', 'fk_lawyer_specialty_cat'));
+check('the packaged Execution 37 migration created the customer columns',
+    e291_has_column($admin, $scratch, 'najiz_categories', 'customer_desc_ar')
+    && e291_has_column($admin, $scratch, 'najiz_categories', 'customer_icon_key'));
+check('the packaged Execution 37 migration created consultations.specialty_category_id',
+    e291_has_column($admin, $scratch, 'consultations', 'specialty_category_id'));
+$lsCount = (int)$admin->query("SELECT COUNT(*) FROM `$scratch`.lawyer_specialties")->fetchColumn();
+check('lawyer_specialties ships empty — no lawyer is assigned a specialty', $lsCount === 0);
+
+// The customer descriptions are static content, but najiz_categories is populated by
+// includes/najiz_import.php at runtime — no migration seeds it, and schema.sql does not
+// contain it. So the scratch database has zero categories and v63 legitimately filled
+// nothing. Assert the mechanism directly instead: create a category the way the importer
+// does, re-run v63, and confirm the description and icon appear. This also proves v63 is
+// safe to re-run, which is how a fresh install repairs itself when the import happens
+// after the migration.
+$admin->exec("INSERT INTO `$scratch`.najiz_categories (name_ar, name_en, is_active)
+              VALUES ('الدعاوى العمالية', 'Labor', 1)");
+e291_apply_sql($admin, $scratch, $pkg . '/database/upgrade_v63.sql');
+$row = $admin->query("SELECT customer_desc_ar, customer_icon_key FROM `$scratch`.najiz_categories
+                      WHERE name_ar = 'الدعاوى العمالية'")->fetch(PDO::FETCH_ASSOC);
+check('re-running the packaged Execution 37 migration fills a category added later',
+    $row !== false && !empty($row['customer_desc_ar']),
+    'desc=' . var_export($row['customer_desc_ar'] ?? null, true));
+check('the same re-run sets the card icon key',
+    ($row['customer_icon_key'] ?? null) === 'labor',
+    'icon=' . var_export($row['customer_icon_key'] ?? null, true));
+check('the filled description is customer-facing prose, not the internal term',
+    isset($row['customer_desc_ar'])
+    && mb_strpos($row['customer_desc_ar'], 'ناجز') === false
+    && mb_strpos($row['customer_desc_ar'], 'الأحوال') === false,
+    'desc=' . var_export($row['customer_desc_ar'] ?? null, true));
+check('no customer description anywhere leaks the internal classification name',
+    (int)$admin->query("SELECT COUNT(*) FROM `$scratch`.najiz_categories WHERE customer_desc_ar LIKE '%ناجز%'")->fetchColumn() === 0);
+
 // ---------------------------------------------------------------------------
 echo "\n== 5. the reset flow works against the packaged result ==\n";
 // ---------------------------------------------------------------------------
