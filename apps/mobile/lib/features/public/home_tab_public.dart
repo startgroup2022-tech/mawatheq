@@ -99,12 +99,6 @@ class _PublicHomeTabState extends State<PublicHomeTab> {
       );
     }
 
-    // Only a total failure (nothing to show at all) replaces the screen; a partial
-    // failure still renders what did load.
-    if (_error != null && _banners.isEmpty && _specialties.isEmpty) {
-      return ErrorState(message: _error!, onRetry: _load);
-    }
-
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
@@ -113,6 +107,14 @@ class _PublicHomeTabState extends State<PublicHomeTab> {
           _greeting(rtl),
           const SizedBox(height: 16),
           _searchBar(rtl),
+          // A failure is reported inline, above the sections that still have content.
+          // It must never replace the screen: the slider and the specialty list come
+          // from different endpoints, so one missing file would otherwise hide the
+          // whole product (greeting, search, services, how-it-works) from the visitor.
+          if (_error != null) ...[
+            const SizedBox(height: 18),
+            _loadNotice(rtl),
+          ],
           if (_banners.isNotEmpty) ...[
             const SizedBox(height: 18),
             BannerCarousel(
@@ -151,6 +153,43 @@ class _PublicHomeTabState extends State<PublicHomeTab> {
   }
 
   // ----------------------------------------------------------------- sections
+
+  /// A non-blocking notice for a failed section load, with a retry action.
+  Widget _loadNotice(bool rtl) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.s4),
+      decoration: BoxDecoration(
+        color: AppColors.dangerBg,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment:
+            rtl ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.error_outline, size: 20, color: AppColors.danger),
+              const SizedBox(width: AppSpacing.s3),
+              Expanded(
+                child: Text(
+                  _error!,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.s3),
+          SecondaryButton(
+            label: rtl ? 'إعادة المحاولة' : 'Retry',
+            icon: Icons.refresh,
+            onPressed: _load,
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _greeting(bool rtl) {
     return Column(
@@ -216,11 +255,12 @@ class _PublicHomeTabState extends State<PublicHomeTab> {
       );
     }
 
+    // Show every specialty the server publishes, not an arbitrary prefix: the
+    // owner asked for all categories to be reachable from the home screen.
     return Wrap(
       spacing: 10,
       runSpacing: 10,
       children: _specialties
-          .take(8)
           .map((s) => _SpecialtyChip(
                 specialty: s,
                 rtl: rtl,

@@ -28,6 +28,28 @@ require_once __DIR__ . '/najiz_parser.php';
 require_once __DIR__ . '/najiz_search_lib.php';
 
 /**
+ * Whether the classification tables exist.
+ *
+ * An install that never received upgrade_v59.sql has no najiz_* tables, and that is a
+ * deployment state rather than a server fault. Every caller that reads the hierarchy
+ * must therefore ask this first and degrade to an empty result: the public guide
+ * renders a readable "not enabled yet" notice, and api/najiz_classify.php answers with
+ * an empty list instead of dying on the first query with an opaque 500. Both readers
+ * share this one probe so they cannot disagree about readiness.
+ */
+function najiz_tables_ready(PDO $pdo): bool {
+    static $ready = null;
+    if ($ready !== null) return $ready;
+    try {
+        $pdo->query('SELECT 1 FROM najiz_categories LIMIT 1');
+        $ready = true;
+    } catch (Throwable $e) {
+        $ready = false;
+    }
+    return $ready;
+}
+
+/**
  * @param array $opts  dry_run (bool), source (string path), actor_admin_id (int|null)
  * @return array report
  */

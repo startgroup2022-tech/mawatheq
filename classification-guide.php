@@ -13,13 +13,9 @@ require_once __DIR__ . '/includes/najiz_import.php';
 $q = trim((string)($_GET['q'] ?? ''));
 $catFilter = (int)($_GET['cat'] ?? 0);
 
-// Guard: the guide must render before the migration has been applied.
-$hasTables = false;
-try {
-    $hasTables = (bool)$pdo->query("SELECT 1 FROM najiz_categories LIMIT 1") !== false;
-} catch (Throwable $e) {
-    $hasTables = false;
-}
+// Guard: the guide must render before the migration has been applied. Uses the same
+// probe as api/najiz_classify.php so the page and the API cannot disagree.
+$hasTables = najiz_tables_ready($pdo);
 
 $results = [];
 $suggested = [];

@@ -1848,3 +1848,66 @@ Apache serves the repo at `:8080` (docroot `/workspace/project/mawatheq`, DB fro
 Seeding requires the admin DB user (`sudo mysql mawatheq_test`); note `najiz_categories` has
 `name_ar`/`name_en`, not `name`, and `lawyer_specialties` is a `(lawyer_id, category_id)` join
 table with no name column.
+
+## Execution 39 — the Android app's app-wide "INTERNAL SERVER ERROR" is a deployment gap
+
+### The error text is not in the APK, so it came from the server
+
+`grep` for `internal server error` (and `INTERNAL SERVER ERROR`) in the built APK's
+`classes.dex` and `lib/*/libapp.so` returns **nothing**, in both UTF-8 and UTF-16LE. The Arabic
+strings are all present in UTF-16LE in the AOT snapshot (`مواثيق` x5, `تخصصاتنا القانونية`,
+`خدمات سريعة`, `تعذّر الاتصال بالخادم`), which is the positive control that the search works.
+A Dart AOT snapshot stores strings as UTF-16LE, so a UTF-8-only grep finds nothing even when the
+string *is* compiled in. Conclusion: the text the owner saw was a **server response body**
+(`api/v1/bootstrap.php` emits exactly `{"ok":false,"error":"internal server error"}`), not a
+client string. Never conclude "the app hardcodes this" from a `grep` that did not first prove it
+can find a string you know is in the binary.
+
+### Production is running the pre-Execution-37 build, and the app is post-Execution-38
+
+The released APK calls `GET /api/v1/banners.php` and `GET /api/v1/journey.php?action=specialties`.
+Both are **404** on `mawatheq.com` (LiteSpeed HTML 404, not JSON) while `api/v1/README.md` is 403,
+so the `api/v1/` directory exists but the two files were never deployed. Everything else the app
+calls works: `plans.php` 200, `lawyers.php` 200, `available-slots.php` 200, the auth-gated set
+(`me/cases/documents/consultations/invoices/notifications/calendar/ai-status/...`) 401, and
+`auth/*` 400/410. `consultation-journey.php`, `lawyer/specialties.php` and `affiliate/index.php`
+are also 404. So the failure is not one broken endpoint — the deployed website is simply older
+than the client.
+
+### A real 500 on production: `api/najiz_classify.php`, and the page already says why
+
+`GET /api/najiz_classify.php?action=categories` returns **HTTP 500**
+`{"ok":false,"error":"server_error"}` (the endpoint's own `catch (Throwable)`). The cause is in
+production's own HTML: `classification-guide.php` renders "لم يتم تفعيل دليل التصنيفات بعد على هذا
+النظام. يرجى تطبيق ترقية قاعدة البيانات upgrade_v59.sql." The `najiz_*` tables do not exist
+because **`upgrade_v59.sql` was never applied**. The guide page guards on `$hasTables` and degrades
+politely; `api/najiz_classify.php` has no such guard and dies on the first query. That is why the
+same missing table produces a readable page and an opaque 500. A public read-only endpoint should
+answer `{"ok":true,"categories":[]}` when its reference tables are absent, not 500.
+
+### The home screen blanks itself on any load failure
+
+`PublicHomeTab._load()` records `_error` for a failed banners *or* specialties call, and `build()`
+replaces the entire screen with `ErrorState` when `_error != null && _banners.isEmpty &&
+_specialties.isEmpty`. Reproduced faithfully by replaying production's exact 404 HTML and 200 JSON
+through the real `ApiClient`/`ApiRepository` and rendering the real `PublicHomeTab`: the screen
+shows **2 texts total** — `العنصر المطلوب غير موجود.` and `إعادة المحاولة` — with no greeting, no
+search, no categories and no quick services. A single missing optional file (the banner slider)
+therefore erases the whole product.
+
+### `messageFromBody` passes the backend's raw string through
+
+`ApiException.message` is documented as carrying "the server's own Arabic message", and
+`messageFromBody` returns `decoded['error']` verbatim whenever it is a non-empty string. It only
+falls back to Arabic when the body is *not* JSON. So any English server error — `internal server
+error`, `unauthorized: invalid or expired token` — is shown to an Arabic-speaking customer exactly
+as the server wrote it. The status-based fallbacks below it are unreachable for JSON bodies.
+
+### Categories come from the importer, so a deployment that skipped v59 has none
+
+`najiz_categories` is filled by `includes/najiz_import.php` from
+`database/sources/Pasted%20text%283%29.txt`; no migration seeds it (see the Execution 37 note).
+`journey.php?action=specialties` and `api/najiz_classify.php?action=categories` are the only two
+readers, and on production the first is absent and the second 500s. The website homepage has no
+legal-category section at all, so there is nothing to scrape as a fallback — restoring categories
+requires applying `upgrade_v59.sql` **and** running the import on production.

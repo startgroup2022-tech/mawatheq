@@ -102,5 +102,5 @@ try {
     }
 } catch (Throwable $e) {
     error_log('api/v1/journey: ' . $e->getMessage());
-    api_error('internal server error', 500);
+    api_error('حدث خطأ في الخادم. يرجى المحاولة لاحقاً.', 500);
 }

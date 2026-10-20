@@ -20,6 +20,22 @@ header('X-Content-Type-Options: nosniff');
 $action = $_GET['action'] ?? '';
 
 try {
+    if (!najiz_tables_ready($pdo)) {
+        // Same shape as a populated database that has no matching rows, so the caller
+        // needs no special case for an unmigrated install.
+        switch ($action) {
+            case 'categories':    najiz_json(['ok' => true, 'categories' => []]);
+            case 'subcategories': najiz_json(['ok' => true, 'subcategories' => []]);
+            case 'types':         najiz_json(['ok' => true, 'types' => []]);
+            case 'requests':      najiz_json(['ok' => true, 'requests' => []]);
+            case 'search':        najiz_json(['ok' => true, 'query' => (string)($_GET['q'] ?? ''), 'results' => [], 'suggested' => []]);
+            case 'suggest':       najiz_json(['ok' => true, 'suggested' => []]);
+            case 'tree':          najiz_json(['ok' => true, 'categories' => [], 'subcategories' => [], 'types' => [], 'requests' => []]);
+            case 'stats':         najiz_json(['ok' => true, 'stats' => ['categories' => 0, 'subcategories' => 0, 'lawsuit_types' => 0, 'judicial_requests' => 0]]);
+            default:              najiz_json(['ok' => false, 'error' => 'unknown action'], 400);
+        }
+    }
+
     switch ($action) {
         case 'categories':
             $rows = $pdo->query('SELECT id, name_ar, name_en, sort_order FROM najiz_categories

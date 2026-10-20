@@ -29,7 +29,7 @@ if (getenv('MAWATHEQ_ALLOW_RUNTIME_SCHEMA_DDL') === '1') {
 set_exception_handler(function (Throwable $e): void {
     error_log('api/v1 uncaught: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
     if (!headers_sent()) http_response_code(500);
-    echo json_encode(['ok' => false, 'error' => 'internal server error'], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['ok' => false, 'error' => 'حدث خطأ في الخادم. يرجى المحاولة لاحقاً.'], JSON_UNESCAPED_UNICODE);
     exit;
 });
 $origin=$_SERVER['HTTP_ORIGIN'] ?? '';
@@ -73,7 +73,7 @@ function api_issue_token(PDO $pdo, string $userType, int $userId, ?string $devic
 function api_authenticate(PDO $pdo): array {
     $header = $_SERVER['HTTP_AUTHORIZATION'] ?? ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '');
     if (!preg_match('/Bearer\s+(\S+)/i', $header, $m)) {
-        api_error('unauthorized: missing bearer token', 401);
+        api_error('الجلسة مطلوبة. يرجى تسجيل الدخول.', 401);
     }
     $token = $m[1];
 
@@ -92,14 +92,14 @@ function api_authenticate(PDO $pdo): array {
     $stmt->execute([hash('sha256', $token), $token]);
     $row = $stmt->fetch();
     if (!$row) {
-        api_error('unauthorized: invalid or expired token', 401);
+        api_error('انتهت صلاحية الجلسة. يرجى تسجيل الدخول مرة أخرى.', 401);
     }
     $table = $row['user_type'] === 'lawyer' ? 'lawyers' : 'users';
     $account = $pdo->prepare("SELECT status,email_verified FROM {$table} WHERE id=?");
     $account->execute([(int)$row['user_id']]);
     $profile = $account->fetch();
     if (!$profile || empty($profile['email_verified']) || ($row['user_type'] === 'client' && $profile['status'] !== 'active') || ($row['user_type'] === 'lawyer' && $profile['status'] !== 'approved')) {
-        api_error('account is inactive or email is not verified', 403);
+        api_error('الحساب غير مفعّل أو البريد الإلكتروني غير مؤكد.', 403);
     }
     // Upgrade a legacy plaintext token to its hash on first use. The WHERE clause repeats
     // the plaintext condition so the write only touches a row that is still plaintext —
@@ -134,9 +134,9 @@ function api_integration_gate(array $integration): void {
     $endpoint = basename($_SERVER['SCRIPT_NAME'] ?? '');
     $map = api_integration_endpoint_scopes();
     if (!isset($map[$endpoint])) {
-        api_error('forbidden: this token cannot access ' . $endpoint, 403);
+        api_error('لا تملك صلاحية الوصول إلى هذا العنصر.', 403);
     }
     if (!integration_scope_allows($integration['scopes'] ?? '', $map[$endpoint])) {
-        api_error('forbidden: this token lacks the "' . $map[$endpoint] . '" scope', 403);
+        api_error('لا تملك الصلاحية المطلوبة لهذا الإجراء.', 403);
     }
 }
