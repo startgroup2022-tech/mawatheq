@@ -1,3 +1,6 @@
+import java.util.Properties
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -9,7 +12,12 @@ plugins {
 // points at a keystore (.jks/.keystore, both gitignored). When the file is absent — a plain
 // `flutter build apk --release` on a fresh clone — the release build falls back to the debug
 // signature so the build still works, exactly as before this change.
-val keystoreProperties = java.util.Properties()
+//
+// `Properties` is imported above rather than written as `java.util.Properties`: inside a
+// Project script `java` resolves to the Java plugin extension, not the JDK package, so the
+// qualified form does not compile here (it does in settings.gradle.kts, which has no such
+// extension).
+val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
 val hasReleaseKeystore = keystorePropertiesFile.exists()
 if (hasReleaseKeystore) {
@@ -26,8 +34,12 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
 
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_11.toString()
+    // compilerOptions replaces the deprecated kotlinOptions DSL; Kotlin 2.x warns on the
+    // old form and AGP 9 removes it.
+    kotlin {
+        compilerOptions {
+            jvmTarget = JvmTarget.JVM_11
+        }
     }
 
     defaultConfig {

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,6 +9,7 @@ import 'package:mawatheq_mobile/core/network/api_repository.dart';
 import 'package:mawatheq_mobile/core/network/models.dart';
 import 'package:mawatheq_mobile/core/storage/token_storage.dart';
 import 'package:mawatheq_mobile/features/consultations/journey_screen.dart';
+import 'package:mawatheq_mobile/shared/widgets/brand_widgets.dart';
 
 /// Execution 37 — the mobile consultation journey.
 ///
@@ -233,6 +235,167 @@ void main() {
     });
   });
 
+  group('Journey attachments: staging, limits and the booking hand-off', () {
+    test('a staged attachment parses the server-classified category', () {
+      final a = StagedAttachment.fromJson(jsonDecode(
+          '{"id":31,"name":"تسجيل.m4a","category":"audio","extension":"m4a",'
+          '"size":2048,"size_label":"2 KB","status":"staged"}') as Map<String, dynamic>);
+      expect(a.id, 31);
+      expect(a.originalName, 'تسجيل.m4a');
+      // The category comes from the server's byte-sniffing, not the filename.
+      expect(a.isAudio, isTrue);
+      expect(a.isVideo, isFalse);
+      expect(a.sizeLabel, '2 KB');
+      expect(a.status, 'staged');
+    });
+
+    test('the staged list carries the server limits, including the file ceiling',
+        () async {
+      late Uri seen;
+      final repo = _repo((uri) async {
+        seen = uri;
+        return (
+          200,
+          '{"ok":true,"attachments":[{"id":1,"name":"a.pdf","category":"document",'
+          '"extension":"pdf","size":10,"size_label":"10 B","status":"staged"}],'
+          '"limits":{"document_mb":10,"audio_mb":50,"video_mb":100,"max_files":5,'
+          '"allowed_extensions":["pdf","png","jpg","jpeg","mp3","m4a"],'
+          '"audio_extensions":["mp3","m4a"],"image_extensions":["png","jpg","jpeg"]}}'
+        );
+      });
+      final staged = await repo.journeyStagedAttachments(draftToken: 'a' * 64);
+      expect(seen.path, endsWith('/consultation-attachments.php'));
+      expect(seen.queryParameters['draft_token'], 'a' * 64);
+      expect(staged.attachments.single.originalName, 'a.pdf');
+      expect(staged.maxFiles, 5);
+      expect(staged.audioMb, 50);
+      expect(staged.atLimit, isFalse);
+      // The picker must offer exactly what the server accepts.
+      expect(staged.allowedExtensions.contains('pdf'), isTrue);
+      expect(staged.allowedExtensions.contains('mp3'), isTrue);
+      expect(staged.allowedExtensions.contains('exe'), isFalse);
+      // Per-category ceilings, with images riding the document limit.
+      expect(staged.limitMbFor('audio'), 50);
+      expect(staged.limitMbFor('video'), 100);
+      expect(staged.limitMbFor('image'), 10);
+      expect(staged.limitMbFor('document'), 10);
+    });
+
+    test('atLimit is true once the server maximum is reached', () {
+      final staged = JourneyStagedAttachments.fromJson(jsonDecode(
+          '{"ok":true,"attachments":[{"id":1,"name":"a.pdf","category":"document"},'
+          '{"id":2,"name":"b.pdf","category":"document"}],'
+          '"limits":{"max_files":2}}') as Map<String, dynamic>);
+      expect(staged.atLimit, isTrue);
+    });
+
+    test('booking carries the draft token so staged files are bound', () async {
+      final recording = _RecordingTransport();
+      final repo = ApiRepository(
+        client: ApiClient(
+          client: recording,
+          tokens: _MemoryTokenStore()..saveToken('t'),
+        ),
+      );
+      await repo.bookConsultation(
+        lawyerId: 1,
+        consultationType: 'text',
+        date: '2026-11-01',
+        time: '10:00',
+        topic: 'تفاصيل',
+        specialtyCategoryId: 1,
+        issueTypeId: 5,
+        draftToken: 'b' * 64,
+      );
+      expect(recording.lastBody.contains('draft_token'), isTrue);
+      expect(recording.lastBody.contains('b' * 64), isTrue);
+      // The customer's app must still never name the internal classification.
+      expect(recording.lastBody.contains('najiz'), isFalse);
+    });
+
+    test('a booking with no attachments sends no draft token', () async {
+      final recording = _RecordingTransport();
+      final repo = ApiRepository(
+        client: ApiClient(
+          client: recording,
+          tokens: _MemoryTokenStore()..saveToken('t'),
+        ),
+      );
+      await repo.bookConsultation(
+        lawyerId: 1,
+        consultationType: 'text',
+        date: '2026-11-01',
+        time: '10:00',
+      );
+      expect(recording.lastBody.contains('draft_token'), isFalse);
+    });
+
+    test('a staged upload posts the file as "file" with the draft token', () async {
+      final recording = _RecordingTransport();
+      final repo = ApiRepository(
+        client: ApiClient(
+          client: recording,
+          tokens: _MemoryTokenStore()..saveToken('t'),
+        ),
+      );
+      final file = File('${Directory.systemTemp.path}/exec37_stage_probe.pdf')
+        ..writeAsBytesSync(utf8.encode('%PDF-1.4 probe'));
+      addTearDown(() => file.existsSync() ? file.deleteSync() : null);
+
+      await repo.uploadJourneyAttachment(file: file, draftToken: 'c' * 64);
+
+      // The multipart body names the field the endpoint reads and carries the token.
+      expect(recording.lastBody.contains('name="file"'), isTrue);
+      expect(recording.lastBody.contains('c' * 64), isTrue);
+      expect(recording.lastUrl.path, endsWith('/consultation-attachments.php'));
+    });
+
+    test('removing a staged attachment deletes it by id', () async {
+      final recording = _RecordingTransport();
+      final repo = ApiRepository(
+        client: ApiClient(
+          client: recording,
+          tokens: _MemoryTokenStore()..saveToken('t'),
+        ),
+      );
+      await repo.deleteJourneyAttachment(31);
+      expect(recording.lastMethod, 'DELETE');
+      expect(recording.lastUrl.queryParameters['id'], '31');
+    });
+
+    test('a consultation reads back the files attached to it', () async {
+      late Uri seen;
+      final repo = _repo((uri) async {
+        seen = uri;
+        return (
+          200,
+          '{"ok":true,"attachments":[{"id":77,"name":"تسجيل.m4a","category":"audio",'
+          '"extension":"m4a","size":4096,"size_label":"4 KB","status":"stored"}],'
+          '"can_upload":true,"limits":{"document_mb":10,"max_files":5}}'
+        );
+      });
+      final list = await repo.consultationAttachments(20);
+      expect(seen.path, endsWith('/consultation-attachments.php'));
+      expect(seen.queryParameters['consultation_id'], '20');
+      expect(list.single.id, 77);
+      expect(list.single.isAudio, isTrue);
+      expect(list.single.status, 'stored');
+    });
+
+    test('the consultation list surfaces the attachment count', () {
+      final c = Consultation.fromJson(jsonDecode(
+          '{"id":20,"status":"confirmed","consultation_type":"voice",'
+          '"topic":"استشارة","attachment_count":3}') as Map<String, dynamic>);
+      expect(c.attachmentCount, 3);
+    });
+
+    test('a consultation with no attachments counts zero', () {
+      final c = Consultation.fromJson(jsonDecode(
+          '{"id":21,"status":"pending"}') as Map<String, dynamic>);
+      expect(c.attachmentCount, 0);
+    });
+  });
+
   group('The journey screen renders the three steps', () {
     testWidgets('step 1 shows the specialty cards from the API', (tester) async {
       final repo = _repo((uri) async {
@@ -323,19 +486,74 @@ void main() {
       expect(find.text('لا يوجد محامٍ متاح حالياً'), findsOneWidget);
       expect(find.textContaining('ترشيح محامٍ'), findsOneWidget);
     });
+
+    testWidgets('an empty submission is refused before it reaches the server',
+        (tester) async {
+      final recording = _RecordingTransport();
+      final repo = ApiRepository(
+        client: ApiClient(client: recording, tokens: _MemoryTokenStore()..saveToken('t')),
+      );
+      await tester.pumpWidget(
+        MaterialApp(home: ConsultationJourneyScreen(repository: repo)),
+      );
+      await tester.pumpAndSettle();
+
+      // Walk the real journey: specialty → issue type → lawyer → booking form.
+      await tester.tap(find.text('الأحوال الشخصية'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('إثبات عقد الزواج'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Firm A Owner'));
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithText(PrimaryButton, 'تأكيد الحجز'), findsOneWidget);
+      await tester.tap(find.text('10:00'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(PrimaryButton, 'تأكيد الحجز'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('اكتب وصفاً للاستشارة أو أرفق ملفاً واحداً على الأقل.'),
+          findsOneWidget);
+      expect(recording.lastUrl.path, isNot(endsWith('/consultations.php')),
+          reason: 'the booking must not be sent with neither a description nor a file');
+    });
   });
 }
 
-/// Reads the whole request body so the booking test can assert what was sent.
+/// Reads the whole request body so the booking test can assert what was sent, and
+/// answers with the same fixtures the other tests use so a real journey can be walked.
 class _RecordingTransport extends http_base.BaseClient {
   String lastBody = '';
+  String lastMethod = '';
+  Uri lastUrl = Uri();
 
   @override
   Future<http_base.StreamedResponse> send(http_base.BaseRequest request) async {
+    lastMethod = request.method;
+    lastUrl = request.url;
     final chunks = await request.finalize().toList();
-    lastBody = utf8.decode(chunks.expand((c) => c).toList());
+    lastBody = utf8.decode(chunks.expand((c) => c).toList(), allowMalformed: true);
+
+    final String body;
+    if (request.url.path.endsWith('/journey.php')) {
+      switch (request.url.queryParameters['action']) {
+        case 'specialties':
+          body = _specialtiesJson;
+        case 'issue-types':
+          body = _issueTypesJson;
+        default:
+          body = _matchJson;
+      }
+    } else if (request.url.path.endsWith('/available-slots.php')) {
+      body = '{"ok":true,"slots":["10:00","11:00"]}';
+    } else if (request.url.path.endsWith('/consultation-attachments.php')) {
+      body = '{"ok":true,"attachments":[],"limits":{"document_mb":10,"max_files":5}}';
+    } else {
+      body = jsonEncode({'ok': true, 'consultation_id': 20});
+    }
+
     return http_base.StreamedResponse(
-      Stream.value(utf8.encode(jsonEncode({'ok': true, 'consultation_id': 20}))),
+      Stream.value(utf8.encode(body)),
       200,
       headers: {'content-type': 'application/json; charset=utf-8'},
     );

@@ -231,6 +231,10 @@ class ApiRepository {
   /// `specialtyCategoryId` and `issueTypeId` carry the customer's journey choice so
   /// the lawyer receives the internal legal classification. Both are optional: a
   /// booking that skipped the journey is unchanged.
+  ///
+  /// `draftToken` is the token the customer's staged recordings/documents were
+  /// uploaded against. Passing it binds those files to the consultation the server
+  /// creates here; omitting it books exactly as before.
   Future<int> bookConsultation({
     required int lawyerId,
     required String consultationType,
@@ -239,6 +243,7 @@ class ApiRepository {
     String? topic,
     int? specialtyCategoryId,
     int? issueTypeId,
+    String? draftToken,
   }) async {
     final json = await _client.post(
       '/consultations.php',
@@ -251,9 +256,60 @@ class ApiRepository {
         if (specialtyCategoryId != null && specialtyCategoryId > 0)
           'specialty_category_id': specialtyCategoryId,
         if (issueTypeId != null && issueTypeId > 0) 'issue_type_id': issueTypeId,
+        if (draftToken != null && draftToken.isNotEmpty)
+          'draft_token': draftToken,
       },
     );
     return Json(json).intg('consultation_id');
+  }
+
+  /// Stages one recording/document against a draft token, before the consultation
+  /// exists. Returns the stored metadata so the form can list and remove it.
+  Future<StagedAttachment> uploadJourneyAttachment({
+    required File file,
+    required String draftToken,
+  }) async {
+    final json = await _client.uploadConsultationAttachment(
+      file: file,
+      draftToken: draftToken,
+    );
+    final map = json['attachment'];
+    return map is Map
+        ? StagedAttachment.fromJson(Map<String, dynamic>.from(map))
+        : const StagedAttachment(id: 0, originalName: '', category: '');
+  }
+
+  /// Removes a staged attachment the customer decided against.
+  Future<void> deleteJourneyAttachment(int attachmentId) =>
+      _client.deleteConsultationAttachment(attachmentId);
+
+  /// The files already staged under this draft token, plus the server's own upload
+  /// rules — the GET returns both, so the form never has to guess a limit and never
+  /// needs a second round trip. Only the uploader can read their own staged files.
+  Future<JourneyStagedAttachments> journeyStagedAttachments({
+    required String draftToken,
+  }) async {
+    final json = await _client.get(
+      '/consultation-attachments.php',
+      query: {'draft_token': draftToken},
+    );
+    return JourneyStagedAttachments.fromJson(json);
+  }
+
+  /// The files attached to a consultation that already exists — what the customer
+  /// sees after submitting, and what a lawyer sees on their queue. The server decides
+  /// who may read them, so the app does not filter by role itself.
+  Future<List<StagedAttachment>> consultationAttachments(int consultationId) async {
+    final json = await _client.get(
+      '/consultation-attachments.php',
+      query: {'consultation_id': consultationId},
+    );
+    return json['attachments'] is List
+        ? (json['attachments'] as List)
+            .whereType<Map>()
+            .map((e) => StagedAttachment.fromJson(Map<String, dynamic>.from(e)))
+            .toList()
+        : <StagedAttachment>[];
   }
 
   // ------------------------------------------------------- consultation journey

@@ -154,6 +154,67 @@ class ApiClient {
     }
   }
 
+  /// Multipart upload for the consultation journey's staged attachments.
+  ///
+  /// `POST /api/v1/consultation-attachments.php` with `draft_token`, so the customer can
+  /// attach recordings and documents to a consultation that does not exist yet. The token
+  /// is a 64-hex string the caller generates; the server binds the staged files to the
+  /// consultation when the booking POST carries the same token.
+  ///
+  /// `contentType` is intentionally left to the server for audio and video: the app cannot
+  /// always name the container reliably, and the endpoint sniffs the bytes anyway
+  /// (`consultation_attachment_sniff`). Sending a wrong guess would only mislead.
+  Future<Map<String, dynamic>> uploadConsultationAttachment({
+    required File file,
+    required String draftToken,
+    MediaType? contentType,
+  }) async {
+    try {
+      final request =
+          http.MultipartRequest('POST', _uri('/consultation-attachments.php'));
+      final token = await _tokens.readToken();
+      request.headers['Accept'] = 'application/json';
+      if (token != null && token.isNotEmpty) {
+        request.headers['Authorization'] = 'Bearer $token';
+      }
+
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          'file',
+          file.path,
+          contentType: contentType,
+        ),
+      );
+      request.fields['draft_token'] = draftToken;
+
+      final streamed = await _http.send(request).timeout(AppConfig.timeout);
+      final response = await http.Response.fromStream(streamed);
+      return _decode(response);
+    } on ApiException {
+      rethrow;
+    } catch (error) {
+      throw networkErrorFrom(error);
+    }
+  }
+
+  /// `DELETE /api/v1/consultation-attachments.php?id=` — removes a staged file before the
+  /// customer submits, so a mis-picked recording does not travel with the booking.
+  Future<void> deleteConsultationAttachment(int attachmentId) async {
+    try {
+      final response = await _http
+          .delete(
+            _uri('/consultation-attachments.php', {'id': attachmentId}),
+            headers: await _headers(),
+          )
+          .timeout(AppConfig.timeout);
+      _decode(response);
+    } on ApiException {
+      rethrow;
+    } catch (error) {
+      throw networkErrorFrom(error);
+    }
+  }
+
   /// Mirrors the server's allow-list in `includes/upload_validation.php` exactly
   /// (pdf/png/jpg/jpeg). Anything else returns null so the request carries no
   /// misleading content type; the server sniffs the bytes and rejects it anyway.

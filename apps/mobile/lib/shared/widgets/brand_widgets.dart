@@ -577,6 +577,21 @@ class ConsultationCard extends StatelessWidget {
             ].where((s) => s.isNotEmpty).join(' · '),
             style: Theme.of(context).textTheme.bodySmall,
           ),
+          if (item.attachmentCount > 0) ...[
+            const SizedBox(height: AppSpacing.s2),
+            Row(
+              children: [
+                const Icon(Icons.attach_file, size: 14),
+                const SizedBox(width: 4),
+                Text(
+                  item.attachmentCount == 1
+                      ? 'مرفق واحد'
+                      : '${item.attachmentCount} مرفقات',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

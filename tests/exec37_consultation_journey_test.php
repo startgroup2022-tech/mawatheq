@@ -146,6 +146,23 @@ check('specialties are sorted with staffed ones first',
     ($spec['specialties'][0]['lawyer_count'] ?? 0) >= ($spec['specialties'][count($spec['specialties']) - 1]['lawyer_count'] ?? 0));
 
 $catId = (int)($first['id'] ?? 0);
+
+// upgrade_v63.sql ships lawyer_specialties EMPTY on purpose: linking a lawyer to an
+// expertise is an operator action, and inventing one would route a real customer to a
+// lawyer who cannot help. The journey therefore reports no match on a clean database.
+// This suite creates the one link it needs and removes it in cleanup — asserting
+// matched:true against an empty table would be asserting the seed data, not the code.
+$fixtureLawyerId = (int)$pdo->query(
+    "SELECT id FROM lawyers WHERE status = 'approved' ORDER BY id LIMIT 1")->fetchColumn();
+check('an approved lawyer exists to link a specialty to', $fixtureLawyerId > 0);
+$pdo->prepare('INSERT IGNORE INTO lawyer_specialties (lawyer_id, category_id) VALUES (?, ?)')
+    ->execute([$fixtureLawyerId, $catId]);
+
+// Re-read the list so lawyer_count reflects the link above; the earlier read predates it,
+// and the unstaffed-specialty check below picks the first specialty with a count of zero.
+[$code, $body] = http37('GET', '/api/v1/journey.php?action=specialties');
+$spec = json_decode($body, true);
+
 [$code, $body] = http37('GET', "/api/v1/journey.php?action=issue-types&category_id=$catId");
 $types = json_decode($body, true);
 check('issue-types endpoint answers 200', $code === 200);
@@ -373,6 +390,9 @@ check('the unfiltered lawyer directory still answers 200', $code === 200);
 foreach ($createdConsultations as $id) {
     $pdo->prepare('DELETE FROM consultations WHERE id = ?')->execute([$id]);
 }
+// Remove the fixture link so the table is left exactly as upgrade_v63.sql ships it.
+$pdo->prepare('DELETE FROM lawyer_specialties WHERE lawyer_id = ? AND category_id = ?')
+    ->execute([$fixtureLawyerId, $catId]);
 @unlink($jar);
 @unlink($lj);
 

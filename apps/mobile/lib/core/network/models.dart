@@ -51,6 +51,20 @@ class Json {
     return const [];
   }
 
+  /// A list of plain scalars — e.g. the server's `allowed_extensions`. [list] is for
+  /// lists of objects and drops these, so they need their own accessor.
+  List<String> strList(String key) {
+    final value = raw[key];
+    if (value is List) {
+      return value
+          .where((e) => e != null)
+          .map((e) => e.toString())
+          .where((e) => e.isNotEmpty)
+          .toList();
+    }
+    return const [];
+  }
+
   Json? object(String key) {
     final value = raw[key];
     if (value is Map) return Json(Map<String, dynamic>.from(value));
@@ -242,6 +256,7 @@ class Consultation {
     this.clientName = '',
     this.scheduledDate = '',
     this.scheduledTime = '',
+    this.attachmentCount = 0,
   });
 
   final int id;
@@ -253,6 +268,10 @@ class Consultation {
   final String scheduledDate;
   final String scheduledTime;
 
+  /// How many files are attached, as counted server-side. The list endpoint already
+  /// derives it; showing it tells the customer their upload arrived.
+  final int attachmentCount;
+
   String get schedule =>
       [scheduledDate, scheduledTime].where((s) => s.isNotEmpty).join(' · ');
 
@@ -263,6 +282,7 @@ class Consultation {
       status: j.str('status', fallback: 'pending'),
       consultationType: j.str('consultation_type', fallback: 'text'),
       topic: j.str('topic', fallback: j.str('subject')),
+      attachmentCount: j.intg('attachment_count'),
       lawyerName: j.str('lawyer_name'),
       clientName: j.str('client_name'),
       scheduledDate: j.str('scheduled_date', fallback: j.str('date')),
@@ -628,6 +648,103 @@ class JourneyMatch {
       lawyers: j.list('lawyers').map((e) => LawyerProfile.fromJson(e.asMap)).toList(),
       matched: j.boolean('matched'),
       alternative: j.str('alternative'),
+    );
+  }
+}
+
+/// One recording or document staged against a draft token, from
+/// `POST/GET /api/v1/consultation-attachments.php`.
+///
+/// The server classifies the file (`file_category`: document/image/audio/video) after
+/// sniffing its bytes, so the app shows the server's category rather than trusting the
+/// filename. No stored path is ever exposed.
+class StagedAttachment {
+  const StagedAttachment({
+    required this.id,
+    required this.originalName,
+    required this.category,
+    this.extension = '',
+    this.size = 0,
+    this.sizeLabel = '',
+    this.status = 'staged',
+  });
+
+  final int id;
+  final String originalName;
+  final String category;
+  final String extension;
+  final int size;
+  final String sizeLabel;
+  final String status;
+
+  bool get isAudio => category == 'audio';
+  bool get isVideo => category == 'video';
+
+  factory StagedAttachment.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return StagedAttachment(
+      id: j.intg('id'),
+      originalName: j.str('name'),
+      category: j.str('category'),
+      extension: j.str('extension'),
+      size: j.intg('size'),
+      sizeLabel: j.str('size_label'),
+      status: j.str('status', fallback: 'staged'),
+    );
+  }
+}
+
+/// The staged files for one draft token plus the server's upload rules.
+///
+/// `allowedExtensions` and the per-category MB ceilings come from the server, so the
+/// picker filters by the real allow-list and the UI states the real limits.
+class JourneyStagedAttachments {
+  const JourneyStagedAttachments({
+    this.attachments = const [],
+    this.allowedExtensions = const [],
+    this.maxFiles = 0,
+    this.documentMb = 0,
+    this.audioMb = 0,
+    this.videoMb = 0,
+  });
+
+  final List<StagedAttachment> attachments;
+  final List<String> allowedExtensions;
+  final int maxFiles;
+  final int documentMb;
+  final int audioMb;
+  final int videoMb;
+
+  bool get atLimit => maxFiles > 0 && attachments.length >= maxFiles;
+
+  /// The ceiling that applies to one file of this category, for the pre-upload hint.
+  /// Images ride the document limit, matching `consultation_attachment_limits`.
+  int limitMbFor(String category) {
+    switch (category) {
+      case 'audio':
+        return audioMb;
+      case 'video':
+        return videoMb;
+      default:
+        return documentMb;
+    }
+  }
+
+  factory JourneyStagedAttachments.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    final limits = j.object('limits');
+    return JourneyStagedAttachments(
+      attachments: j
+          .list('attachments')
+          .map((e) => StagedAttachment.fromJson(e.asMap))
+          .toList(),
+      allowedExtensions: limits == null
+          ? const []
+          : limits.strList('allowed_extensions'),
+      maxFiles: limits?.intg('max_files') ?? 0,
+      documentMb: limits?.intg('document_mb') ?? 0,
+      audioMb: limits?.intg('audio_mb') ?? 0,
+      videoMb: limits?.intg('video_mb') ?? 0,
     );
   }
 }

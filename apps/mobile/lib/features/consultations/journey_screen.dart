@@ -1,3 +1,7 @@
+import 'dart:io';
+import 'dart:math';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/network/api_exception.dart';
@@ -308,16 +312,105 @@ class _JourneyBookingScreenState extends State<_JourneyBookingScreen> {
   bool _submitting = false;
   String? _error;
 
+  /// The token this form's recordings/documents are staged against. Generated once per
+  /// booking form: the files have to exist somewhere before the consultation does, and
+  /// the booking POST binds them by carrying the same token.
+  late final String _draftToken = _generateDraftToken();
+  List<StagedAttachment> _attachments = const [];
+  List<String> _allowedExtensions = const ['pdf', 'png', 'jpg', 'jpeg', 'mp3', 'wav', 'm4a', 'ogg', 'mp4', 'mov', 'webm'];
+  int _maxFiles = 0;
+  bool _uploading = false;
+
+  static String _generateDraftToken() {
+    // 32 random bytes as 64 lowercase hex characters — the exact shape the endpoint
+    // validates (`/^[a-f0-9]{64}$/`) and unguessable enough to stand alone.
+    final rng = Random.secure();
+    final bytes = List<int>.generate(32, (_) => rng.nextInt(256));
+    return bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+  }
+
   @override
   void initState() {
     super.initState();
     _loadSlots();
+    _loadStaged();
   }
 
   @override
   void dispose() {
     _topic.dispose();
     super.dispose();
+  }
+
+  /// Pulls the server's own allow-list and any files already staged, so a resumed form
+  /// (or a rebuild) never loses what the customer attached.
+  Future<void> _loadStaged() async {
+    try {
+      final staged =
+          await widget.repository.journeyStagedAttachments(draftToken: _draftToken);
+      if (!mounted) return;
+      setState(() {
+        _attachments = staged.attachments;
+        _allowedExtensions = staged.allowedExtensions.isEmpty
+            ? _allowedExtensions
+            : staged.allowedExtensions;
+        _maxFiles = staged.maxFiles;
+      });
+    } on ApiException {
+      // A failure here must not block the booking; the customer can still write the topic.
+    }
+  }
+
+  Future<void> _attachFile() async {
+    if (_uploading) return;
+    if (_maxFiles > 0 && _attachments.length >= _maxFiles) {
+      setState(() => _error = 'بلغت الحد الأقصى لعدد المرفقات ($_maxFiles).');
+      return;
+    }
+
+    final picked = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: _allowedExtensions,
+      withData: false,
+    );
+    final path = picked?.files.single.path;
+    if (path == null || !mounted) return;
+
+    setState(() {
+      _uploading = true;
+      _error = null;
+    });
+    try {
+      final attachment = await widget.repository.uploadJourneyAttachment(
+        file: File(path),
+        draftToken: _draftToken,
+      );
+      if (!mounted) return;
+      setState(() {
+        _attachments = [..._attachments, attachment];
+        _uploading = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _uploading = false;
+        _error = e.message;
+      });
+    }
+  }
+
+  Future<void> _removeAttachment(StagedAttachment attachment) async {
+    try {
+      await widget.repository.deleteJourneyAttachment(attachment.id);
+      if (!mounted) return;
+      setState(() {
+        _attachments =
+            _attachments.where((a) => a.id != attachment.id).toList();
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.message);
+    }
   }
 
   String get _dateParam =>
@@ -363,6 +456,13 @@ class _JourneyBookingScreenState extends State<_JourneyBookingScreen> {
       setState(() => _error = 'اختر وقتاً متاحاً.');
       return;
     }
+    // The server accepts a consultation with a written description OR at least one
+    // staged file ("audio only" is a valid submission). Enforce the same rule here so
+    // the customer is told before the request leaves the device.
+    if (_topic.text.trim().isEmpty && _attachments.isEmpty) {
+      setState(() => _error = 'اكتب وصفاً للاستشارة أو أرفق ملفاً واحداً على الأقل.');
+      return;
+    }
     setState(() {
       _submitting = true;
       _error = null;
@@ -376,6 +476,10 @@ class _JourneyBookingScreenState extends State<_JourneyBookingScreen> {
         topic: _topic.text.trim(),
         specialtyCategoryId: widget.specialty.id,
         issueTypeId: widget.issueType?.id,
+        // Binds the recordings/documents staged above to the consultation the server
+        // is about to create. With no attachments the server treats it as an ordinary
+        // booking, so this is safe to always send.
+        draftToken: _draftToken,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -444,8 +548,16 @@ class _JourneyBookingScreenState extends State<_JourneyBookingScreen> {
             controller: _topic,
             maxLines: 3,
             decoration: const InputDecoration(
-              labelText: 'اكتب وصفاً موجزاً لمشكلتك (اختياري)',
+              labelText: 'اكتب وصفاً موجزاً لمشكلتك (أو أرفق ملفاً)',
             ),
+          ),
+          const SizedBox(height: 16),
+          _AttachmentsSection(
+            attachments: _attachments,
+            uploading: _uploading,
+            atLimit: _maxFiles > 0 && _attachments.length >= _maxFiles,
+            onAdd: _attachFile,
+            onRemove: _removeAttachment,
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),
@@ -466,6 +578,137 @@ class _JourneyBookingScreenState extends State<_JourneyBookingScreen> {
 }
 
 // ------------------------------------------------------------- building blocks
+
+/// The recordings and documents the customer attaches to the consultation.
+///
+/// Files are staged server-side as they are picked (against the form's draft token),
+/// so a large recording does not have to survive in memory until submit, and a file
+/// the customer removes is gone from the server immediately. A consultation is valid
+/// with only a recording and no written description, which is why this sits next to
+/// the topic field rather than behind an "advanced" toggle.
+class _AttachmentsSection extends StatelessWidget {
+  const _AttachmentsSection({
+    required this.attachments,
+    required this.uploading,
+    required this.atLimit,
+    required this.onAdd,
+    required this.onRemove,
+  });
+
+  final List<StagedAttachment> attachments;
+  final bool uploading;
+  final bool atLimit;
+  final VoidCallback onAdd;
+  final void Function(StagedAttachment) onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'المرفقات والتسجيلات',
+          style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.navyDark),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'يمكنك إرفاق مستندات أو صور، أو تسجيل صوتي أو مقطع فيديو يشرح موضوعك. '
+          'الوصف المكتوب أو مرفق واحد على الأقل مطلوب.',
+          style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+        ),
+        const SizedBox(height: 10),
+        for (final attachment in attachments)
+          _AttachmentTile(
+            attachment: attachment,
+            onRemove: () => onRemove(attachment),
+          ),
+        const SizedBox(height: 6),
+        OutlinedButton.icon(
+          onPressed: (uploading || atLimit) ? null : onAdd,
+          icon: uploading
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.attach_file),
+          label: Text(
+            uploading
+                ? 'جارٍ الرفع…'
+                : atLimit
+                    ? 'بلغت الحد الأقصى للمرفقات'
+                    : 'إضافة مرفق أو تسجيل',
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// One staged file: the server's own category, name and size, with a remove action.
+class _AttachmentTile extends StatelessWidget {
+  const _AttachmentTile({required this.attachment, required this.onRemove});
+
+  final StagedAttachment attachment;
+  final VoidCallback onRemove;
+
+  IconData get _icon {
+    switch (attachment.category) {
+      case 'audio':
+        return Icons.mic_none;
+      case 'video':
+        return Icons.videocam_outlined;
+      case 'image':
+        return Icons.image_outlined;
+      default:
+        return Icons.description_outlined;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Icon(_icon, size: 20, color: AppColors.navyDark),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  attachment.originalName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w600, color: AppColors.navyDark),
+                ),
+                if (attachment.sizeLabel.isNotEmpty)
+                  Text(
+                    attachment.sizeLabel,
+                    style: const TextStyle(
+                        fontSize: 11, color: AppColors.textMuted),
+                  ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'إزالة',
+            icon: const Icon(Icons.close, size: 18),
+            onPressed: onRemove,
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 /// A labelled summary block — used on the confirmation screen to restate the
 /// customer's own words for what they chose.
