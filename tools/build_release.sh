@@ -97,6 +97,19 @@ for doc in \
 do
     [ -f "$STAGE/site/$doc" ] && cp "$STAGE/site/$doc" "$STAGE/migrations/"
 done
+
+# --- development files are not part of a running site ----------------------
+# The site archive is downloaded by whoever deploys, so it must carry only what the
+# application serves. AGENTS.md is the agent's own memory of this repository, and the
+# remaining root-level .md files are execution reports written for the maintainer — none
+# is reachable from the application (no template links to a .md) and .htaccess denies
+# .md at the web layer anyway. The migration package keeps the ones an operator needs;
+# they were copied above, before this removal.
+step "dropping development files from the site package"
+removed_docs="$(find "$STAGE/site" -maxdepth 1 -type f -name '*.md' | wc -l)"
+find "$STAGE/site" -maxdepth 1 -type f -name '*.md' -delete
+printf '  removed %s root-level .md file(s) from the site package\n' "$removed_docs"
+[ ! -e "$STAGE/site/AGENTS.md" ] || fail "AGENTS.md is still in the site package"
 # The migration package is applied on the server before the site files, so it must
 # carry its own copy of the preflight the operator runs first.
 [ -f "$STAGE/migrations/database/repair/00_preflight_check.php" ] \
@@ -164,6 +177,16 @@ check_absent "$STAGE/site" '*/config/secrets.php' 'no config/secrets.php in the 
 check_absent "$STAGE/site" '*/.git' 'no .git in the site package'
 check_absent "$STAGE/site" '*/tests' 'no tests/ in the site package'
 check_absent "$STAGE/site" '*/docs' 'no docs/ in the site package'
+check_absent "$STAGE/site" '*/AGENTS.md' 'no AGENTS.md in the site package'
+# Root level only: vendor/ and api/v1/ ship their own README.md legitimately, and `find -path`
+# treats `*` as matching `/`, so a `*.md` pattern would flag them too.
+root_docs="$(find "$STAGE/site" -maxdepth 1 -type f -name '*.md' -print 2>/dev/null)"
+if [ -n "$root_docs" ]; then
+    printf '  ! root-level .md files in the site package:\n%s\n' "$(printf '%s\n' "$root_docs" | sed 's/^/      /')"
+    guard_fail=1
+else
+    printf '  ok  no root-level .md files in the site package\n'
+fi
 check_absent "$STAGE/migrations" '*/config/secrets.php' 'no config/secrets.php in the migration package'
 
 # A mode that is not 644/755 is the failure this script exists to prevent, so it is
