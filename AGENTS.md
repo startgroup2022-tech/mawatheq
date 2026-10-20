@@ -1441,6 +1441,23 @@ clone exec33 saw 0 rows and failed on data, not code. It now imports when `najiz
 empty and leaves a populated database alone. It also reads `category_id` from the API response
 instead of hardcoding `2`, since seed ids are not part of the contract.
 
+### `lawyer_specialties` ships empty, so a suite that needs a match must make one
+
+`database/upgrade_v63.sql` creates `lawyer_specialties` **empty** on purpose: linking a lawyer
+to an expertise is an operator action, and inventing one would route a real customer to a lawyer
+who cannot help. "No match" is a first-class outcome, so `legal_journey_lawyers_for_specialty()`
+returns `[]` on a clean database — correct behaviour, not a bug.
+
+`tests/exec37_consultation_journey_test.php` asserted `matched:true` unconditionally and so
+could never pass on a fresh checkout (12 failures that read like a regression in the journey
+code). The e2e spec added in the same commit already handles this correctly — it
+`test.skip`s when nothing matched. The PHP suite now inserts the one `lawyer_specialties` row it
+needs and deletes it in cleanup, and **re-reads** `/journey.php?action=specialties` afterwards,
+because the list it read before the insert still reports `lawyer_count: 0` and the
+unstaffed-specialty check would otherwise pick the specialty the fixture just staffed.
+**Rule: a suite asserts the code, not the seed. If it needs a row the migration deliberately
+omits, it creates and removes that row itself.**
+
 ### Running the suites: the `www-data` group matters
 
 Apache writes consultation attachments as `www-data` under a group-only private root
@@ -1452,7 +1469,7 @@ from `getent group www-data`, **not** `id -nG` (which reflects the stale login-t
 
 ### Current state
 
-* Full suite: **36/36 green** (`bash tests/run_all_tests.sh`).
+* Full suite: **39/39 green** (`sg www-data -c 'bash tests/run_all_tests.sh'`).
 * `exec34_staff_permissions_test.php`: 118 checks. `exec34_affiliate_registration_test.php`:
   43 checks (Parts A + C, including the closed-programme path).
   `exec34_affiliate_e2e_workflow_test.php`: 43 checks (true HTTP E2E, cookie jar + CSRF).
