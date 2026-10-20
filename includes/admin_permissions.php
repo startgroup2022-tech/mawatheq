@@ -63,7 +63,8 @@ function admin_module_routes(): array {
     return [
         // ---- grantable modules ------------------------------------------------
         'index.php'                  => 'dashboard',
-        'articles.php'               => 'blog',
+        'articles.php'               => 'blog', 
+        'banners.php'                => 'blog',
         'laws.php'                   => 'laws',
         'classification.php'         => 'classification',
         'leads.php'                  => 'leads',

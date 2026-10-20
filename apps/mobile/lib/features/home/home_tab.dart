@@ -6,6 +6,8 @@ import '../../core/network/api_exception.dart';
 import '../../core/network/api_repository.dart';
 import '../../core/network/models.dart';
 import '../../core/theme/app_colors.dart';
+import '../../shared/widgets/banner_carousel.dart';
+import '../../shared/widgets/banner_link_screen.dart';
 import '../../shared/widgets/brand_widgets.dart';
 import '../account/account_screen.dart';
 import '../consultations/consultations_screen.dart';
@@ -32,6 +34,7 @@ class _HomeTabState extends State<HomeTab> {
   List<CaseSummary> _cases = const [];
   List<Consultation> _consultations = const [];
   List<DocumentSummary> _documents = const [];
+  List<HomeBanner> _banners = const [];
 
   int _unread = 0;
 
@@ -42,6 +45,19 @@ class _HomeTabState extends State<HomeTab> {
   void initState() {
     super.initState();
     _load();
+    // Banners load separately: a failure here must not blank the dashboard, and an
+    // empty slider is a normal state rather than an error.
+    _loadBanners();
+  }
+
+  Future<void> _loadBanners() async {
+    try {
+      final banners = await _repo.banners();
+      if (!mounted) return;
+      setState(() => _banners = banners);
+    } catch (_) {
+      // Leave the slider empty; the rest of the home screen is unaffected.
+    }
   }
 
   Future<void> _load() async {
@@ -101,6 +117,15 @@ class _HomeTabState extends State<HomeTab> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // Operator-published banners, above the greeting. The widget renders
+          // nothing when there are none, so a fresh install shows no empty frame.
+          if (_banners.isNotEmpty) ...[
+            BannerCarousel(
+              banners: _banners,
+              onTap: (banner) => _openBanner(banner),
+            ),
+            const SizedBox(height: 18),
+          ],
           // Greeting + real AI availability.
           GradientHeroCard(
             eyebrow: 'مواثيق',
@@ -268,5 +293,24 @@ class _HomeTabState extends State<HomeTab> {
         ],
       ),
     );
+  }
+
+  /// A banner destination is already resolved server-side; the app only maps the
+  /// type onto a local tab. An external link is shown in full before leaving the
+  /// app, and a banner whose target was hidden degrades to `none` (not tappable).
+  void _openBanner(HomeBanner banner) {
+    switch (banner.linkType) {
+      case 'category':
+      case 'specialty':
+        widget.onNavigate(1);
+      case 'url':
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => BannerLinkScreen(banner: banner),
+          ),
+        );
+      default:
+        break;
+    }
   }
 }

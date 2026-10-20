@@ -14,12 +14,13 @@ import 'package:mawatheq_mobile/core/network/models.dart';
 import 'package:mawatheq_mobile/core/storage/token_storage.dart';
 import 'package:mawatheq_mobile/features/auth/login_screen.dart';
 import 'package:mawatheq_mobile/features/home/home_shell.dart';
-import 'package:mawatheq_mobile/features/public/onboarding_screen.dart';
+import 'package:mawatheq_mobile/features/public/home_tab_public.dart';
 import 'package:mawatheq_mobile/features/public/pricing_screen.dart';
 import 'package:mawatheq_mobile/features/public/public_guest_shell.dart';
-import 'package:mawatheq_mobile/features/public/public_home_screen.dart';
+import 'package:mawatheq_mobile/features/public/public_lawyers_screen.dart';
 import 'package:mawatheq_mobile/features/public/splash_screen.dart';
 import 'package:mawatheq_mobile/shared/widgets/auth_gate.dart';
+import 'package:mawatheq_mobile/shared/widgets/banner_carousel.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -102,6 +103,82 @@ const _plansJson = {
   ],
 };
 
+/// The public endpoints the guest home calls, so the real repository and widgets are
+/// exercised rather than a stub. `plans` is served too because the account tab links
+/// to the pricing page from the same shell.
+Future<(int, Object)> _publicEndpoints(Uri uri) async {
+  if (uri.path.endsWith('/banners.php')) {
+    return (200, {'ok': true, 'banners': _bannersJson});
+  }
+  if (uri.path.endsWith('/journey.php')) {
+    if (uri.queryParameters['action'] == 'specialties') {
+      return (200, {
+        'ok': true,
+        'specialties': [
+          {
+            'id': 1,
+            'name': 'الأحوال الشخصية',
+            'icon_key': 'family',
+            'lawyer_count': 3,
+          },
+          {
+            'id': 2,
+            'name': 'القضايا التجارية',
+            'icon_key': 'commercial',
+            'lawyer_count': 0,
+          },
+        ],
+      });
+    }
+    return (200, {'ok': true, 'issue_types': []});
+  }
+  if (uri.path.endsWith('/lawyers.php')) {
+    return (200, {'ok': true, 'lawyers': _lawyersJson});
+  }
+  if (uri.path.endsWith('/plans.php')) return (200, _plansJson);
+  return (200, {'ok': true});
+}
+
+const _bannersJson = [
+  {
+    'id': 1,
+    'title_ar': 'استشارتك الأولى بخصم ٢٠٪',
+    'title_en': '20% off your first consultation',
+    'subtitle_ar': 'لفترة محدودة',
+    'image_path': 'uploads/banners/one.jpg',
+    'alt_ar': 'عرض الاستشارة الأولى',
+    'link_type': 'none',
+    'link_target': null,
+  },
+  {
+    'id': 2,
+    'title_ar': 'تعرّف على محامينا',
+    'title_en': 'Meet our lawyers',
+    'image_path': 'uploads/banners/two.jpg',
+    'link_type': 'specialty',
+    'link_target': '1',
+  },
+];
+
+const _lawyersJson = [
+  {
+    'id': 7,
+    'full_name': 'سارة العتيبي',
+    'specialization': 'الأحوال الشخصية',
+    'jurisdiction': 'الرياض',
+    'rating': '4.800',
+    'hourly_rate': '350.000',
+  },
+  {
+    'id': 8,
+    'full_name': 'خالد المطيري',
+    'specialization': 'القضايا التجارية',
+    'jurisdiction': 'جدة',
+    'rating': '0',
+    'hourly_rate': '0',
+  },
+];
+
 ApiRepository _repo(_FakeTransport transport) => ApiRepository(
       client: ApiClient(client: transport, tokens: _MemoryTokenStore()),
     );
@@ -126,6 +203,50 @@ Widget _wrap({
   );
 }
 
+/// The consumer home is a tab body, not a page: it expects the shell to supply the
+/// `Scaffold` (and therefore the `Material` its search field needs). Tests that mount
+/// it directly must provide one, exactly as the shell does.
+Widget _homeTab({
+  required AuthController auth,
+  required ApiRepository repo,
+  GuestSession? guest,
+  LocaleController? locale,
+  VoidCallback? onOpenLawyers,
+}) {
+  return _wrap(
+    auth: auth,
+    guest: guest,
+    locale: locale,
+    child: Scaffold(
+      body: PublicHomeTab(
+        repository: repo,
+        onOpenLawyers: onOpenLawyers ?? () {},
+      ),
+    ),
+  );
+}
+
+/// Mounts a widget that reads [LocaleController], which the carousel does to pick
+/// between the Arabic and English copy of a banner.
+Widget _withLocale(Widget child) {
+  return ChangeNotifierProvider<LocaleController>.value(
+    value: LocaleController(),
+    child: MaterialApp(home: Scaffold(body: child)),
+  );
+}
+
+/// Taps a bottom-nav destination by name. The nav is matched explicitly because the
+/// guest home also uses some of these words as section headings and actions.
+Future<void> _tapNav(WidgetTester tester, String label) async {
+  await tester.tap(
+    find.descendant(
+      of: find.byType(NavigationBar),
+      matching: find.text(label),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
+
 /// Scrolls the guest homepage until [finder] is on screen. The page is long, so a
 /// widget below the fold must be scrolled to before it can be tapped or asserted
 /// on reliably.
@@ -144,17 +265,23 @@ void main() {
     // LocaleController persists through SharedPreferences; without a mock the
     // platform channel never answers and the test hangs.
     SharedPreferences.setMockInitialValues({});
-    final view =
-        TestWidgetsFlutterBinding.ensureInitialized().platformDispatcher.views.first;
+    final binding = TestWidgetsFlutterBinding.ensureInitialized();
+    final view = binding.platformDispatcher.views.first;
     view.physicalSize = const Size(1080, 2280);
     view.devicePixelRatio = 3.0;
+    // The banner carousel auto-advances on a timer. Disabling animations is the
+    // signal it uses to stay static, and it is what a real reduced-motion user gets.
+    // It also keeps every test deterministic instead of racing a six-second timer.
+    binding.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(disableAnimations: true);
   });
 
   tearDown(() {
-    final view =
-        TestWidgetsFlutterBinding.ensureInitialized().platformDispatcher.views.first;
+    final binding = TestWidgetsFlutterBinding.ensureInitialized();
+    final view = binding.platformDispatcher.views.first;
     view.resetPhysicalSize();
     view.resetDevicePixelRatio();
+    binding.platformDispatcher.clearAccessibilityFeaturesTestValue();
   });
 
   // ---------------------------------------------------------------- guest mode
@@ -201,100 +328,153 @@ void main() {
       expect(auth.isGuest, isFalse);
     });
 
-    testWidgets('the welcome screen offers a prominent guest entry',
+    testWidgets('the guest account tab offers sign-in, register and exit',
         (tester) async {
       final auth = AuthController(
         repository: _repo(_FakeTransport((_) async => (200, {'ok': true}))),
         tokens: _MemoryTokenStore(),
       )..enterGuest();
-      auth.exitGuest();
 
-      await tester.pumpWidget(_wrap(auth: auth, child: const OnboardingScreen()));
+      await tester.pumpWidget(
+        _wrap(auth: auth, child: const PublicGuestShell()),
+      );
       await tester.pumpAndSettle();
 
-      expect(find.text('الدخول كزائر'), findsOneWidget);
+      // Open the account tab.
+      await _tapNav(tester, 'حسابي');
 
-      await tester.tap(find.text('الدخول كزائر'));
+      expect(find.text('أنت تتصفّح كزائر'), findsOneWidget);
+      expect(find.text('إنشاء حساب'), findsOneWidget);
+
+      // The tab is a long list, so the exit action sits below the fold.
+      await _scrollTo(tester, find.text('إنهاء وضع الزائر'));
+      await tester.tap(find.text('إنهاء وضع الزائر'));
       await tester.pumpAndSettle();
-      expect(auth.status, AuthStatus.guest);
+      expect(auth.status, AuthStatus.signedOut);
     });
   });
 
   // ------------------------------------------------------------ guest homepage
 
-  group('Guest homepage', () {
-    testWidgets('renders the public sections and real prices from the API',
-        (tester) async {
-      final transport = _FakeTransport((_) async => (200, _plansJson));
+  group('Consumer home for a guest', () {
+    testWidgets('renders the operator banners from the API', (tester) async {
+      final transport = _FakeTransport(_publicEndpoints);
       final auth = AuthController(
         repository: _repo(transport),
         tokens: _MemoryTokenStore(),
       )..enterGuest();
 
       await tester.pumpWidget(
-        _wrap(
+        _homeTab(
           auth: auth,
-          child: PublicHomeScreen(repository: _repo(transport)),
+          repo: _repo(transport),
         ),
       );
       await tester.pumpAndSettle();
 
-      // Public sections are present.
-      expect(find.text('مواثيق'), findsWidgets);
-      expect(find.text('الدخول كزائر'), findsNothing); // not the welcome button
-      expect(find.textContaining('منصة قانونية متكاملة'), findsWidgets);
+      // The first slide is the operator's own copy, not a placeholder promotion.
+      expect(find.text('استشارتك الأولى بخصم ٢٠٪'), findsOneWidget);
+      expect(find.text('لفترة محدودة'), findsOneWidget);
+    });
 
-      // Prices come from the API, not from a hardcoded constant. The pricing
-      // preview sits below the fold, so scroll it into view first.
-      await _scrollTo(tester, find.text('149'));
-      expect(find.text('149'), findsOneWidget);
-      expect(find.text('مجاناً'), findsOneWidget);
+    testWidgets('no banners means no slider at all, not an empty frame',
+        (tester) async {
+      final transport = _FakeTransport((uri) async {
+        if (uri.path.endsWith('/banners.php')) {
+          return (200, {'ok': true, 'banners': []});
+        }
+        return _publicEndpoints(uri);
+      });
+      final auth = AuthController(
+        repository: _repo(transport),
+        tokens: _MemoryTokenStore(),
+      )..enterGuest();
+
+      await tester.pumpWidget(
+        _homeTab(
+          auth: auth,
+          repo: _repo(transport),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(BannerCarousel), findsNothing);
+      expect(find.byType(PageView), findsNothing);
+      // The rest of the home screen still renders.
+      expect(find.text('تخصصاتنا القانونية'), findsOneWidget);
+    });
+
+    testWidgets('shows real specialties with their lawyer counts',
+        (tester) async {
+      final transport = _FakeTransport(_publicEndpoints);
+      final auth = AuthController(
+        repository: _repo(transport),
+        tokens: _MemoryTokenStore(),
+      )..enterGuest();
+
+      await tester.pumpWidget(
+        _homeTab(
+          auth: auth,
+          repo: _repo(transport),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('الأحوال الشخصية'), findsOneWidget);
+      expect(find.text('3 محامٍ'), findsOneWidget);
+      // A specialty nobody covers is still listed, and says nothing misleading.
+      expect(find.text('القضايا التجارية'), findsOneWidget);
+    });
+
+    testWidgets('a banner failure does not blank the specialties',
+        (tester) async {
+      final transport = _FakeTransport((uri) async {
+        if (uri.path.endsWith('/banners.php')) {
+          return (500, {'ok': false, 'error': 'boom'});
+        }
+        return _publicEndpoints(uri);
+      });
+      final auth = AuthController(
+        repository: _repo(transport),
+        tokens: _MemoryTokenStore(),
+      )..enterGuest();
+
+      await tester.pumpWidget(
+        _homeTab(
+          auth: auth,
+          repo: _repo(transport),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // One failing section must not take the page down with it.
+      expect(find.text('الأحوال الشخصية'), findsOneWidget);
+      expect(find.byType(BannerCarousel), findsNothing);
     });
 
     testWidgets('shows no private data — no case, document or user content',
         (tester) async {
-      final transport = _FakeTransport((_) async => (200, _plansJson));
+      final transport = _FakeTransport(_publicEndpoints);
       final auth = AuthController(
         repository: _repo(transport),
         tokens: _MemoryTokenStore(),
       )..enterGuest();
 
       await tester.pumpWidget(
-        _wrap(auth: auth, child: PublicHomeScreen(repository: _repo(transport))),
+        _homeTab(
+          auth: auth,
+          repo: _repo(transport),
+        ),
       );
       await tester.pumpAndSettle();
 
-      // The guest homepage must never surface a private record.
+      // The guest home must never surface a private record.
       expect(find.textContaining('قضيتي'), findsNothing);
       expect(find.textContaining('فاتورة #'), findsNothing);
     });
 
-    testWidgets('an unavailable pricing API shows an honest state, not prices',
-        (tester) async {
-      final transport = _FakeTransport(
-        (_) async => (503, {'ok': false, 'error': 'unavailable'}),
-      );
-      final auth = AuthController(
-        repository: _repo(transport),
-        tokens: _MemoryTokenStore(),
-      )..enterGuest();
-
-      await tester.pumpWidget(
-        _wrap(auth: auth, child: PublicHomeScreen(repository: _repo(transport))),
-      );
-      await tester.pumpAndSettle();
-
-      await _scrollTo(tester, find.textContaining('تعذّر تحميل الأسعار'));
-      expect(find.textContaining('تعذّر تحميل الأسعار'), findsOneWidget);
-      expect(find.text('149'), findsNothing);
-    });
-  });
-
-  // --------------------------------------------------------- protected routes
-
-  group('Protected routes for a guest', () {
-    testWidgets('tapping a private area raises the auth prompt', (tester) async {
-      final transport = _FakeTransport((_) async => (200, _plansJson));
+    testWidgets('a quick service raises the sign-in prompt', (tester) async {
+      final transport = _FakeTransport(_publicEndpoints);
       final auth = AuthController(
         repository: _repo(transport),
         tokens: _MemoryTokenStore(),
@@ -302,16 +482,47 @@ void main() {
       final guest = GuestSession();
 
       await tester.pumpWidget(
-        _wrap(
+        _homeTab(
           auth: auth,
-          guest: guest,
-          child: PublicHomeScreen(repository: _repo(transport)),
+    guest: guest,
+          repo: _repo(transport),
         ),
       );
       await tester.pumpAndSettle();
 
-      await _scrollTo(tester, find.text('منطقتك الخاصة'));
-      await tester.tap(find.text('القضايا').first);
+      await _scrollTo(tester, find.text('متابعة قضاياي'));
+      await tester.tap(find.text('متابعة قضاياي'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('متابعة التصفح'), findsOneWidget);
+      await tester.tap(find.text('تسجيل الدخول').last);
+      await tester.pumpAndSettle();
+      expect(guest.pendingIntent, ProtectedDestination.cases);
+    });
+  });
+
+  // --------------------------------------------------------- protected routes
+
+  group('Protected routes for a guest', () {
+    testWidgets('tapping a private area raises the auth prompt', (tester) async {
+      final transport = _FakeTransport(_publicEndpoints);
+      final auth = AuthController(
+        repository: _repo(transport),
+        tokens: _MemoryTokenStore(),
+      )..enterGuest();
+      final guest = GuestSession();
+
+      await tester.pumpWidget(
+        _homeTab(
+          auth: auth,
+    guest: guest,
+          repo: _repo(transport),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await _scrollTo(tester, find.text('استشارة قانونية'));
+      await tester.tap(find.text('استشارة قانونية'));
       await tester.pumpAndSettle();
 
       // The three required choices, all in Arabic.
@@ -325,7 +536,7 @@ void main() {
       var calls = 0;
       final transport = _FakeTransport((uri) async {
         calls++;
-        return (200, _plansJson);
+        return _publicEndpoints(uri);
       });
       final auth = AuthController(
         repository: _repo(transport),
@@ -334,23 +545,24 @@ void main() {
       final guest = GuestSession();
 
       await tester.pumpWidget(
-        _wrap(
+        _homeTab(
           auth: auth,
-          guest: guest,
-          child: PublicHomeScreen(repository: _repo(transport)),
+    guest: guest,
+          repo: _repo(transport),
         ),
       );
       await tester.pumpAndSettle();
       final callsBefore = calls;
 
-      await _scrollTo(tester, find.text('منطقتك الخاصة'));
-      await tester.tap(find.text('المستندات').first);
+      await _scrollTo(tester, find.text('مستنداتي'));
+      await tester.tap(find.text('مستنداتي'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('متابعة التصفح'));
       await tester.pumpAndSettle();
 
-      // Still on the public page, and no protected endpoint was called.
-      expect(find.text('تسجيل الدخول'), findsWidgets);
+      // Still on the public page, and no protected endpoint was called. Asserted on
+      // the widget rather than a heading, because the list is scrolled at this point.
+      expect(find.byType(PublicHomeTab), findsOneWidget);
       expect(calls, callsBefore);
       // Keeping browsing records no destination to resume.
       expect(guest.hasPendingIntent, isFalse);
@@ -358,7 +570,83 @@ void main() {
 
     testWidgets('choosing sign in records the intended destination',
         (tester) async {
-      final transport = _FakeTransport((_) async => (200, _plansJson));
+      final transport = _FakeTransport(_publicEndpoints);
+      final auth = AuthController(
+        repository: _repo(transport),
+        tokens: _MemoryTokenStore(),
+      )..enterGuest();
+      final guest = GuestSession();
+
+      await tester.pumpWidget(
+        _homeTab(
+          auth: auth,
+    guest: guest,
+          repo: _repo(transport),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await _scrollTo(tester, find.text('المساعد القانوني'));
+      await tester.tap(find.text('المساعد القانوني'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('تسجيل الدخول').last);
+      await tester.pumpAndSettle();
+
+      expect(guest.pendingIntent, ProtectedDestination.legalAi);
+    });
+  });
+
+  // ------------------------------------------------- public lawyer directory
+
+  group('Public lawyer directory', () {
+    testWidgets('lists real lawyers from the public endpoint', (tester) async {
+      final transport = _FakeTransport(_publicEndpoints);
+      final auth = AuthController(
+        repository: _repo(transport),
+        tokens: _MemoryTokenStore(),
+      )..enterGuest();
+
+      await tester.pumpWidget(
+        _wrap(
+          auth: auth,
+          child: PublicLawyersScreen(repository: _repo(transport)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('سارة العتيبي'), findsOneWidget);
+      expect(find.text('الأحوال الشخصية'), findsOneWidget);
+      expect(find.text('350 ر.س/ساعة'), findsOneWidget);
+      expect(find.text('2 محامياً متاحاً'), findsOneWidget);
+      // A lawyer with no rating shows no stars rather than a fabricated zero.
+      expect(find.text('خالد المطيري'), findsOneWidget);
+    });
+
+    testWidgets('search filters the already-loaded directory', (tester) async {
+      final transport = _FakeTransport(_publicEndpoints);
+      final auth = AuthController(
+        repository: _repo(transport),
+        tokens: _MemoryTokenStore(),
+      )..enterGuest();
+
+      await tester.pumpWidget(
+        _wrap(
+          auth: auth,
+          child: PublicLawyersScreen(repository: _repo(transport)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'جدة');
+      await tester.pumpAndSettle();
+
+      expect(find.text('خالد المطيري'), findsOneWidget);
+      expect(find.text('سارة العتيبي'), findsNothing);
+      expect(find.text('1 محامياً متاحاً'), findsOneWidget);
+    });
+
+    testWidgets('booking a lawyer raises the sign-in prompt', (tester) async {
+      final transport = _FakeTransport(_publicEndpoints);
       final auth = AuthController(
         repository: _repo(transport),
         tokens: _MemoryTokenStore(),
@@ -369,18 +657,17 @@ void main() {
         _wrap(
           auth: auth,
           guest: guest,
-          child: PublicHomeScreen(repository: _repo(transport)),
+          child: PublicLawyersScreen(repository: _repo(transport)),
         ),
       );
       await tester.pumpAndSettle();
 
-      await _scrollTo(tester, find.text('منطقتك الخاصة'));
-      await tester.tap(find.text('المساعد الذكي').first);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('تسجيل الدخول').last);
+      await tester.tap(find.text('احجز استشارة').first);
       await tester.pumpAndSettle();
 
-      expect(guest.pendingIntent, ProtectedDestination.legalAi);
+      // Booking needs an account; the prompt names the lawyer and is not a dead end.
+      expect(find.textContaining('سارة العتيبي'), findsWidgets);
+      expect(find.text('متابعة التصفح'), findsOneWidget);
     });
   });
 
@@ -499,11 +786,9 @@ void main() {
       expect(find.byType(Image), findsOneWidget);
     });
 
-    testWidgets('an unauthenticated start routes to the welcome screen',
-        (tester) async {
-      final transport = _FakeTransport((uri) async {
-        return (200, {'ok': true, 'plans': []});
-      });
+    testWidgets('an unauthenticated start opens the consumer shell, not a '
+        'slideshow', (tester) async {
+      final transport = _FakeTransport(_publicEndpoints);
       final auth = AuthController(
         repository: _repo(transport),
         tokens: _MemoryTokenStore(),
@@ -523,11 +808,14 @@ void main() {
       );
       await tester.pumpAndSettle(const Duration(seconds: 2));
 
-      expect(find.byType(OnboardingScreen), findsOneWidget);
+      // The first screen is the app itself, with browsable content — not an
+      // onboarding carousel standing between the visitor and the product.
+      expect(find.byType(PublicGuestShell), findsOneWidget);
+      expect(find.byType(PublicHomeTab), findsOneWidget);
     });
 
-    testWidgets('a guest start routes to the public homepage', (tester) async {
-      final transport = _FakeTransport((_) async => (200, _plansJson));
+    testWidgets('a guest start routes to the public shell', (tester) async {
+      final transport = _FakeTransport(_publicEndpoints);
       final auth = AuthController(
         repository: _repo(transport),
         tokens: _MemoryTokenStore(),
@@ -547,10 +835,11 @@ void main() {
       );
       await tester.pumpAndSettle(const Duration(seconds: 2));
 
-      expect(find.byType(PublicHomeScreen), findsOneWidget);
+      expect(find.byType(PublicGuestShell), findsOneWidget);
+      expect(find.byType(PublicHomeTab), findsOneWidget);
     });
 
-    testWidgets('an expired stored token lands on the welcome screen, not a '
+    testWidgets('an expired stored token lands on the consumer shell, not a '
         'broken session', (tester) async {
       final tokens = _MemoryTokenStore(token: 'expired');
       final transport = _FakeTransport(
@@ -686,7 +975,7 @@ void main() {
 
   group('Arabic RTL and English LTR', () {
     testWidgets('Arabic renders RTL and shows Arabic copy', (tester) async {
-      final transport = _FakeTransport((_) async => (200, _plansJson));
+      final transport = _FakeTransport(_publicEndpoints);
       final auth = AuthController(
         repository: _repo(transport),
         tokens: _MemoryTokenStore(),
@@ -709,7 +998,12 @@ void main() {
                   textDirection: locale.isRtl
                       ? TextDirection.rtl
                       : TextDirection.ltr,
-                  child: PublicHomeScreen(repository: _repo(transport)),
+                  child: Scaffold(
+                    body: PublicHomeTab(
+                      repository: _repo(transport),
+                      onOpenLawyers: () {},
+                    ),
+                  ),
                 ),
               );
             },
@@ -719,14 +1013,14 @@ void main() {
       await tester.pumpAndSettle();
 
       final dir = Directionality.of(
-        tester.element(find.byType(PublicHomeScreen)),
+        tester.element(find.byType(PublicHomeTab)),
       );
       expect(dir, TextDirection.rtl);
-      expect(find.text('إنشاء حساب مجاني'), findsOneWidget);
+      expect(find.text('تخصصاتنا القانونية'), findsOneWidget);
     });
 
     testWidgets('English mode renders LTR with English copy', (tester) async {
-      final transport = _FakeTransport((_) async => (200, _plansJson));
+      final transport = _FakeTransport(_publicEndpoints);
       final auth = AuthController(
         repository: _repo(transport),
         tokens: _MemoryTokenStore(),
@@ -748,7 +1042,12 @@ void main() {
                 home: Directionality(
                   textDirection:
                       l.isRtl ? TextDirection.rtl : TextDirection.ltr,
-                  child: PublicHomeScreen(repository: _repo(transport)),
+                  child: Scaffold(
+                    body: PublicHomeTab(
+                      repository: _repo(transport),
+                      onOpenLawyers: () {},
+                    ),
+                  ),
                 ),
               );
             },
@@ -758,10 +1057,11 @@ void main() {
       await tester.pumpAndSettle();
 
       final dir = Directionality.of(
-        tester.element(find.byType(PublicHomeScreen)),
+        tester.element(find.byType(PublicHomeTab)),
       );
       expect(dir, TextDirection.ltr);
-      expect(find.text('Create a free account'), findsOneWidget);
+      expect(find.text('Our legal specialties'), findsOneWidget);
+      expect(find.text('20% off your first consultation'), findsOneWidget);
     });
   });
 
@@ -843,7 +1143,7 @@ void main() {
     testWidgets('a guest lands on the public shell, never the authenticated one',
         (tester) async {
       final auth = AuthController(
-        repository: _repo(_FakeTransport((_) async => (200, {'ok': true}))),
+        repository: _repo(_FakeTransport(_publicEndpoints)),
         tokens: _MemoryTokenStore(),
       );
       final guest = GuestSession();
@@ -855,7 +1155,7 @@ void main() {
           auth: auth,
           guest: guest,
           locale: locale,
-          child: const PublicGuestShell(),
+          child: PublicGuestShell(repository: _repo(_FakeTransport(_publicEndpoints))),
         ),
       );
       await tester.pumpAndSettle();
@@ -863,17 +1163,23 @@ void main() {
       // The public shell is present; the authenticated shell is not.
       expect(find.byType(PublicGuestShell), findsOneWidget);
       expect(find.byType(HomeShell), findsNothing);
-      // Public navigation only: the guest tab bar never names the private areas.
-      expect(find.text('الرئيسية'), findsWidgets);
-      expect(find.text('الخدمات'), findsOneWidget);
-      expect(find.text('الأسعار'), findsOneWidget);
+      // The guest tab bar names consumer destinations, never the private dashboard.
+      // Scoped to the nav because the home body uses some of the same words.
+      Finder nav(String label) => find.descendant(
+            of: find.byType(NavigationBar),
+            matching: find.text(label),
+          );
+      expect(nav('الرئيسية'), findsOneWidget);
+      expect(nav('المحامون'), findsOneWidget);
+      expect(nav('استشارة'), findsOneWidget);
+      expect(nav('حسابي'), findsOneWidget);
       expect(find.text('القضايا'), findsNothing);
       expect(find.text('المستندات'), findsNothing);
     });
 
-    testWidgets('the guest shell shows public content, not a dashboard',
+    testWidgets('the guest shell shows consumer content, not a dashboard',
         (tester) async {
-      final transport = _FakeTransport((_) async => (200, _plansJson));
+      final transport = _FakeTransport(_publicEndpoints);
       final auth = AuthController(
         repository: _repo(transport),
         tokens: _MemoryTokenStore(),
@@ -887,14 +1193,36 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // The public homepage hero is visible inside the shell.
-      expect(find.textContaining('مواثيق'), findsWidgets);
+      // The consumer home is what a guest lands on, inside the shell.
+      expect(find.byType(PublicHomeTab), findsOneWidget);
+      expect(find.text('تخصصاتنا القانونية'), findsOneWidget);
       expect(find.text('القضايا'), findsNothing);
     });
 
-    testWidgets('a guest tapping a service raises the sign-in prompt',
+    testWidgets('the lawyers tab lists the directory inside the shell',
         (tester) async {
-      final transport = _FakeTransport((_) async => (200, _plansJson));
+      final transport = _FakeTransport(_publicEndpoints);
+      final auth = AuthController(
+        repository: _repo(transport),
+        tokens: _MemoryTokenStore(),
+      );
+
+      await tester.pumpWidget(
+        _wrap(
+          auth: auth,
+          child: PublicGuestShell(repository: _repo(transport)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await _tapNav(tester, 'المحامون');
+
+      expect(find.text('سارة العتيبي'), findsOneWidget);
+    });
+
+    testWidgets('the consultation tab raises the sign-in prompt instead of '
+        'opening a protected screen', (tester) async {
+      final transport = _FakeTransport(_publicEndpoints);
       final auth = AuthController(
         repository: _repo(transport),
         tokens: _MemoryTokenStore(),
@@ -910,22 +1238,16 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Scroll the homepage to the service list and tap a service card. The label
-      // is unique to the services list, so the tap cannot land on a decorative tile.
-      final tile = find.text('البحث في الأنظمة واللوائح');
-      await _scrollTo(tester, tile);
-      await tester.tap(tile);
-      await tester.pumpAndSettle();
+      await _tapNav(tester, 'استشارة');
 
       // The prompt names the requested service and never opens a dashboard.
-      expect(find.textContaining('الخدمة المطلوبة'), findsOneWidget);
-      expect(find.textContaining('البحث في الأنظمة واللوائح'), findsWidgets);
+      expect(find.textContaining('الاستشارات القانونية'), findsWidgets);
       expect(find.byType(HomeShell), findsNothing);
     });
 
     testWidgets('a guest choosing a plan is routed to sign-in, not a checkout',
         (tester) async {
-      final transport = _FakeTransport((_) async => (200, _plansJson));
+      final transport = _FakeTransport(_publicEndpoints);
       final auth = AuthController(
         repository: _repo(transport),
         tokens: _MemoryTokenStore(),
@@ -949,6 +1271,103 @@ void main() {
       // sign-in flow, and the prompt states the service requires an account.
       expect(guest.selectedPlan, isNotNull);
       expect(find.textContaining('الخدمة المطلوبة'), findsOneWidget);
+    });
+  });
+
+  // ------------------------------------------------ banner carousel (exec 38)
+
+  group('Banner carousel', () {
+    testWidgets('renders nothing at all when there are no banners',
+        (tester) async {
+      await tester.pumpWidget(
+        _withLocale(
+          BannerCarousel(banners: const [], autoAdvance: false)
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // No frame, no dots, no placeholder — the caller shows its own content.
+      expect(find.byType(PageView), findsNothing);
+      expect(find.byType(SizedBox), findsWidgets);
+      expect(tester.getSize(find.byType(BannerCarousel)).height, 0);
+    });
+
+    testWidgets('paging dots appear only when there is more than one banner',
+        (tester) async {
+      final one = [
+        HomeBanner.fromJson(Map<String, dynamic>.from(_bannersJson[0])),
+      ];
+      await tester.pumpWidget(
+        _withLocale(
+          BannerCarousel(banners: one, autoAdvance: false)
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(PageView), findsOneWidget);
+      expect(find.byType(AnimatedContainer), findsNothing);
+
+      final two = _bannersJson
+          .map((e) => HomeBanner.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+      await tester.pumpWidget(
+        _withLocale(
+          BannerCarousel(banners: two, autoAdvance: false)
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AnimatedContainer), findsNWidgets(2));
+    });
+
+    testWidgets('a banner with no destination is not tappable', (tester) async {
+      var taps = 0;
+      final banners = _bannersJson
+          .map((e) => HomeBanner.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+
+      await tester.pumpWidget(
+        _withLocale(
+          BannerCarousel(
+          banners: banners,
+          autoAdvance: false,
+          onTap: (_) => taps++,
+          )
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Slide one is link_type "none": it has no InkWell, so nothing can fire.
+      expect(find.text('اعرف المزيد'), findsNothing);
+      await tester.tap(find.text('استشارتك الأولى بخصم ٢٠٪'));
+      await tester.pumpAndSettle();
+      expect(taps, 0);
+
+      // Slide two links to a specialty and does offer the affordance.
+      await tester.drag(find.byType(PageView), const Offset(-400, 0));
+      await tester.pumpAndSettle();
+      expect(find.text('اعرف المزيد'), findsOneWidget);
+      await tester.tap(find.text('تعرّف على محامينا'));
+      await tester.pumpAndSettle();
+      expect(taps, 1);
+    });
+
+    testWidgets('a broken image degrades to a titled block, not an error',
+        (tester) async {
+      final banners = [
+        HomeBanner.fromJson(Map<String, dynamic>.from(_bannersJson[1])),
+      ];
+
+      await tester.pumpWidget(
+        _withLocale(
+          BannerCarousel(banners: banners, autoAdvance: false)
+        ),
+      );
+      // Image.network cannot resolve in a widget test, so it takes the error path.
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('تعرّف على محامينا'), findsOneWidget);
     });
   });
 

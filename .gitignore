@@ -12,6 +12,7 @@ uploads/documents/*
 uploads/evidence/*
 uploads/lawyer-photos/*
 uploads/knowledge/*
+uploads/banners/*
 !uploads/**/.htaccess
 
 # Dependency / build output

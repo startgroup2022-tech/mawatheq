@@ -521,6 +521,23 @@ class ApiRepository {
             .toList()
         : <Plan>[];
   }
+
+  // -------------------------------------------------------------- banners
+
+  /// `GET /api/v1/banners.php` — the home slider, no token required.
+  ///
+  /// An empty list is a normal answer (a fresh install has no banners), and the
+  /// home screen shows its empty state. Nothing is fabricated client-side: the
+  /// brief forbids inventing promotions.
+  Future<List<HomeBanner>> banners() async {
+    final json = await _client.get('/banners.php', auth: false);
+    return json['banners'] is List
+        ? (json['banners'] as List)
+            .whereType<Map>()
+            .map((e) => HomeBanner.fromJson(Map<String, dynamic>.from(e)))
+            .toList()
+        : <HomeBanner>[];
+  }
 }
 
 /// Result of a login/register attempt.

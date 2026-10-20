@@ -10,12 +10,11 @@ import 'core/theme/app_theme.dart';
 
 import 'features/auth/password_reset_screens.dart';
 import 'features/home/home_shell.dart';
-import 'features/public/onboarding_screen.dart';
 import 'features/public/public_guest_shell.dart';
 import 'features/public/splash_screen.dart';
 
 /// Root widget: wires locale + direction, then routes from the splash to the
-/// dashboard, the welcome screen, or the public homepage depending on the session.
+/// authenticated dashboard or the consumer shell depending on the session.
 ///
 /// [deepLinks] is optional so widget tests can omit it and never touch a platform
 /// channel; in production `main.dart` supplies one that turns a reset link into the
@@ -127,9 +126,11 @@ class _MawatheqAppState extends State<MawatheqApp> {
               // Guest → the public shell. Deliberately a different shell from
               // HomeShell: a guest never sees the authenticated dashboard.
               AuthStatus.guest => const PublicGuestShell(),
-              // Unauthenticated (including an expired session) → welcome screen
-              // with guest access.
-              _ => const OnboardingScreen(),
+              // Unauthenticated (including an expired session) → the same consumer
+              // shell a guest uses. The app opens on the home experience, not a
+              // value-proposition slideshow: a visitor sees what the product does
+              // before being asked for anything.
+              _ => const PublicGuestShell(),
             },
     );
   }

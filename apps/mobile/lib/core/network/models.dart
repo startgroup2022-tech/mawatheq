@@ -384,6 +384,86 @@ class LawyerProfile {
   }
 }
 
+/// A home-screen slider banner, from `GET /api/v1/banners.php`.
+///
+/// Every field is operator-supplied through `/admin/banners.php`; nothing is
+/// synthesized on the client. An empty list is the normal state of a fresh install,
+/// and the home screen shows its empty state rather than inventing a promotion.
+class HomeBanner {
+  const HomeBanner({
+    required this.id,
+    required this.titleAr,
+    required this.titleEn,
+    this.subtitleAr = '',
+    this.subtitleEn = '',
+    this.imagePath = '',
+    this.altAr = '',
+    this.altEn = '',
+    this.linkType = 'none',
+    this.linkTarget,
+  });
+
+  final int id;
+  final String titleAr;
+  final String titleEn;
+  final String subtitleAr;
+  final String subtitleEn;
+
+  /// Relative to the site root, e.g. `uploads/banners/ab12.jpg`. The client resolves
+  /// it against [AppConfig.siteBase] so the server does not have to know which host
+  /// the app was built for.
+  final String imagePath;
+
+  final String altAr;
+  final String altEn;
+
+  /// One of `none`, `category`, `specialty`, `url`. The server has already verified
+  /// that the target resolves, so an unresolvable banner arrives as `none`.
+  final String linkType;
+  final String? linkTarget;
+
+  bool get isTappable => linkType != 'none' && (linkTarget ?? '').isNotEmpty;
+
+  String title(bool isRtl) => isRtl ? titleAr : (titleEn.isEmpty ? titleAr : titleEn);
+
+  String subtitle(bool isRtl) =>
+      isRtl ? subtitleAr : (subtitleEn.isEmpty ? subtitleAr : subtitleEn);
+
+  /// Alt text for a screen reader. Falls back to the title so an image is never
+  /// announced as unlabelled.
+  String alt(bool isRtl) {
+    final value = isRtl ? altAr : (altEn.isEmpty ? altAr : altEn);
+    return value.isEmpty ? title(isRtl) : value;
+  }
+
+  /// Absolute image URL, or null when the banner has no usable path.
+  String? imageUrl(String siteBase) {
+    if (imagePath.isEmpty) return null;
+    final base = siteBase.endsWith('/')
+        ? siteBase.substring(0, siteBase.length - 1)
+        : siteBase;
+    final path = imagePath.startsWith('/') ? imagePath : '/$imagePath';
+    return '$base$path';
+  }
+
+  factory HomeBanner.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    final target = j.str('link_target');
+    return HomeBanner(
+      id: j.intg('id'),
+      titleAr: j.str('title_ar'),
+      titleEn: j.str('title_en'),
+      subtitleAr: j.str('subtitle_ar'),
+      subtitleEn: j.str('subtitle_en'),
+      imagePath: j.str('image_path', fallback: j.str('image_url')),
+      altAr: j.str('alt_ar'),
+      altEn: j.str('alt_en'),
+      linkType: j.str('link_type', fallback: 'none'),
+      linkTarget: target.isEmpty ? null : target,
+    );
+  }
+}
+
 /// The real assistant availability from `GET /api/v1/ai-status.php`.
 ///
 /// Used instead of a permanently green indicator: the home screen reflects what

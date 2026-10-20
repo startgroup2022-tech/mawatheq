@@ -42,6 +42,7 @@ if (!function_exists('adm_icon')) {
             'user' => '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
             'edit' => '<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
             'funnel' => '<path d="M22 3H2l8 9.46V19l4 2v-8.54z"/>',
+            'image' => '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-4.6-4.6a1.4 1.4 0 0 0-2 0L4 21"/>',
         ];
         return '<svg class="i" viewBox="0 0 24 24" aria-hidden="true">' . ($p[$n] ?? $p['dashboard']) . '</svg>';
     }

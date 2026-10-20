@@ -51,6 +51,7 @@ $adminNavGroups = [
           'ai-operations' => ['i' => 'settings', 'ar' => 'عمليات وحكامة AI', 'en' => 'AI operations', 'href' => '/admin/ai-operations.php'],
         'ai-workflows' => ['i' => 'check', 'ar' => 'سير عمل الوكلاء والموافقات', 'en' => 'Agent workflows', 'href' => '/admin/ai-workflows.php', 'badge' => 'wf'],
         'articles' => ['i' => 'book', 'ar' => 'مركز المعرفة', 'en' => 'Articles', 'href' => '/admin/articles.php'],
+        'banners' => ['i' => 'image', 'ar' => 'بانرات الصفحة الرئيسية', 'en' => 'Home banners', 'href' => '/admin/banners.php'],
         'laws' => ['i' => 'landmark', 'ar' => 'مكتبة الأنظمة', 'en' => 'Law library', 'href' => '/admin/laws.php'],
     ]],
     ['t' => adm('النظام', 'System'), 'items' => [

@@ -2,22 +2,29 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/auth_controller.dart';
+import '../../core/guest_session.dart';
 import '../../core/locale_controller.dart';
 import '../../core/network/api_repository.dart';
 import '../../core/theme/app_colors.dart';
+import '../../shared/widgets/auth_gate.dart';
 import '../../shared/widgets/brand_widgets.dart';
 import '../auth/login_screen.dart';
 import '../auth/register_screen.dart';
+import 'home_tab_public.dart';
 import 'pricing_screen.dart';
-import 'public_home_screen.dart';
 import 'public_info_screen.dart';
+import 'public_lawyers_screen.dart';
 
-/// The shell a guest browses: public navigation only.
+/// The shell a guest browses: the consumer app, without an account.
 ///
-/// This is deliberately a different shell from the authenticated [HomeShell]. A guest
-/// sees the marketing tabs — home, services, pricing, about, account — and never the
-/// private dashboard tabs (cases, documents, firm administration). Entering guest mode
-/// therefore cannot unlock an authenticated route.
+/// This is deliberately a different shell from the authenticated [HomeShell], and it
+/// is a consumer experience rather than a marketing site: home, lawyers, a
+/// consultation entry point, and the account doorway. The private dashboard tabs
+/// (cases, documents, firm administration) are not reachable from here, so entering
+/// guest mode cannot unlock an authenticated route.
+///
+/// It reuses [HomeShell]'s tab layout, colours and app bar so the app looks like one
+/// product across the sign-in boundary rather than two.
 class PublicGuestShell extends StatefulWidget {
   const PublicGuestShell({super.key, this.repository, this.initialIndex = 0});
 
@@ -31,13 +38,33 @@ class PublicGuestShell extends StatefulWidget {
 }
 
 class _PublicGuestShellState extends State<PublicGuestShell> {
-  late int _index = widget.initialIndex;
+  /// The selected bottom-nav destination. It is NOT the page index: "Consult" is a
+  /// nav entry with no page, so the two do not line up. Keeping them separate is what
+  /// stops "Account" from indexing past the end of the page list.
+  late int _navIndex = _navIndexForPage(widget.initialIndex);
+
+  static const _consultNavIndex = 2;
+
+  /// Maps a page index (0..2) onto its nav position, skipping the Consult entry.
+  static int _navIndexForPage(int page) => page < _consultNavIndex ? page : page + 1;
+
+  int get _pageIndex =>
+      _navIndex < _consultNavIndex ? _navIndex : _navIndex - 1;
 
   bool get _rtl => context.read<LocaleController>().isRtl;
 
   @override
   Widget build(BuildContext context) {
     final rtl = _rtl;
+
+    final pages = [
+      PublicHomeTab(
+        repository: widget.repository,
+        onOpenLawyers: () => setState(() => _navIndex = 1),
+      ),
+      PublicLawyersScreen(repository: widget.repository, embedded: true),
+      const _GuestAccountTab(),
+    ];
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -82,19 +109,18 @@ class _PublicGuestShellState extends State<PublicGuestShell> {
           ),
         ],
       ),
-      body: IndexedStack(
-        index: _index,
-        children: [
-          PublicHomeScreen(repository: widget.repository, embedded: true),
-          _ServicesTab(repository: widget.repository),
-          PricingScreen(repository: widget.repository),
-          const PublicInfoScreen(section: InfoSection.about, embedded: true),
-          const _GuestAccountTab(),
-        ],
-      ),
+      body: IndexedStack(index: _pageIndex, children: pages),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
+        selectedIndex: _navIndex,
+        onDestinationSelected: (i) {
+          if (i == _consultNavIndex) {
+            // Consultation needs an account, so it opens the sign-in prompt instead
+            // of switching to a page the server would refuse to fill.
+            requireAccount(context, ProtectedDestination.consultations);
+            return;
+          }
+          setState(() => _navIndex = i);
+        },
         destinations: [
           NavigationDestination(
             icon: const Icon(Icons.home_outlined),
@@ -102,19 +128,14 @@ class _PublicGuestShellState extends State<PublicGuestShell> {
             label: rtl ? 'الرئيسية' : 'Home',
           ),
           NavigationDestination(
-            icon: const Icon(Icons.grid_view_outlined),
-            selectedIcon: const Icon(Icons.grid_view),
-            label: rtl ? 'الخدمات' : 'Services',
+            icon: const Icon(Icons.gavel_outlined),
+            selectedIcon: const Icon(Icons.gavel),
+            label: rtl ? 'المحامون' : 'Lawyers',
           ),
           NavigationDestination(
-            icon: const Icon(Icons.sell_outlined),
-            selectedIcon: const Icon(Icons.sell),
-            label: rtl ? 'الأسعار' : 'Pricing',
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.info_outline),
-            selectedIcon: const Icon(Icons.info),
-            label: rtl ? 'من نحن' : 'About',
+            icon: const Icon(Icons.forum_outlined),
+            selectedIcon: const Icon(Icons.forum),
+            label: rtl ? 'استشارة' : 'Consult',
           ),
           NavigationDestination(
             icon: const Icon(Icons.person_outline),
@@ -124,18 +145,6 @@ class _PublicGuestShellState extends State<PublicGuestShell> {
         ],
       ),
     );
-  }
-}
-
-/// The services tab: every public service, each raising the auth prompt when tapped.
-class _ServicesTab extends StatelessWidget {
-  const _ServicesTab({this.repository});
-
-  final ApiRepository? repository;
-
-  @override
-  Widget build(BuildContext context) {
-    return PublicInfoScreen(section: InfoSection.services, embedded: true);
   }
 }
 
@@ -202,6 +211,39 @@ class _GuestAccountTab extends StatelessWidget {
         ),
         const SizedBox(height: 18),
         const Divider(),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.sell_outlined, color: AppColors.navy),
+          title: Text(rtl ? 'الأسعار والخطط' : 'Pricing and plans'),
+          trailing: const Icon(Icons.chevron_left, size: 18),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const PricingScreen()),
+          ),
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.info_outline, color: AppColors.navy),
+          title: Text(rtl ? 'من نحن' : 'About us'),
+          trailing: const Icon(Icons.chevron_left, size: 18),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) =>
+                  const PublicInfoScreen(section: InfoSection.about),
+            ),
+          ),
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.support_agent, color: AppColors.navy),
+          title: Text(rtl ? 'تواصل معنا' : 'Contact us'),
+          trailing: const Icon(Icons.chevron_left, size: 18),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) =>
+                  const PublicInfoScreen(section: InfoSection.contact),
+            ),
+          ),
+        ),
         const SizedBox(height: 8),
         TextButton.icon(
           onPressed: () => context.read<AuthController>().exitGuest(),
