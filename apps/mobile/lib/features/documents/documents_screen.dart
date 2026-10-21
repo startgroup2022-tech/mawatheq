@@ -9,6 +9,7 @@ import '../../core/network/api_exception.dart';
 import '../../core/network/api_repository.dart';
 import '../../core/network/models.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_tokens.dart';
 import '../../shared/widgets/brand_widgets.dart';
 
 /// Document list from `GET /api/v1/documents.php`, with upload.
@@ -338,8 +339,8 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: AppColors.surface,
-            border: Border.all(color: AppColors.border),
+            color: context.tokens.surface,
+            border: Border.all(color: context.tokens.border),
             borderRadius: BorderRadius.circular(AppRadius.lg),
           ),
           child: Column(
@@ -370,9 +371,9 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: AppColors.surface2,
+              color: context.tokens.surface2,
               borderRadius: BorderRadius.circular(AppRadius.md),
-              border: Border.all(color: AppColors.border),
+              border: Border.all(color: context.tokens.border),
             ),
             child: Text(
               doc.str('status') == 'processing'

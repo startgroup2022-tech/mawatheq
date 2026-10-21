@@ -7,6 +7,7 @@ import '../../core/network/api_exception.dart';
 import '../../core/network/api_repository.dart';
 import '../../core/network/models.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_tokens.dart';
 import '../../shared/widgets/auth_gate.dart';
 import '../../shared/widgets/brand_widgets.dart';
 
@@ -101,14 +102,14 @@ class _PublicLawyersScreenState extends State<PublicLawyersScreen> {
             : _body(rtl);
 
     if (widget.embedded) {
-      return Container(color: AppColors.bg, child: body);
+      return Container(color: context.tokens.bg, child: body);
     }
 
     return Scaffold(
-      backgroundColor: AppColors.bg,
+      backgroundColor: context.tokens.bg,
       appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        surfaceTintColor: AppColors.surface,
+        backgroundColor: context.tokens.surface,
+        surfaceTintColor: context.tokens.surface,
         title: Text(rtl ? 'المحامون' : 'Lawyers'),
       ),
       body: body,
@@ -131,10 +132,10 @@ class _PublicLawyersScreenState extends State<PublicLawyersScreen> {
                   : 'Search by name, specialty or city',
               prefixIcon: const Icon(Icons.search),
               filled: true,
-              fillColor: AppColors.surface,
+              fillColor: context.tokens.surface,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(AppRadius.lg),
-                borderSide: const BorderSide(color: AppColors.border),
+                borderSide: BorderSide(color: context.tokens.border),
               ),
             ),
           ),
@@ -202,9 +203,9 @@ class _LawyerCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: context.tokens.surface,
         borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: context.tokens.border),
         boxShadow: AppShadow.xs,
       ),
       child: Column(
@@ -224,9 +225,9 @@ class _LawyerCard extends StatelessWidget {
                   children: [
                     Text(
                       lawyer.name,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.w700,
-                        color: AppColors.navyDark,
+                        color: context.tokens.heading,
                         fontSize: 15,
                       ),
                     ),
@@ -234,8 +235,8 @@ class _LawyerCard extends StatelessWidget {
                       const SizedBox(height: 3),
                       Text(
                         lawyer.specialization,
-                        style: const TextStyle(
-                            color: AppColors.textMuted, fontSize: 13),
+                        style: TextStyle(
+                            color: context.tokens.textMuted, fontSize: 13),
                       ),
                     ],
                   ],
@@ -248,8 +249,8 @@ class _LawyerCard extends StatelessWidget {
                     const SizedBox(width: 3),
                     Text(
                       lawyer.rating.toStringAsFixed(1),
-                      style: const TextStyle(
-                          color: AppColors.textMuted,
+                      style: TextStyle(
+                          color: context.tokens.textMuted,
                           fontSize: 12,
                           fontWeight: FontWeight.w600),
                     ),
@@ -261,29 +262,29 @@ class _LawyerCard extends StatelessWidget {
           Row(
             children: [
               if (lawyer.jurisdiction.isNotEmpty) ...[
-                const Icon(Icons.place_outlined,
-                    size: 15, color: AppColors.textSubtle),
+                Icon(Icons.place_outlined,
+                    size: 15, color: context.tokens.textSubtle),
                 const SizedBox(width: 4),
                 Flexible(
                   child: Text(
                     lawyer.jurisdiction,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        color: AppColors.textSubtle, fontSize: 12),
+                    style: TextStyle(
+                        color: context.tokens.textSubtle, fontSize: 12),
                   ),
                 ),
                 const SizedBox(width: 12),
               ],
               if (lawyer.hourlyRate > 0) ...[
-                const Icon(Icons.payments_outlined,
-                    size: 15, color: AppColors.textSubtle),
+                Icon(Icons.payments_outlined,
+                    size: 15, color: context.tokens.textSubtle),
                 const SizedBox(width: 4),
                 Text(
                   rtl
                       ? '${lawyer.hourlyRate.toStringAsFixed(0)} ر.س/ساعة'
                       : 'SAR ${lawyer.hourlyRate.toStringAsFixed(0)}/hr',
-                  style: const TextStyle(
-                      color: AppColors.textSubtle, fontSize: 12),
+                  style: TextStyle(
+                      color: context.tokens.textSubtle, fontSize: 12),
                 ),
               ],
             ],

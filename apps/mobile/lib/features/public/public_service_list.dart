@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/guest_session.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_tokens.dart';
 import '../../shared/widgets/auth_gate.dart';
 
 /// One public service a visitor can read about but must sign in to use.
@@ -71,10 +72,10 @@ class PublicServiceList extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Material(
-              color: AppColors.surface,
+              color: context.tokens.surface,
               clipBehavior: Clip.antiAlias,
               shape: RoundedRectangleBorder(
-                side: const BorderSide(color: AppColors.border),
+                side: BorderSide(color: context.tokens.border),
                 borderRadius: BorderRadius.circular(AppRadius.lg),
               ),
               child: InkWell(
@@ -101,8 +102,8 @@ class PublicServiceList extends StatelessWidget {
                               ),
                         ),
                       ),
-                      const Icon(Icons.lock_outline,
-                          size: 16, color: AppColors.textSubtle),
+                      Icon(Icons.lock_outline,
+                          size: 16, color: context.tokens.textSubtle),
                     ],
                   ),
                 ),

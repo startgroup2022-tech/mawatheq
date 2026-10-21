@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/locale_controller.dart';
 import '../../core/network/models.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_tokens.dart';
 
 /// Confirmation screen for a banner that points at an external address.
 ///
@@ -22,10 +23,10 @@ class BannerLinkScreen extends StatelessWidget {
     final target = banner.linkTarget ?? '';
 
     return Scaffold(
-      backgroundColor: AppColors.bg,
+      backgroundColor: context.tokens.bg,
       appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        surfaceTintColor: AppColors.surface,
+        backgroundColor: context.tokens.surface,
+        surfaceTintColor: context.tokens.surface,
         title: Text(banner.title(rtl)),
       ),
       body: ListView(
@@ -41,9 +42,9 @@ class BannerLinkScreen extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: AppColors.surface,
+              color: context.tokens.surface,
               borderRadius: BorderRadius.circular(AppRadius.lg),
-              border: Border.all(color: AppColors.border),
+              border: Border.all(color: context.tokens.border),
             ),
             child: Row(
               children: [
@@ -52,8 +53,8 @@ class BannerLinkScreen extends StatelessWidget {
                 Expanded(
                   child: SelectableText(
                     target,
-                    style: const TextStyle(
-                        color: AppColors.textMuted, fontSize: 13),
+                    style: TextStyle(
+                        color: context.tokens.textMuted, fontSize: 13),
                   ),
                 ),
               ],
@@ -68,7 +69,7 @@ class BannerLinkScreen extends StatelessWidget {
             style: Theme.of(context)
                 .textTheme
                 .bodySmall
-                ?.copyWith(color: AppColors.textMuted),
+                ?.copyWith(color: context.tokens.textMuted),
           ),
         ],
       ),

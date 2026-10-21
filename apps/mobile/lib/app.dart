@@ -7,6 +7,7 @@ import 'core/deep_link_service.dart';
 import 'core/locale_controller.dart';
 import 'core/network/api_repository.dart';
 import 'core/theme/app_theme.dart';
+import 'core/theme/theme_controller.dart';
 
 import 'features/auth/password_reset_screens.dart';
 import 'features/home/home_shell.dart';
@@ -93,12 +94,24 @@ class _MawatheqAppState extends State<MawatheqApp> {
   Widget build(BuildContext context) {
     final locale = context.watch<LocaleController>();
     final auth = context.watch<AuthController>();
+    // Read the theme choice, but tolerate a harness that does not provide one:
+    // widget tests mount screens directly and should not have to supply it.
+    ThemeController? themeController;
+    try {
+      themeController = context.watch<ThemeController>();
+    } on ProviderNotFoundException {
+      themeController = null;
+    }
 
     return MaterialApp(
       title: 'مواثيق',
       navigatorKey: _navigatorKey,
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
+      // Without a controller the app follows the system, which is the documented
+      // default and keeps a bare test harness honest.
+      themeMode: themeController?.themeMode ?? ThemeMode.system,
       locale: Locale(locale.locale),
       supportedLocales: const [Locale('ar'), Locale('en')],
       localizationsDelegates: const [

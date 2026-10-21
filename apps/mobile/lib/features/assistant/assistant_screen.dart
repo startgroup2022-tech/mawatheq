@@ -4,6 +4,7 @@ import '../../core/network/api_exception.dart';
 import '../../core/network/api_repository.dart';
 import '../../core/network/models.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_tokens.dart';
 import '../../shared/widgets/brand_widgets.dart';
 
 /// Legal assistant chat, backed by `POST /api/v1/ai-chat.php`.
@@ -149,21 +150,21 @@ class _AssistantScreenState extends State<AssistantScreen> {
             margin: const EdgeInsets.fromLTRB(16, 14, 16, 0),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: AppColors.warningBg,
+              color: context.tokens.warningBg,
               borderRadius: BorderRadius.circular(AppRadius.md),
-              border: Border.all(color: const Color(0xFFF3E0BE)),
+              border: Border.all(color: context.tokens.warningBorder),
             ),
             child: Row(
               children: [
-                const Icon(Icons.construction_outlined,
-                    size: 18, color: AppColors.warning),
+                Icon(Icons.construction_outlined,
+                    size: 18, color: context.tokens.warningFg),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     'المساعد الذكي غير متاح حالياً. ${_status.reason}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12.5,
-                      color: AppColors.warning,
+                      color: context.tokens.warningFg,
                       height: 1.65,
                     ),
                   ),
@@ -215,9 +216,9 @@ class _AssistantScreenState extends State<AssistantScreen> {
           top: false,
           child: Container(
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-            decoration: const BoxDecoration(
-              color: AppColors.surface,
-              border: Border(top: BorderSide(color: AppColors.border)),
+            decoration: BoxDecoration(
+              color: context.tokens.surface,
+              border: Border(top: BorderSide(color: context.tokens.border)),
             ),
             child: Row(
               children: [
@@ -242,7 +243,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
                   onPressed: (_status.available && !_sending) ? _send : null,
                   style: IconButton.styleFrom(
                     backgroundColor: AppColors.teal,
-                    disabledBackgroundColor: AppColors.surface3,
+                    disabledBackgroundColor: context.tokens.surface3,
                   ),
                   icon: const Icon(Icons.send, size: 20),
                 ),
@@ -264,20 +265,20 @@ class _AssistantScreenState extends State<AssistantScreen> {
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: AppColors.dangerBg,
+          color: context.tokens.dangerBg,
           borderRadius: BorderRadius.circular(AppRadius.lg),
-          border: Border.all(color: const Color(0xFFF2CFC4)),
+          border: Border.all(color: context.tokens.dangerBorder),
         ),
         child: Row(
           children: [
-            const Icon(Icons.error_outline, size: 16, color: AppColors.danger),
+            Icon(Icons.error_outline, size: 16, color: context.tokens.dangerFg),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
                 text,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13,
-                  color: AppColors.danger,
+                  color: context.tokens.dangerFg,
                   height: 1.7,
                 ),
               ),

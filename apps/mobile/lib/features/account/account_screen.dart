@@ -6,6 +6,8 @@ import '../../core/locale_controller.dart';
 import '../../core/network/api_repository.dart';
 import '../../core/network/models.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_tokens.dart';
+import '../../core/theme/theme_controller.dart';
 import '../../shared/widgets/brand_widgets.dart';
 import '../auth/login_screen.dart';
 import '../public/pricing_screen.dart';
@@ -58,26 +60,26 @@ class _AccountScreenState extends State<AccountScreen> {
         Container(
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
-            gradient: AppColors.lightSurface,
+            gradient: context.tokens.washGradient,
             borderRadius: BorderRadius.circular(AppRadius.lg),
-            border: Border.all(color: const Color(0xFFCFE7F2)),
+            border: Border.all(color: context.tokens.washBorder),
           ),
           child: Row(
             children: [
               Container(
                 width: 56,
                 height: 56,
-                decoration: const BoxDecoration(
-                  color: AppColors.surface,
+                decoration: BoxDecoration(
+                  color: context.tokens.surface,
                   shape: BoxShape.circle,
                 ),
                 child: Center(
                   child: Text(
                     user.name.isEmpty ? '؟' : user.name.characters.first,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.w800,
-                      color: AppColors.navy,
+                      color: context.tokens.heading,
                     ),
                   ),
                 ),
@@ -107,7 +109,7 @@ class _AccountScreenState extends State<AccountScreen> {
                           const SizedBox(width: 6),
                           _Pill(
                             label: user.role.isEmpty ? 'عضو مكتب' : user.role,
-                            color: AppColors.navy,
+                            color: context.tokens.heading,
                           ),
                         ],
                       ],
@@ -125,9 +127,9 @@ class _AccountScreenState extends State<AccountScreen> {
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: AppColors.surface2,
+              color: context.tokens.surface2,
               borderRadius: BorderRadius.circular(AppRadius.md),
-              border: Border.all(color: AppColors.border),
+              border: Border.all(color: context.tokens.border),
             ),
             child: Text(
               'لم يُرجِع الخادم قائمة صلاحيات لهذا الحساب.',
@@ -139,7 +141,7 @@ class _AccountScreenState extends State<AccountScreen> {
             spacing: 6,
             runSpacing: 6,
             children: user.permissions
-                .map((p) => _Pill(label: p, color: AppColors.success))
+                .map((p) => _Pill(label: p, color: context.tokens.successFg))
                 .toList(),
           ),
         const SizedBox(height: 22),
@@ -156,8 +158,8 @@ class _AccountScreenState extends State<AccountScreen> {
                 child: Container(
                   padding: const EdgeInsets.all(13),
                   decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    border: Border.all(color: AppColors.border),
+                    color: context.tokens.surface,
+                    border: Border.all(color: context.tokens.border),
                     borderRadius: BorderRadius.circular(AppRadius.md),
                   ),
                   child: Row(
@@ -180,9 +182,9 @@ class _AccountScreenState extends State<AccountScreen> {
                       ),
                       Text(
                         '${inv.total.toStringAsFixed(0)} ${inv.currency}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.w700,
-                          color: AppColors.navy,
+                          color: context.tokens.heading,
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -200,6 +202,9 @@ class _AccountScreenState extends State<AccountScreen> {
           value: locale.isRtl ? 'العربية' : 'English',
           onTap: () => context.read<LocaleController>().toggle(),
         ),
+        // The theme chooser reads its state tolerantly, like the app shell does:
+        // widget tests mount this screen without a ThemeController.
+        _ThemeSettingTile(),
         _SettingTile(
           icon: Icons.workspace_premium_outlined,
           label: 'الخطط والأسعار',
@@ -236,7 +241,7 @@ class _AccountScreenState extends State<AccountScreen> {
           },
           style: OutlinedButton.styleFrom(
             foregroundColor: AppColors.danger,
-            side: const BorderSide(color: Color(0xFFF2CFC4)),
+            side: BorderSide(color: context.tokens.dangerBorder),
             minimumSize: const Size(0, 48),
           ),
           icon: const Icon(Icons.logout, size: 18),
@@ -300,10 +305,10 @@ class _SettingTile extends StatelessWidget {
       // Material, not a decorated Container, so the tile's ink splash is
       // visible on the surface it actually paints on.
       child: Material(
-        color: AppColors.surface,
+        color: context.tokens.surface,
         clipBehavior: Clip.antiAlias,
         shape: RoundedRectangleBorder(
-          side: const BorderSide(color: AppColors.border),
+          side: BorderSide(color: context.tokens.border),
           borderRadius: BorderRadius.circular(AppRadius.md),
         ),
         child: ListTile(
@@ -311,7 +316,7 @@ class _SettingTile extends StatelessWidget {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppRadius.md),
           ),
-          leading: Icon(icon, size: 20, color: AppColors.textMuted),
+          leading: Icon(icon, size: 20, color: context.tokens.textMuted),
           title: Text(label, style: Theme.of(context).textTheme.bodyMedium),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
@@ -319,9 +324,84 @@ class _SettingTile extends StatelessWidget {
               if (value != null)
                 Text(value!, style: Theme.of(context).textTheme.bodySmall),
               const SizedBox(width: 6),
-              const Icon(Icons.chevron_left, size: 18, color: AppColors.textSubtle),
+              Icon(Icons.chevron_left, size: 18, color: context.tokens.textSubtle),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The light/dark/system chooser.
+///
+/// Reads [ThemeController] as a nullable type so this screen is safe to mount
+/// directly by widget tests, which do not provide one. A missing provider hides
+/// the tile rather than crashing the settings list.
+class _ThemeSettingTile extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.watch<ThemeController?>();
+    if (controller == null) return const SizedBox.shrink();
+
+    final locale = context.watch<LocaleController>();
+    final mode = controller.mode;
+
+    return _SettingTile(
+      icon: mode.icon,
+      label: locale.isRtl ? 'المظهر' : 'Appearance',
+      value: locale.isRtl ? mode.labelAr : mode.labelEn,
+      onTap: () => _showThemePicker(context, controller, locale.isRtl),
+    );
+  }
+
+  void _showThemePicker(
+    BuildContext context,
+    ThemeController controller,
+    bool rtl,
+  ) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: context.tokens.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 6),
+              child: Align(
+                alignment: rtl ? Alignment.centerRight : Alignment.centerLeft,
+                child: Text(
+                  rtl ? 'المظهر' : 'Appearance',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                    color: sheetContext.tokens.heading,
+                  ),
+                ),
+              ),
+            ),
+            for (final option in AppThemeMode.values)
+              ListTile(
+                leading: Icon(option.icon,
+                    size: 20, color: sheetContext.tokens.textMuted),
+                title: Text(
+                  rtl ? option.labelAr : option.labelEn,
+                  style: Theme.of(sheetContext).textTheme.bodyMedium,
+                ),
+                trailing: option == controller.mode
+                    ? Icon(Icons.check, size: 20, color: AppColors.teal)
+                    : null,
+                onTap: () {
+                  controller.setMode(option);
+                  Navigator.of(sheetContext).pop();
+                },
+              ),
+            const SizedBox(height: 8),
+          ],
         ),
       ),
     );

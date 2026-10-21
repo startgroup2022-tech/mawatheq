@@ -6,6 +6,7 @@ import '../../core/guest_session.dart';
 import '../../core/locale_controller.dart';
 import '../../core/network/api_repository.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_tokens.dart';
 import '../../shared/widgets/auth_gate.dart';
 import '../../shared/widgets/brand_widgets.dart';
 import '../auth/login_screen.dart';
@@ -67,10 +68,10 @@ class _PublicGuestShellState extends State<PublicGuestShell> {
     ];
 
     return Scaffold(
-      backgroundColor: AppColors.bg,
+      backgroundColor: context.tokens.bg,
       appBar: AppBar(
-        backgroundColor: AppColors.surface,
-        surfaceTintColor: AppColors.surface,
+        backgroundColor: context.tokens.surface,
+        surfaceTintColor: context.tokens.surface,
         titleSpacing: AppSpacing.s4,
         title: Row(
           children: [
@@ -89,15 +90,15 @@ class _PublicGuestShellState extends State<PublicGuestShell> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
-              color: AppColors.surface3,
+              color: context.tokens.surface3,
               borderRadius: BorderRadius.circular(AppRadius.pill),
             ),
             child: Text(
               rtl ? 'زائر' : 'Guest',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
-                color: AppColors.textMuted,
+                color: context.tokens.textMuted,
               ),
             ),
           ),
@@ -213,7 +214,7 @@ class _GuestAccountTab extends StatelessWidget {
         const Divider(),
         ListTile(
           contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.sell_outlined, color: AppColors.navy),
+          leading: Icon(Icons.sell_outlined, color: context.tokens.heading),
           title: Text(rtl ? 'الأسعار والخطط' : 'Pricing and plans'),
           trailing: const Icon(Icons.chevron_left, size: 18),
           onTap: () => Navigator.of(context).push(
@@ -222,7 +223,7 @@ class _GuestAccountTab extends StatelessWidget {
         ),
         ListTile(
           contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.info_outline, color: AppColors.navy),
+          leading: Icon(Icons.info_outline, color: context.tokens.heading),
           title: Text(rtl ? 'من نحن' : 'About us'),
           trailing: const Icon(Icons.chevron_left, size: 18),
           onTap: () => Navigator.of(context).push(
@@ -234,7 +235,7 @@ class _GuestAccountTab extends StatelessWidget {
         ),
         ListTile(
           contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.support_agent, color: AppColors.navy),
+          leading: Icon(Icons.support_agent, color: context.tokens.heading),
           title: Text(rtl ? 'تواصل معنا' : 'Contact us'),
           trailing: const Icon(Icons.chevron_left, size: 18),
           onTap: () => Navigator.of(context).push(

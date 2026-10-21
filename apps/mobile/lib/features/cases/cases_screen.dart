@@ -5,6 +5,7 @@ import '../../core/network/api_exception.dart';
 import '../../core/network/api_repository.dart';
 import '../../core/network/models.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_tokens.dart';
 import '../../shared/widgets/brand_widgets.dart';
 
 /// Case list with search and status filtering, backed by `GET /api/v1/cases.php`.
@@ -205,9 +206,9 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            gradient: AppColors.lightSurface,
+            gradient: context.tokens.washGradient,
             borderRadius: BorderRadius.circular(AppRadius.lg),
-            border: Border.all(color: const Color(0xFFCFE7F2)),
+            border: Border.all(color: context.tokens.washBorder),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -275,8 +276,8 @@ class _CaseDetailScreenState extends State<CaseDetailScreen> {
             child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: AppColors.surface,
-                border: Border.all(color: AppColors.border),
+                color: context.tokens.surface,
+                border: Border.all(color: context.tokens.border),
                 borderRadius: BorderRadius.circular(AppRadius.md),
               ),
               child: Row(

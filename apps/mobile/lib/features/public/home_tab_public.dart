@@ -7,6 +7,8 @@ import '../../core/network/api_exception.dart';
 import '../../core/network/api_repository.dart';
 import '../../core/network/models.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_tokens.dart';
+import '../../shared/specialty_icons.dart';
 import '../../shared/widgets/auth_gate.dart';
 import '../../shared/widgets/banner_carousel.dart';
 import '../../shared/widgets/banner_link_screen.dart';
@@ -160,9 +162,9 @@ class _PublicHomeTabState extends State<PublicHomeTab> {
       width: double.infinity,
       padding: const EdgeInsets.all(AppSpacing.s4),
       decoration: BoxDecoration(
-        color: AppColors.dangerBg,
+        color: context.tokens.dangerBg,
         borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: context.tokens.border),
       ),
       child: Column(
         crossAxisAlignment:
@@ -170,7 +172,7 @@ class _PublicHomeTabState extends State<PublicHomeTab> {
         children: [
           Row(
             children: [
-              const Icon(Icons.error_outline, size: 20, color: AppColors.danger),
+              Icon(Icons.error_outline, size: 20, color: context.tokens.dangerFg),
               const SizedBox(width: AppSpacing.s3),
               Expanded(
                 child: Text(
@@ -201,7 +203,7 @@ class _PublicHomeTabState extends State<PublicHomeTab> {
           style: Theme.of(context)
               .textTheme
               .headlineSmall
-              ?.copyWith(color: AppColors.navy, fontWeight: FontWeight.w800),
+              ?.copyWith(color: context.tokens.heading, fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 4),
         Text(
@@ -211,7 +213,7 @@ class _PublicHomeTabState extends State<PublicHomeTab> {
           style: Theme.of(context)
               .textTheme
               .bodyMedium
-              ?.copyWith(color: AppColors.textMuted),
+              ?.copyWith(color: context.tokens.textMuted),
         ),
       ],
     );
@@ -227,10 +229,10 @@ class _PublicHomeTabState extends State<PublicHomeTab> {
         hintText: rtl ? 'ابحث عن محامٍ أو تخصص' : 'Search a lawyer or specialty',
         prefixIcon: const Icon(Icons.search),
         filled: true,
-        fillColor: AppColors.surface,
+        fillColor: context.tokens.surface,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadius.lg),
-          borderSide: const BorderSide(color: AppColors.border),
+          borderSide: BorderSide(color: context.tokens.border),
         ),
       ),
     );
@@ -242,9 +244,9 @@ class _PublicHomeTabState extends State<PublicHomeTab> {
         width: double.infinity,
         padding: const EdgeInsets.all(AppSpacing.s5),
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: context.tokens.surface,
           borderRadius: BorderRadius.circular(AppRadius.xl),
-          border: Border.all(color: AppColors.border),
+          border: Border.all(color: context.tokens.border),
         ),
         child: Text(
           rtl
@@ -344,9 +346,9 @@ class _PublicHomeTabState extends State<PublicHomeTab> {
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: AppColors.surface,
+              color: context.tokens.surface,
               borderRadius: BorderRadius.circular(AppRadius.lg),
-              border: Border.all(color: AppColors.border),
+              border: Border.all(color: context.tokens.border),
             ),
             child: Row(
               children: [
@@ -362,15 +364,15 @@ class _PublicHomeTabState extends State<PublicHomeTab> {
                     children: [
                       Text(
                         steps[i].$2,
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontWeight: FontWeight.w700,
-                            color: AppColors.navyDark),
+                            color: context.tokens.heading),
                       ),
                       const SizedBox(height: 3),
                       Text(
                         steps[i].$3,
-                        style: const TextStyle(
-                            color: AppColors.textMuted, fontSize: 13),
+                        style: TextStyle(
+                            color: context.tokens.textMuted, fontSize: 13),
                       ),
                     ],
                   ),
@@ -439,7 +441,7 @@ class _SpecialtyChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.surface,
+      color: context.tokens.surface,
       borderRadius: BorderRadius.circular(AppRadius.lg),
       child: InkWell(
         borderRadius: BorderRadius.circular(AppRadius.lg),
@@ -448,7 +450,7 @@ class _SpecialtyChip extends StatelessWidget {
           width: 150,
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            border: Border.all(color: AppColors.border),
+            border: Border.all(color: context.tokens.border),
             borderRadius: BorderRadius.circular(AppRadius.lg),
           ),
           child: Column(
@@ -458,11 +460,11 @@ class _SpecialtyChip extends StatelessWidget {
                 width: 34,
                 height: 34,
                 decoration: BoxDecoration(
-                  color: AppColors.infoBg,
+                  color: context.tokens.infoBg,
                   borderRadius: BorderRadius.circular(AppRadius.md),
                 ),
                 child: Icon(
-                  _iconFor(specialty.iconKey),
+                  specialtyIcon(specialty.iconKey),
                   size: 18,
                   color: AppColors.teal,
                 ),
@@ -472,9 +474,9 @@ class _SpecialtyChip extends StatelessWidget {
                 specialty.name,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   fontWeight: FontWeight.w700,
-                  color: AppColors.navyDark,
+                  color: context.tokens.heading,
                   fontSize: 13,
                   height: 1.35,
                 ),
@@ -485,8 +487,8 @@ class _SpecialtyChip extends StatelessWidget {
                   rtl
                       ? '${specialty.lawyerCount} محامٍ'
                       : '${specialty.lawyerCount} lawyers',
-                  style: const TextStyle(
-                      color: AppColors.textSubtle, fontSize: 11),
+                  style: TextStyle(
+                      color: context.tokens.textSubtle, fontSize: 11),
                 ),
               ],
             ],
@@ -511,7 +513,7 @@ class _ServiceTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.surface,
+      color: context.tokens.surface,
       borderRadius: BorderRadius.circular(AppRadius.lg),
       child: InkWell(
         borderRadius: BorderRadius.circular(AppRadius.lg),
@@ -519,23 +521,23 @@ class _ServiceTile extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
           decoration: BoxDecoration(
-            border: Border.all(color: AppColors.border),
+            border: Border.all(color: context.tokens.border),
             borderRadius: BorderRadius.circular(AppRadius.lg),
           ),
           child: Column(
             children: [
-              Icon(icon, color: AppColors.navy, size: 22),
+              Icon(icon, color: context.tokens.heading, size: 22),
               const SizedBox(height: 8),
               Text(
                 label,
                 textAlign: TextAlign.center,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11.5,
                   height: 1.3,
                   fontWeight: FontWeight.w600,
-                  color: AppColors.navyDark,
+                  color: context.tokens.heading,
                 ),
               ),
             ],
@@ -546,19 +548,3 @@ class _ServiceTile extends StatelessWidget {
   }
 }
 
-IconData _iconFor(String key) {
-  switch (key) {
-    case 'family':
-      return Icons.family_restroom;
-    case 'commercial':
-      return Icons.storefront_outlined;
-    case 'labor':
-      return Icons.work_outline;
-    case 'criminal':
-      return Icons.gavel_outlined;
-    case 'realestate':
-      return Icons.home_work_outlined;
-    default:
-      return Icons.balance_outlined;
-  }
-}

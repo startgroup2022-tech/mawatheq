@@ -7,6 +7,7 @@ import '../../core/config/app_config.dart';
 import '../../core/locale_controller.dart';
 import '../../core/network/models.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_tokens.dart';
 
 /// The home-screen banner carousel, fed by `GET /api/v1/banners.php`.
 ///
@@ -127,7 +128,7 @@ class _BannerCarouselState extends State<BannerCarousel> {
                 width: active ? 18 : 6,
                 height: 6,
                 decoration: BoxDecoration(
-                  color: active ? AppColors.teal : AppColors.borderStrong,
+                  color: active ? AppColors.teal : context.tokens.borderStrong,
                   borderRadius: BorderRadius.circular(AppRadius.pill),
                 ),
               );

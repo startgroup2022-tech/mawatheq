@@ -1938,3 +1938,81 @@ starts a second `php -S` on port 8099, and restores the file afterwards. Reuse t
 future "unmigrated install" test. Note also that PHP's built-in server rejects a raw non-ASCII
 request line, so an Arabic query parameter must be `rawurlencode`d or the test fails for a reason
 unrelated to the code under test.
+
+## Execution 40 — the mobile app's dark mode (theme tokens)
+
+### There was no dark theme; the work was adding one without moving the light palette
+
+`AppTheme` built a single light theme and the file said so explicitly ("There is intentionally no
+dark theme"). The app is Arabic-first and the owner's phone is commonly in dark mode, so the
+requested change was a real dark theme. The hard constraint is the opposite one: the approved light
+palette must stay byte-identical, because it is the shipped, signed-off design.
+
+The structure that satisfies both is a token layer. `lib/core/theme/app_tokens.dart` holds only the
+**neutral** colours that must change (background, surfaces, borders, body text, shadows) plus a few
+new composites; the **brand** colours (navy, teal, gold, cyan, and the status semantics) stay in
+`AppColors` and do not change between themes. A dark theme that re-tinted the brand would stop
+looking like Mawatheq. Screens ask for `context.tokens.surface`, never "is dark mode on?".
+
+`app_tokens.dart` was written so that `AppThemeTokens.light` is literally the old constants —
+`bg` is `AppColors.bg`, `heading` is `AppColors.navy`, and so on. `exec40_dark_theme_test.dart`
+pins every one of those equalities, which is what makes "the light palette did not move" a checked
+claim rather than a promise.
+
+### The bug class to look for: a correct token that nothing calls
+
+Three defects in this area all had the same shape — the dark-mode support existed and was not
+wired, so it looked done:
+
+- `StatusBadge` kept painting the pale light-mode washes (`AppColors.backgroundForStatus`) on dark
+  cards. `backgroundForStatusIn` existed and had no callers.
+- `DashboardCard` fell back to `accent ?? AppColors.navy` for its number. Navy on a dark card is
+  invisible. The fallback is now `context.tokens.heading`.
+- `filledButtonTheme` used `AppColors.navy` in **both** themes, directly under a comment claiming
+  "dark mode needs a lighter navy … the light navy would read as a hole in the card". The comment
+  was right and the code did not do it; the navy separates from the dark surface by only 1.4:1.
+
+So when auditing this area, check that each dark-mode-aware helper has a caller. Contrast maths on
+the token table is not enough on its own — `exec40_dark_render_test.dart` mounts the real widgets
+and asserts the *resolved* colour, which is what catches an unused token.
+
+### Contrast floors and the deliberate exceptions
+
+Body text is held to 4.5:1 and muted text, borders and badge text to 3:1. Two values are
+deliberately **not** fixed:
+
+- The **light** info badge (brand teal on the pale info wash) measures 2.54:1. This predates the
+  theme work. Raising it means editing the approved light palette, which the brief forbids, so
+  `exec40_dark_theme_test.dart` pins the value at 2.54 instead — if someone changes it, the test
+  tells them they moved a shipped colour. The dark info badge uses the same teal and reaches 5.1:1,
+  so no per-theme variant is needed there.
+- The dark `brandFill` (0xFF35608F) separates from the dark surface by 2.53:1, below the 3:1 used
+  for borders. That is intentional: it is a large filled control with a 6.5:1 label, and pushing it
+  to 3:1 costs the white label its margin.
+
+### The theme chooser has to exist, and the controller has to be injectable
+
+`ThemeController` was wired into `main.dart` and `app.dart` but `setMode` had no caller, so the
+feature was unreachable. The chooser now lives in the account screen's settings list
+(`_ThemeSettingTile`, an "المظهر" tile opening a bottom sheet with حسب النظام / فاتح / داكن).
+
+Two things about it are load-bearing:
+
+- It reads the controller as `context.watch<ThemeController?>()`. A widget test that mounts the
+  screen without a provider must hide the tile, not crash — same tolerance `app.dart` uses around
+  `ProviderNotFoundException`.
+- `ThemeController` takes a `PrefsStore`, not the concrete `PrefsStorage`. It took the concrete
+  class, which made the persistence path untestable; that is why the interface exists.
+
+### Widget-test note: `pumpAndSettle` does not work on the account screen
+
+`AccountScreen` shows `LoadingSkeleton` while invoices load, and it animates forever, so the frame
+scheduler never goes idle and `pumpAndSettle` times out. Pump explicit frames instead
+(`await tester.pump(const Duration(milliseconds: 400))`). This is not a bug in the screen; it is a
+property of any test that mounts it.
+
+### A shared specialty-icon map replaced two copies
+
+`journey_screen.dart` and `home_tab_public.dart` each had a private `_iconFor`. They are now
+`lib/shared/specialty_icons.dart`. The consolidation was not cosmetic: both copies were missing
+`enforcement` and `endowments`, so those two categories silently fell through to the default icon.

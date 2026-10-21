@@ -5,6 +5,7 @@ import '../../core/locale_controller.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/network/api_repository.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_tokens.dart';
 import '../../shared/widgets/brand_widgets.dart';
 
 /// Requests a password reset link.
@@ -66,7 +67,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   Widget build(BuildContext context) {
     final rtl = context.watch<LocaleController>().isRtl;
     return Scaffold(
-      backgroundColor: AppColors.bg,
+      backgroundColor: context.tokens.bg,
       appBar: BrandAppBar(
         subtitle: rtl ? 'استعادة كلمة المرور' : 'Password recovery',
       ),
@@ -204,7 +205,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   Widget build(BuildContext context) {
     final rtl = context.watch<LocaleController>().isRtl;
     return Scaffold(
-      backgroundColor: AppColors.bg,
+      backgroundColor: context.tokens.bg,
       appBar: BrandAppBar(
         subtitle: rtl ? 'تعيين كلمة مرور جديدة' : 'Set a new password',
       ),
@@ -286,22 +287,22 @@ class _Notice extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: error ? AppColors.dangerBg : AppColors.infoBg,
+        color: error ? context.tokens.dangerBg : context.tokens.infoBg,
         borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: error ? AppColors.danger : AppColors.border),
+        border: Border.all(color: error ? context.tokens.dangerFg : context.tokens.border),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(icon,
               size: 18,
-              color: error ? AppColors.danger : AppColors.teal),
+              color: error ? context.tokens.dangerFg : AppColors.teal),
           const SizedBox(width: 10),
           Expanded(
             child: Text(text,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       height: 1.6,
-                      color: error ? AppColors.danger : AppColors.navy,
+                      color: error ? AppColors.danger : context.tokens.heading,
                     )),
           ),
         ],

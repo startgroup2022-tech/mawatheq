@@ -79,6 +79,11 @@ abstract class PrefsStore {
 
   Future<void> saveOnboardingSeen(bool seen);
   Future<bool> readOnboardingSeen();
+
+  /// 'system', 'light' or 'dark'. Returns null when nothing is stored, so the
+  /// caller can distinguish "never chose" from "chose the default".
+  Future<void> saveThemeMode(String mode);
+  Future<String?> readThemeMode();
 }
 
 /// Production [PrefsStore] backed by SharedPreferences.
@@ -91,6 +96,7 @@ class PrefsStorage implements PrefsStore {
 
   static const _localeKey = 'mawatheq.locale';
   static const _onboardingKey = 'mawatheq.onboarding_seen';
+  static const _themeModeKey = 'mawatheq.theme_mode';
 
   final Future<SharedPreferences>? _prefs;
 
@@ -123,6 +129,22 @@ class PrefsStorage implements PrefsStore {
       return (await _instance).getBool(_onboardingKey) ?? false;
     } catch (_) {
       return false;
+    }
+  }
+
+  @override
+  Future<void> saveThemeMode(String mode) async =>
+      (await _instance).setString(_themeModeKey, mode);
+
+  @override
+  Future<String?> readThemeMode() async {
+    try {
+      // Deliberately NOT defaulted to 'system' here: returning null lets the
+      // controller tell "no stored choice" from "stored choice", which is what a
+      // future migration between defaults would need.
+      return (await _instance).getString(_themeModeKey);
+    } catch (_) {
+      return null;
     }
   }
 }

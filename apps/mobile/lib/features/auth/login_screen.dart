@@ -6,6 +6,7 @@ import '../../core/guest_session.dart';
 import '../../core/locale_controller.dart';
 import '../../core/network/api_repository.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_tokens.dart';
 import '../../shared/widgets/brand_widgets.dart';
 import 'password_reset_screens.dart';
 import 'register_screen.dart';
@@ -146,7 +147,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 Container(
                   padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
-                    color: AppColors.surface3,
+                    color: context.tokens.surface3,
                     borderRadius: BorderRadius.circular(AppRadius.md),
                   ),
                   child: Row(
@@ -244,9 +245,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: AppColors.infoBg,
+                    color: context.tokens.infoBg,
                     borderRadius: BorderRadius.circular(AppRadius.md),
-                    border: Border.all(color: const Color(0xFFCFEAF1)),
+                    border: Border.all(color: context.tokens.washBorder),
                   ),
                   child: Row(
                     children: [
@@ -257,9 +258,9 @@ class _LoginScreenState extends State<LoginScreen> {
                           _asLawyer
                               ? 'دخول المحامين متاح بعد اعتماد الحساب من الإدارة.'
                               : 'يتطلب تسجيل الدخول تأكيد البريد الإلكتروني أولاً.',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
-                            color: AppColors.textMuted,
+                            color: context.tokens.textMuted,
                             height: 1.6,
                           ),
                         ),
@@ -310,7 +311,7 @@ class _TypeTab extends StatelessWidget {
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
-            color: selected ? AppColors.surface : Colors.transparent,
+            color: selected ? context.tokens.surface : Colors.transparent,
             borderRadius: BorderRadius.circular(AppRadius.sm),
             boxShadow: selected ? AppShadow.xs : null,
           ),
@@ -319,7 +320,7 @@ class _TypeTab extends StatelessWidget {
             textAlign: TextAlign.center,
             style: TextStyle(
               fontWeight: FontWeight.w700,
-              color: selected ? AppColors.navy : AppColors.textMuted,
+              color: selected ? context.tokens.heading : context.tokens.textMuted,
             ),
           ),
         ),

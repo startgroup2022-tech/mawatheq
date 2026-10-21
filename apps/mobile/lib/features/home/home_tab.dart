@@ -6,6 +6,7 @@ import '../../core/network/api_exception.dart';
 import '../../core/network/api_repository.dart';
 import '../../core/network/models.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_tokens.dart';
 import '../../shared/widgets/banner_carousel.dart';
 import '../../shared/widgets/banner_link_screen.dart';
 import '../../shared/widgets/brand_widgets.dart';
@@ -143,21 +144,21 @@ class _HomeTabState extends State<HomeTab> {
               margin: const EdgeInsets.only(bottom: 18),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: AppColors.warningBg,
+                color: context.tokens.warningBg,
                 borderRadius: BorderRadius.circular(AppRadius.md),
-                border: Border.all(color: const Color(0xFFF3E0BE)),
+                border: Border.all(color: context.tokens.warningBorder),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.warning_amber_rounded,
-                      size: 17, color: AppColors.warning),
+                  Icon(Icons.warning_amber_rounded,
+                      size: 17, color: context.tokens.warningFg),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       _ai.reason,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
-                        color: AppColors.warning,
+                        color: context.tokens.warningFg,
                         height: 1.6,
                       ),
                     ),

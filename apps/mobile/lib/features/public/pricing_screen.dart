@@ -8,6 +8,7 @@ import '../../core/network/api_exception.dart';
 import '../../core/network/api_repository.dart';
 import '../../core/network/models.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_tokens.dart';
 import '../../shared/widgets/auth_gate.dart';
 import '../../shared/widgets/brand_widgets.dart';
 
@@ -173,9 +174,9 @@ class _PricingScreenState extends State<PricingScreen> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.infoBg,
+        color: context.tokens.infoBg,
         borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: const Color(0xFFCFEAF1)),
+        border: Border.all(color: context.tokens.washBorder),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -190,9 +191,9 @@ class _PricingScreenState extends State<PricingScreen> {
                   : 'Prices are in Saudi Riyal exactly as published in the admin '
                       'console. Subscriptions are completed on the platform after '
                       'signing in.',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
-                color: AppColors.textMuted,
+                color: context.tokens.textMuted,
                 height: 1.7,
               ),
             ),
@@ -262,9 +263,9 @@ class _PlanCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: context.tokens.surface,
         border: Border.all(
-          color: featured ? AppColors.teal : AppColors.border,
+          color: featured ? AppColors.teal : context.tokens.border,
           width: featured ? 1.6 : 1,
         ),
         borderRadius: BorderRadius.circular(AppRadius.lg),
@@ -345,7 +346,7 @@ class _PlanCard extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(vertical: 11),
             decoration: BoxDecoration(
-              color: AppColors.surface3,
+              color: context.tokens.surface3,
               borderRadius: BorderRadius.circular(AppRadius.md),
             ),
             child: Text(
@@ -353,10 +354,10 @@ class _PlanCard extends StatelessWidget {
                   ? 'الاشتراك متاح من المنصة بعد تسجيل الدخول'
                   : 'Subscribe on the platform after signing in',
               textAlign: TextAlign.center,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: AppColors.textMuted,
+                color: context.tokens.textMuted,
               ),
             ),
           ),
@@ -382,10 +383,10 @@ class _PlanCard extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(top: 3),
             child: Icon(Icons.check_circle_outline,
-                size: 15, color: AppColors.success),
+                size: 15, color: context.tokens.successFg),
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -414,21 +415,21 @@ class _ComparisonTable extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: context.tokens.surface,
         borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: context.tokens.border),
       ),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: DataTable(
-          headingTextStyle: const TextStyle(
+          headingTextStyle: TextStyle(
             fontWeight: FontWeight.w800,
-            color: AppColors.navy,
+            color: context.tokens.heading,
             fontSize: 12.5,
           ),
-          dataTextStyle: const TextStyle(
+          dataTextStyle: TextStyle(
             fontSize: 12.5,
-            color: AppColors.text,
+            color: context.tokens.text,
           ),
           columns: [
             DataColumn(label: Text(rtl ? 'الخطة' : 'Plan')),

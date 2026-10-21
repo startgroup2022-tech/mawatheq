@@ -8,6 +8,8 @@ import '../../core/network/api_exception.dart';
 import '../../core/network/api_repository.dart';
 import '../../core/network/models.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_tokens.dart';
+import '../../shared/specialty_icons.dart';
 import '../../shared/widgets/brand_widgets.dart';
 
 /// رحلة الاستشارة على الجوال — the same journey the website runs.
@@ -193,7 +195,7 @@ class _ConsultationJourneyScreenState extends State<ConsultationJourneyScreen> {
         if (i == 0) return const _StepHeader(step: 1, title: 'ما نوع مشكلتك القانونية؟');
         final s = _specialties[i - 1];
         return _ChoiceCard(
-          icon: _iconFor(s.iconKey),
+          icon: specialtyIcon(s.iconKey),
           title: s.name,
           subtitle: s.description,
           footnote: s.hasLawyers
@@ -516,9 +518,9 @@ class _JourneyBookingScreenState extends State<_JourneyBookingScreen> {
           ListTile(
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
-              side: const BorderSide(color: AppColors.border),
+              side: BorderSide(color: context.tokens.border),
             ),
-            tileColor: AppColors.surface,
+            tileColor: context.tokens.surface,
             leading: const Icon(Icons.calendar_today_outlined),
             title: const Text('التاريخ'),
             subtitle: Text(_dateParam),
@@ -528,8 +530,8 @@ class _JourneyBookingScreenState extends State<_JourneyBookingScreen> {
           if (_loadingSlots)
             const LoadingSkeleton(count: 2)
           else if (_slots.isEmpty)
-            const Text('لا توجد أوقات متاحة في هذا اليوم. اختر يوماً آخر.',
-                style: TextStyle(color: AppColors.textMuted))
+            Text('لا توجد أوقات متاحة في هذا اليوم. اختر يوماً آخر.',
+                style: TextStyle(color: context.tokens.textMuted))
           else
             Wrap(
               spacing: 8,
@@ -561,7 +563,7 @@ class _JourneyBookingScreenState extends State<_JourneyBookingScreen> {
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),
-            Text(_error!, style: const TextStyle(color: AppColors.danger)),
+            Text(_error!, style: TextStyle(color: context.tokens.dangerFg)),
           ],
           const SizedBox(height: 18),
           PrimaryButton(
@@ -606,15 +608,15 @@ class _AttachmentsSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'المرفقات والتسجيلات',
-          style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.navyDark),
+          style: TextStyle(fontWeight: FontWeight.w700, color: context.tokens.heading),
         ),
         const SizedBox(height: 4),
-        const Text(
+        Text(
           'يمكنك إرفاق مستندات أو صور، أو تسجيل صوتي أو مقطع فيديو يشرح موضوعك. '
           'الوصف المكتوب أو مرفق واحد على الأقل مطلوب.',
-          style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+          style: TextStyle(fontSize: 12, color: context.tokens.textMuted),
         ),
         const SizedBox(height: 10),
         for (final attachment in attachments)
@@ -671,13 +673,13 @@ class _AttachmentTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        border: Border.all(color: AppColors.border),
+        color: context.tokens.surface,
+        border: Border.all(color: context.tokens.border),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
         children: [
-          Icon(_icon, size: 20, color: AppColors.navyDark),
+          Icon(_icon, size: 20, color: context.tokens.heading),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -687,14 +689,14 @@ class _AttachmentTile extends StatelessWidget {
                   attachment.originalName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w600, color: AppColors.navyDark),
+                  style: TextStyle(
+                      fontWeight: FontWeight.w600, color: context.tokens.heading),
                 ),
                 if (attachment.sizeLabel.isNotEmpty)
                   Text(
                     attachment.sizeLabel,
-                    style: const TextStyle(
-                        fontSize: 11, color: AppColors.textMuted),
+                    style: TextStyle(
+                        fontSize: 11, color: context.tokens.textMuted),
                   ),
               ],
             ),
@@ -724,25 +726,25 @@ class _SummaryCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        border: Border.all(color: AppColors.border),
+        color: context.tokens.surface,
+        border: Border.all(color: context.tokens.border),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label,
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
-                  color: AppColors.textMuted)),
+                  color: context.tokens.textMuted)),
           const SizedBox(height: 6),
           Text(value,
-              style: const TextStyle(
-                  fontWeight: FontWeight.w700, color: AppColors.navyDark)),
+              style: TextStyle(
+                  fontWeight: FontWeight.w700, color: context.tokens.heading)),
           if (secondary != null && secondary!.isNotEmpty)
             Text(secondary!,
-                style: const TextStyle(color: AppColors.textMuted)),
+                style: TextStyle(color: context.tokens.textMuted)),
         ],
       ),
     );
@@ -770,13 +772,13 @@ class _StepHeader extends StatelessWidget {
                   fontWeight: FontWeight.w700)),
           const SizedBox(height: 4),
           Text(title,
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w800,
-                  color: AppColors.navyDark)),
+                  color: context.tokens.heading)),
           if (subtitle != null)
             Text(subtitle!,
-                style: const TextStyle(color: AppColors.textMuted)),
+                style: TextStyle(color: context.tokens.textMuted)),
         ],
       ),
     );
@@ -801,7 +803,7 @@ class _ChoiceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.surface,
+      color: context.tokens.surface,
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
@@ -809,7 +811,7 @@ class _ChoiceCard extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            border: Border.all(color: AppColors.border),
+            border: Border.all(color: context.tokens.border),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Row(
@@ -826,25 +828,25 @@ class _ChoiceCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(title,
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontWeight: FontWeight.w700,
-                            color: AppColors.navyDark)),
+                            color: context.tokens.heading)),
                     if (subtitle.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(subtitle,
-                          style: const TextStyle(
-                              color: AppColors.textMuted, fontSize: 13)),
+                          style: TextStyle(
+                              color: context.tokens.textMuted, fontSize: 13)),
                     ],
                     if (footnote != null && footnote!.isNotEmpty) ...[
                       const SizedBox(height: 6),
                       Text(footnote!,
-                          style: const TextStyle(
-                              color: AppColors.textSubtle, fontSize: 12)),
+                          style: TextStyle(
+                              color: context.tokens.textSubtle, fontSize: 12)),
                     ],
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_left, color: AppColors.textSubtle),
+              Icon(Icons.chevron_left, color: context.tokens.textSubtle),
             ],
           ),
         ),
@@ -862,7 +864,7 @@ class _LawyerChoiceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.surface,
+      color: context.tokens.surface,
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
@@ -870,7 +872,7 @@ class _LawyerChoiceCard extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            border: Border.all(color: AppColors.border),
+            border: Border.all(color: context.tokens.border),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Row(
@@ -886,24 +888,24 @@ class _LawyerChoiceCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(lawyer.name,
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontWeight: FontWeight.w700,
-                            color: AppColors.navyDark)),
+                            color: context.tokens.heading)),
                     const SizedBox(height: 4),
                     Row(
                       children: [
                         const Icon(Icons.star, size: 14, color: AppColors.gold),
                         const SizedBox(width: 4),
                         Text(lawyer.rating.toStringAsFixed(1),
-                            style: const TextStyle(
-                                color: AppColors.textMuted, fontSize: 12)),
+                            style: TextStyle(
+                                color: context.tokens.textMuted, fontSize: 12)),
                         if (lawyer.jurisdiction.isNotEmpty) ...[
                           const SizedBox(width: 10),
                           Flexible(
                             child: Text(lawyer.jurisdiction,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    color: AppColors.textSubtle, fontSize: 12)),
+                                style: TextStyle(
+                                    color: context.tokens.textSubtle, fontSize: 12)),
                           ),
                         ],
                       ],
@@ -923,19 +925,3 @@ class _LawyerChoiceCard extends StatelessWidget {
   }
 }
 
-IconData _iconFor(String key) {
-  switch (key) {
-    case 'family':
-      return Icons.family_restroom;
-    case 'commercial':
-      return Icons.storefront_outlined;
-    case 'labor':
-      return Icons.work_outline;
-    case 'criminal':
-      return Icons.gavel_outlined;
-    case 'realestate':
-      return Icons.home_work_outlined;
-    default:
-      return Icons.balance_outlined;
-  }
-}

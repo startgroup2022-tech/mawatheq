@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'app_tokens.dart';
+
 /// MAWATHEQ brand palette.
 ///
 /// Every value here is taken from the website's design tokens
@@ -66,6 +68,9 @@ class AppColors {
   );
 
   /// Soft light-blue wash used by hero cards on the home screen.
+  ///
+  /// Kept for the light theme only; widgets read `context.tokens.washGradient`,
+  /// which resolves to this in light mode and a deep navy in dark mode.
   static const lightSurface = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
@@ -75,7 +80,17 @@ class AppColors {
   /// Maps a backend status value to its colour.
   /// The values mirror the ENUMs in `database/schema.sql` so a badge can never
   /// invent a state the backend does not produce.
-  static Color forStatus(String status) {
+  ///
+  /// These are brand-semantic and deliberately identical in both themes: "green
+  /// means approved" must not become a different green in dark mode, or the badge
+  /// stops being a reliable signal. Only the badge *backgrounds* vary by theme;
+  /// see [backgroundForStatusIn].
+  /// The semantic family a backend status belongs to.
+  ///
+  /// The status list lives here once, and both themes resolve a family to their own
+  /// colours. Duplicating the switch per theme is how the two would silently drift:
+  /// a status added to one list and not the other would render neutral.
+  static _StatusFamily _familyFor(String status) {
     switch (status.toLowerCase()) {
       case 'active':
       case 'open':
@@ -83,60 +98,73 @@ class AppColors {
       case 'paid':
       case 'approved':
       case 'completed':
-        return success;
+        return _StatusFamily.success;
       case 'pending':
       case 'draft':
       case 'in_review':
       case 'processing':
       case 'expired':
-        return warning;
+        return _StatusFamily.warning;
       case 'closed_lost':
       case 'cancelled':
       case 'overdue':
       case 'failed':
       case 'suspended':
       case 'rejected':
-        return danger;
+        return _StatusFamily.danger;
       case 'closed_won':
       case 'closed_settled':
       case 'published':
-        return info;
+        return _StatusFamily.info;
       default:
-        return textMuted;
+        return _StatusFamily.neutral;
     }
   }
 
-  static Color backgroundForStatus(String status) {
-    switch (status.toLowerCase()) {
-      case 'active':
-      case 'open':
-      case 'confirmed':
-      case 'paid':
-      case 'approved':
-      case 'completed':
-        return successBg;
-      case 'pending':
-      case 'draft':
-      case 'in_review':
-      case 'processing':
-      case 'expired':
-        return warningBg;
-      case 'closed_lost':
-      case 'cancelled':
-      case 'overdue':
-      case 'failed':
-      case 'suspended':
-      case 'rejected':
-        return dangerBg;
-      case 'closed_won':
-      case 'closed_settled':
-      case 'published':
-        return infoBg;
-      default:
-        return surface3;
-    }
-  }
+  static Color _fg(_StatusFamily family, AppThemeTokens t) => switch (family) {
+        _StatusFamily.success => t.successFg,
+        _StatusFamily.warning => t.warningFg,
+        _StatusFamily.danger => t.dangerFg,
+        // The brand teal is already light enough to read on the deep dark wash
+        // (5.1:1) and on the card surface, so unlike the other semantics it needs
+        // no per-theme variant.
+        _StatusFamily.info => info,
+        _StatusFamily.neutral => t.textMuted,
+      };
+
+  static Color _bg(_StatusFamily family, AppThemeTokens t) => switch (family) {
+        _StatusFamily.success => t.successBg,
+        _StatusFamily.warning => t.warningBg,
+        _StatusFamily.danger => t.dangerBg,
+        _StatusFamily.info => t.infoBg,
+        _StatusFamily.neutral => t.surface3,
+      };
+
+  /// The badge foreground for a status, resolved for the current theme.
+  static Color statusFgFor(String status, AppThemeTokens tokens) =>
+      _fg(_familyFor(status), tokens);
+
+  /// The badge foreground for the light theme.
+  static Color forStatus(String status) =>
+      _fg(_familyFor(status), AppThemeTokens.light);
+
+  /// The badge background for a status, resolved for the current theme.
+  ///
+  /// Separate from the foreground because the pale light-mode washes are glaring
+  /// blocks on a dark surface, while the status *hue* must stay recognisable. The
+  /// dark palette therefore supplies deep washes behind a lightened foreground.
+  static Color backgroundForStatusIn(String status, AppThemeTokens tokens) =>
+      _bg(_familyFor(status), tokens);
+
+  /// The light-mode badge background. Retained for callers that have no
+  /// [BuildContext] (and for the light theme, where it is still correct); new
+  /// widget code should use [backgroundForStatusIn] so dark mode works.
+  static Color backgroundForStatus(String status) =>
+      _bg(_familyFor(status), AppThemeTokens.light);
 }
+
+/// The semantic family of a backend status. Internal to [AppColors].
+enum _StatusFamily { success, warning, danger, info, neutral }
 
 /// Spacing, radius and elevation scales — identical to the web tokens.
 class AppSpacing {

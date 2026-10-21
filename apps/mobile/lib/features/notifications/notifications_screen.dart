@@ -4,6 +4,7 @@ import '../../core/network/api_exception.dart';
 import '../../core/network/api_repository.dart';
 import '../../core/network/models.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_tokens.dart';
 import '../../shared/widgets/brand_widgets.dart';
 
 /// Notifications from `GET /api/v1/notifications.php`, with a server-backed
@@ -110,9 +111,9 @@ class _NotificationTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: item.isRead ? AppColors.surface : AppColors.infoBg,
+        color: item.isRead ? context.tokens.surface : context.tokens.infoBg,
         border: Border.all(
-          color: item.isRead ? AppColors.border : const Color(0xFFCFEAF1),
+          color: item.isRead ? context.tokens.border : context.tokens.washBorder,
         ),
         borderRadius: BorderRadius.circular(AppRadius.lg),
       ),
@@ -123,7 +124,7 @@ class _NotificationTile extends StatelessWidget {
             width: 34,
             height: 34,
             decoration: BoxDecoration(
-              color: item.isRead ? AppColors.surface3 : AppColors.surface,
+              color: item.isRead ? context.tokens.surface3 : context.tokens.surface,
               borderRadius: BorderRadius.circular(AppRadius.sm),
             ),
             child: Icon(
@@ -131,7 +132,7 @@ class _NotificationTile extends StatelessWidget {
                   ? Icons.notifications_none
                   : Icons.notifications_active_outlined,
               size: 17,
-              color: item.isRead ? AppColors.textSubtle : AppColors.teal,
+              color: item.isRead ? context.tokens.textSubtle : AppColors.teal,
             ),
           ),
           const SizedBox(width: 12),
@@ -155,9 +156,9 @@ class _NotificationTile extends StatelessWidget {
                   const SizedBox(height: 6),
                   Text(
                     item.createdAt,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
-                      color: AppColors.textSubtle,
+                      color: context.tokens.textSubtle,
                     ),
                   ),
                 ],

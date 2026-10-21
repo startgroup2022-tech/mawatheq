@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/auth_controller.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_tokens.dart';
 import '../../shared/widgets/brand_widgets.dart';
 
 /// Client self-registration.
@@ -159,7 +160,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 Container(
                   padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
-                    color: AppColors.surface3,
+                    color: context.tokens.surface3,
                     borderRadius: BorderRadius.circular(AppRadius.md),
                   ),
                   child: Row(
@@ -215,7 +216,7 @@ class _AccountTypeTab extends StatelessWidget {
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
-            color: selected ? AppColors.surface : Colors.transparent,
+            color: selected ? context.tokens.surface : Colors.transparent,
             borderRadius: BorderRadius.circular(AppRadius.sm),
             boxShadow: selected ? AppShadow.xs : null,
           ),
@@ -224,7 +225,7 @@ class _AccountTypeTab extends StatelessWidget {
             textAlign: TextAlign.center,
             style: TextStyle(
               fontWeight: FontWeight.w700,
-              color: selected ? AppColors.navy : AppColors.textMuted,
+              color: selected ? context.tokens.heading : context.tokens.textMuted,
             ),
           ),
         ),

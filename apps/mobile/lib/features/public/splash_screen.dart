@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_tokens.dart';
 import '../../shared/widgets/brand_widgets.dart';
 
 /// The branded splash shown while the stored session is validated.
@@ -56,9 +57,9 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.surface,
+      backgroundColor: context.tokens.surface,
       body: DecoratedBox(
-        decoration: const BoxDecoration(gradient: _brandWash),
+        decoration: BoxDecoration(gradient: context.tokens.splashGradient),
         child: SafeArea(
           child: Center(
             child: AnimatedBuilder(
@@ -76,21 +77,21 @@ class _SplashScreenState extends State<SplashScreen>
                           // The original mark, unchanged.
                           const BrandLogo(size: 104),
                           const SizedBox(height: 22),
-                          const Text(
+                          Text(
                             'مواثيق',
                             style: TextStyle(
                               fontSize: 30,
                               fontWeight: FontWeight.w800,
-                              color: AppColors.navy,
+                              color: context.tokens.heading,
                               letterSpacing: 0.4,
                             ),
                           ),
                           const SizedBox(height: 8),
-                          const Text(
+                          Text(
                             'منصة قانونية متكاملة',
                             style: TextStyle(
                               fontSize: AppFontSize.sm,
-                              color: AppColors.textMuted,
+                              color: context.tokens.textMuted,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -147,7 +148,7 @@ class _BrandProgressState extends State<_BrandProgress>
       builder: (context, _) {
         return Stack(
           children: [
-            Container(color: AppColors.surface3),
+            Container(color: context.tokens.surface3),
             FractionallySizedBox(
               widthFactor: 0.45,
               alignment: Alignment(-1 + 2 * _controller.value, 0),
@@ -161,12 +162,3 @@ class _BrandProgressState extends State<_BrandProgress>
     );
   }
 }
-
-/// A very light navy-tinted surface with a soft cyan glow in one corner — the
-/// brand background the brief asks for, without any unrelated imagery.
-const _brandWash = LinearGradient(
-  begin: Alignment.topCenter,
-  end: Alignment.bottomCenter,
-  colors: [Color(0xFFF7FBFD), Color(0xFFEAF6F9), Color(0xFFFBFDFE)],
-  stops: [0.0, 0.55, 1.0],
-);

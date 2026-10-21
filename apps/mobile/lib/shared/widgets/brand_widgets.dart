@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/network/models.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_tokens.dart';
 
 
 /// The reusable component set named in MAWATHEQ_DESIGN_SYSTEM.md.
@@ -30,7 +31,7 @@ class BrandLogo extends StatelessWidget {
       errorBuilder: (context, error, stack) => Icon(
         Icons.gavel_outlined,
         size: size * 0.8,
-        color: AppColors.navy,
+        color: context.tokens.heading,
       ),
     );
   }
@@ -80,9 +81,9 @@ class BrandAppBar extends StatelessWidget implements PreferredSizeWidget {
               if (subtitle != null)
                 Text(
                   subtitle!,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: AppFontSize.xs,
-                    color: AppColors.textSubtle,
+                    color: context.tokens.textSubtle,
                     fontWeight: FontWeight.w400,
                   ),
                 ),
@@ -217,9 +218,9 @@ class GradientHeroCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(AppSpacing.s5),
       decoration: BoxDecoration(
-        gradient: AppColors.lightSurface,
+        gradient: context.tokens.washGradient,
         borderRadius: BorderRadius.circular(AppRadius.xl),
-        border: Border.all(color: const Color(0xFFCFE7F2)),
+        border: Border.all(color: context.tokens.washBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -242,9 +243,9 @@ class GradientHeroCard extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.s3),
           ],
-          Text(title, style: theme.textTheme.titleLarge?.copyWith(color: AppColors.navy)),
+          Text(title, style: theme.textTheme.titleLarge?.copyWith(color: context.tokens.heading)),
           const SizedBox(height: AppSpacing.s2),
-          Text(body, style: theme.textTheme.bodySmall?.copyWith(color: AppColors.textMuted)),
+          Text(body, style: theme.textTheme.bodySmall?.copyWith(color: context.tokens.textMuted)),
           if (ctaLabel != null) ...[
             const SizedBox(height: AppSpacing.s4),
             SizedBox(
@@ -287,7 +288,7 @@ class FeatureTile extends StatelessWidget {
     return Opacity(
       opacity: enabled ? 1 : 0.45,
       child: Material(
-        color: AppColors.surface,
+        color: context.tokens.surface,
         borderRadius: BorderRadius.circular(AppRadius.lg),
         child: InkWell(
           onTap: enabled ? onTap : null,
@@ -298,7 +299,7 @@ class FeatureTile extends StatelessWidget {
               vertical: AppSpacing.s4,
             ),
             decoration: BoxDecoration(
-              border: Border.all(color: AppColors.border),
+              border: Border.all(color: context.tokens.border),
               borderRadius: BorderRadius.circular(AppRadius.lg),
             ),
             child: Column(
@@ -319,10 +320,10 @@ class FeatureTile extends StatelessWidget {
                   textAlign: TextAlign.center,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: AppFontSize.xs,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.text,
+                    color: context.tokens.text,
                     height: 1.4,
                   ),
                 ),
@@ -355,8 +356,8 @@ class DashboardCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.s4),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        border: Border.all(color: AppColors.border),
+        color: context.tokens.surface,
+        border: Border.all(color: context.tokens.border),
         borderRadius: BorderRadius.circular(AppRadius.lg),
         boxShadow: AppShadow.xs,
       ),
@@ -370,7 +371,11 @@ class DashboardCard extends StatelessWidget {
           Text(
             value,
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  color: accent ?? AppColors.navy,
+                  // The fallback is the themed heading, not a fixed navy: the number
+                  // sits on the card surface, and navy-on-dark is unreadable. A
+                  // caller passing an accent (gold) still wins, because that is a
+                  // deliberate highlight on a fixed brand colour.
+                  color: accent ?? context.tokens.heading,
                 ),
           ),
           const SizedBox(height: 2),
@@ -418,7 +423,7 @@ class StatusBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: AppColors.backgroundForStatus(status),
+        color: AppColors.backgroundForStatusIn(status, context.tokens),
         borderRadius: BorderRadius.circular(AppRadius.pill),
       ),
       child: Text(
@@ -426,7 +431,7 @@ class StatusBadge extends StatelessWidget {
         style: TextStyle(
           fontSize: AppFontSize.xs,
           fontWeight: FontWeight.w700,
-          color: AppColors.forStatus(status),
+          color: AppColors.statusFgFor(status, context.tokens),
         ),
       ),
     );
@@ -504,7 +509,7 @@ class DocumentCard extends StatelessWidget {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: AppColors.infoBg,
+              color: context.tokens.infoBg,
               borderRadius: BorderRadius.circular(AppRadius.sm),
             ),
             child: const Icon(Icons.description_outlined, size: 20, color: AppColors.teal),
@@ -627,9 +632,9 @@ class AIChatBubble extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: AppSpacing.s3),
         padding: const EdgeInsets.all(AppSpacing.s3),
         decoration: BoxDecoration(
-          color: isUser ? AppColors.infoBg : AppColors.surface,
+          color: isUser ? context.tokens.infoBg : context.tokens.surface,
           border: Border.all(
-            color: isUser ? const Color(0xFFCFEAF1) : AppColors.border,
+            color: isUser ? context.tokens.washBorder : context.tokens.border,
           ),
           borderRadius: BorderRadius.circular(AppRadius.lg),
         ),
@@ -662,9 +667,9 @@ class AIChatBubble extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: AppColors.infoBg,
+                  color: context.tokens.infoBg,
                   borderRadius: BorderRadius.circular(AppRadius.pill),
-                  border: Border.all(color: const Color(0xFFCFEAF1)),
+                  border: Border.all(color: context.tokens.washBorder),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -718,7 +723,7 @@ class SearchField extends StatelessWidget {
       textInputAction: TextInputAction.search,
       decoration: InputDecoration(
         hintText: hint,
-        prefixIcon: const Icon(Icons.search, size: 20, color: AppColors.textSubtle),
+        prefixIcon: Icon(Icons.search, size: 20, color: context.tokens.textSubtle),
         isDense: true,
       ),
     );
@@ -791,8 +796,8 @@ class EmptyState extends StatelessWidget {
             Container(
               width: 68,
               height: 68,
-              decoration: const BoxDecoration(
-                color: AppColors.infoBg,
+              decoration: BoxDecoration(
+                color: context.tokens.infoBg,
                 shape: BoxShape.circle,
               ),
               child: Icon(icon, size: 30, color: AppColors.teal),
@@ -843,11 +848,11 @@ class ErrorState extends StatelessWidget {
             Container(
               width: 68,
               height: 68,
-              decoration: const BoxDecoration(
-                color: AppColors.dangerBg,
+              decoration: BoxDecoration(
+                color: context.tokens.dangerBg,
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, size: 30, color: AppColors.danger),
+              child: Icon(icon, size: 30, color: context.tokens.dangerFg),
             ),
             const SizedBox(height: AppSpacing.s4),
             Text(
@@ -907,8 +912,8 @@ class _LoadingSkeletonState extends State<LoadingSkeleton>
               height: widget.height,
               decoration: BoxDecoration(
                 color: Color.lerp(
-                  AppColors.surface3,
-                  AppColors.surface2,
+                  context.tokens.surface3,
+                  context.tokens.surface2,
                   _controller.value,
                 ),
                 borderRadius: BorderRadius.circular(AppRadius.lg),
@@ -997,7 +1002,7 @@ class _SurfaceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.surface,
+      color: context.tokens.surface,
       borderRadius: BorderRadius.circular(AppRadius.lg),
       child: InkWell(
         onTap: onTap,
@@ -1006,7 +1011,7 @@ class _SurfaceCard extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.all(AppSpacing.s4),
           decoration: BoxDecoration(
-            border: Border.all(color: AppColors.border),
+            border: Border.all(color: context.tokens.border),
             borderRadius: BorderRadius.circular(AppRadius.lg),
             boxShadow: AppShadow.xs,
           ),

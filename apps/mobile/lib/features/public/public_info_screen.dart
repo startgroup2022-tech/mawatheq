@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/locale_controller.dart';
 import '../../core/public_content.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_tokens.dart';
 import '../../shared/widgets/brand_widgets.dart';
 import 'public_service_list.dart';
 
@@ -53,7 +54,7 @@ class PublicInfoScreen extends StatelessWidget {
     if (embedded) return body;
 
     return Scaffold(
-      backgroundColor: AppColors.bg,
+      backgroundColor: context.tokens.bg,
       appBar: BrandAppBar(subtitle: title),
       body: body,
     );
@@ -125,9 +126,9 @@ class PublicInfoScreen extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(AppSpacing.s5),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: context.tokens.surface,
         borderRadius: BorderRadius.circular(AppRadius.xl),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: context.tokens.border),
         boxShadow: AppShadow.xs,
       ),
       child: Column(
@@ -138,7 +139,7 @@ class PublicInfoScreen extends StatelessWidget {
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                color: AppColors.infoBg,
+                color: context.tokens.infoBg,
                 borderRadius: BorderRadius.circular(AppRadius.md),
               ),
               child: Icon(icon, size: 22, color: AppColors.teal),
@@ -149,7 +150,7 @@ class PublicInfoScreen extends StatelessWidget {
               style: Theme.of(context)
                   .textTheme
                   .titleLarge
-                  ?.copyWith(color: AppColors.navy)),
+                  ?.copyWith(color: context.tokens.heading)),
           const SizedBox(height: 8),
           Text(body,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(height: 1.8)),
@@ -168,16 +169,16 @@ class PublicInfoScreen extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        color: highlighted ? AppColors.infoBg : AppColors.surface,
+        color: highlighted ? context.tokens.infoBg : context.tokens.surface,
         borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(
-          color: highlighted ? AppColors.teal : AppColors.border,
+          color: highlighted ? AppColors.teal : context.tokens.border,
         ),
       ),
       child: Row(
         children: [
           Icon(icon, size: 17,
-              color: highlighted ? AppColors.teal : AppColors.textSubtle),
+              color: highlighted ? AppColors.teal : context.tokens.textSubtle),
           const SizedBox(width: 10),
           Expanded(
             child: Text(

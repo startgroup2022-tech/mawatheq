@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/guest_session.dart';
 import '../../core/locale_controller.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_tokens.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/auth/register_screen.dart';
 import 'brand_widgets.dart';
@@ -27,7 +28,7 @@ Future<AuthPromptChoice> showAuthPrompt(
   final choice = await showModalBottomSheet<AuthPromptChoice>(
     context: context,
     isScrollControlled: true,
-    backgroundColor: AppColors.surface,
+    backgroundColor: context.tokens.surface,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
     ),
@@ -114,7 +115,7 @@ class _AuthPromptSheet extends StatelessWidget {
                 width: 42,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: AppColors.borderStrong,
+                  color: context.tokens.borderStrong,
                   borderRadius: BorderRadius.circular(AppRadius.pill),
                 ),
               ),
@@ -145,7 +146,7 @@ class _AuthPromptSheet extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
-                  color: AppColors.surface3,
+                  color: context.tokens.surface3,
                   borderRadius: BorderRadius.circular(AppRadius.pill),
                 ),
                 child: Text(
@@ -155,7 +156,7 @@ class _AuthPromptSheet extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodySmall?.copyWith(
                     fontWeight: FontWeight.w700,
-                    color: AppColors.navy,
+                    color: context.tokens.heading,
                   ),
                 ),
               ),

@@ -8,6 +8,7 @@ import 'core/guest_session.dart';
 import 'core/locale_controller.dart';
 import 'core/network/api_repository.dart';
 import 'core/storage/token_storage.dart';
+import 'core/theme/theme_controller.dart';
 
 /// Composition root.
 ///
@@ -33,6 +34,11 @@ void main() {
         ChangeNotifierProvider<GuestSession>(create: (_) => GuestSession()),
         ChangeNotifierProvider<LocaleController>(
           create: (_) => LocaleController()..load(),
+        ),
+        // The stored theme choice is read before the first frame the user can
+        // interact with, so the app does not flash light and then switch to dark.
+        ChangeNotifierProvider<ThemeController>(
+          create: (_) => ThemeController()..load(),
         ),
       ],
       child: MawatheqApp(deepLinks: deepLinks),
