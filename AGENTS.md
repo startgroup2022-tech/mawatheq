@@ -1911,3 +1911,30 @@ as the server wrote it. The status-based fallbacks below it are unreachable for 
 readers, and on production the first is absent and the second 500s. The website homepage has no
 legal-category section at all, so there is nothing to scrape as a fallback — restoring categories
 requires applying `upgrade_v59.sql` **and** running the import on production.
+
+### Production is missing exactly two `api/v1` files, and the migration order matters
+
+Probing every `api/v1/*.php` on `mawatheq.com` returns 401/400/200 for 23 of them and **404 for
+exactly two**: `banners.php` and `journey.php`. Both exist in the repo and their entire include
+closure (`includes/banners.php`, `includes/legal_journey.php`, `najiz_search_lib.php`,
+`najiz_parser.php`, `availability.php`, `currency.php`, `najiz_import.php`) is already deployed —
+each answers 403 through the web layer, i.e. present but denied. So the server-side gap is two
+files, not a version.
+
+`upgrade_v63.sql` derives `customer_desc_ar` / `customer_icon_key` **from the existing rows** of
+`najiz_categories`. On a database where v59 just created that table it is empty, so the first run
+writes nothing and the journey cards lose their descriptions. The order that works is
+**v59 → v63 → importer → v63 again**; the second v63 run fills all 7 descriptions and icons. A
+package that ships v59 and v63 without saying this leaves the home screen with 7 correctly-named
+but description-less cards.
+
+### Verifying the delivery package
+
+`tests/exec39_najiz_graceful_test.php` drives the real endpoint against a scratch database with no
+`najiz_*` tables, but the environment cannot redirect the connection: `config/secrets.php` defines
+`DB_NAME` before `config/config.php`'s `MAWATHEQ_DB_NAME` fallback is reached, so exporting the
+variable has no effect. The suite removes just the `define('DB_NAME'…)` line into a temp copy,
+starts a second `php -S` on port 8099, and restores the file afterwards. Reuse that pattern for any
+future "unmigrated install" test. Note also that PHP's built-in server rejects a raw non-ASCII
+request line, so an Arabic query parameter must be `rawurlencode`d or the test fails for a reason
+unrelated to the code under test.
