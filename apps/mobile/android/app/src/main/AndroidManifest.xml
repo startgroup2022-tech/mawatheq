@@ -1,11 +1,37 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- The app is a pure HTTP client of the platform's own /api/v1 endpoints, so it needs
          network access in every build type. Declared here (not only in the debug/profile
-         manifests) because a release build otherwise cannot reach the API at all.
-         No other permission is requested: the file picker uses the system document picker
-         (SAF), which grants per-file access without READ_EXTERNAL_STORAGE. -->
+         manifests) because a release build otherwise cannot reach the API at all. -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+
+    <!-- Voice notes on a consultation. RECORD_AUDIO is requested at the moment the
+         customer taps "record" (permission_handler), never on launch, and the recorder
+         writes an m4a the attachment endpoint already accepts.
+         Documents, images and video still go through the system document picker (SAF),
+         which grants per-file access, so READ_EXTERNAL_STORAGE is deliberately absent. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+
+    <!-- Camera capture. Declared with required="false" so the app stays installable on a
+         device without a camera: image_picker then falls back to the gallery picker, and
+         a photo can still be attached. CAMERA is likewise requested only when the
+         customer taps "camera". -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false"/>
+
+    <!-- Appointment reminders. Android 13+ requires this to be granted at runtime before
+         a notification can be posted; the app asks when the customer enables a reminder
+         and degrades to an in-app note when it is refused. On older releases the
+         permission does not exist and the declaration is ignored. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Exact alarms are needed for a reminder to fire at the appointment time rather than
+         whenever the OS next batches background work. Declared so the scheduler can use
+         them; if the platform refuses, the reminder falls back to an inexact window. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+    <!-- Re-arms pending reminders after a reboot, which otherwise silently drops them. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+
     <application
         android:label="مواثيق"
         android:name="${applicationName}"
@@ -62,6 +88,23 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- flutter_local_notifications: delivers a scheduled reminder and restores the
+             schedule after a reboot. Both are required for a reminder set for tomorrow
+             morning to still fire if the phone restarts overnight. -->
+        <receiver
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
+            android:exported="false"/>
+        <receiver
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
+            </intent-filter>
+        </receiver>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

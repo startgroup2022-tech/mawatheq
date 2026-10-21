@@ -7,10 +7,12 @@ import 'package:flutter/material.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/network/api_repository.dart';
 import '../../core/network/models.dart';
+import '../../core/notifications/reminder_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../shared/specialty_icons.dart';
 import '../../shared/widgets/brand_widgets.dart';
+import '../../shared/widgets/capture_sheet.dart';
 
 /// رحلة الاستشارة على الجوال — the same journey the website runs.
 ///
@@ -30,6 +32,12 @@ class ConsultationJourneyScreen extends StatefulWidget {
 }
 
 enum _Step { specialty, issueType, lawyers }
+
+/// The two halves of booking, kept as separate steps so the customer chooses the
+/// appointment before being asked for the topic and attachments. Combining them
+/// made one long form where the time — the decision that matters most — competed
+/// with everything else on the screen.
+enum _BookingStep { appointment, confirm }
 
 class _ConsultationJourneyScreenState extends State<ConsultationJourneyScreen> {
   late final ApiRepository _repo = widget.repository ?? ApiRepository();
@@ -323,6 +331,16 @@ class _JourneyBookingScreenState extends State<_JourneyBookingScreen> {
   int _maxFiles = 0;
   bool _uploading = false;
 
+  /// Which half of booking the customer is on. The appointment step is shown
+  /// first so the time is chosen before the description is written.
+  _BookingStep _bookingStep = _BookingStep.appointment;
+
+  /// Whether the customer wants a reminder for this appointment. On by default:
+  /// a booked consultation the customer forgets is the failure this prevents.
+  /// The outcome of scheduling is carried to the confirmation dialog directly, so
+  /// it is deliberately not held in a field.
+  bool _reminderEnabled = true;
+
   static String _generateDraftToken() {
     // 32 random bytes as 64 lowercase hex characters — the exact shape the endpoint
     // validates (`/^[a-f0-9]{64}$/`) and unguessable enough to stand alone.
@@ -378,13 +396,36 @@ class _JourneyBookingScreenState extends State<_JourneyBookingScreen> {
     final path = picked?.files.single.path;
     if (path == null || !mounted) return;
 
+    await _uploadFile(File(path));
+  }
+
+  /// Records a voice note or captures a photo, then stages it like any other file.
+  ///
+  /// The sheet does the permission handling and returns only a real file, so this
+  /// method never has to reason about a denied permission.
+  Future<void> _captureMedia() async {
+    if (_uploading) return;
+    if (_maxFiles > 0 && _attachments.length >= _maxFiles) {
+      setState(() => _error = 'بلغت الحد الأقصى لعدد المرفقات ($_maxFiles).');
+      return;
+    }
+
+    final captured = await CaptureSheet.show(context);
+    if (captured == null || !mounted) return;
+    await _uploadFile(captured.file);
+  }
+
+  /// Stages one local file against the draft token and appends it to the list.
+  /// Shared by the picker and the capture sheet so both paths enforce the same
+  /// limit and surface the same server error.
+  Future<void> _uploadFile(File file) async {
     setState(() {
       _uploading = true;
       _error = null;
     });
     try {
       final attachment = await widget.repository.uploadJourneyAttachment(
-        file: File(path),
+        file: file,
         draftToken: _draftToken,
       );
       if (!mounted) return;
@@ -470,7 +511,7 @@ class _JourneyBookingScreenState extends State<_JourneyBookingScreen> {
       _error = null;
     });
     try {
-      await widget.repository.bookConsultation(
+      final consultationId = await widget.repository.bookConsultation(
         lawyerId: widget.lawyer.id,
         consultationType: 'text',
         date: _dateParam,
@@ -484,9 +525,21 @@ class _JourneyBookingScreenState extends State<_JourneyBookingScreen> {
         draftToken: _draftToken,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم إرسال طلب الاستشارة بنجاح.')),
-      );
+
+      // The booking is already made, so a reminder failure must not be reported as a
+      // booking failure. The outcome is recorded and shown on the confirmation.
+      ReminderStatus? reminder;
+      if (_reminderEnabled && consultationId > 0) {
+        reminder = await ReminderService.scheduleConsultationReminder(
+          consultationId: consultationId,
+          appointment: _appointmentDateTime,
+          lawyerName: widget.lawyer.name,
+        );
+      }
+      if (!mounted) return;
+
+      await _showConfirmation(consultationId, reminder);
+      if (!mounted) return;
       Navigator.of(context).popUntil((route) => route.isFirst);
     } on ApiException catch (e) {
       if (!mounted) return;
@@ -497,84 +550,211 @@ class _JourneyBookingScreenState extends State<_JourneyBookingScreen> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: const BrandAppBar(subtitle: 'تأكيد الحجز'),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-        children: [
-          _SummaryCard(
-            label: 'موضوع الاستشارة',
-            value: widget.specialty.name,
-            secondary: widget.issueType?.name,
-          ),
-          const SizedBox(height: 12),
-          _SummaryCard(
-            label: 'المحامي',
-            value: widget.lawyer.name,
-          ),
-          const SizedBox(height: 12),
-          ListTile(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-              side: BorderSide(color: context.tokens.border),
-            ),
-            tileColor: context.tokens.surface,
-            leading: const Icon(Icons.calendar_today_outlined),
-            title: const Text('التاريخ'),
-            subtitle: Text(_dateParam),
-            onTap: _pickDate,
-          ),
-          const SizedBox(height: 12),
-          if (_loadingSlots)
-            const LoadingSkeleton(count: 2)
-          else if (_slots.isEmpty)
-            Text('لا توجد أوقات متاحة في هذا اليوم. اختر يوماً آخر.',
-                style: TextStyle(color: context.tokens.textMuted))
-          else
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _slots
-                  .map((s) => ChoiceChip(
-                        label: Text(s),
-                        selected: _slot == s,
-                        showCheckmark: false,
-                        onSelected: (_) => setState(() => _slot = s),
-                      ))
-                  .toList(),
-            ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _topic,
-            maxLines: 3,
-            decoration: const InputDecoration(
-              labelText: 'اكتب وصفاً موجزاً لمشكلتك (أو أرفق ملفاً)',
-            ),
-          ),
-          const SizedBox(height: 16),
-          _AttachmentsSection(
-            attachments: _attachments,
-            uploading: _uploading,
-            atLimit: _maxFiles > 0 && _attachments.length >= _maxFiles,
-            onAdd: _attachFile,
-            onRemove: _removeAttachment,
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 12),
-            Text(_error!, style: TextStyle(color: context.tokens.dangerFg)),
+  /// The chosen date and slot as one local wall-clock instant, which is what both
+  /// the reminder and the confirmation text need.
+  DateTime get _appointmentDateTime {
+    final parts = (_slot ?? '00:00').split(':');
+    final hour = int.tryParse(parts.isNotEmpty ? parts[0] : '') ?? 0;
+    final minute = int.tryParse(parts.length > 1 ? parts[1] : '') ?? 0;
+    return DateTime(_date.year, _date.month, _date.day, hour, minute);
+  }
+
+  /// Confirms the booking in place, including what happened to the reminder. A
+  /// snack bar is not enough: the customer needs to see the time they booked and
+  /// whether a reminder was actually set.
+  Future<void> _showConfirmation(int consultationId, ReminderStatus? reminder) {
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('تم إرسال طلب الاستشارة'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('التاريخ: $_dateParam — الوقت: ${_slot ?? ''}'),
+            const SizedBox(height: 8),
+            Text('المحامي: ${widget.lawyer.name}'),
+            if (reminder != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                ReminderService.describe(reminder, _appointmentDateTime),
+                style: TextStyle(
+                  fontSize: 12.5,
+                  height: 1.6,
+                  color: reminder == ReminderStatus.scheduled
+                      ? context.tokens.successFg
+                      : context.tokens.warningFg,
+                ),
+              ),
+            ],
           ],
-          const SizedBox(height: 18),
-          PrimaryButton(
-            label: 'تأكيد الحجز',
-            icon: Icons.check_circle_outline,
-            expand: true,
-            loading: _submitting,
-            onPressed: _submit,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('حسناً'),
           ),
         ],
       ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final onAppointment = _bookingStep == _BookingStep.appointment;
+    return Scaffold(
+      appBar: BrandAppBar(
+        subtitle: onAppointment ? 'اختر الموعد' : 'تأكيد الحجز',
+        leading: onAppointment
+            ? null
+            : IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () =>
+                    setState(() => _bookingStep = _BookingStep.appointment),
+              ),
+      ),
+      body: onAppointment ? _appointmentStep() : _confirmStep(),
+    );
+  }
+
+  /// Step 4 of the journey: choose the day and the available time.
+  Widget _appointmentStep() {
+    final canContinue = _slot != null && !_loadingSlots;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      children: [
+        const _StepHeader(step: 4, title: 'اختر الموعد', subtitle: 'الخطوة الأخيرة قبل التأكيد'),
+        const SizedBox(height: 6),
+        _SummaryCard(
+          label: 'موضوع الاستشارة',
+          value: widget.specialty.name,
+          secondary: widget.issueType?.name,
+        ),
+        const SizedBox(height: 12),
+        _SummaryCard(label: 'المحامي', value: widget.lawyer.name),
+        const SizedBox(height: 12),
+        ListTile(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: BorderSide(color: context.tokens.border),
+          ),
+          tileColor: context.tokens.surface,
+          leading: const Icon(Icons.calendar_today_outlined),
+          title: const Text('التاريخ'),
+          subtitle: Text(_dateParam),
+          trailing: const Icon(Icons.edit_calendar_outlined, size: 18),
+          onTap: _pickDate,
+        ),
+        const SizedBox(height: 14),
+        Text(
+          'الأوقات المتاحة',
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            color: context.tokens.heading,
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (_loadingSlots)
+          const LoadingSkeleton(count: 2)
+        else if (_slots.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: context.tokens.warningBg,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border: Border.all(color: context.tokens.warningBorder),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.event_busy_outlined,
+                    size: 18, color: context.tokens.warningFg),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'لا توجد أوقات متاحة في هذا اليوم. اختر يوماً آخر.',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: context.tokens.warningFg,
+                      height: 1.6,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          )
+        else
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _slots
+                .map((s) => ChoiceChip(
+                      label: Text(s),
+                      selected: _slot == s,
+                      showCheckmark: false,
+                      onSelected: (_) => setState(() => _slot = s),
+                    ))
+                .toList(),
+          ),
+        const SizedBox(height: 22),
+        PrimaryButton(
+          label: 'متابعة',
+          icon: Icons.arrow_forward,
+          expand: true,
+          onPressed: canContinue
+              ? () => setState(() => _bookingStep = _BookingStep.confirm)
+              : null,
+        ),
+      ],
+    );
+  }
+
+  /// Step 5: the topic, attachments and reminder, then confirm.
+  Widget _confirmStep() {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      children: [
+        const _StepHeader(step: 5, title: 'تفاصيل الاستشارة', subtitle: 'ثم أكّد الحجز'),
+        const SizedBox(height: 6),
+        _SummaryCard(
+          label: 'الموعد المختار',
+          value: '$_dateParam — ${_slot ?? ''}',
+          secondary: widget.lawyer.name,
+        ),
+        const SizedBox(height: 14),
+        TextField(
+          controller: _topic,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            labelText: 'اكتب وصفاً موجزاً لمشكلتك (أو أرفق ملفاً)',
+          ),
+        ),
+        const SizedBox(height: 16),
+        _AttachmentsSection(
+          attachments: _attachments,
+          uploading: _uploading,
+          atLimit: _maxFiles > 0 && _attachments.length >= _maxFiles,
+          onAdd: _attachFile,
+          onCapture: _captureMedia,
+          onRemove: _removeAttachment,
+        ),
+        const SizedBox(height: 8),
+        _ReminderToggle(
+          enabled: _reminderEnabled,
+          onChanged: (v) => setState(() => _reminderEnabled = v),
+        ),
+        if (_error != null) ...[
+          const SizedBox(height: 12),
+          Text(_error!, style: TextStyle(color: context.tokens.dangerFg)),
+        ],
+        const SizedBox(height: 18),
+        PrimaryButton(
+          label: 'تأكيد الحجز',
+          icon: Icons.check_circle_outline,
+          expand: true,
+          loading: _submitting,
+          onPressed: _submit,
+        ),
+      ],
     );
   }
 }
@@ -594,6 +774,7 @@ class _AttachmentsSection extends StatelessWidget {
     required this.uploading,
     required this.atLimit,
     required this.onAdd,
+    required this.onCapture,
     required this.onRemove,
   });
 
@@ -601,10 +782,12 @@ class _AttachmentsSection extends StatelessWidget {
   final bool uploading;
   final bool atLimit;
   final VoidCallback onAdd;
+  final VoidCallback onCapture;
   final void Function(StagedAttachment) onRemove;
 
   @override
   Widget build(BuildContext context) {
+    final disabled = uploading || atLimit;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -614,7 +797,7 @@ class _AttachmentsSection extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Text(
-          'يمكنك إرفاق مستندات أو صور، أو تسجيل صوتي أو مقطع فيديو يشرح موضوعك. '
+          'سجّل ملاحظة صوتية أو التقط صورة لمستند، أو أرفق ملفاً من جهازك. '
           'الوصف المكتوب أو مرفق واحد على الأقل مطلوب.',
           style: TextStyle(fontSize: 12, color: context.tokens.textMuted),
         ),
@@ -625,24 +808,83 @@ class _AttachmentsSection extends StatelessWidget {
             onRemove: () => onRemove(attachment),
           ),
         const SizedBox(height: 6),
-        OutlinedButton.icon(
-          onPressed: (uploading || atLimit) ? null : onAdd,
-          icon: uploading
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.attach_file),
-          label: Text(
-            uploading
-                ? 'جارٍ الرفع…'
-                : atLimit
-                    ? 'بلغت الحد الأقصى للمرفقات'
-                    : 'إضافة مرفق أو تسجيل',
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: disabled ? null : onCapture,
+                icon: const Icon(Icons.mic_none, size: 18),
+                label: const Text('صوت أو صورة'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: disabled ? null : onAdd,
+                icon: uploading
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.attach_file, size: 18),
+                label: Text(
+                  uploading
+                      ? 'جارٍ الرفع…'
+                      : atLimit
+                          ? 'بلغت الحد الأقصى'
+                          : 'إرفاق ملف',
+                ),
+              ),
+            ),
+          ],
         ),
       ],
+    );
+  }
+}
+
+/// The appointment reminder opt-in.
+///
+/// The switch states plainly that the reminder lives on the device, because the
+/// platform has no server-side reminder service and claiming otherwise would be a
+/// promise the product cannot keep.
+class _ReminderToggle extends StatelessWidget {
+  const _ReminderToggle({required this.enabled, required this.onChanged});
+
+  final bool enabled;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    // Material rather than a decorated Container: SwitchListTile paints its
+    // background and ink splash on the nearest Material ancestor, so a
+    // DecoratedBox in between would hide both.
+    return Material(
+      color: context.tokens.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: context.tokens.border),
+      ),
+      child: SwitchListTile.adaptive(
+        value: enabled,
+        onChanged: onChanged,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+        title: Text(
+          'تذكير قبل الموعد',
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 14,
+            color: context.tokens.heading,
+          ),
+        ),
+        subtitle: Text(
+          'يصلك تذكير على هذا الجهاز قبل الموعد بساعة.',
+          style: TextStyle(fontSize: 12, color: context.tokens.textMuted),
+        ),
+        secondary: Icon(Icons.notifications_active_outlined,
+            color: context.tokens.heading),
+      ),
     );
   }
 }
@@ -758,6 +1000,11 @@ class _StepHeader extends StatelessWidget {
   final String title;
   final String? subtitle;
 
+  /// The journey has five steps: specialty → issue type → lawyer → appointment →
+  /// details. Kept as one constant so the "of N" label cannot drift from the
+  /// number of steps actually rendered.
+  static const totalSteps = 5;
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -765,7 +1012,7 @@ class _StepHeader extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('الخطوة $step من 3',
+          Text('الخطوة $step من $totalSteps',
               style: const TextStyle(
                   color: AppColors.teal,
                   fontSize: 12,

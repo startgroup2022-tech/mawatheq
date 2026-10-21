@@ -28,6 +28,24 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     UNIQUE KEY uq_schema_migration (filename)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 0b) `CREATE TABLE IF NOT EXISTS` above does NOTHING when the table already exists,
+--     so on a database whose ledger was created by an earlier v53 the column list is
+--     never compared and `statements_ok` is simply absent. That is the real cause of
+--     `#1054 - Unknown column 'statements_ok' in 'INSERT INTO'`: every later file
+--     (v59, v61, v62, v63) ends with a guarded INSERT that names this column, so MySQL
+--     aborts the file at its LAST statement. The tables those files create are already
+--     in place, the ledger row is never written, and a re-run "does nothing" — which is
+--     exactly how the najiz_* tables came to exist and stay empty.
+--
+--     The column is therefore added explicitly, guarded by information_schema like
+--     every other ALTER in this project. The CREATE above is kept for a ledger that does
+--     not exist yet, but it is not the mechanism that repairs one that does.
+-- ------------------------------------------------------------
+SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS
+           WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='schema_migrations' AND COLUMN_NAME='statements_ok');
+SET @s := IF(@c=0, 'ALTER TABLE schema_migrations ADD COLUMN statements_ok INT UNSIGNED NOT NULL DEFAULT 0', 'SELECT 1');
+PREPARE stmt FROM @s; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
 -- ------------------------------------------------------------
 -- 1) How complete the migration is.
 --    enumeration:

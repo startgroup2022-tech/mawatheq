@@ -40,6 +40,30 @@ dependencies:
   file_picker: ^11.0.3
   app_links: ^6.4.1
 
+  # Camera capture and gallery selection for consultation attachments. The
+  # attachment endpoint already accepts png/jpg/jpeg, so a photo of a contract is
+  # a first-class submission rather than a document the customer must scan first.
+  image_picker: ^1.2.4
+
+  # Voice notes. `record` is the recorder; it writes an m4a (AAC) file, which the
+  # attachment endpoint already accepts. Playback is deliberately not a dependency:
+  # the customer reviews the length and removes the note if it is wrong, and the
+  # lawyer plays it on the web console.
+  record: ^7.1.2
+  # The recorder needs a writable path for the file it is producing.
+  path_provider: ^2.1.5
+
+  # Runtime permission prompts. Android 13+ splits the notification permission out
+  # of the manifest, and the recorder/camera need a granted permission before the
+  # plugin is called, otherwise the platform throws instead of prompting.
+  permission_handler: ^13.0.2
+
+  # Appointment reminders, scheduled locally on the device. There is no server
+  # reminder endpoint, so the reminder is derived from the booking the customer
+  # just made and never claims the server sent it.
+  flutter_local_notifications: ^22.3.2
+  timezone: ^0.11.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

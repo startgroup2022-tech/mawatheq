@@ -139,6 +139,38 @@ class _HomeTabState extends State<HomeTab> {
           ),
           const SizedBox(height: 18),
 
+          // The two things a signed-in customer actually comes here to do. They sit
+          // directly under the slider so the primary action is the first thing under
+          // the banner, and they replace the three counter cards that used to sit
+          // here: those restated numbers the tabs already show, while these start a
+          // booking or a question.
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: ActionCard(
+                  icon: Icons.event_available_outlined,
+                  label: 'احجز استشارة',
+                  caption: 'اختر التخصص والمحامي والموعد',
+                  onTap: _startBooking,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ActionCard(
+                  icon: Icons.auto_awesome_outlined,
+                  label: 'اسأل المساعد الذكي',
+                  caption: _ai.available
+                      ? 'إجابة فورية مبنية على الأنظمة'
+                      : 'غير متاح حالياً',
+                  primary: false,
+                  onTap: () => widget.onNavigate(2),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+
           if (!_ai.available)
             Container(
               margin: const EdgeInsets.only(bottom: 18),
@@ -167,41 +199,14 @@ class _HomeTabState extends State<HomeTab> {
               ),
             ),
 
-          // Real counters.
-          Row(
-            children: [
-              Expanded(
-                child: DashboardCard(
-                  value: '${_cases.length}',
-                  label: 'قضية',
-                  icon: Icons.folder_outlined,
-                  accent: AppColors.navy,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: DashboardCard(
-                  value: '${_documents.length}',
-                  label: 'مستند',
-                  icon: Icons.description_outlined,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: DashboardCard(
-                  value: '${_consultations.length}',
-                  label: 'استشارة',
-                  icon: Icons.forum_outlined,
-                  accent: AppColors.gold,
-                ),
-              ),
-            ],
-          ),
+          // The counters are kept as a compact single row: they are still useful
+          // context, but they no longer occupy the place of the primary action.
+          _countersRow(),
           const SizedBox(height: 22),
 
-          SectionHeader(
-            title: 'مميزات المنصة',
-          ),
+          // Everything else the platform offers, deliberately below the primary
+          // consultation actions rather than competing with them.
+          SectionHeader(title: 'خدمات أخرى'),
           GridView.count(
             crossAxisCount: 3,
             shrinkWrap: true,
@@ -221,23 +226,10 @@ class _HomeTabState extends State<HomeTab> {
                 onTap: () => widget.onNavigate(3),
               ),
               FeatureTile(
-                icon: Icons.auto_awesome_outlined,
-                label: 'المساعد الذكي',
-                onTap: () => widget.onNavigate(2),
-              ),
-              FeatureTile(
                 icon: Icons.forum_outlined,
                 label: 'الاستشارات',
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const ConsultationsScreen()),
-                ),
-              ),
-              FeatureTile(
-                icon: Icons.assignment_outlined,
-                label: 'احجز استشارة',
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                      builder: (_) => const ConsultationJourneyScreen()),
                 ),
               ),
               FeatureTile(
@@ -296,6 +288,37 @@ class _HomeTabState extends State<HomeTab> {
     );
   }
 
+  /// Opens the booking journey. Shared by the primary CTA and the service grid so
+  /// both routes cannot drift to different destinations.
+  void _startBooking() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ConsultationJourneyScreen()),
+    );
+  }
+
+  /// The compact counter row. It is deliberately plain text over a divider rather
+  /// than three cards: the numbers are context for the actions above, not the
+  /// reason the customer opened the screen.
+  Widget _countersRow() {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
+      decoration: BoxDecoration(
+        color: context.tokens.surface,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(color: context.tokens.border),
+      ),
+      child: Row(
+        children: [
+          _Counter(value: '${_cases.length}', label: 'قضية'),
+          _CounterDivider(),
+          _Counter(value: '${_documents.length}', label: 'مستند'),
+          _CounterDivider(),
+          _Counter(value: '${_consultations.length}', label: 'استشارة'),
+        ],
+      ),
+    );
+  }
+
   /// A banner destination is already resolved server-side; the app only maps the
   /// type onto a local tab. An external link is shown in full before leaving the
   /// app, and a banner whose target was hidden degrades to `none` (not tappable).
@@ -313,5 +336,52 @@ class _HomeTabState extends State<HomeTab> {
       default:
         break;
     }
+  }
+}
+
+/// One number in the compact counter row.
+class _Counter extends StatelessWidget {
+  const _Counter({required this.value, required this.label});
+
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        children: [
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: AppFontSize.lg,
+              fontWeight: FontWeight.w800,
+              color: context.tokens.heading,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: AppFontSize.xs,
+              color: context.tokens.textMuted,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CounterDivider extends StatelessWidget {
+  const _CounterDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 1,
+      height: 26,
+      color: context.tokens.border,
+    );
   }
 }

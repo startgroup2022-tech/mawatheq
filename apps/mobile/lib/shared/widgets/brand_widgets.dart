@@ -336,6 +336,94 @@ class FeatureTile extends StatelessWidget {
   }
 }
 
+/// A prominent primary action, sized for the home screen.
+///
+/// Two of these sit side by side directly under the banner slider, which is the
+/// first thing the customer acts on. It is deliberately larger and higher
+/// contrast than [FeatureTile]: the top of the home screen answers "what do I do
+/// here", and the secondary services sit further down.
+class ActionCard extends StatelessWidget {
+  const ActionCard({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.caption,
+    required this.onTap,
+    this.primary = true,
+  });
+
+  final IconData icon;
+  final String label;
+  final String caption;
+  final VoidCallback onTap;
+
+  /// The filled brand treatment. Set false for the outline variant, which is used
+  /// where a second action must not compete with the first.
+  final bool primary;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final fg = primary ? tokens.onBrand : tokens.heading;
+
+    return Material(
+      color: primary ? tokens.brandFill : tokens.surface,
+      borderRadius: BorderRadius.circular(AppRadius.xl),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadius.xl),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.s4,
+            vertical: AppSpacing.s5,
+          ),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppRadius.xl),
+            border: Border.all(
+              color: primary ? tokens.brandFill : tokens.border,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 26, color: fg),
+              const SizedBox(height: AppSpacing.s3),
+              Text(
+                label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: AppFontSize.md,
+                  fontWeight: FontWeight.w800,
+                  color: fg,
+                  height: 1.3,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.s1),
+              Text(
+                caption,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: AppFontSize.xs,
+                  height: 1.45,
+                  // On the filled card the caption is the same colour as the label
+                  // rather than a muted tone: a muted navy on a dark fill is the
+                  // exact pairing that reads as unreadable text in dark mode.
+                  color: primary
+                      ? fg.withValues(alpha: 0.88)
+                      : tokens.textMuted,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// A compact stat card (label + value) used on dashboards.
 class DashboardCard extends StatelessWidget {
   const DashboardCard({

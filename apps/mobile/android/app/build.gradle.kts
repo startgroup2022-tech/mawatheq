@@ -26,12 +26,23 @@ if (hasReleaseKeystore) {
 
 android {
     namespace = "com.mawatheq.app"
-    compileSdk = flutter.compileSdkVersion
+    // Pinned to 37 rather than flutter.compileSdkVersion (36): permission_handler_android
+    // compiles against 37, and compiling against a higher SDK is backward compatible.
+    // targetSdk stays at Flutter's default, so runtime behaviour is unchanged — this
+    // only widens the API surface available at compile time.
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+
+        // flutter_local_notifications schedules notifications through java.time, which
+        // is not present on the API levels this app supports (minSdk 21). Without
+        // desugaring the scheduled-reminder path fails at runtime on older devices.
+        // The plugin requires desugaring even when only immediate notifications are
+        // used, so this is not optional while the dependency is present.
+        isCoreLibraryDesugaringEnabled = true
     }
 
     // compilerOptions replaces the deprecated kotlinOptions DSL; Kotlin 2.x warns on the
@@ -77,6 +88,13 @@ android {
             }
         }
     }
+}
+
+dependencies {
+    // Required by flutter_local_notifications for its java.time usage; the flag that
+    // turns it on is set in compileOptions above. 2.1.4 is the version the plugin
+    // documents and ships against.
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
 
 flutter {

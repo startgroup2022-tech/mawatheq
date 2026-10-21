@@ -1939,6 +1939,62 @@ future "unmigrated install" test. Note also that PHP's built-in server rejects a
 request line, so an Arabic query parameter must be `rawurlencode`d or the test fails for a reason
 unrelated to the code under test.
 
+### A sandbox reset also reverts `/etc/apache2` and the private root's group
+
+The 2026-10 reset removed more than the installed packages, and each loss shows up as a
+different, misleading test failure. All of it is repairable in a few commands, and none of it
+is an application defect:
+
+- **The vhosts and ports are gone.** `setup_test_env.sh` writes
+  `/etc/apache2/sites-available/mawatheq-{8080,12000}.conf` and appends the `Listen` lines; the
+  reset restores `ports.conf` to `Listen 80` and removes both site files, so Apache answers on
+  neither port and *every* `*_http_probe.php` fails at once. Re-create them (the script is
+  idempotent — re-running it is the simplest fix) rather than debugging the probes.
+- **`/workspace/project/mawatheq-private` keeps its `openhands` group** while `www-data` loses
+  the membership. The symptom is `execution30_consultation_attachments_probe` failing with
+  `Permission denied` on files the CLI user is entitled to read, and
+  `exec35_multimodal_consultation_test` dying with a TypeError in
+  `consultation_attachment_absolute_path()` because a query returned `false`. Restore with
+  `sudo chgrp -R www-data /workspace/project/mawatheq-private` and `chmod 2770` on that
+  directory, plus `sudo usermod -aG www-data $(id -un)`, then run through `sg www-data -c`.
+- **`mawatheq_test` survives with a partial schema.** It had 48 tables and no `lawyers` table,
+  which is worse than an empty database: the tables exist, so nothing recreates them, and the
+  failures look like code bugs. `upgrade_v63.sql` then dies with errno 150
+  (`Foreign key constraint is incorrectly formed`) because `lawyer_specialties` references a
+  table that is not there. Drop and rebuild: `database/schema.sql` gives 107 tables, and the
+  63 `upgrade_v*.sql` files in numeric order give 143. **Do not apply
+  `MAWATHEQ_LEGAL_CLASSIFICATIONS_IMPORT.sql` by hand** — `exec33_najiz_classification_test`
+  imports only when `najiz_categories` is empty, so a manual import leaves `najiz_import_runs`
+  with one row and the suite fails `import runs recorded` (it asserts `>= 2`). Leave the
+  taxonomy empty and let the suite import, or truncate the taxonomy tables first.
+
+### A batch failure that passes standalone is usually test-order state
+
+`exec33` reported `FAIL: import runs recorded` in `run_all_tests.sh` and `99/99` when run
+alone, purely because of the manual import above. Before investigating a single suite failure,
+re-run that suite on its own — `run_all_tests.sh` prints per-suite output, but the cause is
+often the database state an earlier step left behind, not the code under test.
+
+### Pinning `compileSdk` is the fix for a plugin that compiles against a newer SDK
+
+Flutter 3.47.7's `FlutterExtension` defaults `compileSdkVersion` to **36**, but
+`permission_handler_android` compiles against 37, so `flutter build apk --release` fails
+dependency validation with `requires Android SDK version 37`. `android/app/build.gradle.kts`
+now pins `compileSdk = 37` explicitly. Compiling against a higher SDK than `targetSdk` is
+backward compatible, so `targetSdk` stays at Flutter's default 36 and runtime behaviour is
+unchanged — the pin only widens the API surface visible at compile time. The Android SDK ships
+platform 37, so nothing is downloaded.
+
+### Kotlin 2.3.20 is the floor; Gradle 9 / AGP 9 are a separate, deferred migration
+
+`flutter build apk --release` warns that Kotlin 2.2.20 "will soon be dropped" (needs >= 2.3.20).
+`android/settings.gradle.kts` is now on 2.3.20 and that warning is gone. The remaining two
+warnings name **Gradle 8.14.3 -> >= 9.1.0** and **AGP 8.11.1 -> >= 9.0.1**; those are
+major-version migrations with their own breaking changes and are deliberately not part of an
+additive change. They are warnings, not failures — the build succeeds. Suppress them for a
+one-off run with `--android-skip-build-dependency-validation`, never by editing the versions
+casually.
+
 ## Execution 40 — the mobile app's dark mode (theme tokens)
 
 ### There was no dark theme; the work was adding one without moving the light palette

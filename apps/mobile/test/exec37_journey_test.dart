@@ -396,7 +396,7 @@ void main() {
     });
   });
 
-  group('The journey screen renders the three steps', () {
+  group('The journey screen renders every step of the flow', () {
     testWidgets('step 1 shows the specialty cards from the API', (tester) async {
       final repo = _repo((uri) async {
         expect(uri.queryParameters['action'], 'specialties');
@@ -498,7 +498,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Walk the real journey: specialty → issue type → lawyer → booking form.
+      // Walk the real journey: specialty → issue type → lawyer → appointment →
+      // details. The booking form is now two steps, so the time is chosen and
+      // confirmed before the description field is reachable.
       await tester.tap(find.text('الأحوال الشخصية'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('إثبات عقد الزواج'));
@@ -506,9 +508,17 @@ void main() {
       await tester.tap(find.text('Firm A Owner'));
       await tester.pumpAndSettle();
 
-      expect(find.widgetWithText(PrimaryButton, 'تأكيد الحجز'), findsOneWidget);
+      // Step 4: the appointment. Continue is disabled until a time is chosen, so
+      // an empty slot cannot slip past this step.
+      expect(find.widgetWithText(PrimaryButton, 'متابعة'), findsOneWidget);
       await tester.tap(find.text('10:00'));
       await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(PrimaryButton, 'متابعة'));
+      await tester.pumpAndSettle();
+
+      // Step 5: details. Submitting with no description and no attachment is the
+      // case under test.
+      expect(find.widgetWithText(PrimaryButton, 'تأكيد الحجز'), findsOneWidget);
       await tester.tap(find.widgetWithText(PrimaryButton, 'تأكيد الحجز'));
       await tester.pumpAndSettle();
 
@@ -516,6 +526,33 @@ void main() {
           findsOneWidget);
       expect(recording.lastUrl.path, isNot(endsWith('/consultations.php')),
           reason: 'the booking must not be sent with neither a description nor a file');
+    });
+
+    testWidgets('the appointment step will not advance without a time',
+        (tester) async {
+      final recording = _RecordingTransport();
+      final repo = ApiRepository(
+        client: ApiClient(client: recording, tokens: _MemoryTokenStore()..saveToken('t')),
+      );
+      await tester.pumpWidget(
+        MaterialApp(home: ConsultationJourneyScreen(repository: repo)),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('الأحوال الشخصية'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('إثبات عقد الزواج'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Firm A Owner'));
+      await tester.pumpAndSettle();
+
+      // Tapping continue with no slot selected must leave the customer on step 4:
+      // the button is disabled, so the details step is never reached.
+      await tester.tap(find.widgetWithText(PrimaryButton, 'متابعة'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('الأوقات المتاحة'), findsOneWidget);
+      expect(find.widgetWithText(PrimaryButton, 'تأكيد الحجز'), findsNothing);
     });
   });
 }
