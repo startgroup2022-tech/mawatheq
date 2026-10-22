@@ -43,9 +43,9 @@ lib/
     locale_controller.dart        ar/en switch (provider)
     theme/, strings.dart          brand tokens
   features/
-    public/                       splash, onboarding, guest home, info, pricing
+    public/                       splash, info pages, pricing, lawyer directory
     auth/                         login, register
-    home/                         shell + dashboard tab
+    home/                         one shell + dashboard tab, for guest and signed-in
     cases/ documents/ consultations/ assistant/ notifications/ account/
     consultations/journey_screen.dart  specialty → issue type → lawyer → book
   shared/widgets/brand_widgets.dart   18 shared components
@@ -54,6 +54,15 @@ lib/
 
 Layering rule: a screen depends on `ApiRepository`, never on `ApiClient` or on
 `http` directly. `ApiRepository` is the only place that knows endpoint paths.
+
+Screens take the repository as a constructor argument and fall back to
+`ApiRepository()`. A screen that builds its own client cannot be mounted against a
+fake transport, which is how `ConsultationsScreen` came to render an empty list in
+the screenshot harness: the fixture was served by a transport the screen never used.
+
+The Arabic type families live in `assets/fonts/` and are bundled, not fetched.
+`main.dart` disables `GoogleFonts` runtime fetching, so a weight added to the theme
+needs a matching file in that directory or the app throws at first paint.
 
 ## The consultation journey
 
@@ -89,12 +98,12 @@ gains a `guest` status that is deliberately **not** a session: no token is issue
 no user id exists, and `can(...)` stays false for every permission. Guest mode
 therefore changes nothing on the server and cannot reach a protected endpoint.
 
-- The welcome screen offers a prominent `الدخول كزائر` / `Continue as Guest`
-  button.
-- The guest homepage (`features/public/public_home_screen.dart`) shows only
-  sections backed by shipped capabilities — features, services, documents,
-  consultations, pricing, how-it-works, FAQ — and reads its prices from
-  `GET /api/v1/plans.php`. No private record is reachable from it.
+- A visitor lands on the same home shell a signed-in client uses. There is no
+  separate guest homepage: one product across the sign-in boundary means the guest
+  sees what the app is, not a marketing page standing in for it.
+- The home tab shows the published specialties, the service list and the banner
+  carousel — all from public endpoints. The account tab states plainly that the
+  visitor is browsing as a guest and offers sign in or create account.
 - Tapping a private area (cases, documents, assistant, consultations,
   notifications, account) raises an authentication prompt offering sign in,
   create account, or keep browsing. The protected call is never attempted first.
@@ -108,8 +117,9 @@ therefore changes nothing on the server and cannot reach a protected endpoint.
 short fade/scale/rise entrance. It stays until both the session check and the
 animation finish — the animation is deliberately brief so it never becomes an
 artificial delay. Routing then follows the session: signed in → dashboard,
-guest → public homepage, otherwise → welcome screen. A stored token the server
-rejects is cleared and the welcome screen explains that the session expired.
+guest or visitor → the home shell, with the guest badge and the account tab
+explaining the state. A stored token the server rejects is cleared and the shell
+reports the expired session instead of pretending to be signed in.
 
 ## Honest degradation
 
@@ -127,14 +137,33 @@ cope with it being absent:
 
 ```bash
 flutter analyze     # must be clean
-flutter test        # 93 tests: model parsing, error mapping, pricing, guest, splash,
-                    #            auth security, password reset, deep links, consultation journey
+flutter test        # 204 tests: model parsing, error mapping, pricing, guest, splash,
+                    #            auth security, password reset, deep links, consultation
+                    #            journey, theming, blank-screen sweep
 ```
 
 The tests use a fake transport that returns the same JSON and status codes the
 PHP endpoints return, so the production client, repository and widgets are all
 exercised for real. `_MemoryTokenStore` stands in for the platform keychain,
 which is not available in a unit-test process.
+
+### Screenshots
+
+`tool/screenshots/capture_screenshots.dart` renders nine screens at 1080×2280 and
+writes them to `tool/screenshots/goldens/`:
+
+```bash
+flutter test tool/screenshots/capture_screenshots.dart --update-goldens
+```
+
+It asserts each screen's text **before** capturing. `matchesGoldenFile` will
+happily save a picture of a blank screen, so without the assertion a broken screen
+would produce a passing test and a useless image.
+
+`test/exec41_blank_screen_sweep_test.dart` is the companion guard: it mounts every
+data-loading screen against the fake transport and asserts the fetched content
+reached the screen, which is the failure mode neither a compile check nor a
+mount-only test catches.
 
 `test/exec37_journey_test.dart` pins the customer consultation journey against the
 same `api/v1/journey.php` contract the website uses, and asserts the one rule the
