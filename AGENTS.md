@@ -2129,3 +2129,66 @@ fall back to `ApiRepository()`, matching `DocumentsScreen` and `PublicLawyersScr
 `test/exec41_blank_screen_sweep_test.dart` mounts every data-loading screen against a fake transport
 and asserts the fetched content is on screen. That is the regression guard for "the screen builds but
 shows nothing", which neither a compile check nor a mount-only test catches.
+
+## EXECUTION 41 — the release, and the minSdk claim that was wrong
+
+### `flutter.minSdkVersion` is 24, and nothing in the repo said so
+
+`android/app/build.gradle.kts` sets `minSdk = flutter.minSdkVersion`, which is Flutter's default and
+not written anywhere in this repo. On Flutter 3.47.7 that default is 24 (`FlutterExtension.kt`), so
+the app requires **Android 7.0**. The desugaring comment above that line said "minSdk 21" and the
+Arabic delivery guide repeated "أندرويد 5.0 (API 21)", which would have told a reader the app
+installs on Android 5.0. It does not.
+
+Never state a minSdk from memory or from a neighbouring comment. Read it off the built artifact:
+
+```bash
+aapt2 dump badging app-release.apk | grep -E "minSdkVersion|targetSdkVersion"
+# minSdkVersion:'24'   targetSdkVersion:'36'
+```
+
+### Release assets are named `vX.Y.Z+<versionCode>`, and the release is `vYYYY.MM.DD-execNN`
+
+Assets in this repo's releases carry the version *and* the version code
+(`MAWATHEQ_APP_v1.1.0+2_release.apk`) so the file name matches `aapt2 dump badging` output. Keep
+that when adding an asset.
+
+A `+` in an asset name is percent-encoded in the download URL. The link works only as `%2B`:
+
+```bash
+curl -sL -o app.apk \
+  "https://github.com/startgroup2022-tech/mawatheq/releases/download/v2026.10.22-exec41/MAWATHEQ_APP_v1.1.0%2B2_release.apk"
+```
+
+### The GitHub release API returns 204 with an empty body on asset DELETE
+
+`json.load(r)` on that response raises `JSONDecodeError: Expecting value: line 1 column 1`. Read the
+body and parse only if it is non-empty. A failed run can also leave a half-replaced asset set: the
+delete succeeds and the upload does not, so re-list the assets rather than assuming.
+
+### The tag has to point at the commit the assets were built from
+
+The release is created with `target_commitish: main`, which creates the tag at `main` *at that
+moment*. Pushing a later commit leaves the tag behind `main`, and a reader clicking the tag gets
+sources that do not match the APK. After any post-release commit, move the tag:
+
+```bash
+git tag -f -a v2026.10.22-exec41 -m "..." HEAD
+git push -f origin v2026.10.22-exec41
+git rev-parse v2026.10.22-exec41^{commit}   # must equal git rev-parse origin/main
+```
+
+### Signing: v2 only, debug key
+
+The release APK is signed with `CN=Android Debug` and **only** APK Signature Scheme v2
+(`apksigner verify --verbose` → `Verified using v1 scheme (JAR signing): false`). v2-only is fine
+above minSdk 24, but the debug key means it cannot go to Google Play and App Links cannot verify
+against it. `android/key.properties` (gitignored) is what switches it to a real release key.
+
+### What screenshot and widget tests do not prove
+
+The 204-test suite, the nine goldens and the blank-screen sweep all run against a fake transport.
+They prove the screens build, render, and handle canned JSON. They prove nothing about a live
+booking, a production login, a real document upload or an AI call. Do not let a green suite stand in
+for those in a delivery report — list them as untested.
+
