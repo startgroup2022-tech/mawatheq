@@ -2072,3 +2072,60 @@ property of any test that mounts it.
 `journey_screen.dart` and `home_tab_public.dart` each had a private `_iconFor`. They are now
 `lib/shared/specialty_icons.dart`. The consolidation was not cosmetic: both copies were missing
 `enforcement` and `endowments`, so those two categories silently fell through to the default icon.
+
+## EXECUTION 41 — mobile screenshots, and the two defects they exposed
+
+### The screenshot harness asserts before it captures
+
+`apps/mobile/tool/screenshots/capture_screenshots.dart` renders nine screens at 1080x2280 and writes
+goldens to `tool/screenshots/goldens/`. It asserts each screen's text **before** calling
+`matchesGoldenFile`, through a shared `_shot()` helper. The order is the point: `matchesGoldenFile`
+will happily write a picture of a blank screen, so without the assertion a broken screen produces a
+green test and a useless image. Regenerate with:
+
+```
+flutter test tool/screenshots/capture_screenshots.dart --update-goldens
+```
+
+### Arabic fonts are bundled and runtime fetching is off
+
+`google_fonts` resolves a family+weight to a file by name (`Cairo-Bold.ttf`,
+`IBMPlexSansArabic-SemiBold.ttf`, ...). Those files live in `apps/mobile/assets/fonts/` and are
+declared as assets. `main.dart` sets `GoogleFonts.config.allowRuntimeFetching = false` and the
+harness does the same, so the harness cannot pass on a font the shipped app would not have.
+
+This replaced a runtime fetch from fonts.gstatic.com. The consequence to remember: **a new weight in
+`app_theme.dart` needs a matching file in `assets/fonts/`**, or the app throws at first paint with
+"allowRuntimeFetching is false but font X was not found". Weights in use: Cairo 400/700/800, IBM Plex
+Sans Arabic 400/500/600/700. Cairo is published only as a variable font, so the static instances were
+pinned from the `wght` axis with `fontTools.varLib.instancer`.
+
+They are app assets rather than harness assets deliberately: declaring `tool/screenshots/` in
+`pubspec.yaml` shipped ~1.5 MB of fonts *and the harness source itself* into the release APK.
+
+### Do not sweep-test screens at the default 800x600 surface
+
+The Flutter test surface is 800x600, a tablet-ish window. Phone layouts overflow on it, which looks
+like a layout bug and is not one. Set the surface in any widget test that asserts layout:
+
+```dart
+tester.view.physicalSize = const Size(1080, 2280);
+tester.view.devicePixelRatio = 3.0;
+addTearDown(tester.view.resetPhysicalSize);
+addTearDown(tester.view.resetDevicePixelRatio);
+```
+
+Also wrap the screen under test in a `Scaffold`: `TextField` and `ChoiceChip` throw
+"No Material widget found" without one.
+
+### Screens must accept an injected `ApiRepository`
+
+`ConsultationsScreen`, `CasesScreen`, `NotificationsScreen` and `AssistantScreen` hardcoded
+`ApiRepository()` in a field initialiser. A screen that builds its own client cannot be tested at
+all, and that is exactly how `ConsultationsScreen` came to render an empty list in the harness: the
+fixture was served by a fake transport the screen never used. They now take `this.repository` and
+fall back to `ApiRepository()`, matching `DocumentsScreen` and `PublicLawyersScreen`.
+
+`test/exec41_blank_screen_sweep_test.dart` mounts every data-loading screen against a fake transport
+and asserts the fetched content is on screen. That is the regression guard for "the screen builds but
+shows nothing", which neither a compile check nor a mount-only test catches.

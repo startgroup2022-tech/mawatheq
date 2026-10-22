@@ -42,11 +42,13 @@ class _BrokenPrefs implements PrefsStore {
 }
 
 void main() {
-  test('defaults to system before anything is stored', () async {
+  test('defaults to light before anything is stored', () async {
+    // Requirement 12: a first-time user gets the light theme. Following the device
+    // would open the app dark on a phone that happens to be in dark mode.
     final controller = ThemeController(prefs: _FakePrefs());
     await controller.load();
-    expect(controller.mode, AppThemeMode.system);
-    expect(controller.themeMode, ThemeMode.system);
+    expect(controller.mode, AppThemeMode.light);
+    expect(controller.themeMode, ThemeMode.light);
   });
 
   test('a chosen mode is written and survives a relaunch', () async {
@@ -78,10 +80,10 @@ void main() {
     expect(reloaded.mode, AppThemeMode.light);
   });
 
-  test('an unreadable store falls back to system instead of throwing', () async {
+  test('an unreadable store falls back to light instead of throwing', () async {
     final controller = ThemeController(prefs: _BrokenPrefs());
     await controller.load();
-    expect(controller.mode, AppThemeMode.system);
+    expect(controller.mode, AppThemeMode.light);
   });
 
   test('a failed write does not lose the in-memory choice', () async {
@@ -113,11 +115,11 @@ void main() {
     expect(notifications, 1);
   });
 
-  test('an unknown stored value degrades to system', () async {
+  test('an unknown stored value degrades to light', () async {
     final prefs = _FakePrefs()..stored = 'sepia';
     final controller = ThemeController(prefs: prefs);
     await controller.load();
-    expect(controller.mode, AppThemeMode.system);
+    expect(controller.mode, AppThemeMode.light);
   });
 
   test('every mode has an Arabic label, an English label and an icon', () {

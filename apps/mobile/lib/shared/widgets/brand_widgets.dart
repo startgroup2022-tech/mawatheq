@@ -73,21 +73,32 @@ class BrandAppBar extends StatelessWidget implements PreferredSizeWidget {
             const BrandLogo(size: 30),
             const SizedBox(width: AppSpacing.s2),
           ],
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Text('مواثيق', style: TextStyle(fontWeight: FontWeight.w800)),
-              if (subtitle != null)
-                Text(
-                  subtitle!,
-                  style: TextStyle(
-                    fontSize: AppFontSize.xs,
-                    color: context.tokens.textSubtle,
-                    fontWeight: FontWeight.w400,
-                  ),
+          // Flexible + ellipsis because the bar also carries action icons: with a
+          // subtitle the title is the widest thing in the row, so it is the part
+          // that must yield rather than overflow the bar.
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'مواثيق',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                  overflow: TextOverflow.ellipsis,
                 ),
-            ],
+                if (subtitle != null)
+                  Text(
+                    subtitle!,
+                    style: TextStyle(
+                      fontSize: AppFontSize.xs,
+                      color: context.tokens.textSubtle,
+                      fontWeight: FontWeight.w400,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+              ],
+            ),
           ),
         ],
       ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import 'app.dart';
@@ -17,6 +18,13 @@ import 'core/theme/theme_controller.dart';
 /// is exactly one place that knows the API base URL and the token.
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // The Arabic families are bundled in `assets/fonts/`. Fetching them from Google
+  // at first launch would reflow the UI once the download lands, and on a device
+  // with no connectivity would silently fall back to a face that does not shape
+  // Arabic as the brand requires. Bundled and pinned means what the design review
+  // approved is what the user sees.
+  GoogleFonts.config.allowRuntimeFetching = false;
 
   final tokens = TokenStorage();
   final repository = ApiRepository();

@@ -30,7 +30,7 @@ class PublicInfoScreen extends StatelessWidget {
   final String? highlight;
 
   /// When true the page renders only its content, without its own `Scaffold` or
-  /// app bar, so it can live inside [PublicGuestShell].
+  /// app bar, so it can live inside the app shell.
   final bool embedded;
 
   @override

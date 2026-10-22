@@ -8,7 +8,7 @@ import 'package:mawatheq_mobile/core/network/api_client.dart';
 import 'package:mawatheq_mobile/core/network/api_exception.dart';
 import 'package:mawatheq_mobile/core/network/api_repository.dart';
 import 'package:mawatheq_mobile/core/storage/token_storage.dart';
-import 'package:mawatheq_mobile/features/public/home_tab_public.dart';
+import 'package:mawatheq_mobile/features/home/home_tab.dart';
 import 'package:provider/provider.dart';
 
 /// Regression tests for the failure the owner reported from the released APK:
@@ -76,7 +76,7 @@ Widget _home(ApiRepository repo) => MultiProvider(
         Provider<ApiRepository>.value(value: repo),
       ],
       child: MaterialApp(
-        home: Scaffold(body: PublicHomeTab(repository: repo, onOpenLawyers: () {})),
+        home: Scaffold(body: HomeTab(repository: repo, onOpenLawyers: () {})),
       ),
     );
 
@@ -135,15 +135,16 @@ void main() {
       await tester.pumpWidget(_home(_repo(_productionWhileBroken)));
       await tester.pumpAndSettle();
 
-      // The regression: these were the ONLY two widgets on screen.
-      expect(find.text('أهلاً بك'), findsOneWidget);
-      expect(find.text('ابحث عن محامٍ أو تخصص'), findsOneWidget);
-      expect(find.text('تخصصاتنا القانونية'), findsOneWidget);
-      expect(find.text('خدمات سريعة'), findsOneWidget);
-      expect(find.text('استشارة قانونية'), findsOneWidget);
-      expect(find.text('متابعة قضاياي'), findsOneWidget);
-      expect(find.text('مستنداتي'), findsOneWidget);
-      expect(find.text('المساعد القانوني'), findsOneWidget);
+      // The regression: the whole home must survive the failure, not just the
+      // error notice. The primary actions, the specialty section and the services
+      // are all still there.
+      expect(find.text('احجز استشارة'), findsOneWidget);
+      expect(find.text('اسأل المساعد الذكي'), findsOneWidget);
+      expect(find.text('اختر تخصصك القانوني'), findsOneWidget);
+      expect(find.text('خدمات مواثيق'), findsOneWidget);
+      expect(find.text('الاستشارات القانونية'), findsOneWidget);
+      expect(find.text('دليل المحامين'), findsOneWidget);
+      expect(find.text('إدارة القضايا'), findsOneWidget);
     });
 
     testWidgets('the failure is reported inline with a retry, not as a page',
@@ -153,7 +154,7 @@ void main() {
 
       expect(find.textContaining('إعادة المحاولة'), findsOneWidget);
       // The notice must not be a full-screen replacement.
-      expect(find.text('خدمات سريعة'), findsOneWidget);
+      expect(find.text('خدمات مواثيق'), findsOneWidget);
     });
 
     testWidgets('the specialties section states its empty case', (tester) async {
@@ -161,9 +162,11 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        find.text('ستظهر التخصصات هنا بعد تجهيزها من فريق مواثيق.'),
+        find.text('لا توجد تخصصات منشورة بعد'),
         findsOneWidget,
       );
+      // The state explains what happens next rather than leaving a blank frame.
+      expect(find.textContaining('ستظهر التخصصات القانونية'), findsOneWidget);
     });
 
     testWidgets('all published specialties are shown, not a truncated prefix',

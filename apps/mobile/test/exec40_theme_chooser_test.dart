@@ -38,6 +38,16 @@ Widget _screen({ThemeController? theme}) {
   );
 }
 
+/// An option inside the open chooser sheet.
+///
+/// Scoped to the sheet because the settings tile behind it shows the *current*
+/// choice, which is "فاتح" by default — an unscoped `find.text('فاتح')` matches the
+/// tile and the option and is ambiguous.
+Finder _sheetOption(String label) => find.descendant(
+      of: find.byType(BottomSheet),
+      matching: find.text(label),
+    );
+
 void main() {
   testWidgets('the appearance setting is reachable from the settings list',
       (tester) async {
@@ -46,8 +56,8 @@ void main() {
     await tester.pump();
 
     expect(find.text('المظهر'), findsOneWidget);
-    // The tile shows the current choice, which starts as "follow the system".
-    expect(find.text('حسب النظام'), findsOneWidget);
+    // The tile shows the current choice, which starts as Light.
+    expect(find.text('فاتح'), findsOneWidget);
   });
 
   testWidgets('choosing dark reaches the controller and is persisted',
@@ -65,10 +75,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     // All three options are offered.
-    expect(find.text('فاتح'), findsOneWidget);
-    expect(find.text('داكن'), findsOneWidget);
+    expect(_sheetOption('فاتح'), findsOneWidget);
+    expect(_sheetOption('داكن'), findsOneWidget);
 
-    await tester.tap(find.text('داكن'));
+    await tester.tap(_sheetOption('داكن'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
@@ -85,13 +95,13 @@ void main() {
     await tester.tap(find.text('المظهر'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    await tester.tap(find.text('فاتح'));
+    await tester.tap(_sheetOption('داكن'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    // Back on the list: the tile now reports the chosen mode.
-    expect(find.text('فاتح'), findsOneWidget);
-    expect(find.text('داكن'), findsNothing);
+    // Back on the list, with the sheet gone: the tile now reports the new choice.
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.text('داكن'), findsOneWidget);
   });
 
   testWidgets('the screen still renders without a ThemeController',

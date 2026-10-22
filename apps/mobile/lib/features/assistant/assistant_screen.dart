@@ -15,14 +15,19 @@ import '../../shared/widgets/brand_widgets.dart';
 ///  * When the laws library supplied a statutory reference, it is shown under the
 ///    answer. When it did not, no reference is invented.
 class AssistantScreen extends StatefulWidget {
-  const AssistantScreen({super.key});
+  const AssistantScreen({super.key, this.repository});
+
+  /// The shared repository. Falls back to the default client so an embedding
+  /// that does not inject it still works, while a caller that needs to control
+  /// the network edge can supply one instead.
+  final ApiRepository? repository;
 
   @override
   State<AssistantScreen> createState() => _AssistantScreenState();
 }
 
 class _AssistantScreenState extends State<AssistantScreen> {
-  final _repo = ApiRepository();
+  late final ApiRepository _repo = widget.repository ?? ApiRepository();
   final _input = TextEditingController();
   final _scroll = ScrollController();
 

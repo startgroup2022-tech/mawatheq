@@ -2,124 +2,189 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/auth_controller.dart';
+import '../../core/guest_session.dart';
+import '../../core/locale_controller.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/network/api_repository.dart';
 import '../../core/network/models.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_tokens.dart';
+import '../../shared/specialty_icons.dart';
+import '../../shared/widgets/auth_gate.dart';
 import '../../shared/widgets/banner_carousel.dart';
 import '../../shared/widgets/banner_link_screen.dart';
 import '../../shared/widgets/brand_widgets.dart';
-import '../account/account_screen.dart';
+import '../assistant/assistant_screen.dart';
 import '../consultations/consultations_screen.dart';
 import '../consultations/journey_screen.dart';
 import '../notifications/notifications_screen.dart';
-import '../public/pricing_screen.dart';
 
-/// The signed-in home: greeting, real assistant availability, quick stats and
-/// the feature grid. Every number shown comes from the API.
+/// The home screen, identical for a guest and a signed-in customer.
+///
+/// There used to be two homes — one for an account and one for a visitor — which
+/// meant the same product looked like two different apps depending on whether you
+/// had signed in, and the signed-in one replaced the entire screen with an error
+/// page when any single endpoint failed. This is one screen with one layout;
+/// authentication changes the greeting, the notification badge and where an action
+/// leads, never the structure.
+///
+/// Section order is fixed and matches the specification: slider, the two primary
+/// actions, the legal specialties, then the other services.
 class HomeTab extends StatefulWidget {
-  const HomeTab({super.key, required this.onNavigate});
+  const HomeTab({
+    super.key,
+    this.repository,
+    this.onNavigate,
+    this.onOpenLawyers,
+  });
 
-  /// Switches the bottom-nav tab (0..4).
-  final ValueChanged<int> onNavigate;
+  /// Injectable for widget tests; production uses the shared client.
+  final ApiRepository? repository;
+
+  /// Switches the enclosing shell to a bottom-nav tab, when it has one.
+  final ValueChanged<int>? onNavigate;
+
+  /// Opens the lawyer directory. The signed-in shell has no lawyers tab, so it
+  /// falls back to a pushed directory screen when this is null.
+  final VoidCallback? onOpenLawyers;
 
   @override
   State<HomeTab> createState() => _HomeTabState();
 }
 
 class _HomeTabState extends State<HomeTab> {
-  final _repo = ApiRepository();
+  late final ApiRepository _repo = widget.repository ?? ApiRepository();
 
-  AiStatus _ai = AiStatus.unknown;
-  List<CaseSummary> _cases = const [];
-  List<Consultation> _consultations = const [];
-  List<DocumentSummary> _documents = const [];
   List<HomeBanner> _banners = const [];
+  List<JourneySpecialty> _specialties = const [];
 
+  /// The assistant's real provider state. Unknown until the server answers, and it
+  /// is fetched only for a signed-in account: the endpoint requires a session, so
+  /// asking as a guest would produce a guaranteed 401 dressed up as a failure.
+  AiStatus _ai = AiStatus.unknown;
   int _unread = 0;
 
   bool _loading = true;
   String? _error;
 
-  @override
-  void initState() {
-    super.initState();
-    _load();
-    // Banners load separately: a failure here must not blank the dashboard, and an
-    // empty slider is a normal state rather than an error.
-    _loadBanners();
-  }
+  /// Whether the current session is authenticated, tracked so the personal parts
+  /// of the home refresh when the visitor signs in or out on this screen.
+  bool _signedIn = false;
 
-  Future<void> _loadBanners() async {
-    try {
-      final banners = await _repo.banners();
-      if (!mounted) return;
-      setState(() => _banners = banners);
-    } catch (_) {
-      // Leave the slider empty; the rest of the home screen is unaffected.
+  /// Providers are read tolerantly, like the account screen reads its theme
+  /// controller: the shell always supplies them, and a widget test that mounts the
+  /// home alone gets the guest view instead of a provider lookup error.
+  ///
+  /// The listening reads are confined to [build]; everything else uses the
+  /// non-listening lookups below, because reading a provider
+  /// with listen outside the widget tree is an error.
+  AuthController? get _auth => context.read<AuthController?>();
+
+
+  /// False until the first load has been started, so the load happens in
+  /// didChangeDependencies (the first point where inherited widgets may be read)
+  /// rather than in initState.
+  bool _started = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final signedIn = _auth?.isSignedIn ?? false;
+    if (!_started || signedIn != _signedIn) {
+      _started = true;
+      _signedIn = signedIn;
+      // Scheduled because didChangeDependencies can run during a build.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _load();
+      });
     }
   }
 
+  /// Loads the home in two independent halves.
+  ///
+  /// Public content (banners, specialties) and personal content (assistant state,
+  /// unread count) are separate requests, and a failure in either must not remove
+  /// the other. Previously all five endpoints were awaited together inside one
+  /// `try`, so the first failure — and `ai-status.php` answers 401 to any request
+  /// without a session — replaced the whole home with an error screen.
   Future<void> _load() async {
     setState(() {
       _loading = true;
       _error = null;
     });
+
+    final signedIn = _auth?.isSignedIn ?? false;
+
+    List<HomeBanner> banners = const [];
+    List<JourneySpecialty> specialties = const [];
+    String? failure;
+
     try {
-      final results = await Future.wait([
-        _repo.aiStatus(),
-        _repo.cases(),
-        _repo.documents(),
-        _repo.consultations(),
-        _repo.notifications(),
-      ]);
-      if (!mounted) return;
-      setState(() {
-        _ai = results[0] as AiStatus;
-        _cases = results[1] as List<CaseSummary>;
-        _documents = results[2] as List<DocumentSummary>;
-        _consultations = results[3] as List<Consultation>;
-        _unread = (results[4] as NotificationPage).unreadCount;
-        _loading = false;
-      });
+      banners = await _repo.banners();
     } on ApiException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _error = e.message;
-      });
+      failure = e.message;
     } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _error = 'تعذّر تحميل البيانات. أعد المحاولة.';
-      });
+      failure = 'تعذّر تحميل المحتوى. أعد المحاولة.';
     }
+
+    try {
+      specialties = await _repo.journeySpecialties();
+    } on ApiException catch (e) {
+      failure ??= e.message;
+    } catch (_) {
+      failure ??= 'تعذّر تحميل المحتوى. أعد المحاولة.';
+    }
+
+    var ai = AiStatus.unknown;
+    var unread = 0;
+    if (signedIn) {
+      try {
+        ai = await _repo.aiStatus();
+      } catch (_) {
+        // Leave the assistant state unknown; the CTA explains itself either way.
+      }
+      try {
+        unread = (await _repo.notifications()).unreadCount;
+      } catch (_) {
+        // A badge is decoration; losing it must not affect the home.
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _banners = banners;
+      _specialties = specialties;
+      _ai = ai;
+      _unread = unread;
+      _loading = false;
+      _error = failure;
+    });
   }
+
+  /// The listening reads live here, inside build, so the home rebuilds when the
+  /// locale or the session changes. Every other read uses [_auth] / [_locale],
+  /// which do not listen — a listening read outside build is an error.
+  bool get _rtl => context.watch<LocaleController?>()?.isRtl ?? true;
 
   @override
   Widget build(BuildContext context) {
-    final user = context.watch<AuthController>().user;
+    final rtl = _rtl;
+    final auth = context.watch<AuthController?>();
 
     if (_loading) {
       return const Padding(
-        padding: EdgeInsets.all(16),
+        padding: EdgeInsets.all(AppSpacing.s4),
         child: LoadingSkeleton(count: 5),
       );
-    }
-
-    if (_error != null) {
-      return ErrorState(message: _error!, onRetry: _load);
     }
 
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
         children: [
-          // Operator-published banners, above the greeting. The widget renders
-          // nothing when there are none, so a fresh install shows no empty frame.
+          // 1. Slider. Rendered only when the operator has published banners: an
+          // empty frame with a large blank area is what made the home look broken.
           if (_banners.isNotEmpty) ...[
             BannerCarousel(
               banners: _banners,
@@ -127,245 +192,589 @@ class _HomeTabState extends State<HomeTab> {
             ),
             const SizedBox(height: 18),
           ],
-          // Greeting + real AI availability.
-          GradientHeroCard(
-            eyebrow: 'مواثيق',
-            title: 'أهلاً ${user.name.isEmpty ? '' : user.name}'.trim(),
-            body: _ai.available
-                ? 'المساعد القانوني الذكي متاح الآن. اطرح سؤالك وستحصل على إجابة مبنية على الأنظمة.'
-                : 'المساعد الذكي غير متاح حالياً. ${_ai.reason}',
-            ctaLabel: 'المساعد الذكي',
-            onCta: () => widget.onNavigate(2),
-          ),
-          const SizedBox(height: 18),
 
-          // The two things a signed-in customer actually comes here to do. They sit
-          // directly under the slider so the primary action is the first thing under
-          // the banner, and they replace the three counter cards that used to sit
-          // here: those restated numbers the tabs already show, while these start a
-          // booking or a question.
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                child: ActionCard(
-                  icon: Icons.event_available_outlined,
-                  label: 'احجز استشارة',
-                  caption: 'اختر التخصص والمحامي والموعد',
-                  onTap: _startBooking,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: ActionCard(
-                  icon: Icons.auto_awesome_outlined,
-                  label: 'اسأل المساعد الذكي',
-                  caption: _ai.available
-                      ? 'إجابة فورية مبنية على الأنظمة'
-                      : 'غير متاح حالياً',
-                  primary: false,
-                  onTap: () => widget.onNavigate(2),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-
-          if (!_ai.available)
-            Container(
-              margin: const EdgeInsets.only(bottom: 18),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: context.tokens.warningBg,
-                borderRadius: BorderRadius.circular(AppRadius.md),
-                border: Border.all(color: context.tokens.warningBorder),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.warning_amber_rounded,
-                      size: 17, color: context.tokens.warningFg),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _ai.reason,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: context.tokens.warningFg,
-                        height: 1.6,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-          // The counters are kept as a compact single row: they are still useful
-          // context, but they no longer occupy the place of the primary action.
-          _countersRow(),
-          const SizedBox(height: 22),
-
-          // Everything else the platform offers, deliberately below the primary
-          // consultation actions rather than competing with them.
-          SectionHeader(title: 'خدمات أخرى'),
-          GridView.count(
-            crossAxisCount: 3,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            mainAxisSpacing: 10,
-            crossAxisSpacing: 10,
-            childAspectRatio: 0.98,
-            children: [
-              FeatureTile(
-                icon: Icons.folder_outlined,
-                label: 'القضايا',
-                onTap: () => widget.onNavigate(1),
-              ),
-              FeatureTile(
-                icon: Icons.description_outlined,
-                label: 'المستندات',
-                onTap: () => widget.onNavigate(3),
-              ),
-              FeatureTile(
-                icon: Icons.forum_outlined,
-                label: 'الاستشارات',
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ConsultationsScreen()),
-                ),
-              ),
-              FeatureTile(
-                icon: Icons.event_outlined,
-                label: 'المواعيد',
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const ConsultationsScreen()),
-                ),
-              ),
-              FeatureTile(
-                icon: Icons.notifications_outlined,
-                label: _unread > 0 ? 'الإشعارات ($_unread)' : 'الإشعارات',
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const NotificationsScreen()),
-                ),
-              ),
-              FeatureTile(
-                icon: Icons.person_outline,
-                label: 'الملف الشخصي',
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const AccountScreen()),
-                ),
-              ),
-              FeatureTile(
-                icon: Icons.workspace_premium_outlined,
-                label: 'الأسعار',
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const PricingScreen()),
-                ),
-              ),
-              FeatureTile(
-                icon: Icons.security_outlined,
-                label: 'الأمان',
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const AccountScreen()),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 22),
-
-          if (_cases.isNotEmpty) ...[
-            SectionHeader(
-              title: 'أحدث القضايا',
-              actionLabel: 'عرض الكل',
-              onAction: () => widget.onNavigate(1),
-            ),
-            ..._cases.take(3).map((c) => Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: CaseCard(item: c, onTap: () => widget.onNavigate(1)),
-                )),
+          // A failed section is reported inline, above content that still works,
+          // with a retry. It must never replace the screen.
+          if (_error != null) ...[
+            _LoadNotice(message: _error!, rtl: rtl, onRetry: _load),
+            const SizedBox(height: 18),
           ],
-          const SizedBox(height: 10),
+
+          // 2. The two primary actions, directly under the slider.
+          _PrimaryActions(
+            rtl: rtl,
+            signedIn: auth?.isSignedIn ?? false,
+            aiAvailable: _ai.available,
+            onBook: _startBooking,
+            onAskAssistant: _openAssistant,
+          ),
+          const SizedBox(height: 22),
+
+          // 3. The legal specialties, from the backend.
+          SectionHeader(
+            title: rtl ? 'اختر تخصصك القانوني' : 'Choose your specialty',
+          ),
+          Text(
+            rtl
+                ? 'اختر المجال المناسب لنساعدك في الوصول إلى المحامي المناسب.'
+                : 'Pick the right field so we can match you with the right lawyer.',
+            style: TextStyle(fontSize: 12.5, color: context.tokens.textMuted),
+          ),
+          const SizedBox(height: 14),
+          _SpecialtyGrid(
+            specialties: _specialties,
+            rtl: rtl,
+            onTap: _openSpecialty,
+          ),
+          const SizedBox(height: 26),
+
+          // 4. The other services the platform actually implements.
+          SectionHeader(title: rtl ? 'خدمات مواثيق' : 'Mawatheq services'),
+          const SizedBox(height: 4),
+          _ServicesSection(
+            rtl: rtl,
+            signedIn: auth?.isSignedIn ?? false,
+            unread: _unread,
+            onOpen: _openService,
+          ),
         ],
       ),
     );
   }
 
-  /// Opens the booking journey. Shared by the primary CTA and the service grid so
-  /// both routes cannot drift to different destinations.
+  // ------------------------------------------------------------------ actions
+
+  /// The primary conversion action. A guest browses the same categories and
+  /// lawyers; the sign-in prompt appears at the point of confirmation, which is
+  /// where the server would refuse an anonymous request.
   void _startBooking() {
+    if (!(_auth?.isSignedIn ?? false)) {
+      requireAccount(context, ProtectedDestination.consultations);
+      return;
+    }
+    _openJourney();
+  }
+
+  void _openJourney({JourneySpecialty? specialty}) {
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const ConsultationJourneyScreen()),
-    );
-  }
-
-  /// The compact counter row. It is deliberately plain text over a divider rather
-  /// than three cards: the numbers are context for the actions above, not the
-  /// reason the customer opened the screen.
-  Widget _countersRow() {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
-      decoration: BoxDecoration(
-        color: context.tokens.surface,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: context.tokens.border),
-      ),
-      child: Row(
-        children: [
-          _Counter(value: '${_cases.length}', label: 'قضية'),
-          _CounterDivider(),
-          _Counter(value: '${_documents.length}', label: 'مستند'),
-          _CounterDivider(),
-          _Counter(value: '${_consultations.length}', label: 'استشارة'),
-        ],
+      MaterialPageRoute(
+        builder: (_) => ConsultationJourneyScreen(initialSpecialty: specialty),
       ),
     );
   }
 
-  /// A banner destination is already resolved server-side; the app only maps the
-  /// type onto a local tab. An external link is shown in full before leaving the
-  /// app, and a banner whose target was hidden degrades to `none` (not tappable).
+  /// Tapping a specialty opens the journey already scoped to it, so the customer
+  /// does not pick the same specialty twice.
+  void _openSpecialty(JourneySpecialty specialty) {
+    if (!(_auth?.isSignedIn ?? false)) {
+      // The visitor is told which service needs an account, and their intent is
+      // remembered so sign-in can resume it.
+      requireAccount(context, ProtectedDestination.consultations);
+      return;
+    }
+    _openJourney(specialty: specialty);
+  }
+
+  /// The assistant entry point.
+  ///
+  /// A guest is asked to sign in first because the endpoint requires a session.
+  /// A signed-in customer opens the assistant, which shows its own honest
+  /// unavailable state when the provider is not configured — the app never
+  /// pretends a request succeeded.
+  void _openAssistant() {
+    if (!(_auth?.isSignedIn ?? false)) {
+      requireAccount(context, ProtectedDestination.legalAi);
+      return;
+    }
+    final navigate = widget.onNavigate;
+    if (navigate != null) {
+      navigate(2);
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const AssistantScreen()),
+    );
+  }
+
+  void _openLawyers() {
+    final open = widget.onOpenLawyers;
+    if (open != null) {
+      open();
+      return;
+    }
+    widget.onNavigate?.call(1);
+  }
+
+  void _openService(_ServiceAction action) {
+    final signedIn = _auth?.isSignedIn ?? false;
+    switch (action) {
+      case _ServiceAction.consultations:
+        if (!signedIn) {
+          requireAccount(context, ProtectedDestination.consultations);
+          return;
+        }
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const ConsultationsScreen()),
+        );
+      case _ServiceAction.lawyers:
+        _openLawyers();
+      case _ServiceAction.cases:
+        if (!signedIn) {
+          requireAccount(context, ProtectedDestination.cases);
+          return;
+        }
+        widget.onNavigate?.call(1);
+      case _ServiceAction.documents:
+        if (!signedIn) {
+          requireAccount(context, ProtectedDestination.documents);
+          return;
+        }
+        widget.onNavigate?.call(3);
+      case _ServiceAction.notifications:
+        if (!signedIn) {
+          requireAccount(context, ProtectedDestination.notifications);
+          return;
+        }
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+        );
+      case _ServiceAction.account:
+        if (!signedIn) {
+          requireAccount(context, ProtectedDestination.account);
+          return;
+        }
+        widget.onNavigate?.call(4);
+      case _ServiceAction.assistant:
+        _openAssistant();
+    }
+  }
+
+  /// A banner destination is resolved server-side; the app only maps the type onto
+  /// a local action. An external link is shown in full before leaving the app.
   void _openBanner(HomeBanner banner) {
     switch (banner.linkType) {
-      case 'category':
-      case 'specialty':
-        widget.onNavigate(1);
       case 'url':
         Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => BannerLinkScreen(banner: banner),
-          ),
+          MaterialPageRoute(builder: (_) => BannerLinkScreen(banner: banner)),
         );
+      case 'category':
+      case 'specialty':
+        _startBooking();
       default:
         break;
     }
   }
 }
 
-/// One number in the compact counter row.
-class _Counter extends StatelessWidget {
-  const _Counter({required this.value, required this.label});
+/// The two primary actions, side by side, stacking on a narrow screen.
+///
+/// They are deliberately the first thing under the slider: booking a consultation
+/// is what the app is for, and it used to sit below a large assistant card and a
+/// row of counters.
+class _PrimaryActions extends StatelessWidget {
+  const _PrimaryActions({
+    required this.rtl,
+    required this.signedIn,
+    required this.aiAvailable,
+    required this.onBook,
+    required this.onAskAssistant,
+  });
 
-  final String value;
-  final String label;
+  final bool rtl;
+  final bool signedIn;
+  final bool aiAvailable;
+  final VoidCallback onBook;
+  final VoidCallback onAskAssistant;
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: Column(
-        children: [
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: AppFontSize.lg,
-              fontWeight: FontWeight.w800,
-              color: context.tokens.heading,
+    // Two cards plus the gutter need roughly 320pt. Below that they stack, so the
+    // captions are not clipped on a small phone.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final book = ActionCard(
+          icon: Icons.event_available_outlined,
+          label: rtl ? 'احجز استشارة' : 'Book a consultation',
+          caption: rtl ? 'اختر التخصص والمحامي والموعد' : 'Specialty, lawyer, slot',
+          onTap: onBook,
+        );
+        final ask = ActionCard(
+          icon: Icons.auto_awesome_outlined,
+          label: rtl ? 'اسأل المساعد الذكي' : 'Ask the AI assistant',
+          // Only a signed-in customer can reach the provider, so a guest sees what
+          // signing in unlocks rather than an availability claim about a service
+          // they cannot call yet.
+          caption: !signedIn
+              ? (rtl ? 'يتطلب تسجيل الدخول' : 'Sign in required')
+              : aiAvailable
+                  ? (rtl
+                      ? 'إجابة فورية مبنية على الأنظمة'
+                      : 'Instant, law-based answers')
+                  : (rtl ? 'غير متاح حالياً' : 'Unavailable right now'),
+          primary: false,
+          onTap: onAskAssistant,
+        );
+
+        if (constraints.maxWidth < 320) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [book, const SizedBox(height: 10), ask],
+          );
+        }
+        // IntrinsicHeight because the Row lives in a ListView: stretching to the
+        // cross axis inside an unbounded-height parent would ask for infinite
+        // height. It makes both cards match the taller one, so the pair is even.
+        return IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: book),
+              const SizedBox(width: 10),
+              Expanded(child: ask),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// The specialty grid. An unknown icon key falls back rather than throwing, so an
+/// operator adding a category cannot break the screen.
+class _SpecialtyGrid extends StatelessWidget {
+  const _SpecialtyGrid({
+    required this.specialties,
+    required this.rtl,
+    required this.onTap,
+  });
+
+  final List<JourneySpecialty> specialties;
+  final bool rtl;
+  final void Function(JourneySpecialty) onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    if (specialties.isEmpty) {
+      return _EmptySection(
+        icon: Icons.category_outlined,
+        title: rtl ? 'لا توجد تخصصات منشورة بعد' : 'No specialties published yet',
+        body: rtl
+            ? 'ستظهر التخصصات القانونية هنا بعد تجهيزها من فريق مواثيق. '
+                'اسحب للأسفل للمحاولة مرة أخرى.'
+            : 'Legal specialties appear here once the team publishes them. '
+                'Pull down to try again.',
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Two columns on a phone, three when there is room for them.
+        final columns = constraints.maxWidth >= 520 ? 3 : 2;
+        return GridView.count(
+          crossAxisCount: columns,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: columns == 3 ? 1.12 : 1.02,
+          children: [
+            for (final specialty in specialties)
+              _SpecialtyCard(
+                specialty: specialty,
+                rtl: rtl,
+                onTap: () => onTap(specialty),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _SpecialtyCard extends StatelessWidget {
+  const _SpecialtyCard({
+    required this.specialty,
+    required this.rtl,
+    required this.onTap,
+  });
+
+  final JourneySpecialty specialty;
+  final bool rtl;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: context.tokens.surface,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: context.tokens.border),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(13),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: context.tokens.infoBg,
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                ),
+                child: Icon(
+                  specialtyIcon(specialty.iconKey),
+                  size: 20,
+                  color: AppColors.teal,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      specialty.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: context.tokens.heading,
+                        fontSize: 13.5,
+                        height: 1.35,
+                      ),
+                    ),
+                    if (specialty.description.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Expanded(
+                        child: Text(
+                          specialty.description,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11,
+                            height: 1.4,
+                            color: context.tokens.textMuted,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (specialty.hasLawyers) ...[
+                const SizedBox(height: 4),
+                Text(
+                  rtl
+                      ? '${specialty.lawyerCount} محامٍ'
+                      : '${specialty.lawyerCount} lawyers',
+                  style: TextStyle(
+                    color: context.tokens.textSubtle,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The services the platform ships. Every entry opens something that exists; none
+/// is a placeholder, and the list is not a copy of the bottom navigation.
+enum _ServiceAction {
+  consultations,
+  lawyers,
+  cases,
+  documents,
+  notifications,
+  account,
+  assistant,
+}
+
+class _ServicesSection extends StatelessWidget {
+  const _ServicesSection({
+    required this.rtl,
+    required this.signedIn,
+    required this.unread,
+    required this.onOpen,
+  });
+
+  final bool rtl;
+  final bool signedIn;
+  final int unread;
+  final void Function(_ServiceAction) onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final services = <(IconData, String, String, _ServiceAction)>[
+      (
+        Icons.forum_outlined,
+        'الاستشارات القانونية',
+        'Legal consultations',
+        _ServiceAction.consultations,
+      ),
+      (
+        Icons.gavel_outlined,
+        'دليل المحامين',
+        'Lawyer directory',
+        _ServiceAction.lawyers,
+      ),
+      (
+        Icons.auto_awesome_outlined,
+        'المساعد القانوني',
+        'Legal assistant',
+        _ServiceAction.assistant,
+      ),
+      (
+        Icons.folder_outlined,
+        'إدارة القضايا',
+        'Case management',
+        _ServiceAction.cases,
+      ),
+      (
+        Icons.description_outlined,
+        'إدارة المستندات',
+        'Document management',
+        _ServiceAction.documents,
+      ),
+      (
+        Icons.notifications_outlined,
+        'الإشعارات',
+        'Notifications',
+        _ServiceAction.notifications,
+      ),
+    ];
+
+    return Column(
+      children: [
+        for (final s in services)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Material(
+              color: context.tokens.surface,
+              clipBehavior: Clip.antiAlias,
+              shape: RoundedRectangleBorder(
+                side: BorderSide(color: context.tokens.border),
+                borderRadius: BorderRadius.circular(AppRadius.lg),
+              ),
+              child: InkWell(
+                onTap: () => onOpen(s.$4),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: context.tokens.infoBg,
+                          borderRadius: BorderRadius.circular(AppRadius.md),
+                        ),
+                        child: Icon(s.$1, size: 20, color: AppColors.teal),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          rtl ? s.$2 : s.$3,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyMedium
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      // A lock marks what needs an account, so the visitor knows
+                      // before tapping rather than being surprised by a prompt.
+                      if (signedIn &&
+                          s.$4 == _ServiceAction.notifications &&
+                          unread > 0)
+                        Container(
+                          margin: const EdgeInsets.only(left: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: context.tokens.brandFill,
+                            borderRadius: BorderRadius.circular(AppRadius.pill),
+                          ),
+                          child: Text(
+                            '$unread',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: context.tokens.onBrand,
+                            ),
+                          ),
+                        ),
+                      Icon(
+                        signedIn ? Icons.chevron_left : Icons.lock_outline,
+                        size: signedIn ? 18 : 16,
+                        color: context.tokens.textSubtle,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: AppFontSize.xs,
-              color: context.tokens.textMuted,
-            ),
+      ],
+    );
+  }
+}
+
+/// A non-blocking notice for a failed section, with a retry.
+class _LoadNotice extends StatelessWidget {
+  const _LoadNotice({
+    required this.message,
+    required this.rtl,
+    required this.onRetry,
+  });
+
+  final String message;
+  final bool rtl;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.s4),
+      decoration: BoxDecoration(
+        color: context.tokens.dangerBg,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(color: context.tokens.dangerBorder),
+      ),
+      child: Column(
+        crossAxisAlignment:
+            rtl ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.error_outline, size: 20, color: context.tokens.dangerFg),
+              const SizedBox(width: AppSpacing.s3),
+              Expanded(
+                child: Text(
+                  message,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    height: 1.6,
+                    color: context.tokens.dangerFg,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.s3),
+          SecondaryButton(
+            label: rtl ? 'إعادة المحاولة' : 'Retry',
+            icon: Icons.refresh,
+            onPressed: onRetry,
           ),
         ],
       ),
@@ -373,15 +782,52 @@ class _Counter extends StatelessWidget {
   }
 }
 
-class _CounterDivider extends StatelessWidget {
-  const _CounterDivider();
+/// An explanatory empty state: what is missing and what the visitor can do.
+class _EmptySection extends StatelessWidget {
+  const _EmptySection({
+    required this.icon,
+    required this.title,
+    required this.body,
+  });
+
+  final IconData icon;
+  final String title;
+  final String body;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 1,
-      height: 26,
-      color: context.tokens.border,
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.s5),
+      decoration: BoxDecoration(
+        color: context.tokens.surface,
+        borderRadius: BorderRadius.circular(AppRadius.xl),
+        border: Border.all(color: context.tokens.border),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, size: 30, color: context.tokens.textSubtle),
+          const SizedBox(height: 10),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: context.tokens.heading,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            body,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.7,
+              color: context.tokens.textMuted,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

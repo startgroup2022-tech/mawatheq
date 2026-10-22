@@ -21,10 +21,19 @@ import '../../shared/widgets/capture_sheet.dart';
 /// internal legal classification never crosses the wire: the customer only ever
 /// sees the plain-language specialty and issue type they picked.
 class ConsultationJourneyScreen extends StatefulWidget {
-  const ConsultationJourneyScreen({super.key, this.repository});
+  const ConsultationJourneyScreen({
+    super.key,
+    this.repository,
+    this.initialSpecialty,
+  });
 
   /// Injectable for widget tests; production builds create their own.
   final ApiRepository? repository;
+
+  /// A specialty the customer already chose on the home screen. When set, the
+  /// journey opens on the issue-type step instead of asking them to pick the same
+  /// specialty a second time.
+  final JourneySpecialty? initialSpecialty;
 
   @override
   State<ConsultationJourneyScreen> createState() =>
@@ -56,6 +65,17 @@ class _ConsultationJourneyScreenState extends State<ConsultationJourneyScreen> {
   @override
   void initState() {
     super.initState();
+    final preselected = widget.initialSpecialty;
+    if (preselected != null) {
+      // The customer already picked this specialty on the home screen, so start at
+      // the sub-specialty step. The specialty list is still loaded so going back
+      // shows the full set rather than an empty step.
+      _chosenSpecialty = preselected;
+      _step = _Step.issueType;
+      _loadSpecialties();
+      _loadIssueTypes(preselected);
+      return;
+    }
     _loadSpecialties();
   }
 
@@ -88,6 +108,13 @@ class _ConsultationJourneyScreenState extends State<ConsultationJourneyScreen> {
       _error = null;
       _issueTypes = const [];
     });
+    await _loadIssueTypes(s);
+  }
+
+  /// Loads the plain-language issue types for one specialty. Shared by the
+  /// specialty step and by the home screen's pre-scoped entry, so both reach the
+  /// same sub-specialty list.
+  Future<void> _loadIssueTypes(JourneySpecialty s) async {
     try {
       final list = await _repo.journeyIssueTypes(categoryId: s.id);
       if (!mounted) return;

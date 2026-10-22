@@ -10,14 +10,19 @@ import '../../shared/widgets/brand_widgets.dart';
 
 /// Case list with search and status filtering, backed by `GET /api/v1/cases.php`.
 class CasesScreen extends StatefulWidget {
-  const CasesScreen({super.key});
+  const CasesScreen({super.key, this.repository});
+
+  /// The shared repository. Falls back to the default client so an embedding
+  /// that does not inject it still works, while a caller that needs to control
+  /// the network edge can supply one instead.
+  final ApiRepository? repository;
 
   @override
   State<CasesScreen> createState() => _CasesScreenState();
 }
 
 class _CasesScreenState extends State<CasesScreen> {
-  final _repo = ApiRepository();
+  late final ApiRepository _repo = widget.repository ?? ApiRepository();
 
   List<CaseSummary> _all = const [];
   bool _loading = true;

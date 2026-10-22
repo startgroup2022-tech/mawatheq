@@ -21,7 +21,11 @@ enum AppThemeMode {
   static AppThemeMode fromStorage(String? value) => switch (value) {
         'light' => AppThemeMode.light,
         'dark' => AppThemeMode.dark,
-        _ => AppThemeMode.system,
+        'system' => AppThemeMode.system,
+        // No stored choice means a first-time user: they get the light theme.
+        // Following the device here would open the app dark on a phone that
+        // happens to be in dark mode, which is not the documented default.
+        _ => AppThemeMode.light,
       };
 
   /// The Material theme mode this choice maps to.
@@ -53,36 +57,40 @@ enum AppThemeMode {
 
 /// Theme state, persisted across launches.
 ///
-/// The default is [AppThemeMode.system]: a user who has set their phone to dark
-/// mode expects a new app to respect that, and switching them to light is the more
-/// surprising failure. The choice is stored in plain preferences, not the keychain
-/// — it is not a secret, and it must survive signing out.
+/// The default is [AppThemeMode.light]: a first-time user gets the light theme,
+/// as the product specification requires. [AppThemeMode.system] remains an
+/// explicit user choice, it is just no longer what an unmade choice means. The
+/// selection is stored in plain preferences, not the keychain — it is not a
+/// secret, and it must survive signing out.
 class ThemeController extends ChangeNotifier {
   ThemeController({PrefsStore? prefs}) : _prefs = prefs ?? PrefsStorage();
 
   final PrefsStore _prefs;
 
-  AppThemeMode _mode = AppThemeMode.system;
+  AppThemeMode _mode = AppThemeMode.light;
   AppThemeMode get mode => _mode;
 
   ThemeMode get themeMode => _mode.material;
 
-  /// Reads the stored choice. Falls back to [AppThemeMode.system] when nothing is
+  /// Reads the stored choice. Falls back to [AppThemeMode.light] when nothing is
   /// stored or the platform channel is unavailable, so a first launch and a test
-  /// harness both get a usable value instead of throwing.
+  /// harness both get the documented default instead of throwing.
   Future<void> load() async {
     try {
       _mode = AppThemeMode.fromStorage(await _prefs.readThemeMode());
     } catch (_) {
-      _mode = AppThemeMode.system;
+      _mode = AppThemeMode.light;
     }
     notifyListeners();
   }
 
   Future<void> setMode(AppThemeMode mode) async {
-    if (mode == _mode) return;
+    final changed = mode != _mode;
     _mode = mode;
-    notifyListeners();
+    if (changed) notifyListeners();
+    // Always persisted, even when the choice matches the in-memory default. The
+    // default is light, so an early return here would drop an explicit "light" and
+    // a user who picked it on a dark phone would silently get system next launch.
     // Persisted after notifying: the UI must not wait on disk to repaint.
     try {
       await _prefs.saveThemeMode(mode.storageKey);

@@ -14,9 +14,8 @@ import 'package:mawatheq_mobile/core/network/models.dart';
 import 'package:mawatheq_mobile/core/storage/token_storage.dart';
 import 'package:mawatheq_mobile/features/auth/login_screen.dart';
 import 'package:mawatheq_mobile/features/home/home_shell.dart';
-import 'package:mawatheq_mobile/features/public/home_tab_public.dart';
+import 'package:mawatheq_mobile/features/home/home_tab.dart';
 import 'package:mawatheq_mobile/features/public/pricing_screen.dart';
-import 'package:mawatheq_mobile/features/public/public_guest_shell.dart';
 import 'package:mawatheq_mobile/features/public/public_lawyers_screen.dart';
 import 'package:mawatheq_mobile/features/public/splash_screen.dart';
 import 'package:mawatheq_mobile/shared/widgets/auth_gate.dart';
@@ -218,7 +217,7 @@ Widget _homeTab({
     guest: guest,
     locale: locale,
     child: Scaffold(
-      body: PublicHomeTab(
+      body: HomeTab(
         repository: repo,
         onOpenLawyers: onOpenLawyers ?? () {},
       ),
@@ -336,7 +335,7 @@ void main() {
       )..enterGuest();
 
       await tester.pumpWidget(
-        _wrap(auth: auth, child: const PublicGuestShell()),
+        _wrap(auth: auth, child: const HomeShell()),
       );
       await tester.pumpAndSettle();
 
@@ -401,7 +400,7 @@ void main() {
       expect(find.byType(BannerCarousel), findsNothing);
       expect(find.byType(PageView), findsNothing);
       // The rest of the home screen still renders.
-      expect(find.text('تخصصاتنا القانونية'), findsOneWidget);
+      expect(find.text('اختر تخصصك القانوني'), findsOneWidget);
     });
 
     testWidgets('shows real specialties with their lawyer counts',
@@ -490,8 +489,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await _scrollTo(tester, find.text('متابعة قضاياي'));
-      await tester.tap(find.text('متابعة قضاياي'));
+      await _scrollTo(tester, find.text('إدارة القضايا'));
+      await tester.tap(find.text('إدارة القضايا'));
       await tester.pumpAndSettle();
 
       expect(find.text('متابعة التصفح'), findsOneWidget);
@@ -521,8 +520,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await _scrollTo(tester, find.text('استشارة قانونية'));
-      await tester.tap(find.text('استشارة قانونية'));
+      await _scrollTo(tester, find.text('الاستشارات القانونية'));
+      await tester.tap(find.text('الاستشارات القانونية'));
       await tester.pumpAndSettle();
 
       // The three required choices, all in Arabic.
@@ -554,15 +553,15 @@ void main() {
       await tester.pumpAndSettle();
       final callsBefore = calls;
 
-      await _scrollTo(tester, find.text('مستنداتي'));
-      await tester.tap(find.text('مستنداتي'));
+      await _scrollTo(tester, find.text('إدارة المستندات'));
+      await tester.tap(find.text('إدارة المستندات'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('متابعة التصفح'));
       await tester.pumpAndSettle();
 
       // Still on the public page, and no protected endpoint was called. Asserted on
       // the widget rather than a heading, because the list is scrolled at this point.
-      expect(find.byType(PublicHomeTab), findsOneWidget);
+      expect(find.byType(HomeTab), findsOneWidget);
       expect(calls, callsBefore);
       // Keeping browsing records no destination to resume.
       expect(guest.hasPendingIntent, isFalse);
@@ -810,8 +809,8 @@ void main() {
 
       // The first screen is the app itself, with browsable content — not an
       // onboarding carousel standing between the visitor and the product.
-      expect(find.byType(PublicGuestShell), findsOneWidget);
-      expect(find.byType(PublicHomeTab), findsOneWidget);
+      expect(find.byType(HomeShell), findsOneWidget);
+      expect(find.byType(HomeTab), findsOneWidget);
     });
 
     testWidgets('a guest start routes to the public shell', (tester) async {
@@ -835,8 +834,8 @@ void main() {
       );
       await tester.pumpAndSettle(const Duration(seconds: 2));
 
-      expect(find.byType(PublicGuestShell), findsOneWidget);
-      expect(find.byType(PublicHomeTab), findsOneWidget);
+      expect(find.byType(HomeShell), findsOneWidget);
+      expect(find.byType(HomeTab), findsOneWidget);
     });
 
     testWidgets('an expired stored token lands on the consumer shell, not a '
@@ -999,7 +998,7 @@ void main() {
                       ? TextDirection.rtl
                       : TextDirection.ltr,
                   child: Scaffold(
-                    body: PublicHomeTab(
+                    body: HomeTab(
                       repository: _repo(transport),
                       onOpenLawyers: () {},
                     ),
@@ -1013,10 +1012,10 @@ void main() {
       await tester.pumpAndSettle();
 
       final dir = Directionality.of(
-        tester.element(find.byType(PublicHomeTab)),
+        tester.element(find.byType(HomeTab)),
       );
       expect(dir, TextDirection.rtl);
-      expect(find.text('تخصصاتنا القانونية'), findsOneWidget);
+      expect(find.text('اختر تخصصك القانوني'), findsOneWidget);
     });
 
     testWidgets('English mode renders LTR with English copy', (tester) async {
@@ -1043,7 +1042,7 @@ void main() {
                   textDirection:
                       l.isRtl ? TextDirection.rtl : TextDirection.ltr,
                   child: Scaffold(
-                    body: PublicHomeTab(
+                    body: HomeTab(
                       repository: _repo(transport),
                       onOpenLawyers: () {},
                     ),
@@ -1057,10 +1056,10 @@ void main() {
       await tester.pumpAndSettle();
 
       final dir = Directionality.of(
-        tester.element(find.byType(PublicHomeTab)),
+        tester.element(find.byType(HomeTab)),
       );
       expect(dir, TextDirection.ltr);
-      expect(find.text('Our legal specialties'), findsOneWidget);
+      expect(find.text('Choose your specialty'), findsOneWidget);
       expect(find.text('20% off your first consultation'), findsOneWidget);
     });
   });
@@ -1137,11 +1136,14 @@ void main() {
     });
   });
 
-  // ------------------------------------------------ guest routing (exec 15.1)
+  // ------------------------------------------------ guest routing (exec 41)
+  //
+  // Execution 41 replaced the two shells with one. These assert the replacement
+  // contract: a guest and a signed-in customer get the same shell and the same
+  // home, and only the personal parts differ.
 
-  group('Guest routing', () {
-    testWidgets('a guest lands on the public shell, never the authenticated one',
-        (tester) async {
+  group('Unified shell', () {
+    testWidgets('a guest lands in the one shell, on the one home', (tester) async {
       final auth = AuthController(
         repository: _repo(_FakeTransport(_publicEndpoints)),
         tokens: _MemoryTokenStore(),
@@ -1155,29 +1157,30 @@ void main() {
           auth: auth,
           guest: guest,
           locale: locale,
-          child: PublicGuestShell(repository: _repo(_FakeTransport(_publicEndpoints))),
+          child: HomeShell(repository: _repo(_FakeTransport(_publicEndpoints))),
         ),
       );
       await tester.pumpAndSettle();
 
-      // The public shell is present; the authenticated shell is not.
-      expect(find.byType(PublicGuestShell), findsOneWidget);
-      expect(find.byType(HomeShell), findsNothing);
-      // The guest tab bar names consumer destinations, never the private dashboard.
-      // Scoped to the nav because the home body uses some of the same words.
+      // One shell, and the home inside it. There is no second shell to fall back to.
+      expect(find.byType(HomeShell), findsOneWidget);
+      expect(find.byType(HomeTab), findsOneWidget);
+
+      // The tab bar is the full consumer set for a guest too: the same five tabs a
+      // signed-in customer gets, because the gate is on the destination, not on the
+      // tab's existence.
       Finder nav(String label) => find.descendant(
             of: find.byType(NavigationBar),
             matching: find.text(label),
           );
       expect(nav('الرئيسية'), findsOneWidget);
-      expect(nav('المحامون'), findsOneWidget);
-      expect(nav('استشارة'), findsOneWidget);
+      expect(nav('القضايا'), findsOneWidget);
+      expect(nav('المساعد'), findsOneWidget);
+      expect(nav('المستندات'), findsOneWidget);
       expect(nav('حسابي'), findsOneWidget);
-      expect(find.text('القضايا'), findsNothing);
-      expect(find.text('المستندات'), findsNothing);
     });
 
-    testWidgets('the guest shell shows consumer content, not a dashboard',
+    testWidgets('a guest home has the same structure as a signed-in home',
         (tester) async {
       final transport = _FakeTransport(_publicEndpoints);
       final auth = AuthController(
@@ -1186,42 +1189,20 @@ void main() {
       );
 
       await tester.pumpWidget(
-        _wrap(
-          auth: auth,
-          child: PublicGuestShell(repository: _repo(transport)),
-        ),
+        _wrap(auth: auth, child: HomeShell(repository: _repo(transport))),
       );
       await tester.pumpAndSettle();
 
-      // The consumer home is what a guest lands on, inside the shell.
-      expect(find.byType(PublicHomeTab), findsOneWidget);
-      expect(find.text('تخصصاتنا القانونية'), findsOneWidget);
-      expect(find.text('القضايا'), findsNothing);
+      // The guest's home is the real home: the two primary actions and the
+      // specialty section, not a reduced or different layout.
+      expect(find.byType(HomeTab), findsOneWidget);
+      expect(find.text('احجز استشارة'), findsOneWidget);
+      expect(find.text('اسأل المساعد الذكي'), findsOneWidget);
+      expect(find.text('اختر تخصصك القانوني'), findsOneWidget);
     });
 
-    testWidgets('the lawyers tab lists the directory inside the shell',
+    testWidgets('a protected tab raises the sign-in prompt, not a dead screen',
         (tester) async {
-      final transport = _FakeTransport(_publicEndpoints);
-      final auth = AuthController(
-        repository: _repo(transport),
-        tokens: _MemoryTokenStore(),
-      );
-
-      await tester.pumpWidget(
-        _wrap(
-          auth: auth,
-          child: PublicGuestShell(repository: _repo(transport)),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      await _tapNav(tester, 'المحامون');
-
-      expect(find.text('سارة العتيبي'), findsOneWidget);
-    });
-
-    testWidgets('the consultation tab raises the sign-in prompt instead of '
-        'opening a protected screen', (tester) async {
       final transport = _FakeTransport(_publicEndpoints);
       final auth = AuthController(
         repository: _repo(transport),
@@ -1233,16 +1214,36 @@ void main() {
         _wrap(
           auth: auth,
           guest: guest,
-          child: PublicGuestShell(repository: _repo(transport)),
+          child: HomeShell(repository: _repo(transport)),
         ),
       );
       await tester.pumpAndSettle();
 
-      await _tapNav(tester, 'استشارة');
+      await _tapNav(tester, 'القضايا');
 
-      // The prompt names the requested service and never opens a dashboard.
-      expect(find.textContaining('الاستشارات القانونية'), findsWidgets);
-      expect(find.byType(HomeShell), findsNothing);
+      // The prompt names the requested service and the guest stays on Home.
+      expect(find.textContaining('إدارة القضايا'), findsWidgets);
+      expect(find.byType(HomeTab), findsOneWidget);
+    });
+
+    testWidgets('the guest account tab offers sign-in and register, and no '
+        'private data', (tester) async {
+      final transport = _FakeTransport(_publicEndpoints);
+      final auth = AuthController(
+        repository: _repo(transport),
+        tokens: _MemoryTokenStore(),
+      )..enterGuest();
+
+      await tester.pumpWidget(
+        _wrap(auth: auth, child: HomeShell(repository: _repo(transport))),
+      );
+      await tester.pumpAndSettle();
+
+      await _tapNav(tester, 'حسابي');
+
+      expect(find.text('أنت تتصفّح كزائر'), findsOneWidget);
+      expect(find.text('تسجيل الدخول'), findsWidgets);
+      expect(find.text('إنشاء حساب'), findsOneWidget);
     });
 
     testWidgets('a guest choosing a plan is routed to sign-in, not a checkout',
@@ -1273,6 +1274,7 @@ void main() {
       expect(find.textContaining('الخدمة المطلوبة'), findsOneWidget);
     });
   });
+
 
   // ------------------------------------------------ banner carousel (exec 38)
 

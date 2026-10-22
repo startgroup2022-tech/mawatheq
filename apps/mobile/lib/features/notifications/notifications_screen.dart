@@ -10,14 +10,19 @@ import '../../shared/widgets/brand_widgets.dart';
 /// Notifications from `GET /api/v1/notifications.php`, with a server-backed
 /// "mark all read" action.
 class NotificationsScreen extends StatefulWidget {
-  const NotificationsScreen({super.key});
+  const NotificationsScreen({super.key, this.repository});
+
+  /// The shared repository. Falls back to the default client so an embedding
+  /// that does not inject it still works, while a caller that needs to control
+  /// the network edge can supply one instead.
+  final ApiRepository? repository;
 
   @override
   State<NotificationsScreen> createState() => _NotificationsScreenState();
 }
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
-  final _repo = ApiRepository();
+  late final ApiRepository _repo = widget.repository ?? ApiRepository();
   NotificationPage? _page;
   bool _loading = true;
   String? _error;

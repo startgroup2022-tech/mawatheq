@@ -74,3 +74,9 @@ flutter:
 
   assets:
     - assets/images/
+    # The Arabic type families are bundled rather than fetched at runtime. The app
+    # has to render Arabic correctly on a first launch with no network, and a
+    # runtime download of a font is a visible reflow at best and a fallback face at
+    # worst. Names carry the exact family+weight that `google_fonts` resolves to, so
+    # it loads these instead of reaching for fonts.gstatic.com.
+    - assets/fonts/

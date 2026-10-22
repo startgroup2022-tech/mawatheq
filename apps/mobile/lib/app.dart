@@ -11,7 +11,6 @@ import 'core/theme/theme_controller.dart';
 
 import 'features/auth/password_reset_screens.dart';
 import 'features/home/home_shell.dart';
-import 'features/public/public_guest_shell.dart';
 import 'features/public/splash_screen.dart';
 
 /// Root widget: wires locale + direction, then routes from the splash to the
@@ -109,9 +108,9 @@ class _MawatheqAppState extends State<MawatheqApp> {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
-      // Without a controller the app follows the system, which is the documented
-      // default and keeps a bare test harness honest.
-      themeMode: themeController?.themeMode ?? ThemeMode.system,
+      // Without a controller the app uses the light theme, matching the default a
+      // first-time user gets, so a bare test harness renders the same palette.
+      themeMode: themeController?.themeMode ?? ThemeMode.light,
       locale: Locale(locale.locale),
       supportedLocales: const [Locale('ar'), Locale('en')],
       localizationsDelegates: const [
@@ -134,16 +133,15 @@ class _MawatheqAppState extends State<MawatheqApp> {
               },
             )
           : switch (auth.status) {
-              // Authenticated user → the role-based platform shell.
-              AuthStatus.signedIn => const HomeShell(),
-              // Guest → the public shell. Deliberately a different shell from
-              // HomeShell: a guest never sees the authenticated dashboard.
-              AuthStatus.guest => const PublicGuestShell(),
-              // Unauthenticated (including an expired session) → the same consumer
-              // shell a guest uses. The app opens on the home experience, not a
-              // value-proposition slideshow: a visitor sees what the product does
-              // before being asked for anything.
-              _ => const PublicGuestShell(),
+              // Signed in, a guest, or an unauthenticated visitor (including an
+              // expired session) all open the same shell on the same home. Only
+              // the greeting and the account tab differ, which is what keeps the
+              // product one product across the sign-in boundary.
+              AuthStatus.signedIn ||
+              AuthStatus.guest ||
+              AuthStatus.signedOut =>
+                const HomeShell(),
+              _ => const HomeShell(),
             },
     );
   }

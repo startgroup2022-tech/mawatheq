@@ -10,14 +10,20 @@ import '../../shared/widgets/brand_widgets.dart';
 /// The same endpoint returns the lawyer's queue for a lawyer token and the
 /// client's requests for a client token, so one screen serves both.
 class ConsultationsScreen extends StatefulWidget {
-  const ConsultationsScreen({super.key});
+  const ConsultationsScreen({super.key, this.repository});
+
+  /// The shared repository. Falls back to one built from the provided [ApiClient],
+  /// so an embedding that does not inject it still works — but a caller that wants
+  /// to control the network edge (a test, or the screenshot harness) can pass one
+  /// instead of the screen reaching for the global singleton.
+  final ApiRepository? repository;
 
   @override
   State<ConsultationsScreen> createState() => _ConsultationsScreenState();
 }
 
 class _ConsultationsScreenState extends State<ConsultationsScreen> {
-  final _repo = ApiRepository();
+  late final ApiRepository _repo = widget.repository ?? ApiRepository();
   List<Consultation> _all = const [];
   bool _loading = true;
   String? _error;
