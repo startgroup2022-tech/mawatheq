@@ -38,10 +38,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
 
         // flutter_local_notifications schedules notifications through java.time, which
-        // is not present on the API levels this app supports (minSdk 21). Without
-        // desugaring the scheduled-reminder path fails at runtime on older devices.
-        // The plugin requires desugaring even when only immediate notifications are
-        // used, so this is not optional while the dependency is present.
+        // is not present on the API levels this app supports (minSdk 24; java.time
+        // arrived in API 26). Without desugaring the scheduled-reminder path fails at
+        // runtime on older devices. The plugin requires desugaring even when only
+        // immediate notifications are used, so this is not optional while the
+        // dependency is present.
         isCoreLibraryDesugaringEnabled = true
     }
 
