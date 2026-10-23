@@ -2555,3 +2555,64 @@ git ls-remote <remote> refs/heads/<branch> | cut -f1
 Asset uploads go to `uploads.github.com`; `api.github.com` returns a bare 404 for the
 upload POST. Download the APK back and checksum it — a local `sha256sum` proves the bytes
 on disk, not the bytes served.
+
+## Execution 48 — the two buttons go below the slider, and "latest" is not "newest"
+
+### Where the two primary actions belong
+
+`احجز استشارة` and `اسأل المساعد الذكي` are **one row directly below the carousel**,
+rendered by `_PrimaryActions` in `home_tab.dart` — not inside a slide. Execution 43 had
+put them inside each slide to answer the "two static cards" complaint, which fixed that
+but broke this: the controls travelled with the banner and their labels were squeezed
+into the frame. Keep them outside. The carousel's job is the slides; the actions are a
+sibling of it.
+
+`ActionCard` is the *rejected* widget — a static card that goes nowhere. The actions are
+a real `FilledButton` and `OutlinedButton`. `exec43_home_slider_test.dart` asserts the
+widget types, asserts `ActionCard` is absent, and asserts the buttons' top is below the
+carousel's bottom, because "present somewhere on the screen" would pass for the wrong
+layout.
+
+### A screen that builds its own client cannot be tested
+
+`HomeTab` accepted an injected `repository` but never passed it to
+`ConsultationJourneyScreen` or `AssistantScreen`, so both fell back to `ApiRepository()`
+and talked to production. A fake transport was silently ignored and the assertion still
+passed. Any screen pushed from a screen that takes a repository must receive it.
+
+### `/releases/latest` is chosen by `published_at`, not `created_at`
+
+Recreating a release object (delete + create) refreshes `published_at`; editing one does
+not. When a corrected build must be the one `/releases/latest` resolves to — because
+that is the URL a customer is given — check it, do not assume the newest `created_at`
+wins:
+
+```bash
+curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+  https://api.github.com/repos/<owner>/<repo>/releases/latest | \
+  python3 -c "import sys,json;print(json.load(sys.stdin)['tag_name'])"
+```
+
+Deleting the release object leaves the git tag intact, so already-shared download URLs
+keep the same shape.
+
+### A `grep` for a compiled string must prove it can find one
+
+Dart AOT stores strings as **UTF-16LE** in `libapp.so`. A UTF-8 grep for an Arabic string
+returns nothing even when the string is compiled in — which is how "the APK does not
+contain the fix" gets concluded wrongly. Encode before searching, and include a negative
+control (`libflutter.so`):
+
+```python
+d = zipfile.ZipFile('app.apk').read('lib/arm64-v8a/libapp.so')
+assert 'احجز استشارة'.encode('utf-16-le') in d
+```
+
+### The delivered SQL file must be the one verified
+
+`MAWATHEQ_LEGAL_CLASSIFICATIONS_IMPORT.sql` **refuses to run** unless the `najiz_*`
+tables and the two `najiz_categories` customer columns already exist, raising
+`PLEASE RUN MAWATHEQ_DB_SCHEMA_FIX.sql FIRST` before writing any row. The order is
+`MAWATHEQ_DB_SCHEMA_FIX.sql` → the import → `MAWATHEQ_DB_VERIFY.sql`, and the result is
+7 / 38 / 234 / 640. Import the copy **downloaded from the release**, not the repo copy: a
+local file proves the working tree, not the bytes an operator receives.
