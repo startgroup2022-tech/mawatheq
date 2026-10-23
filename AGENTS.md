@@ -2405,3 +2405,68 @@ built from: verify with
 
 Note `exec43` and `exec44` releases already existed at baseline; Execution 45 is
 `v2026.10.23-exec45` (`1.3.1+5`), not a second `exec43`.
+
+## Execution 46 — approved lawyers invisible, and the setgid build guard
+
+### `lawyer_specialties` ships empty on purpose, so it cannot be the only way in
+
+`legal_journey_specialties()` and `legal_journey_lawyers_for_specialty()` used to require
+an explicit `lawyer_specialties` row. That table is created **empty** by
+`upgrade_v63.sql` — linking a lawyer to an expertise is an operator action, and inventing
+one would route a real customer to a lawyer who cannot help. The requirement therefore
+made *every* approved lawyer invisible: production showed seven specialties all at
+`lawyer_count: 0` while `lawyers.php` listed a real criminal-law lawyer.
+
+`legal_journey_lawyer_category_index()` is now the single source. A lawyer's categories
+are their explicit rows when any exist; only a lawyer with none falls back to their own
+`lawyers.specialization`, resolved through `legal_journey_specialization_categories()`
+against the **live category names** (never hardcoded ids). An explicit link always wins.
+A specialization outside the controlled list contributes nothing — silence, never a
+guess. Both readers derive from this one index, so the count and the list cannot
+disagree, which is the specific way this bug hid: `0 lawyers` looked like a fact.
+
+`tests/exec46_lawyer_visibility_test.php` pins all five properties. Note that
+`legal_journey_ready()` stays as it was — it must remain safe on an unmigrated database.
+
+### `chmod 755` does not clear a directory's setgid bit
+
+This is why `execution29_1_release_smoke_test` failed at baseline. `normalize()` in
+`tools/build_release.sh` used `chmod 755`, but a directory already at `2755` stays
+`2755` — so a source tree under a setgid parent (the checked-out `vendor/` is one)
+produced `2755` in the package and the `every packaged file is 644 or 755` guard could
+never be satisfied. Clear the special bits first:
+
+```bash
+find "$dir" -exec chmod a-s {} + 2>/dev/null
+find "$dir" -type d -exec chmod 755 {} +
+find "$dir" -type f -exec chmod 644 {} +
+```
+
+The symptom is a guard that reports a failure it seems to have just fixed. When a
+permissions guard and a `chmod` disagree, check the setuid/setgid/sticky bits.
+
+### The journey `alternative` is an object, not a string
+
+`api/v1/journey.php` sends `alternative` as `{reason, suggest, specialties}`. A client
+that reads it as a string puts the raw map on the customer's screen. The Dart model
+parses it into typed fields; the empty state shows one message and two real routes out
+(`المساعد الذكي` / `تواصل معنا`) and never a server diagnostic.
+
+### `exec33_najiz_classification_test` asserts `>= 2` import runs
+
+A manual import leaves `najiz_import_runs` with one row, so the suite fails
+`import runs recorded` and reads like a regression. It imports only when
+`najiz_categories` is empty, so leave the taxonomy empty on a fresh build, or truncate
+the taxonomy tables first. Running the suite alone (`php tests/…`) is the quickest way
+to tell this from a real failure.
+
+### Release assets are replaced, not accumulated
+
+A release tag can already exist from an earlier session and carry a **stale** APK — here
+`v2026.10.23-exec43` held a `v1.2.0+3` build while the branch was at `1.3.2+6`. Check
+the existing release before creating one (`already_exists` on `tag_name`), delete the
+superseded assets by id, upload the new ones, and move the tag
+(`git tag -f -a … && git push -f origin <tag>`) so it points at the commit the artifacts
+were built from. **Asset uploads go to `uploads.github.com`, not `api.github.com`** —
+the API host returns a bare 404 for the upload POST. A release DELETE of an asset
+returns **204 with an empty body**, so parse the response only when it is non-empty.
