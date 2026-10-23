@@ -2334,3 +2334,74 @@ Verifying an APK's contents (`lib/*/libapp.so` strings, `classes.dex`) works wit
 `s.encode('utf-16-le')`, and include a positive control (a string you know is compiled in) before
 concluding a miss.
 
+
+## Execution 45 — the fixes that hid behind the layer that was tested
+
+Two navigation defects in the Flutter app, both invisible at the layer the tests
+covered. This is the recurring shape worth remembering: **a widget that is only ever
+tested where its parent supplies the missing piece can be broken everywhere else.**
+
+### A screen that returns a bare `Column` works as a tab and dies as a route
+
+`AssistantScreen` returned a `Column` with no `Scaffold`. As a bottom-nav tab the
+shell supplies the `Scaffold`, so it rendered and the tab-level tests passed. Pushed
+as a route — which the home action *and* the journey's no-lawyer state both do — the
+`TextField` threw `No Material widget found`, and the screen arrived with no app bar
+and no way back. It now takes an `embedded` flag: `true` as a tab, `false` when
+pushed, in which case it supplies its own `Scaffold` and app bar. Any screen in this
+app that is reachable both ways needs the same treatment; test the *pushed* path,
+because that is the one nothing else exercises.
+
+### Sign-out must land on the home screen, not the sign-in form
+
+`account_screen.dart` pushed `LoginScreen` on sign-out. The product contract is that
+sign-in, registration, sign-out and session restore all land on the home screen, so
+sign-out now calls `enterGuest()` and opens `HomeShell`. A guest sees the same home as
+a signed-in user, minus account-specific data.
+
+### The RTL cross-axis trap, restated
+
+`Column(crossAxisAlignment: ...)` lays out on the **horizontal** axis, so under RTL
+`CrossAxisAlignment.end` resolves to the **left** edge. Arabic copy that should start
+at the right must use `CrossAxisAlignment.start`, which follows the text direction.
+The "obvious" `rtl ? end : start` is exactly backwards. Measure the margins
+(`tester.getTopLeft`/`getTopRight` on the text) rather than reading the code: the fix
+is only provable as a number (before: left 22 / right 211; after: left 211 / right 22).
+
+### The taxonomy SQL is verified by importing it, not by reading it
+
+`database/MAWATHEQ_LEGAL_CLASSIFICATIONS_IMPORT.sql` is the deliverable for the Najiz
+classification. Verify it the way that can fail: load `schema.sql` + every
+`upgrade_v*.sql` into a scratch database, import the file, and count. It lands
+**7 categories / 38 subcategories / 234 case types / 640 judicial requests**, and a
+second import inserts nothing (idempotent). `database/MAWATHEQ_DB_VERIFY.sql` reports
+all checks `OK` with zero orphans and zero duplicates.
+
+Deployment order matters and is not obvious: **v59 → v63 → import → v63 again.** v63
+derives `customer_desc_ar` / `customer_icon_key` from the existing rows, so its first
+run against an empty table writes nothing; the second run fills all seven.
+
+Never run `schema.sql` against an existing production database, and never import the
+taxonomy without owner authorization — the guide
+(`MAWATHEQ_TAXONOMY_IMPORT_GUIDE_AR.md`) makes the backup a prerequisite, not a
+suggestion.
+
+### Building the APK in a reset sandbox
+
+Three environment pieces are missing after a sandbox reset and each fails
+differently (see also the Execution 41 notes): `sudo apt-get install -y
+openjdk-21-jdk-headless`, `export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64`,
+`export ANDROID_HOME=/workspace/android-sdk` (and `ANDROID_SDK_ROOT` to match). The
+build takes ~4 minutes and must be backgrounded; poll on `pgrep -f GradleWrapperMain`,
+not the `flutter` command name, which the Gradle wrapper renames.
+
+### The release asset checksum must be taken from the *download*
+
+`sha256sum -c` on the local file proves the disk, not the bytes GitHub serves. Fetch
+the published URL back and compare — the APK is 60 MB and downloads in seconds, so
+there is no reason to skip it. The tag must also point at the commit the assets were
+built from: verify with
+`git ls-remote --tags <url> <tag>` against `git rev-parse HEAD`.
+
+Note `exec43` and `exec44` releases already existed at baseline; Execution 45 is
+`v2026.10.23-exec45` (`1.3.1+5`), not a second `exec43`.
