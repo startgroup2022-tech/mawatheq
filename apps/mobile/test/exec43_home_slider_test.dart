@@ -8,7 +8,6 @@ import 'package:mawatheq_mobile/core/guest_session.dart';
 import 'package:mawatheq_mobile/core/locale_controller.dart';
 import 'package:mawatheq_mobile/core/network/api_client.dart';
 import 'package:mawatheq_mobile/core/network/api_repository.dart';
-import 'package:mawatheq_mobile/core/network/models.dart';
 import 'package:mawatheq_mobile/core/storage/token_storage.dart';
 import 'package:mawatheq_mobile/core/theme/app_theme.dart';
 import 'package:mawatheq_mobile/core/theme/theme_controller.dart';
@@ -186,6 +185,55 @@ void main() {
       expect(find.text('عنوان المشغّل'), findsOneWidget);
       // The built-in copy is not shown when the operator has published one.
       expect(find.text('استشارتك القانونية بخطوات بسيطة'), findsNothing);
+    });
+  });
+
+  group('the slider moves on its own', () {
+    testWidgets('advances to the next slide after the dwell interval',
+        (tester) async {
+      // The heart of "a genuine slider, not two static cards": without a tick the
+      // page never changes. A `pumpAndSettle` cannot be used here — it would wait
+      // out the re-armed timer forever — so the clock is advanced explicitly.
+      final t = _FakeTransport((u) => _endpoints(u, banners: [], specialties: []));
+      final auth = _guest(t);
+
+      await tester.pumpWidget(_homeTab(auth: auth, repo: _repo(t)));
+      await tester.pumpAndSettle();
+
+      final view = tester.widget<PageView>(find.byType(PageView));
+      expect(view.controller!.page, 0);
+      expect(find.text('استشارتك القانونية بخطوات بسيطة'), findsOneWidget);
+
+      // Past the 4.5s dwell plus the 480ms transition.
+      await tester.pump(const Duration(milliseconds: 4600));
+      await tester.pump(const Duration(milliseconds: 600));
+
+      expect(view.controller!.page, 1);
+      // The second slide's subtitle is unique; its title also appears as the label
+      // of the assistant button below the slider.
+      expect(find.text('إجابات فورية مبنية على الأنظمة واللوائح'), findsOneWidget);
+    });
+
+    testWidgets('a manual swipe moves the slider too', (tester) async {
+      final t = _FakeTransport((u) => _endpoints(u, banners: [], specialties: []));
+      final auth = _guest(t);
+
+      await tester.pumpWidget(_homeTab(auth: auth, repo: _repo(t)));
+      await tester.pumpAndSettle();
+
+      final view = tester.widget<PageView>(find.byType(PageView));
+      // In RTL the PageView's scroll axis is reversed, so a rightward fling is the
+      // one that advances to the next slide. A fling rather than a plain drag, so
+      // the gesture clears the settle threshold on the narrow default surface.
+      await tester.fling(
+        find.byType(PageView),
+        const Offset(400, 0),
+        1200,
+      );
+      await tester.pumpAndSettle();
+
+      expect(view.controller!.page, 1);
+      expect(find.text('إجابات فورية مبنية على الأنظمة واللوائح'), findsOneWidget);
     });
   });
 
