@@ -2470,3 +2470,88 @@ superseded assets by id, upload the new ones, and move the tag
 were built from. **Asset uploads go to `uploads.github.com`, not `api.github.com`** —
 the API host returns a bare 404 for the upload POST. A release DELETE of an asset
 returns **204 with an empty body**, so parse the response only when it is non-empty.
+
+## Execution 47 — splash-screen hang, and the taxonomy SQL verified by importing it
+
+### A bounded *request* is not a bounded *screen*
+
+The app could sit on the splash screen for 30 seconds. `AuthController.restore()`
+awaited `GET /api/v1/me.php` and had no budget of its own, so it inherited
+`ApiClient`'s 30 s timeout — and nothing bounded the splash independently.
+`_showSplash` is `!_restored || !_splashDone`, so a request that completes the TCP
+handshake and then never answers (a captive portal, a hotel/airport Wi-Fi login wall,
+a loaded server) holds the logo for the full timeout. On a slower device that is
+indistinguishable from a hang.
+
+Three layers, innermost first, because each one alone is defeated by a future caller
+that forgets the one above it:
+
+| Layer | File | Budget |
+|---|---|---|
+| Session check | `lib/core/auth_controller.dart` | `restore()` → `startupTimeout` (5 s) |
+| Named budgets | `lib/core/config/app_config.dart` | `startupTimeout`, `splashCeiling` (8 s) |
+| Hard ceiling | `lib/app.dart` | 8 s `Timer`, cancelled when the check resolves |
+
+**The stored token is deliberately kept on a timeout.** An unreachable session is not a
+revoked one; clearing the token would sign a user out for a temporary network problem.
+`sessionExpired` stays down for the same reason — the welcome screen must not claim the
+session expired when it merely could not be reached.
+
+**The older startup tests could not catch this, and it is worth knowing why:** every one
+of them uses a fake transport that resolves on the next microtask, so `restore()` always
+finished before the splash was observable. `exec47_startup_hang_test.dart` drives the
+**real** `MawatheqApp` through the provider set `main.dart` supplies, with a transport
+that stalls `/me.php`. Omitting `ApiRepository` from that set is a real trap — `HomeShell`
+reads it, so a test without it is not exercising the shipping tree.
+
+### The taxonomy SQL is verified by applying it, on a database built like production
+
+`database/MAWATHEQ_LEGAL_CLASSIFICATIONS_IMPORT.sql` (292,050 bytes, SHA-256
+`10b09093e2ab3f4242efef5e00bb9105ddbf86bcd83df3d755b76816f1468134`) lands on exactly
+**7 categories / 38 subcategories / 234 case types / 640 judicial requests**, and a second
+run inserts nothing. It carries its own prerequisite guard and refuses with
+`PLEASE RUN MAWATHEQ_DB_SCHEMA_FIX.sql FIRST` rather than importing half the data.
+
+To reproduce that verification, build the scratch database as **`schema.sql` then the
+upgrades** — not the upgrades alone. `upgrade_v63.sql` creates `lawyer_specialties` with a
+foreign key to `lawyers`; on a database built from upgrades alone that table does not
+exist, so v63 dies with `errno: 150 "Foreign key constraint is incorrectly formed"`,
+MySQL stops the file at that statement, and the two `najiz_categories` presentation
+columns below it are never added. The import then correctly refuses — and the symptom
+looks like a bug in the import rather than the documented partial-schema failure mode.
+
+**Production already has the taxonomy**, confirmed live:
+`GET https://mawatheq.com/api/najiz_classify.php?action=stats` →
+`{"categories":7,"subcategories":38,"lawsuit_types":234,"judicial_requests":640}`. The SQL
+file is therefore a **disaster-recovery artifact**, not a pending import. Do not treat a
+missing import as the explanation for an empty journey on production; check the stats
+endpoint first.
+
+### Reading a minSdk off the artifact
+
+`minSdk = flutter.minSdkVersion` is Flutter's default, which appears nowhere in this repo.
+Read it from the built APK, never from a neighbouring comment or from memory:
+
+```bash
+aapt2 dump badging app-release.apk | grep -E "minSdkVersion|targetSdkVersion"
+# minSdkVersion:'24'   targetSdkVersion:'36'
+```
+
+`aapt2` and `apksigner` live in `/workspace/android-sdk/build-tools/35.0.0/`.
+
+### The release-tag trap, restated
+
+`v2026.10.23-exec43` already existed from an earlier session and carried a **stale**
+`v1.2.0+3` APK while the branch was at `1.3.2+6`. Before creating a release, check whether
+the tag exists and what it points at. Create with `target_commitish` set to the exact SHA
+the artifacts were built from, then confirm all three agree:
+
+```bash
+git rev-parse v<tag>^{commit}
+git rev-parse HEAD
+git ls-remote <remote> refs/heads/<branch> | cut -f1
+```
+
+Asset uploads go to `uploads.github.com`; `api.github.com` returns a bare 404 for the
+upload POST. Download the APK back and checksum it — a local `sha256sum` proves the bytes
+on disk, not the bytes served.
