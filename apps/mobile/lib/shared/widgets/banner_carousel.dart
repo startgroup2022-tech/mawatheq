@@ -265,8 +265,14 @@ class _BannerCarouselState extends State<BannerCarousel> {
                   // Bottom-aligned: the eyebrow stays at the top and the copy sits on
                   // the bottom edge, with the actions beneath it.
                   mainAxisAlignment: MainAxisAlignment.end,
-                  crossAxisAlignment:
-                      rtl ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                  // `start`, never `end`: the cross axis of a Column is horizontal,
+                  // and this Column is inside a [Directionality], so `start` resolves
+                  // to the right in Arabic and the left in English — the reading
+                  // edge in both. `end` is the opposite and put an Arabic headline
+                  // hard against the LEFT edge, but only when it did not wrap: a
+                  // title long enough to fill the width hides the misalignment,
+                  // which is why the shorter slides were the ones that looked wrong.
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // The top row: the eyebrow on the reading edge, and — only for a
                     // slide that actually has a destination — the "learn more" hint on
@@ -297,9 +303,9 @@ class _BannerCarouselState extends State<BannerCarousel> {
                           width: innerWidth,
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: rtl
-                                ? CrossAxisAlignment.end
-                                : CrossAxisAlignment.start,
+                            // Same rule as the outer column: `start` is the reading
+                            // edge once the ambient [Directionality] resolves it.
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Semantics(
                                 header: true,

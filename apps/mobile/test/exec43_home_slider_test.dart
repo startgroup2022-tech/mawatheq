@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http_base;
 import 'package:mawatheq_mobile/core/auth_controller.dart';
@@ -19,6 +20,7 @@ import 'package:mawatheq_mobile/features/home/home_tab.dart';
 import 'package:mawatheq_mobile/shared/widgets/banner_carousel.dart';
 import 'package:mawatheq_mobile/shared/widgets/brand_widgets.dart';
 import 'package:mawatheq_mobile/shared/widgets/home_slides.dart';
+import 'package:mawatheq_mobile/core/network/models.dart';
 import 'package:provider/provider.dart';
 
 /// Execution 43 — the home slider and the two primary actions.
@@ -463,6 +465,144 @@ void main() {
         tester.element(find.byType(BannerCarousel)),
       );
       expect(dir, TextDirection.rtl);
+    });
+
+    // The test above only proves the frame is RTL, which was never in doubt: the
+    // text was still drawn against the wrong edge. This one measures where the copy
+    // actually lands, which is the thing the owner can see.
+    //
+    // The regression it pins: the copy Column used `CrossAxisAlignment.end`. The
+    // cross axis of a Column is horizontal, so in RTL `end` resolves to the LEFT and
+    // the copy was pushed against the left edge.
+    //
+    // The headline has to be SHORT for this to be observable, and that is the whole
+    // trap. A headline wide enough to fill the Column stretches the Text to the full
+    // width, so both margins come out equal and a broken alignment measures as fine.
+    // Every built-in slide headline is long enough to wrap in the test font, which is
+    // why the first version of this test passed against the bug. The short banner
+    // below is the case that actually distinguishes the two layouts, and the built-in
+    // slides are swept afterwards so a future long-to-short edit is still covered.
+    testWidgets('Arabic copy is anchored to the RIGHT edge of its slide',
+        (tester) async {
+      tester.view.physicalSize = const Size(1080, 2280);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      // Deliberately short: it must not wrap, or the defect is invisible.
+      const shortSlide = HomeBanner(
+        id: 1,
+        titleAr: 'مرحباً',
+        titleEn: 'Welcome',
+        subtitleAr: 'أهلاً',
+        subtitleEn: 'Hi',
+      );
+
+      await tester.pumpWidget(MultiProvider(
+        providers: [
+          ChangeNotifierProvider<LocaleController>.value(
+            value: LocaleController(),
+          ),
+        ],
+        child: MaterialApp(
+          home: Directionality(
+            textDirection: TextDirection.rtl,
+            child: Scaffold(
+              body: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: BannerCarousel(
+                  banners: const [shortSlide],
+                  autoAdvance: false,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ));
+      await tester.pump(const Duration(milliseconds: 400));
+
+      final slideRect = tester.getRect(find.byType(BannerCarousel));
+      final titleRect = tester.getRect(find.text('مرحباً'));
+      final leftMargin = titleRect.left - slideRect.left;
+      final rightMargin = slideRect.right - titleRect.right;
+
+      expect(
+        rightMargin,
+        lessThan(leftMargin),
+        reason: 'the Arabic headline is not anchored to the right edge: '
+            'left margin ${leftMargin.toStringAsFixed(1)}, '
+            'right margin ${rightMargin.toStringAsFixed(1)}. A left-anchored '
+            'headline means the copy Column is using CrossAxisAlignment.end, which '
+            'resolves to the LEFT under RTL.',
+      );
+
+      final subRect = tester.getRect(find.text('أهلاً'));
+      expect(
+        slideRect.right - subRect.right,
+        lessThan(subRect.left - slideRect.left),
+        reason: 'the Arabic subtitle is not anchored to the right edge',
+      );
+    });
+
+    // The short-title case above proves the alignment rule; this sweep proves it holds
+    // for every slide that actually ships, including any headline added later.
+    testWidgets('every built-in slide keeps its copy inside the slide frame',
+        (tester) async {
+      tester.view.physicalSize = const Size(1080, 2280);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final t = _FakeTransport((u) => _endpoints(u, banners: [], specialties: []));
+      final auth = _guest(t);
+      await tester.pumpWidget(_homeTab(auth: auth, repo: _repo(t)));
+      await tester.pumpAndSettle();
+
+      final slideRect = tester.getRect(find.byType(BannerCarousel));
+      // Driven through the PageController rather than a drag: a swipe's direction is
+      // itself RTL-sensitive, and this test is about layout, not gestures.
+      final controller = tester
+          .widget<PageView>(find.byType(PageView))
+          .controller!;
+      var measured = 0;
+
+      for (var i = 0; i < kBuiltInHomeSlides.length; i++) {
+        controller.jumpToPage(i);
+        await tester.pumpAndSettle();
+
+        final slide = kBuiltInHomeSlides[i];
+        final title = find.text(slide.titleAr);
+        expect(
+          title,
+          findsOneWidget,
+          reason: 'slide $i ("${slide.titleAr}") did not render',
+        );
+
+        // The first character must land on the right half of the slide.
+        final para = tester.renderObject<RenderParagraph>(title);
+        final paraRect = tester.getRect(title);
+        final boxes = para.getBoxesForSelection(
+          const TextSelection(baseOffset: 0, extentOffset: 1),
+        );
+        expect(boxes, isNotEmpty, reason: 'slide $i title has no glyphs');
+        final firstGlyphX = paraRect.left + boxes.first.left;
+        final slideMidX = slideRect.left + slideRect.width / 2;
+        expect(
+          firstGlyphX,
+          greaterThan(slideMidX),
+          reason: 'slide $i ("${slide.titleAr}") draws its first character at '
+              'x=${firstGlyphX.toStringAsFixed(1)}, left of the slide midpoint '
+              '${slideMidX.toStringAsFixed(1)}',
+        );
+
+        // And the copy must sit inside the frame, not overhang it.
+        expect(paraRect.left, greaterThanOrEqualTo(slideRect.left - 1));
+        expect(paraRect.right, lessThanOrEqualTo(slideRect.right + 1));
+        measured++;
+      }
+
+      // A loop that measured nothing would pass vacuously.
+      expect(measured, kBuiltInHomeSlides.length);
     });
 
     testWidgets('the built-in slider renders in the dark theme', (tester) async {
