@@ -2192,3 +2192,54 @@ They prove the screens build, render, and handle canned JSON. They prove nothing
 booking, a production login, a real document upload or an AI call. Do not let a green suite stand in
 for those in a delivery report — list them as untested.
 
+## EXECUTION 43 — the "two static cards" home screen
+
+### The slider was conditional on a table that ships empty
+
+`home_tab.dart` rendered `BannerCarousel` **only when `GET /api/v1/banners.php` returned at least one
+row**. `home_banners` is created empty by `upgrade_v64.sql` on purpose (see Execution 38: never invent
+a promotion), so on production the carousel rendered `SizedBox.shrink()` and the top of the home was
+just the two action cards. That is precisely the owner's complaint, and it is the general shape to
+watch for: **an enhancement that is conditional on operator-supplied data looks like a missing
+feature on every fresh install.** `home_slides.dart` now supplies four built-in Mawatheq slides that
+render when the API returns none; published banners still take priority.
+
+### A `Timer` re-armed inside `initState` outlives `dispose`
+
+The carousel's auto-advance is a single cancellable `Timer?` re-armed after each move and cancelled in
+`dispose`, behind an `autoAdvance` flag, honouring `MediaQuery.disableAnimations`. A `Future.delayed`
+chain re-arms itself with no handle to cancel and keeps calling `setState` on a disposed state — the
+"passes alone, flakes in a suite" failure, because a short widget test finishes before the delay fires.
+
+### The swipe test must fling in the RTL-advance direction
+
+A `PageView` reverses its scroll axis under `Directionality.rtl`, so the fling that advances to the
+*next* slide is the **rightward** one (`Offset(+400, 0)`), not the leftward. The leftward fling is the
+one that goes back. An assertion of `page == 1` after a leftward fling fails with `Actual: <0.0>` and
+reads like a broken carousel.
+
+### The taller slider pushes lower sections out of the lazy build window
+
+`exec39_home_resilience_test` and `exec41_blank_screen_sweep_test` mounted the home on Flutter's
+default 800x600 test surface and asserted on sections below the slider. Adding ~206px of carousel put
+those sections outside the `ListView`'s lazy build window, so `find.text(...)` failed on widgets that
+are genuinely on the page. Set a phone surface (`1080x2280`, DPR 3.0) and `scrollUntilVisible`/`drag`
+to the section, which is what a person does anyway. **A test that asserts on an off-screen widget of a
+lazy list is asserting on the scroll position, not on the feature.**
+
+### `flutter.minSdkVersion` is 24 and the release is debug-signed
+
+Re-confirmed by reading the built artifact: `aapt2 dump badging` → `minSdkVersion:'24'
+targetSdkVersion:'36'`, `compileSdkVersion='37'`; `apksigner verify --print-certs` → `CN=Android Debug`.
+No `key.properties` exists in the repo, so this is expected. The APK carries the new slide strings in
+`lib/*/libapp.so` as UTF-16LE — search for a string you *know* is compiled in before concluding a
+`grep` proves an absence.
+
+### The release tag must be moved after the branch is pushed
+
+`target_commitish: main` creates the tag at `main` **at that moment**. The APK is built from the
+feature branch, so the tag landed one commit behind the built source. After creating the release, move
+it: `git tag -f -a <tag> -m "..." <commit>` then `git push -f origin <tag>`, and confirm
+`git rev-parse <tag>^{commit}` equals the built commit. A reader clicking the tag otherwise gets
+sources that do not match the APK.
+
