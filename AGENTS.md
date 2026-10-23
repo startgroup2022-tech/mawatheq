@@ -2258,6 +2258,58 @@ To make that capture reproducible without a live server: run the endpoint's own 
 through the real `ApiClient`/`ApiRepository` in a widget test. A hand-written stub only proves the
 test agrees with itself.
 
+## EXECUTION 44 — the bundled photo that was never bundled
+
+### `assets/` directory entries in pubspec are not recursive
+
+The four built-in slides named `assets/images/banners/banner_*.jpg` and the photos were on disk, but
+`pubspec.yaml` declared only `assets/images/`. Flutter does **not** descend into subdirectories of a
+declared asset directory, so none of the four files entered the bundle. At paint, `Image.asset`
+threw, the `errorBuilder` swapped in the brand gradient, and the slider rendered four flat panels —
+the exact complaint Execution 43 was opened to fix, while every test passed.
+
+The failure mode is the dangerous part: **an `errorBuilder` that degrades to a plausible fallback
+turns a missing asset into a silent visual regression.** Nothing logs, nothing throws visibly, and
+the screen still looks like a designed slider. `tests/exec43_home_slider_test.dart` now loads the
+real bytes for every built-in slide (`rootBundle.load(...)`), which is the only assertion that can
+distinguish "the photo rendered" from "the gradient rendered". Verify it bites by deleting the
+`- assets/images/banners/` line and watching the test fail with `Unable to load asset`. Check
+`build/unit_test_assets/` (or the APK's `assets/`) to confirm what actually shipped.
+
+### Photo provenance has to be recorded, and re-encoding destroys it
+
+Two of the four photos are **CC BY 2.0**, which requires attribution wherever they are redistributed;
+the other two are CC0/public-domain. The files arrived re-encoded, so EXIF and any source URL were
+stripped and the images alone cannot tell you their licence. They are recorded in
+`apps/mobile/IMAGE_ATTRIBUTION.md` — keep it beside the assets and update it when an image is
+swapped. The file deliberately lives at `apps/mobile/`, **not** under `assets/`, so it is not bundled
+into the APK.
+
+### Two more silent-fallback traps in this area
+
+- **A dead asset path is indistinguishable from a missing file.** One slide pointed at
+  `banner_desk.jpg`; the file is `banner_office.jpg`. Same gradient fallback, same silence.
+- **`_NoLawyerState` keyed its language off the ambient `Directionality`.** The journey screen is
+  Arabic-only (it is driven by the Arabic taxonomy), so under an LTR widget-test harness the empty
+  state rendered English and the assertion failed. Match the screen's own convention — it has no
+  English variant — rather than inferring a locale from the frame.
+
+### `pumpAndSettle` never returns once a screen shows `LoadingSkeleton`
+
+The journey and assistant screens render `LoadingSkeleton`, whose `AnimationController` runs
+`repeat(reverse: true)`, so the frame scheduler never goes idle and `pumpAndSettle` times out after
+10s. Pump explicit frames (`pump()` then `pump(Duration(milliseconds: 400))`) in any test whose
+destination is one of those screens.
+
+### A widget-test repository must share the session's token store
+
+`_signedIn()` built the `AuthController` and the `ApiRepository` on **separate** `_MemoryTokenStore`
+instances, so the token `signIn` wrote was not the one the home's request read; the client then fell
+through to the default `TokenStorage` → `flutter_secure_storage`, whose platform channel never
+answers in a widget test. The home sat on its skeleton forever and the test failed as a
+`pumpAndSettle` timeout that pointed at the destination screen rather than at the harness. Pass one
+store to both.
+
 ### `putenv()` inside the PHP script does not beat a pre-set environment
 
 `config/config.php` reads `getenv()`, and a variable already exported by the shell wins over a
