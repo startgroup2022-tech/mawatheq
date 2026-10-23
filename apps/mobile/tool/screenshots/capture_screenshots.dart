@@ -82,12 +82,13 @@ const _banners = [
 ];
 
 const _specialties = [
-  {'id': 1, 'name': 'الأحوال الشخصية', 'icon_key': 'family', 'lawyer_count': 4},
-  {'id': 2, 'name': 'القضايا التجارية', 'icon_key': 'commercial', 'lawyer_count': 3},
-  {'id': 3, 'name': 'القضايا العمالية', 'icon_key': 'labor', 'lawyer_count': 2},
-  {'id': 4, 'name': 'العقارات والملكية', 'icon_key': 'property', 'lawyer_count': 5},
-  {'id': 5, 'name': 'القضايا الجزائية', 'icon_key': 'criminal', 'lawyer_count': 1},
-  {'id': 6, 'name': 'الملكية الفكرية', 'icon_key': 'ip', 'lawyer_count': 0},
+  {'id': 1, 'name': 'الأحوال الشخصية', 'description': 'شؤون الأسرة: الزواج والطلاق والنفقة والحضانة والميراث.', 'icon_key': 'family', 'lawyer_count': 0},
+  {'id': 2, 'name': 'الدعاوى التجارية', 'description': 'النزاعات التجارية والشركات والعقود والأوراق التجارية والإفلاس.', 'icon_key': 'commercial', 'lawyer_count': 0},
+  {'id': 3, 'name': 'الدعاوى العمالية', 'description': 'نزاعات العمل: حقوق وواجبات العامل وصاحب العمل ومستحقات نهاية الخدمة.', 'icon_key': 'labor', 'lawyer_count': 0},
+  {'id': 4, 'name': 'الدعاوى الجزائية', 'description': 'القضايا الجزائية والمطالبات المالية الناشئة عن الجرائم.', 'icon_key': 'criminal', 'lawyer_count': 0},
+  {'id': 5, 'name': 'الدعاوى العامة', 'description': 'الدعاوى المدنية والعقارية والعقود والتحكيم.', 'icon_key': 'general', 'lawyer_count': 0},
+  {'id': 6, 'name': 'دعاوى التنفيذ', 'description': 'تنفيذ الأحكام والسندات التنفيذية والمنازعات المتعلقة بها.', 'icon_key': 'enforcement', 'lawyer_count': 0},
+  {'id': 7, 'name': 'الدعاوى المتعلقة بالإنهاءات', 'description': 'إنهاءات الأوقاف والمواريث والصكوك والولايات.', 'icon_key': 'endowments', 'lawyer_count': 0},
 ];
 
 const _issueTypes = [
@@ -148,6 +149,22 @@ Future<(int, Object)> _apiNoBanners(Uri uri) async {
   if (p.endsWith('/journey.php') &&
       uri.queryParameters['action'] == 'specialties') {
     return (200, {'ok': true, 'specialties': <Object>[], 'ready': true});
+  }
+  return _api(uri);
+}
+
+/// The production state *after* MAWATHEQ_LEGAL_CLASSIFICATIONS_IMPORT.sql: still no
+/// operator banners, so the built-in slides carry the carousel, and the seven real
+/// categories now arrive from the server. `_specialties` holds the names and
+/// descriptions the import actually writes.
+Future<(int, Object)> _apiImportedTaxonomy(Uri uri) async {
+  final p = uri.path;
+  if (p.endsWith('/banners.php')) {
+    return (200, {'ok': true, 'banners': <Object>[]});
+  }
+  if (p.endsWith('/journey.php') &&
+      uri.queryParameters['action'] == 'specialties') {
+    return (200, {'ok': true, 'specialties': _specialties, 'ready': true});
   }
   return _api(uri);
 }
@@ -397,6 +414,30 @@ void main() {
       'احجز استشارة',
       'اسأل المساعد الذكي',
       'اختر تخصصك القانوني',
+    ]);
+  });
+
+  testWidgets('guest home with the imported taxonomy', (tester) async {
+    // The state production reaches after MAWATHEQ_LEGAL_CLASSIFICATIONS_IMPORT.sql:
+    // still no operator banners, so the built-in slider carries the carousel, and the
+    // seven real categories now come from the server. The names below are the ones the
+    // import writes, not invented placeholders — a screenshot of fake data would prove
+    // nothing about the delivery.
+    final t = _FakeTransport(_apiImportedTaxonomy);
+    await tester.pumpWidget(_app(
+      auth: await _auth(t),
+      repo: _repo(t),
+      home: HomeShell(repository: _repo(t)),
+    ));
+    await _settle(tester);
+    await _shot(tester, '11_guest_home_imported_taxonomy.png', <String>[
+      'استشارتك القانونية بخطوات بسيطة',
+      'احجز استشارة',
+      'اسأل المساعد الذكي',
+      'اختر تخصصك القانوني',
+      'الدعاوى العمالية',
+      'دعاوى التنفيذ',
+      'الدعاوى المتعلقة بالإنهاءات',
     ]);
   });
 
