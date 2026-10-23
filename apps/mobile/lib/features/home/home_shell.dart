@@ -61,7 +61,7 @@ class _HomeShellState extends State<HomeShell> {
         case 1:
           return const CasesScreen();
         case 2:
-          return const AssistantScreen();
+          return const AssistantScreen(embedded: true);
         case 3:
           return const DocumentsScreen();
         case 4:

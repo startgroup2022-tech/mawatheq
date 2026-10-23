@@ -9,7 +9,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/theme/theme_controller.dart';
 import '../../shared/widgets/brand_widgets.dart';
-import '../auth/login_screen.dart';
+import '../home/home_shell.dart';
 import '../public/pricing_screen.dart';
 
 /// Profile, permissions, invoices and session controls.
@@ -234,8 +234,12 @@ class _AccountScreenState extends State<AccountScreen> {
 
             await context.read<AuthController>().signOut();
             if (!context.mounted) return;
+            // Signing out returns to the product as a guest, not to the sign-in
+            // form. The shell renders the same home for a guest, so the customer
+            // keeps their place instead of being dropped on a wall.
+            context.read<AuthController>().enterGuest();
             Navigator.of(context).pushAndRemoveUntil(
-              MaterialPageRoute(builder: (_) => const LoginScreen()),
+              MaterialPageRoute(builder: (_) => const HomeShell()),
               (route) => false,
             );
           },
