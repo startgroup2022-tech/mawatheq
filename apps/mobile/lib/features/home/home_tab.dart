@@ -14,6 +14,7 @@ import '../../shared/widgets/auth_gate.dart';
 import '../../shared/widgets/banner_carousel.dart';
 import '../../shared/widgets/banner_link_screen.dart';
 import '../../shared/widgets/brand_widgets.dart';
+import '../../shared/widgets/home_slides.dart';
 import '../assistant/assistant_screen.dart';
 import '../consultations/consultations_screen.dart';
 import '../consultations/journey_screen.dart';
@@ -166,6 +167,20 @@ class _HomeTabState extends State<HomeTab> {
   /// which do not listen — a listening read outside build is an error.
   bool get _rtl => context.watch<LocaleController?>()?.isRtl ?? true;
 
+  /// The slides the carousel shows: the operator's banners when there are any,
+  /// otherwise the built-in Mawatheq slides. This is what keeps a genuine slider on
+  /// the home screen even on a fresh install where `home_banners` is empty — the
+  /// state that previously left only the two action cards at the top of the page.
+  List<HomeBanner> get _slides =>
+      _banners.isNotEmpty ? _banners : kBuiltInHomeSlides;
+
+  /// The specialty cards. The backend list wins; when it is empty — the state of a
+  /// database whose Najiz classification has not been imported — the seven real
+  /// categories are shown so the section is never a blank box. The server list has
+  /// live lawyer counts, so it is preferred whenever it exists.
+  List<JourneySpecialty> get _specialtyCards =>
+      _specialties.isNotEmpty ? _specialties : kBuiltInSpecialties;
+
   @override
   Widget build(BuildContext context) {
     final rtl = _rtl;
@@ -183,15 +198,15 @@ class _HomeTabState extends State<HomeTab> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
         children: [
-          // 1. Slider. Rendered only when the operator has published banners: an
-          // empty frame with a large blank area is what made the home look broken.
-          if (_banners.isNotEmpty) ...[
-            BannerCarousel(
-              banners: _banners,
-              onTap: (banner) => _openBanner(banner),
-            ),
-            const SizedBox(height: 18),
-          ],
+          // 1. Slider. Always present: an operator banner when one is published,
+          // otherwise the built-in Mawatheq slides. It used to render nothing at all
+          // when the server sent no banners, which is the normal fresh-install state
+          // — so the top of the home screen was just the two action cards.
+          BannerCarousel(
+            banners: _slides,
+            onTap: (banner) => _openBanner(banner),
+          ),
+          const SizedBox(height: 18),
 
           // A failed section is reported inline, above content that still works,
           // with a retry. It must never replace the screen.
@@ -222,7 +237,7 @@ class _HomeTabState extends State<HomeTab> {
           ),
           const SizedBox(height: 14),
           _SpecialtyGrid(
-            specialties: _specialties,
+            specialties: _specialtyCards,
             rtl: rtl,
             onTap: _openSpecialty,
           ),
@@ -265,6 +280,11 @@ class _HomeTabState extends State<HomeTab> {
 
   /// Tapping a specialty opens the journey already scoped to it, so the customer
   /// does not pick the same specialty twice.
+  ///
+  /// A fallback card (shown because the server had no taxonomy) opens the journey at
+  /// its own first step instead: the id it carries is not a server id, so pre-scoping
+  /// to it would send the customer into an empty step. The journey then shows
+  /// whatever the backend actually has.
   void _openSpecialty(JourneySpecialty specialty) {
     if (!(_auth?.isSignedIn ?? false)) {
       // The visitor is told which service needs an account, and their intent is
@@ -272,7 +292,9 @@ class _HomeTabState extends State<HomeTab> {
       requireAccount(context, ProtectedDestination.consultations);
       return;
     }
-    _openJourney(specialty: specialty);
+    _openJourney(
+      specialty: _specialties.isEmpty ? null : specialty,
+    );
   }
 
   /// The assistant entry point.
@@ -349,14 +371,19 @@ class _HomeTabState extends State<HomeTab> {
     }
   }
 
-  /// A banner destination is resolved server-side; the app only maps the type onto
-  /// a local action. An external link is shown in full before leaving the app.
+  /// A slide destination is resolved server-side; the app only maps the type onto
+  /// a local action. An external link is shown in full before leaving the app. A
+  /// built-in slide uses the same vocabulary, so there is no special case for it.
   void _openBanner(HomeBanner banner) {
     switch (banner.linkType) {
       case 'url':
         Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => BannerLinkScreen(banner: banner)),
         );
+      case 'assistant':
+        _openAssistant();
+      case 'lawyers':
+        _openLawyers();
       case 'category':
       case 'specialty':
         _startBooking();

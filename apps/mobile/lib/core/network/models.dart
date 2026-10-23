@@ -384,11 +384,15 @@ class LawyerProfile {
   }
 }
 
-/// A home-screen slider banner, from `GET /api/v1/banners.php`.
+/// A home-screen slider slide.
 ///
-/// Every field is operator-supplied through `/admin/banners.php`; nothing is
-/// synthesized on the client. An empty list is the normal state of a fresh install,
-/// and the home screen shows its empty state rather than inventing a promotion.
+/// An operator banner comes from `GET /api/v1/banners.php` and every field is
+/// operator-supplied through `/admin/banners.php`. When the server sends none — the
+/// normal state of a fresh install, since `home_banners` ships empty on purpose —
+/// the home screen falls back to the built-in Mawatheq slides in
+/// `shared/widgets/home_slides.dart`, which are a description of the product rather
+/// than a fabricated promotion. The optional `eyebrow`/`iconKey`/`gradientKey`
+/// fields are client-only and empty for an operator banner.
 class HomeBanner {
   const HomeBanner({
     required this.id,
@@ -401,6 +405,10 @@ class HomeBanner {
     this.altEn = '',
     this.linkType = 'none',
     this.linkTarget,
+    this.eyebrowAr = '',
+    this.eyebrowEn = '',
+    this.iconKey = '',
+    this.gradientKey = '',
   });
 
   final int id;
@@ -408,6 +416,26 @@ class HomeBanner {
   final String titleEn;
   final String subtitleAr;
   final String subtitleEn;
+
+  /// A short label above the title, e.g. "مواثيق". Client-only: the server never
+  /// sends it, and it is empty for an operator banner.
+  final String eyebrowAr;
+  final String eyebrowEn;
+
+  /// The icon that illustrates a built-in slide, resolved through
+  /// `specialty_icons.dart` (`family`, `commercial`, ...). Client-only.
+  final String iconKey;
+
+  /// Which brand gradient a built-in slide paints, one of the keys understood by
+  /// the carousel (`navy`, `teal`, `gold`, `deep`). Client-only.
+  final String gradientKey;
+
+  /// True for a slide Mawatheq ships itself rather than one an operator uploaded.
+  /// A built-in slide has no image and draws a branded gradient instead.
+  bool get isPromo => imagePath.isEmpty && iconKey.isNotEmpty;
+
+  String eyebrow(bool isRtl) =>
+      isRtl ? eyebrowAr : (eyebrowEn.isEmpty ? eyebrowAr : eyebrowEn);
 
   /// Relative to the site root, e.g. `uploads/banners/ab12.jpg`. The client resolves
   /// it against [AppConfig.siteBase] so the server does not have to know which host

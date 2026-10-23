@@ -376,8 +376,11 @@ void main() {
       expect(find.text('لفترة محدودة'), findsOneWidget);
     });
 
-    testWidgets('no banners means no slider at all, not an empty frame',
+    testWidgets('no operator banners still shows the built-in slider',
         (tester) async {
+      // The home must never lose its slider. On a fresh install `home_banners` is
+      // empty, so the built-in Mawatheq slides carry it instead of the top of the
+      // screen collapsing to a bare pair of action cards.
       final transport = _FakeTransport((uri) async {
         if (uri.path.endsWith('/banners.php')) {
           return (200, {'ok': true, 'banners': []});
@@ -397,8 +400,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byType(BannerCarousel), findsNothing);
-      expect(find.byType(PageView), findsNothing);
+      expect(find.byType(BannerCarousel), findsOneWidget);
+      expect(find.byType(PageView), findsOneWidget);
+      // The first built-in slide is on screen.
+      expect(find.text('استشارتك القانونية بخطوات بسيطة'), findsOneWidget);
       // The rest of the home screen still renders.
       expect(find.text('اختر تخصصك القانوني'), findsOneWidget);
     });
@@ -446,9 +451,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // One failing section must not take the page down with it.
+      // One failing section must not take the page down with it. A failed banner
+      // request falls back to the built-in slides, so the slider is still there and
+      // the specialties still render.
       expect(find.text('الأحوال الشخصية'), findsOneWidget);
-      expect(find.byType(BannerCarousel), findsNothing);
+      expect(find.byType(BannerCarousel), findsOneWidget);
+      expect(find.text('استشارتك القانونية بخطوات بسيطة'), findsOneWidget);
     });
 
     testWidgets('shows no private data — no case, document or user content',

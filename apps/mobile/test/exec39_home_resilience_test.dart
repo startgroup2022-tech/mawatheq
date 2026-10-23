@@ -80,6 +80,28 @@ Widget _home(ApiRepository repo) => MultiProvider(
       ),
     );
 
+/// Gives the test the shape of a phone. The default 800x600 surface is a
+/// tablet-ish window; the home is a scrolling page and the lower sections are only
+/// built once they are scrolled into view, so a phone surface plus a scroll is how
+/// a customer actually reaches them.
+void _phoneSurface(WidgetTester tester) {
+  tester.view.physicalSize = const Size(1080, 2280);
+  tester.view.devicePixelRatio = 3.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+}
+
+/// Scrolls the home until [text] is on screen, then settles. The home is a
+/// `ListView`, so a section below the fold is not in the widget tree yet.
+Future<void> _scrollTo(WidgetTester tester, String text) async {
+  await tester.scrollUntilVisible(
+    find.text(text),
+    300,
+    scrollable: find.byType(Scrollable).first,
+  );
+  await tester.pumpAndSettle();
+}
+
 void main() {
   group('Server error messages are localized', () {
     test('the English 500 body is replaced with Arabic', () {
@@ -132,15 +154,20 @@ void main() {
   group('The home screen never blanks itself', () {
     testWidgets('a missing banners endpoint still renders the whole home',
         (tester) async {
+      _phoneSurface(tester);
       await tester.pumpWidget(_home(_repo(_productionWhileBroken)));
       await tester.pumpAndSettle();
 
       // The regression: the whole home must survive the failure, not just the
-      // error notice. The primary actions, the specialty section and the services
-      // are all still there.
+      // error notice. The primary actions and the specialty section are above the
+      // fold; the services are reached by scrolling, as a customer would.
       expect(find.text('احجز استشارة'), findsOneWidget);
       expect(find.text('اسأل المساعد الذكي'), findsOneWidget);
       expect(find.text('اختر تخصصك القانوني'), findsOneWidget);
+      // A missing banners endpoint falls back to the built-in slider, not to a gap.
+      expect(find.text('استشارتك القانونية بخطوات بسيطة'), findsOneWidget);
+
+      await _scrollTo(tester, 'خدمات مواثيق');
       expect(find.text('خدمات مواثيق'), findsOneWidget);
       expect(find.text('الاستشارات القانونية'), findsOneWidget);
       expect(find.text('دليل المحامين'), findsOneWidget);
@@ -149,28 +176,33 @@ void main() {
 
     testWidgets('the failure is reported inline with a retry, not as a page',
         (tester) async {
+      _phoneSurface(tester);
       await tester.pumpWidget(_home(_repo(_productionWhileBroken)));
       await tester.pumpAndSettle();
 
       expect(find.textContaining('إعادة المحاولة'), findsOneWidget);
       // The notice must not be a full-screen replacement.
+      await _scrollTo(tester, 'خدمات مواثيق');
       expect(find.text('خدمات مواثيق'), findsOneWidget);
     });
 
-    testWidgets('the specialties section states its empty case', (tester) async {
+    testWidgets('the specialties section shows the real categories, not a blank box',
+        (tester) async {
+      _phoneSurface(tester);
       await tester.pumpWidget(_home(_repo(_productionWhileBroken)));
       await tester.pumpAndSettle();
 
-      expect(
-        find.text('لا توجد تخصصات منشورة بعد'),
-        findsOneWidget,
-      );
-      // The state explains what happens next rather than leaving a blank frame.
-      expect(find.textContaining('ستظهر التخصصات القانونية'), findsOneWidget);
+      // With no taxonomy on the server the seven real categories are shown, so the
+      // section is never an empty frame. This replaced the old empty-state copy:
+      // the home must present the legal specialties even before the import runs.
+      expect(find.text('اختر تخصصك القانوني'), findsOneWidget);
+      expect(find.text('الأحوال الشخصية'), findsOneWidget);
+      expect(find.text('الدعاوى التجارية'), findsOneWidget);
     });
 
     testWidgets('all published specialties are shown, not a truncated prefix',
         (tester) async {
+      _phoneSurface(tester);
       final specialties = <Map<String, Object?>>[
         for (var i = 1; i <= 12; i++)
           {'id': i, 'name': 'تخصص رقم $i', 'icon_key': 'x', 'lawyer_count': 1},

@@ -138,6 +138,20 @@ const _lawyers = [
   },
 ];
 
+/// The production state while the taxonomy import has not been run: no operator
+/// banners and no server specialties. Everything else is the normal fixture.
+Future<(int, Object)> _apiNoBanners(Uri uri) async {
+  final p = uri.path;
+  if (p.endsWith('/banners.php')) {
+    return (200, {'ok': true, 'banners': <Object>[]});
+  }
+  if (p.endsWith('/journey.php') &&
+      uri.queryParameters['action'] == 'specialties') {
+    return (200, {'ok': true, 'specialties': <Object>[], 'ready': true});
+  }
+  return _api(uri);
+}
+
 Future<(int, Object)> _api(Uri uri) async {
   final p = uri.path;
   if (p.endsWith('/auth/login.php')) {
@@ -364,6 +378,25 @@ void main() {
       'اختر تخصصك القانوني',
       'الأحوال الشخصية',
       'زائر',
+    ]);
+  });
+
+  testWidgets('guest home fresh install (built-in slider)', (tester) async {
+    // The production state: `home_banners` is empty, so the built-in Mawatheq
+    // slides carry the carousel. This is the shot that proves the home is not just
+    // two static cards.
+    final t = _FakeTransport(_apiNoBanners);
+    await tester.pumpWidget(_app(
+      auth: await _auth(t),
+      repo: _repo(t),
+      home: HomeShell(repository: _repo(t)),
+    ));
+    await _settle(tester);
+    await _shot(tester, '10_guest_home_fresh_slider.png', <String>[
+      'استشارتك القانونية بخطوات بسيطة',
+      'احجز استشارة',
+      'اسأل المساعد الذكي',
+      'اختر تخصصك القانوني',
     ]);
   });
 
