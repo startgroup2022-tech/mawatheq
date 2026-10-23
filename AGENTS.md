@@ -2243,3 +2243,42 @@ it: `git tag -f -a <tag> -m "..." <commit>` then `git push -f origin <tag>`, and
 `git rev-parse <tag>^{commit}` equals the built commit. A reader clicking the tag otherwise gets
 sources that do not match the APK.
 
+### A screenshot fixture is a claim about the product, so it must hold real data
+
+`capture_screenshots.dart`'s `_specialties` held invented names (`الملكية الفكرية`,
+`العقارات والملكية`) that the taxonomy import never writes, so `01`/`02`/`03` showed a taxonomy the
+platform does not have — and two of the real keys (`enforcement`, `endowments`) were absent, which is
+how the missing icons went unnoticed. A golden is evidence; fabricated data in it is evidence of
+nothing. The fixture now carries the seven real categories and descriptions, captured from the
+endpoint against an imported database.
+
+To make that capture reproducible without a live server: run the endpoint's own include
+(`config/config.php` + `includes/legal_journey.php`) in a CLI script with
+`MAWATHEQ_DB_NAME`/`MAWATHEQ_DB_USER`/`MAWATHEQ_DB_PASS` exported, then feed the emitted JSON
+through the real `ApiClient`/`ApiRepository` in a widget test. A hand-written stub only proves the
+test agrees with itself.
+
+### `putenv()` inside the PHP script does not beat a pre-set environment
+
+`config/config.php` reads `getenv()`, and a variable already exported by the shell wins over a
+`putenv()` call made later in the same script — so a probe that sets its DB name in PHP connects to
+whatever the shell exported, or to nothing, and appears to hang or fail for the wrong reason. Export
+on the command line (`MAWATHEQ_DB_NAME=… php probe.php`). A probe that then *hangs* rather than
+erroring is usually this.
+
+### GitHub release assets are CDN-cached; verify with a cache-buster
+
+After replacing an asset (`DELETE` then re-`POST` to `uploads.github.com`), an immediate download of
+`SHA256SUMS.txt` can still serve the **previous** bytes, so `sha256sum -c` reports the just-updated
+file as `FAILED` while every other file passes. The upload is fine; the edge cache is stale. Re-fetch
+with `?cb=$(date +%s%N)` and `Cache-Control: no-cache` before concluding a checksum is wrong. Build
+`SHA256SUMS.txt` from the **downloaded** bytes, not from the working tree, or a mid-run asset update
+leaves the manifest describing a file that no longer exists.
+
+### `unzip` is not installed; use Python's `zipfile`
+
+Verifying an APK's contents (`lib/*/libapp.so` strings, `classes.dex`) works with
+`zipfile.ZipFile(...).read(...)`. Dart AOT strings are UTF-16LE, so search
+`s.encode('utf-16-le')`, and include a positive control (a string you know is compiled in) before
+concluding a miss.
+
