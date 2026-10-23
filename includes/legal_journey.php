@@ -158,8 +158,20 @@ function legal_journey_lawyer_category_index(PDO $pdo): array {
     if (!legal_journey_ready($pdo)) return $GLOBALS['__legal_journey_cat_index'] = $index;
 
     try {
-        // Explicit links, keyed by lawyer. Presence of any key means "this lawyer was
-        // placed by hand", so the declared specialization must not add to it.
+        $catIdByName = [];
+        $activeCatIds = [];
+        foreach ($pdo->query("SELECT id, name_ar FROM najiz_categories WHERE is_active = 1")->fetchAll() as $r) {
+            $catIdByName[trim((string)$r['name_ar'])] = (int)$r['id'];
+            $activeCatIds[(int)$r['id']] = true;
+        }
+
+        // Explicit links, keyed by lawyer. Only a link to a **live** category counts:
+        // retiring a category sets is_active = 0 and deliberately does not delete the
+        // row (the FK is RESTRICT), so the stale link survives. Counting it would place
+        // the lawyer in a specialty the customer can no longer see — and, because an
+        // explicit link suppresses the declared-specialization fallback, it would hide
+        // them from every other specialty too. A retired link is therefore ignored, not
+        // treated as a considered statement.
         $explicit = [];
         $rows = $pdo->query(
             "SELECT ls.lawyer_id, ls.category_id
@@ -168,12 +180,9 @@ function legal_journey_lawyer_category_index(PDO $pdo): array {
               WHERE l.status = 'approved'"
         )->fetchAll();
         foreach ($rows as $r) {
-            $explicit[(int)$r['lawyer_id']][] = (int)$r['category_id'];
-        }
-
-        $catIdByName = [];
-        foreach ($pdo->query("SELECT id, name_ar FROM najiz_categories WHERE is_active = 1")->fetchAll() as $r) {
-            $catIdByName[trim((string)$r['name_ar'])] = (int)$r['id'];
+            $cid = (int)$r['category_id'];
+            if (!isset($activeCatIds[$cid])) continue;
+            $explicit[(int)$r['lawyer_id']][] = $cid;
         }
 
         $map = legal_journey_specialization_categories();
@@ -181,7 +190,10 @@ function legal_journey_lawyer_category_index(PDO $pdo): array {
 
         foreach ($lawyers as $lw) {
             $lid = (int)$lw['id'];
-            if (isset($explicit[$lid])) {
+            // An explicit link wins only while it still resolves to a live category.
+            // When every link was retired, the lawyer's own declared specialization
+            // speaks for them again rather than leaving them undiscoverable.
+            if (!empty($explicit[$lid])) {
                 $cats = $explicit[$lid];
             } else {
                 $cats = [];

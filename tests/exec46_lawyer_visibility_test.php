@@ -175,6 +175,58 @@ try {
     }
     check('every mapped category name exists in the classification', $unresolved === []);
     check('the map covers the platform\'s specialization dropdown', count($map) >= 13);
+
+    /* ---------------------------------------------------------------------
+     * 6. A link to a retired category must not hide the lawyer
+     *
+     * Retiring a category sets is_active = 0 and deliberately does not delete
+     * the row (the FK is RESTRICT), so the `lawyer_specialties` link survives.
+     * Counting that stale link placed the lawyer in a specialty the customer
+     * can no longer see — and because an explicit link suppresses the declared
+     * fallback, it also hid them from every other specialty.
+     * ------------------------------------------------------------------- */
+    section('6. A link to a retired category does not hide the lawyer');
+
+    $retiredSpec = 'قانون جنائي';                       // maps to الدعاوى الجزائية
+    $criminal = $catByName['الدعاوى الجزائية'] ?? 0;
+    $victim = seed_lawyer($pdo, $suffix, $retiredSpec);
+
+    // Give the lawyer an explicit link to a category that is then retired.
+    $linkCat = (int)$pdo->query("SELECT id FROM najiz_categories WHERE is_active = 1 LIMIT 1")->fetchColumn();
+    $pdo->prepare("INSERT INTO lawyer_specialties (lawyer_id, category_id) VALUES (?,?)")
+        ->execute([$victim, $linkCat]);
+    $pdo->prepare("UPDATE najiz_categories SET is_active = 0 WHERE id = ?")->execute([$linkCat]);
+    legal_journey_flush_cache();
+
+    $idsAfterRetire = array_map(
+        fn($l) => (int)$l['id'],
+        legal_journey_lawyers_for_specialty($pdo, $criminal)
+    );
+    check(
+        'a lawyer whose only explicit link is retired falls back to their declared specialty',
+        in_array($victim, $idsAfterRetire, true)
+    );
+
+    // Restore the category and confirm the explicit link takes over again.
+    $pdo->prepare("UPDATE najiz_categories SET is_active = 1 WHERE id = ?")->execute([$linkCat]);
+    legal_journey_flush_cache();
+
+    $idsAfterRestore = array_map(
+        fn($l) => (int)$l['id'],
+        legal_journey_lawyers_for_specialty($pdo, $criminal)
+    );
+    check(
+        'a live explicit link still wins over the declared specialization',
+        !in_array($victim, $idsAfterRestore, true)
+    );
+    $linkedIds = array_map(
+        fn($l) => (int)$l['id'],
+        legal_journey_lawyers_for_specialty($pdo, $linkCat)
+    );
+    check('the live explicit link places the lawyer in that specialty', in_array($victim, $linkedIds, true));
+
+    $pdo->prepare("DELETE FROM lawyer_specialties WHERE lawyer_id = ?")->execute([$victim]);
+    legal_journey_flush_cache();
 } finally {
     // Cleanup: remove exactly the rows this run created.
     if ($seeded) {
