@@ -59,10 +59,6 @@ class _HomeTabState extends State<HomeTab> {
   List<HomeBanner> _banners = const [];
   List<JourneySpecialty> _specialties = const [];
 
-  /// The assistant's real provider state. Unknown until the server answers, and it
-  /// is fetched only for a signed-in account: the endpoint requires a session, so
-  /// asking as a guest would produce a guaranteed 401 dressed up as a failure.
-  AiStatus _ai = AiStatus.unknown;
   int _unread = 0;
 
   bool _loading = true;
@@ -136,14 +132,8 @@ class _HomeTabState extends State<HomeTab> {
       failure ??= 'تعذّر تحميل المحتوى. أعد المحاولة.';
     }
 
-    var ai = AiStatus.unknown;
     var unread = 0;
     if (signedIn) {
-      try {
-        ai = await _repo.aiStatus();
-      } catch (_) {
-        // Leave the assistant state unknown; the CTA explains itself either way.
-      }
       try {
         unread = (await _repo.notifications()).unreadCount;
       } catch (_) {
@@ -155,7 +145,6 @@ class _HomeTabState extends State<HomeTab> {
     setState(() {
       _banners = banners;
       _specialties = specialties;
-      _ai = ai;
       _unread = unread;
       _loading = false;
       _error = failure;
@@ -202,9 +191,17 @@ class _HomeTabState extends State<HomeTab> {
           // otherwise the built-in Mawatheq slides. It used to render nothing at all
           // when the server sent no banners, which is the normal fresh-install state
           // — so the top of the home screen was just the two action cards.
+          //
+          // The two primary actions are drawn *inside* each slide rather than in a
+          // row beneath it: a pair of cards under the slider is what read as "two
+          // static cards instead of a slider". Every slide therefore carries its own
+          // احجز استشارة / اسأل المساعد الذكي pair, so they are reachable from the
+          // first screenful without competing with the banner for space.
           BannerCarousel(
             banners: _slides,
             onTap: (banner) => _openBanner(banner),
+            onBook: _startBooking,
+            onAskAssistant: _openAssistant,
           ),
           const SizedBox(height: 18),
 
@@ -215,17 +212,7 @@ class _HomeTabState extends State<HomeTab> {
             const SizedBox(height: 18),
           ],
 
-          // 2. The two primary actions, directly under the slider.
-          _PrimaryActions(
-            rtl: rtl,
-            signedIn: auth?.isSignedIn ?? false,
-            aiAvailable: _ai.available,
-            onBook: _startBooking,
-            onAskAssistant: _openAssistant,
-          ),
-          const SizedBox(height: 22),
-
-          // 3. The legal specialties, from the backend.
+          // 2. The legal specialties, from the backend.
           SectionHeader(
             title: rtl ? 'اختر تخصصك القانوني' : 'Choose your specialty',
           ),
@@ -390,79 +377,6 @@ class _HomeTabState extends State<HomeTab> {
       default:
         break;
     }
-  }
-}
-
-/// The two primary actions, side by side, stacking on a narrow screen.
-///
-/// They are deliberately the first thing under the slider: booking a consultation
-/// is what the app is for, and it used to sit below a large assistant card and a
-/// row of counters.
-class _PrimaryActions extends StatelessWidget {
-  const _PrimaryActions({
-    required this.rtl,
-    required this.signedIn,
-    required this.aiAvailable,
-    required this.onBook,
-    required this.onAskAssistant,
-  });
-
-  final bool rtl;
-  final bool signedIn;
-  final bool aiAvailable;
-  final VoidCallback onBook;
-  final VoidCallback onAskAssistant;
-
-  @override
-  Widget build(BuildContext context) {
-    // Two cards plus the gutter need roughly 320pt. Below that they stack, so the
-    // captions are not clipped on a small phone.
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final book = ActionCard(
-          icon: Icons.event_available_outlined,
-          label: rtl ? 'احجز استشارة' : 'Book a consultation',
-          caption: rtl ? 'اختر التخصص والمحامي والموعد' : 'Specialty, lawyer, slot',
-          onTap: onBook,
-        );
-        final ask = ActionCard(
-          icon: Icons.auto_awesome_outlined,
-          label: rtl ? 'اسأل المساعد الذكي' : 'Ask the AI assistant',
-          // Only a signed-in customer can reach the provider, so a guest sees what
-          // signing in unlocks rather than an availability claim about a service
-          // they cannot call yet.
-          caption: !signedIn
-              ? (rtl ? 'يتطلب تسجيل الدخول' : 'Sign in required')
-              : aiAvailable
-                  ? (rtl
-                      ? 'إجابة فورية مبنية على الأنظمة'
-                      : 'Instant, law-based answers')
-                  : (rtl ? 'غير متاح حالياً' : 'Unavailable right now'),
-          primary: false,
-          onTap: onAskAssistant,
-        );
-
-        if (constraints.maxWidth < 320) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [book, const SizedBox(height: 10), ask],
-          );
-        }
-        // IntrinsicHeight because the Row lives in a ListView: stretching to the
-        // cross axis inside an unbounded-height parent would ask for infinite
-        // height. It makes both cards match the taller one, so the pair is even.
-        return IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(child: book),
-              const SizedBox(width: 10),
-              Expanded(child: ask),
-            ],
-          ),
-        );
-      },
-    );
   }
 }
 

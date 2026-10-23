@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http_base;
 import 'package:mawatheq_mobile/core/auth_controller.dart';
@@ -12,6 +13,8 @@ import 'package:mawatheq_mobile/core/network/api_repository.dart';
 import 'package:mawatheq_mobile/core/storage/token_storage.dart';
 import 'package:mawatheq_mobile/core/theme/app_theme.dart';
 import 'package:mawatheq_mobile/core/theme/theme_controller.dart';
+import 'package:mawatheq_mobile/features/assistant/assistant_screen.dart';
+import 'package:mawatheq_mobile/features/consultations/journey_screen.dart';
 import 'package:mawatheq_mobile/features/home/home_tab.dart';
 import 'package:mawatheq_mobile/shared/widgets/banner_carousel.dart';
 import 'package:mawatheq_mobile/shared/widgets/brand_widgets.dart';
@@ -104,11 +107,27 @@ Future<(int, Object)> _endpoints(
   if (uri.path.endsWith('/lawyers.php')) {
     return (200, {'ok': true, 'lawyers': []});
   }
+  if (uri.path.endsWith('/login.php')) {
+    return (
+      200,
+      {
+        'ok': true,
+        'token': 'tok',
+        'type': 'client',
+        'role': 'client',
+        'firm_id': null,
+        'permissions': <String>[],
+        'profile': {'id': 7, 'full_name': 'عميل'},
+      }
+    );
+  }
   return (200, {'ok': true});
 }
 
-ApiRepository _repo(http_base.BaseClient transport) =>
-    ApiRepository(client: ApiClient(client: transport));
+ApiRepository _repo(http_base.BaseClient transport, [TokenStore? tokens]) =>
+    ApiRepository(
+      client: ApiClient(client: transport, tokens: tokens ?? _MemoryTokenStore()),
+    );
 
 /// A guest session, which is the harder case: everything the home shows a visitor
 /// must also work without an account.
@@ -116,6 +135,22 @@ AuthController _guest(http_base.BaseClient transport) => AuthController(
       repository: _repo(transport),
       tokens: _MemoryTokenStore(),
     )..enterGuest();
+
+/// A signed-in client, together with the repository that shares its token store.
+///
+/// The two must share one store: `signIn` writes the token, and the home's own
+/// request then has to send it. A repository built on the default `TokenStorage`
+/// would reach for `flutter_secure_storage`, whose platform channel never answers in
+/// a widget test, so the home would sit on its skeleton forever.
+Future<(AuthController, ApiRepository)> _signedIn(
+  http_base.BaseClient transport,
+) async {
+  final tokens = _MemoryTokenStore();
+  final repo = _repo(transport, tokens);
+  final auth = AuthController(repository: repo, tokens: tokens);
+  await auth.signIn(email: 'a@b.com', password: 'Password1', asLawyer: false);
+  return (auth, repo);
+}
 
 Widget _homeTab({
   required AuthController auth,
@@ -161,6 +196,23 @@ void main() {
       expect(find.byType(PageView), findsOneWidget);
       // Four built-in slides ship, so the pagination dots are shown.
       expect(kBuiltInHomeSlides.length, greaterThan(1));
+    });
+
+    testWidgets('every built-in slide photo is bundled, not silently a gradient',
+        (tester) async {
+      // The trap this catches: `assets/images/` in pubspec is not recursive, so a
+      // photo in `assets/images/banners/` is absent from the bundle until that
+      // directory is declared too. `Image.asset` then fails at paint, the
+      // `errorBuilder` swaps in the brand gradient, and the slider still renders —
+      // so every other test in this file passes while the owner sees four flat
+      // panels instead of photographs. Only loading the real bytes proves it.
+      for (final slide in kBuiltInHomeSlides) {
+        expect(slide.assetImage, isNotEmpty,
+            reason: 'slide ${slide.id} has no bundled photo');
+        final bytes = await rootBundle.load(slide.assetImage);
+        expect(bytes.lengthInBytes, greaterThan(1000),
+            reason: '${slide.assetImage} is in the bundle but empty');
+      }
     });
 
     testWidgets('operator banners replace the built-in slides',
@@ -210,9 +262,10 @@ void main() {
       await tester.pump(const Duration(milliseconds: 600));
 
       expect(view.controller!.page, 1);
-      // The second slide's subtitle is unique; its title also appears as the label
-      // of the assistant button below the slider.
-      expect(find.text('إجابات فورية مبنية على الأنظمة واللوائح'), findsOneWidget);
+      // The second slide's headline is unique, so finding it proves the frame moved
+      // to slide two rather than merely repainting slide one.
+      expect(find.text('إجابات فورية من المساعد الذكي'), findsOneWidget);
+      expect(find.text('استشارتك القانونية بخطوات بسيطة'), findsNothing);
     });
 
     testWidgets('a manual swipe moves the slider too', (tester) async {
@@ -234,21 +287,91 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(view.controller!.page, 1);
-      expect(find.text('إجابات فورية مبنية على الأنظمة واللوائح'), findsOneWidget);
+      expect(find.text('إجابات فورية من المساعد الذكي'), findsOneWidget);
     });
   });
 
   group('the two primary actions', () {
-    testWidgets('both buttons are present and labelled', (tester) async {
+    testWidgets('both buttons are present inside the banner and labelled',
+        (tester) async {
       final t = _FakeTransport((u) => _endpoints(u, banners: [], specialties: []));
       final auth = _guest(t);
 
       await tester.pumpWidget(_homeTab(auth: auth, repo: _repo(t)));
       await tester.pumpAndSettle();
 
+      // The actions live inside the slider now, not in a row of cards under it: a
+      // pair of static cards beneath the banner is exactly what the owner rejected.
       expect(find.text('احجز استشارة'), findsOneWidget);
       expect(find.text('اسأل المساعد الذكي'), findsOneWidget);
-      expect(find.byType(ActionCard), findsNWidgets(2));
+      // The old layout rendered one ActionCard per action. Neither exists any more.
+      expect(find.byType(ActionCard), findsNothing);
+      // The buttons are inside the carousel's own frame, so they travel with the
+      // slide rather than sitting below it.
+      expect(
+        find.descendant(
+          of: find.byType(BannerCarousel),
+          matching: find.text('احجز استشارة'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(BannerCarousel),
+          matching: find.text('اسأل المساعد الذكي'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the booking button opens the real journey', (tester) async {
+      final t = _FakeTransport((u) => _endpoints(u, banners: [], specialties: []));
+      final (auth, repo) = await _signedIn(t);
+
+      await tester.pumpWidget(_homeTab(auth: auth, repo: repo));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('احجز استشارة'));
+      // The journey screen shows an animating skeleton while it loads, so the frame
+      // scheduler never goes idle and `pumpAndSettle` would time out. Pump explicit
+      // frames instead — a property of the destination, not of this test.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      // The signed-in customer lands on the journey, not on a sign-in prompt.
+      expect(find.byType(ConsultationJourneyScreen), findsOneWidget);
+    });
+
+    testWidgets('the assistant button opens the real assistant', (tester) async {
+      final t = _FakeTransport((u) => _endpoints(u, banners: [], specialties: []));
+      final (auth, repo) = await _signedIn(t);
+
+      await tester.pumpWidget(_homeTab(auth: auth, repo: repo));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('اسأل المساعد الذكي'));
+      // The assistant checks provider availability on open and shows a skeleton while
+      // it does, so settle explicitly rather than waiting for idle.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.byType(AssistantScreen), findsOneWidget);
+    });
+
+    testWidgets('a guest is asked to sign in, and the destination is remembered',
+        (tester) async {
+      final t = _FakeTransport((u) => _endpoints(u, banners: [], specialties: []));
+      final auth = _guest(t);
+
+      await tester.pumpWidget(_homeTab(auth: auth, repo: _repo(t)));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('احجز استشارة'));
+      await tester.pumpAndSettle();
+
+      // Booking needs an account; the prompt is shown and is not a dead end.
+      expect(find.text('متابعة التصفح'), findsOneWidget);
+      expect(find.byType(ConsultationJourneyScreen), findsNothing);
     });
   });
 

@@ -65,8 +65,8 @@ const List<JourneySpecialty> kBuiltInSpecialties = [
 /// or a deadline that nobody approved. That left the home screen with no slider at
 /// all on a fresh install, which is what made the top of the page look like a pair
 /// of static cards. These slides fill that gap without fabricating a promotion —
-/// each one describes a capability the app actually ships, and tapping it opens the
-/// real screen.
+/// each one describes a capability the app actually ships, carries a real licensed
+/// photograph, and offers the two primary actions inside the banner itself.
 ///
 /// An operator banner always takes precedence: as soon as `banners.php` returns a
 /// row, that row is shown instead and this list is not used.
@@ -81,13 +81,11 @@ const List<HomeBanner> kBuiltInHomeSlides = [
     titleEn: 'Your legal consultation in a few steps',
     subtitleAr: 'اختر التخصص والمحامي والموعد المناسب لك',
     subtitleEn: 'Pick the specialty, the lawyer and the slot that suits you',
-    // Deliberately not "احجز استشارة": that is the label of the primary action
-    // button directly below the slider, and a badge repeating it reads as two
-    // buttons for the same thing.
     eyebrowAr: 'استشارة قانونية',
     eyebrowEn: 'Legal consultation',
     iconKey: 'family',
     gradientKey: 'navy',
+    assetImage: 'assets/images/banners/banner_consultation.jpg',
     linkType: 'specialty',
     linkTarget: '1',
     altAr: 'ابدأ حجز استشارة قانونية',
@@ -95,16 +93,17 @@ const List<HomeBanner> kBuiltInHomeSlides = [
   ),
   HomeBanner(
     id: -2,
-    titleAr: 'اسأل المساعد الذكي',
-    titleEn: 'Ask the AI assistant',
-    subtitleAr: 'إجابات فورية مبنية على الأنظمة واللوائح',
-    subtitleEn: 'Instant answers grounded in the regulations',
+    titleAr: 'إجابات فورية من المساعد الذكي',
+    titleEn: 'Instant answers from the AI assistant',
+    subtitleAr: 'إجابات مبنية على الأنظمة واللوائح القانونية',
+    subtitleEn: 'Answers grounded in the regulations',
     eyebrowAr: 'المساعد القانوني',
     eyebrowEn: 'Legal assistant',
     iconKey: 'commercial',
     gradientKey: 'teal',
+    assetImage: 'assets/images/banners/banner_office.jpg',
     linkType: 'assistant',
-    linkTarget: '',
+    linkTarget: 'assistant',
     altAr: 'افتح المساعد القانوني الذكي',
     altEn: 'Open the AI legal assistant',
   ),
@@ -118,8 +117,9 @@ const List<HomeBanner> kBuiltInHomeSlides = [
     eyebrowEn: 'Lawyer directory',
     iconKey: 'labor',
     gradientKey: 'deep',
+    assetImage: 'assets/images/banners/banner_advice.jpg',
     linkType: 'lawyers',
-    linkTarget: '',
+    linkTarget: 'lawyers',
     altAr: 'تصفّح دليل المحامين',
     altEn: 'Browse the lawyer directory',
   ),
@@ -133,6 +133,7 @@ const List<HomeBanner> kBuiltInHomeSlides = [
     eyebrowEn: 'Mawatheq platform',
     iconKey: 'realestate',
     gradientKey: 'gold',
+    assetImage: 'assets/images/banners/banner_library.jpg',
     linkType: 'specialty',
     linkTarget: '1',
     altAr: 'تعرّف على منصة مواثيق',

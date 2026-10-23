@@ -74,6 +74,10 @@ flutter:
 
   assets:
     - assets/images/
+    # `assets/images/` is not recursive, so the banner photos need their own entry.
+    # Without it `Image.asset` throws at first paint and every built-in slide falls
+    # back to its gradient — a slider of four flat panels.
+    - assets/images/banners/
     # The Arabic type families are bundled rather than fetched at runtime. The app
     # has to render Arabic correctly on a first launch with no network, and a
     # runtime download of a font is a visible reflow at best and a fallback face at

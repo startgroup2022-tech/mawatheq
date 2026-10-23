@@ -13,6 +13,8 @@ import '../../core/theme/app_tokens.dart';
 import '../../shared/specialty_icons.dart';
 import '../../shared/widgets/brand_widgets.dart';
 import '../../shared/widgets/capture_sheet.dart';
+import '../assistant/assistant_screen.dart';
+import '../public/public_info_screen.dart';
 
 /// رحلة الاستشارة على الجوال — the same journey the website runs.
 ///
@@ -278,12 +280,10 @@ class _ConsultationJourneyScreenState extends State<ConsultationJourneyScreen> {
 
   Widget _lawyerStep() {
     if (_match.lawyers.isEmpty) {
-      return EmptyState(
-        icon: Icons.search_off,
-        title: 'لا يوجد محامٍ متاح حالياً',
-        message: _match.alternative.isNotEmpty
-            ? _match.alternative
-            : 'جرّب تخصصاً آخر أو تواصل معنا لترشيح محامٍ مناسب.',
+      return _NoLawyerState(
+        alternative: _match.alternative,
+        onAskAssistant: _openAssistant,
+        onContact: _openContact,
       );
     }
     return ListView.separated(
@@ -306,6 +306,25 @@ class _ConsultationJourneyScreenState extends State<ConsultationJourneyScreen> {
     );
   }
 
+  /// Opens the AI assistant from the empty state. The assistant reports its own
+  /// honest unavailable state when no provider is configured; the empty state never
+  /// claims an answer is possible.
+  void _openAssistant() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const AssistantScreen()),
+    );
+  }
+
+  /// Opens the contact/support page. A customer who found no lawyer needs a human
+  /// route, not a dead end.
+  void _openContact() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const PublicInfoScreen(section: InfoSection.contact),
+      ),
+    );
+  }
+
   /// Opens the booking screen carrying the journey choice, so the consultation is
   /// stored with the customer's specialty and issue type.
   void _startBooking(LawyerProfile lawyer) {
@@ -316,6 +335,85 @@ class _ConsultationJourneyScreenState extends State<ConsultationJourneyScreen> {
           lawyer: lawyer,
           specialty: _chosenSpecialty!,
           issueType: _chosenIssueType,
+        ),
+      ),
+    );
+  }
+}
+
+/// The no-lawyer empty state for step 3.
+///
+/// A specialty with no approved lawyer is a normal outcome, not an error: the
+/// `lawyer_specialties` table ships empty, so a fresh deployment has none. Showing a
+/// bare "nothing here" left the customer at a dead end, which is worse than the
+/// problem. This keeps the headline the journey already used and adds the two routes
+/// out — ask the assistant, or contact the firm — as real buttons rather than a
+/// sentence telling them to do something the app does not offer.
+///
+/// The copy is Arabic-only, like the rest of the journey screen: the flow is driven
+/// by the Arabic taxonomy and has no English variant.
+class _NoLawyerState extends StatelessWidget {
+  const _NoLawyerState({
+    required this.alternative,
+    required this.onAskAssistant,
+    required this.onContact,
+  });
+
+  /// The server's own explanation, when it sent one. Rendered verbatim so the app
+  /// does not invent a reason the backend did not give.
+  final String alternative;
+
+  final VoidCallback onAskAssistant;
+  final VoidCallback onContact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(AppSpacing.s6),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 68,
+              height: 68,
+              decoration: BoxDecoration(
+                color: context.tokens.infoBg,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.search_off, size: 30, color: AppColors.teal),
+            ),
+            const SizedBox(height: AppSpacing.s4),
+            Text(
+              'لا يوجد محامٍ متاح حالياً',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: AppSpacing.s2),
+            Text(
+              alternative.isNotEmpty
+                  ? alternative
+                  : 'جرّب تخصصاً آخر أو تواصل معنا لترشيح محامٍ مناسب.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: AppSpacing.s5),
+            // Both routes are real: the assistant opens the AI screen, contact opens
+            // the support page. Neither is a placeholder.
+            PrimaryButton(
+              label: 'اسأل المساعد الذكي',
+              icon: Icons.auto_awesome_outlined,
+              onPressed: onAskAssistant,
+              expand: true,
+            ),
+            const SizedBox(height: AppSpacing.s3),
+            SecondaryButton(
+              label: 'تواصل معنا',
+              icon: Icons.support_agent_outlined,
+              onPressed: onContact,
+              expand: true,
+            ),
+          ],
         ),
       ),
     );

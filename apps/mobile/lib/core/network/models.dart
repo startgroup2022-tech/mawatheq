@@ -409,6 +409,7 @@ class HomeBanner {
     this.eyebrowEn = '',
     this.iconKey = '',
     this.gradientKey = '',
+    this.assetImage = '',
   });
 
   final int id;
@@ -430,9 +431,20 @@ class HomeBanner {
   /// the carousel (`navy`, `teal`, `gold`, `deep`). Client-only.
   final String gradientKey;
 
+  /// A bundled photograph for a built-in slide, e.g.
+  /// `assets/images/banners/banner_library.jpg`. Client-only.
+  ///
+  /// Built-in slides ship a real photo rather than a flat gradient because a plain
+  /// coloured card is what the owner read as "not a real slider". The photo is an
+  /// app asset, so it renders offline and cannot be a broken remote URL. A gradient
+  /// remains the fallback for an operator banner whose upload is missing.
+  final String assetImage;
+
   /// True for a slide Mawatheq ships itself rather than one an operator uploaded.
-  /// A built-in slide has no image and draws a branded gradient instead.
-  bool get isPromo => imagePath.isEmpty && iconKey.isNotEmpty;
+  /// A built-in slide has no server image path; it draws a bundled photo or a
+  /// branded gradient instead.
+  bool get isPromo =>
+      imagePath.isEmpty && (iconKey.isNotEmpty || assetImage.isNotEmpty);
 
   String eyebrow(bool isRtl) =>
       isRtl ? eyebrowAr : (eyebrowEn.isEmpty ? eyebrowAr : eyebrowEn);

@@ -8,6 +8,7 @@ import 'package:mawatheq_mobile/core/network/api_client.dart';
 import 'package:mawatheq_mobile/core/network/api_repository.dart';
 import 'package:mawatheq_mobile/core/network/models.dart';
 import 'package:mawatheq_mobile/core/storage/token_storage.dart';
+import 'package:mawatheq_mobile/features/assistant/assistant_screen.dart';
 import 'package:mawatheq_mobile/features/consultations/journey_screen.dart';
 import 'package:mawatheq_mobile/shared/widgets/brand_widgets.dart';
 
@@ -485,6 +486,39 @@ void main() {
 
       expect(find.text('لا يوجد محامٍ متاح حالياً'), findsOneWidget);
       expect(find.textContaining('ترشيح محامٍ'), findsOneWidget);
+
+      // The empty state is not a dead end: it offers the two real routes out.
+      expect(find.text('اسأل المساعد الذكي'), findsOneWidget);
+      expect(find.text('تواصل معنا'), findsOneWidget);
+    });
+
+    testWidgets('the empty state buttons open real destinations', (tester) async {
+      final repo = _repo((uri) async {
+        switch (uri.queryParameters['action']) {
+          case 'specialties':
+            return (200, _specialtiesJson);
+          case 'issue-types':
+            return (200, _issueTypesJson);
+          default:
+            return (200, _emptyMatchJson);
+        }
+      });
+      await tester.pumpWidget(
+        MaterialApp(home: ConsultationJourneyScreen(repository: repo)),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('الدعاوى الجزائية'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('إثبات عقد الزواج'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('اسأل المساعد الذكي'));
+      // The assistant shows an availability skeleton on open, so settle explicitly
+      // rather than waiting for the frame scheduler to go idle.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byType(AssistantScreen), findsOneWidget);
     });
 
     testWidgets('an empty submission is refused before it reaches the server',
