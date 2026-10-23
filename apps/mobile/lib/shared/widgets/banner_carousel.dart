@@ -28,10 +28,12 @@ import '../specialty_icons.dart';
 ///     the [PageView] follows the ambient direction so a swipe toward the start of
 ///     the reading direction advances the carousel, and the two cannot disagree
 ///     because neither is derived from the other.
-///   * **The two primary actions live inside every slide.** They used to sit in a
-///     pair of cards under the slider, which the owner read as "two static cards
-///     instead of a slider". They are now rendered on the banner itself, on every
-///     slide, and the row under the slider is gone.
+///   * **The primary actions are not part of a slide.** The owner rejected a pair
+///     of static cards *under* the slider and also wants two clearly separate
+///     buttons *below* it, so the actions are one dedicated row that `HomeTab`
+///     renders directly under the carousel. Keeping them out of the slide means
+///     they never move or resize as the carousel advances, and the slide's own copy
+///     keeps the full width.
 ///   * Auto-advance is a single cancellable [Timer], re-armed after each move. A
 ///     recursive `Future.delayed` cannot be cancelled and would outlive [dispose].
 ///   * It is paused when the platform asks for reduced motion (WCAG 2.2.2) and in
@@ -43,8 +45,6 @@ class BannerCarousel extends StatefulWidget {
     super.key,
     required this.banners,
     this.onTap,
-    this.onBook,
-    this.onAskAssistant,
     this.height,
     this.autoAdvance = true,
   });
@@ -54,12 +54,6 @@ class BannerCarousel extends StatefulWidget {
   /// Invoked with the tapped slide. The caller decides where it goes, because the
   /// destination may need to leave the current tab.
   final void Function(HomeBanner banner)? onTap;
-
-  /// The in-banner primary action: open the consultation booking flow.
-  final VoidCallback? onBook;
-
-  /// The in-banner secondary action: open the AI legal assistant.
-  final VoidCallback? onAskAssistant;
 
   /// Fixed frame height. When null the carousel derives one from its width, so a
   /// narrow phone gets a proportionally shorter banner instead of a letterbox.
@@ -345,8 +339,6 @@ class _BannerCarouselState extends State<BannerCarousel> {
                       ),
                     ),
                     const SizedBox(height: AppSpacing.s3),
-                    // Both primary actions, inside the banner, on every slide.
-                    _actions(rtl),
                   ],
                 ),
               ),
@@ -376,38 +368,6 @@ class _BannerCarouselState extends State<BannerCarousel> {
               : content,
         ),
       ),
-    );
-  }
-
-  /// The two primary actions, drawn on the banner itself.
-  ///
-  /// A [Row] of [Flexible] children rather than [Expanded]: each button takes the
-  /// width its label needs and only shrinks if the pair cannot fit, so on a normal
-  /// phone neither label is truncated and on a very narrow one neither overflows the
-  /// frame. That keeps the banner one row tall — stacking them would make it
-  /// noticeably taller on exactly the screens with the least room.
-  Widget _actions(bool rtl) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Flexible(
-          child: _SlideButton(
-            icon: Icons.event_available_outlined,
-            label: rtl ? 'احجز استشارة' : 'Book a consultation',
-            primary: true,
-            onTap: widget.onBook,
-          ),
-        ),
-        const SizedBox(width: AppSpacing.s2),
-        Flexible(
-          child: _SlideButton(
-            icon: Icons.auto_awesome_outlined,
-            label: rtl ? 'اسأل المساعد الذكي' : 'Ask the AI assistant',
-            primary: false,
-            onTap: widget.onAskAssistant,
-          ),
-        ),
-      ],
     );
   }
 
@@ -528,64 +488,6 @@ class _BannerCarouselState extends State<BannerCarousel> {
 /// are sized for a full-width form button and would make the banner tall. This keeps
 /// a 40pt control inside a 44pt tap target, which clears WCAG 2.5.8 with room to
 /// spare while staying visually light over a photograph.
-class _SlideButton extends StatelessWidget {
-  const _SlideButton({
-    required this.icon,
-    required this.label,
-    required this.primary,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final bool primary;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: label,
-      child: Material(
-        color: primary ? AppColors.teal : Colors.white.withValues(alpha: 0.16),
-        borderRadius: BorderRadius.circular(AppRadius.pill),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 40),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(AppRadius.pill),
-              border: primary
-                  ? null
-                  : Border.all(color: Colors.white.withValues(alpha: 0.55)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 16, color: Colors.white),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12.5,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 /// The pagination dots. The active dot stretches into a pill and animates between
 /// positions, so the current slide is obvious without a number.

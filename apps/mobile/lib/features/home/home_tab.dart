@@ -191,19 +191,23 @@ class _HomeTabState extends State<HomeTab> {
           // otherwise the built-in Mawatheq slides. It used to render nothing at all
           // when the server sent no banners, which is the normal fresh-install state
           // — so the top of the home screen was just the two action cards.
-          //
-          // The two primary actions are drawn *inside* each slide rather than in a
-          // row beneath it: a pair of cards under the slider is what read as "two
-          // static cards instead of a slider". Every slide therefore carries its own
-          // احجز استشارة / اسأل المساعد الذكي pair, so they are reachable from the
-          // first screenful without competing with the banner for space.
           BannerCarousel(
             banners: _slides,
             onTap: (banner) => _openBanner(banner),
+          ),
+          const SizedBox(height: 14),
+
+          // 2. The two primary actions, directly below the slider and clearly
+          // separate from it. These are real buttons, not a pair of static cards:
+          // the first opens the consultation booking flow, the second opens the AI
+          // assistant. Both work for a guest (the sign-in prompt appears at the point
+          // of confirmation) and for a signed-in customer.
+          _PrimaryActions(
+            rtl: rtl,
             onBook: _startBooking,
             onAskAssistant: _openAssistant,
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 22),
 
           // A failed section is reported inline, above content that still works,
           // with a retry. It must never replace the screen.
@@ -385,6 +389,56 @@ class _HomeTabState extends State<HomeTab> {
       default:
         break;
     }
+  }
+}
+
+/// The two primary actions, rendered as one row directly below the slider.
+///
+/// These are real buttons rather than the pair of static cards the owner rejected,
+/// and they are deliberately outside the carousel: a control that slides out from
+/// under the customer's thumb is worse than one that stays put, and the labels keep
+/// the full width instead of being squeezed into a banner.
+///
+/// Both work for a guest. `HomeTab` owns the guest handling, so the callbacks it
+/// passes here are the same ones the rest of the screen uses: the sign-in prompt
+/// appears at the point of confirmation and the intent is remembered.
+class _PrimaryActions extends StatelessWidget {
+  const _PrimaryActions({
+    required this.rtl,
+    required this.onBook,
+    required this.onAskAssistant,
+  });
+
+  final bool rtl;
+  final VoidCallback onBook;
+  final VoidCallback onAskAssistant;
+
+  @override
+  Widget build(BuildContext context) {
+    // Side by side on a normal phone. Each is [Expanded] so the pair shares the row
+    // evenly and neither label is truncated; at 320px logical width they still fit
+    // because both labels are short.
+    return Row(
+      children: [
+        Expanded(
+          child: PrimaryButton(
+            label: rtl ? 'احجز استشارة' : 'Book a consultation',
+            icon: Icons.event_available_outlined,
+            expand: true,
+            onPressed: onBook,
+          ),
+        ),
+        const SizedBox(width: AppSpacing.s3),
+        Expanded(
+          child: SecondaryButton(
+            label: rtl ? 'اسأل المساعد الذكي' : 'Ask the AI assistant',
+            icon: Icons.auto_awesome_outlined,
+            expand: true,
+            onPressed: onAskAssistant,
+          ),
+        ),
+      ],
+    );
   }
 }
 

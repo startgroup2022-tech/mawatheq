@@ -294,7 +294,7 @@ void main() {
   });
 
   group('the two primary actions', () {
-    testWidgets('both buttons are present inside the banner and labelled',
+    testWidgets('both buttons sit below the slider and are labelled',
         (tester) async {
       final t = _FakeTransport((u) => _endpoints(u, banners: [], specialties: []));
       final auth = _guest(t);
@@ -302,28 +302,42 @@ void main() {
       await tester.pumpWidget(_homeTab(auth: auth, repo: _repo(t)));
       await tester.pumpAndSettle();
 
-      // The actions live inside the slider now, not in a row of cards under it: a
-      // pair of static cards beneath the banner is exactly what the owner rejected.
+      // The owner rejected a pair of static cards AND wants two separate buttons
+      // under the slider. Both hold only if the actions are a dedicated row below
+      // the carousel — not inside a slide, and not a card.
       expect(find.text('احجز استشارة'), findsOneWidget);
       expect(find.text('اسأل المساعد الذكي'), findsOneWidget);
-      // The old layout rendered one ActionCard per action. Neither exists any more.
       expect(find.byType(ActionCard), findsNothing);
-      // The buttons are inside the carousel's own frame, so they travel with the
-      // slide rather than sitting below it.
+      // They are outside the carousel, so they never travel with a slide.
       expect(
         find.descendant(
           of: find.byType(BannerCarousel),
           matching: find.text('احجز استشارة'),
         ),
-        findsOneWidget,
+        findsNothing,
       );
+      // And they are real buttons, not decorative text.
+      expect(find.widgetWithText(FilledButton, 'احجز استشارة'), findsOneWidget);
       expect(
-        find.descendant(
-          of: find.byType(BannerCarousel),
-          matching: find.text('اسأل المساعد الذكي'),
-        ),
+        find.widgetWithText(OutlinedButton, 'اسأل المساعد الذكي'),
         findsOneWidget,
       );
+    });
+
+    testWidgets('the actions render below the carousel in the widget tree',
+        (tester) async {
+      final t = _FakeTransport((u) => _endpoints(u, banners: [], specialties: []));
+      final auth = _guest(t);
+
+      await tester.pumpWidget(_homeTab(auth: auth, repo: _repo(t)));
+      await tester.pumpAndSettle();
+
+      // Order matters to the brief: the slider comes first, the actions directly
+      // after it. A layout that put them above, or inside a slide, would still pass
+      // the presence checks above, so assert the vertical order too.
+      final carouselY = tester.getBottomLeft(find.byType(BannerCarousel)).dy;
+      final bookY = tester.getTopLeft(find.text('احجز استشارة')).dy;
+      expect(bookY, greaterThan(carouselY));
     });
 
     testWidgets('the booking button opens the real journey', (tester) async {
