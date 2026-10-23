@@ -152,7 +152,7 @@
 | طلب السحب | #9 |
 | الوسم | `v2026.10.23-exec43` — يشير إلى رأس الفرع |
 
-### أصول الإصدار على GitHub (20 أصلاً)
+### أصول الإصدار على GitHub (19 أصلاً)
 
 `MAWATHEQ_APP_v1.2.0+3_release.apk` (59,529,827 بايت) · 11 لقطة شاشة ·
 3 ملفات SQL · `REAL_ENDPOINT_RESPONSE_journey_specialties.json` · تقريران ·
