@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 
 import '../../core/auth_controller.dart';
 import '../../core/guest_session.dart';
-import '../../core/locale_controller.dart';
 import '../../core/network/api_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_tokens.dart';
@@ -61,7 +60,7 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _busy = false);
 
     if (ok) {
-      _resumeDestination();
+      _goHome();
     } else if (auth.error != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(auth.error!)),
@@ -69,51 +68,25 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  /// After a successful sign-in, land on the destination the guest was heading
-  /// for; otherwise the dashboard.
+  /// After a successful sign-in the customer always lands on Home.
   ///
-  /// The explicit [LoginScreen.returnTo] wins, and the guest-session record is
-  /// consumed so the intent is honoured exactly once. The destination is opened
-  /// only if the freshly signed-in account is permitted to be there — otherwise an
-  /// access-denied screen is shown, never an empty dashboard.
-  void _resumeDestination() {
+  /// This is deliberate and unconditional. Sign-in can be started from anywhere —
+  /// the guest prompt, a consultation journey, a banner, the account tab — and the
+  /// brief requires every one of those paths to end on Home rather than on whatever
+  /// screen the visitor happened to be stopped at. Landing on Consultations (or any
+  /// other service) reads as a lost session, and it reopens a journey the customer
+  /// may no longer want.
+  ///
+  /// The whole stack is replaced, so the login screen cannot be returned to with
+  /// Back, and the guest's remembered intent is cleared so a later navigation cannot
+  /// resurrect the destination the customer has already moved past.
+  void _goHome() {
     final guest = context.read<GuestSession>();
-    final destination =
-        widget.returnTo ?? guest.consume() ?? ProtectedDestination.dashboard;
     guest.clear();
-
-    if (!destination.allows(context.read<AuthController>().user)) {
-      final rtl = context.read<LocaleController>().isRtl;
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(
-          builder: (_) => AccessDeniedScreen(
-            destination: destination,
-            isRtl: rtl,
-            onBack: () => Navigator.of(context).pushAndRemoveUntil(
-              MaterialPageRoute(
-                builder: (_) => ProtectedDestination.dashboard.buildShell(),
-              ),
-              (route) => false,
-            ),
-          ),
-        ),
-        (route) => false,
-      );
-      return;
-    }
-
-    final pushed = destination.buildPushedScreen();
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => destination.buildShell()),
+      MaterialPageRoute(builder: (_) => ProtectedDestination.dashboard.buildShell()),
       (route) => false,
     );
-    if (pushed != null) {
-      // A destination that is not a bottom-nav tab (consultations,
-      // notifications) opens on top of the shell it belongs to.
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => pushed),
-      );
-    }
   }
 
   @override

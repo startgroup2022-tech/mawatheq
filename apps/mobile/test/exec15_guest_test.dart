@@ -680,7 +680,7 @@ void main() {
 
   // ------------------------------------------------------- login transitions
 
-  group('Login transition preserves the destination', () {
+  group('Login always lands on Home', () {
     test('consume() returns the destination exactly once', () {
       final guest = GuestSession()..remember(ProtectedDestination.documents);
       expect(guest.consume(), ProtectedDestination.documents);
@@ -688,7 +688,7 @@ void main() {
       expect(guest.hasPendingIntent, isFalse);
     });
 
-    testWidgets('after sign-in the app opens the remembered destination',
+    testWidgets('sign-in lands on Home even when a destination was remembered',
         (tester) async {
       final transport = _FakeTransport((uri) async {
         if (uri.path.endsWith('/auth/login.php')) {
@@ -730,11 +730,14 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
-      // The shell opened on the Documents tab (index 3) rather than the dashboard.
+      // Home is where every sign-in lands, regardless of what the guest was
+      // stopped at. Landing on the remembered Documents tab is the defect the
+      // brief names: a successful login must never open Consultations (or any
+      // other service) instead of Home.
       expect(find.byType(HomeShell), findsOneWidget);
       final shell = tester.widget<HomeShell>(find.byType(HomeShell));
-      expect(shell.initialIndex, 3);
-      // The intent was consumed, so it cannot be replayed.
+      expect(shell.initialIndex, 0);
+      // The intent was cleared, so a later navigation cannot replay it.
       expect(guest.hasPendingIntent, isFalse);
     });
 

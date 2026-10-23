@@ -140,7 +140,8 @@ void main() {
       expect(find.byType(TextField), findsWidgets);
     });
 
-    testWidgets('as a tab it does not nest a second Scaffold', (tester) async {
+    testWidgets('as a tab it keeps exactly one app bar and one bottom bar',
+        (tester) async {
       final t = _Transport(_public);
       final auth = AuthController(
         repository: _repo(t),
@@ -151,8 +152,13 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // The shell owns the only Scaffold; a second one would double the app bar.
-      expect(find.byType(Scaffold), findsOneWidget);
+      // The shell owns the bottom bar; the active tab's route owns the app bar.
+      // Counting Scaffolds would be the wrong assertion now: the shell's Scaffold
+      // carries only the bottom bar, and the tab route nested inside it carries the
+      // app bar, which is what keeps a single bar visible while routes are pushed.
+      expect(find.byType(NavigationBar), findsOneWidget);
+      expect(find.byType(AppBar), findsOneWidget);
+      expect(find.byType(BackButton), findsNothing);
     });
   });
 

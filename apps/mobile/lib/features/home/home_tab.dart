@@ -260,7 +260,13 @@ class _HomeTabState extends State<HomeTab> {
   void _openJourney({JourneySpecialty? specialty}) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => ConsultationJourneyScreen(initialSpecialty: specialty),
+        builder: (_) => ConsultationJourneyScreen(
+          // Carry the injected repository through. Without this the journey built its
+          // own client, so a test that supplied a fake transport was not exercising
+          // the journey at all — it was talking to the production host.
+          repository: widget.repository,
+          initialSpecialty: specialty,
+        ),
       ),
     );
   }
@@ -301,7 +307,9 @@ class _HomeTabState extends State<HomeTab> {
       return;
     }
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const AssistantScreen()),
+      MaterialPageRoute(
+        builder: (_) => AssistantScreen(repository: widget.repository),
+      ),
     );
   }
 
