@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -288,6 +289,42 @@ void main() {
 
       expect(find.text('تخصص من الخادم'), findsOneWidget);
       expect(find.text('الأحوال الشخصية'), findsNothing);
+    });
+
+    // The end-to-end claim: the seven categories the taxonomy import writes, served
+    // in the endpoint's real response shape, reach the home screen through the real
+    // ApiClient and ApiRepository. The fixture is the captured output of
+    // `api/v1/journey.php?action=specialties` against a database that ran
+    // MAWATHEQ_LEGAL_CLASSIFICATIONS_IMPORT.sql — not a hand-written stub, which
+    // would only prove the test agrees with itself.
+    testWidgets('the imported taxonomy reaches the screen through the real client',
+        (tester) async {
+      final payload = jsonDecode(
+        File('test/fixtures/real_journey_specialties.json').readAsStringSync(),
+      ) as Map<String, dynamic>;
+      final specialties = (payload['specialties'] as List).cast<Object>();
+      expect(specialties.length, 7);
+
+      final t = _FakeTransport(
+        (u) => _endpoints(u, banners: [], specialties: specialties),
+      );
+      final auth = _guest(t);
+
+      await tester.pumpWidget(_homeTab(auth: auth, repo: _repo(t)));
+      await tester.pumpAndSettle();
+
+      for (final s in specialties.cast<Map<String, dynamic>>()) {
+        expect(
+          find.text(s['name'] as String),
+          findsOneWidget,
+          reason: '${s['name']} from the import must render on the home screen',
+        );
+      }
+      // A description and an icon key survived the wire, so the cards are not bare.
+      expect(
+        find.text('شؤون الأسرة: الزواج والطلاق والنفقة والحضانة والميراث.'),
+        findsOneWidget,
+      );
     });
   });
 
