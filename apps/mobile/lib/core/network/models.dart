@@ -353,7 +353,13 @@ class AppNotification {
   }
 }
 
-/// A lawyer from the public directory `GET /api/v1/lawyers.php`.
+/// One lawyer as the customer sees them.
+///
+/// The journey's `lawyers` and `lawyer` actions both return this shape, so the fields
+/// the API already sends — experience, photo, bio, the server-formatted fee and the
+/// real availability summary — are carried here rather than dropped at the boundary.
+/// Dropping them is how the directory card came to show a name and a rating while the
+/// customer asked for a specialty, professional information and availability.
 class LawyerProfile {
   const LawyerProfile({
     required this.id,
@@ -362,6 +368,12 @@ class LawyerProfile {
     this.jurisdiction = '',
     this.rating = 0,
     this.hourlyRate = 0,
+    this.yearsExperience = 0,
+    this.bio = '',
+    this.photoPath = '',
+    this.feeDisplay = '',
+    this.hasPublishedHours = false,
+    this.nextSlotCount = 0,
   });
 
   final int id;
@@ -370,9 +382,47 @@ class LawyerProfile {
   final String jurisdiction;
   final double rating;
   final double hourlyRate;
+  final int yearsExperience;
+  final String bio;
+
+  /// The server's stored path for the lawyer's photo, or '' when they have none.
+  /// The app resolves it against the API host; it is never a full URL from the server.
+  final String photoPath;
+
+  /// The fee already formatted with the tenant's currency by the backend
+  /// (`fee_display`). The app never formats money itself, so this is shown verbatim.
+  final String feeDisplay;
+
+  /// Whether the lawyer has published working hours at all. A lawyer with none has no
+  /// bookable slot, which the customer should see before opening the booking form.
+  final bool hasPublishedHours;
+
+  /// How many open slots the server found in the coming days.
+  final int nextSlotCount;
+
+  bool get hasPhoto => photoPath.isNotEmpty;
+  bool get hasAvailability => nextSlotCount > 0;
+
+  /// Absolute photo URL, or null when the lawyer has no photo. Resolved against the
+  /// site root exactly like a banner image, so the server never has to know which host
+  /// the app was built for.
+  String? photoUrl(String siteBase) {
+    if (photoPath.isEmpty) return null;
+    final base = siteBase.endsWith('/')
+        ? siteBase.substring(0, siteBase.length - 1)
+        : siteBase;
+    final path = photoPath.startsWith('/') ? photoPath : '/$photoPath';
+    return '$base$path';
+  }
 
   factory LawyerProfile.fromJson(Map<String, dynamic> map) {
     final j = Json(map);
+    // `availability` is a nested object on the journey responses; read its fields
+    // defensively so a lawyer without the key is simply reported as having no slots.
+    final availability = map['availability'];
+    final av = availability is Map
+        ? Json(Map<String, dynamic>.from(availability))
+        : const Json({});
     return LawyerProfile(
       id: j.intg('id'),
       name: j.str('full_name', fallback: j.str('name')),
@@ -380,6 +430,12 @@ class LawyerProfile {
       jurisdiction: j.str('jurisdiction'),
       rating: j.dbl('rating'),
       hourlyRate: j.dbl('hourly_rate'),
+      yearsExperience: j.intg('years_experience'),
+      bio: j.str('bio'),
+      photoPath: j.str('photo_path'),
+      feeDisplay: j.str('fee_display'),
+      hasPublishedHours: av.boolean('has_published_hours'),
+      nextSlotCount: av.intg('slot_count', fallback: j.intg('slot_count')),
     );
   }
 }
@@ -750,24 +806,68 @@ class JourneyIssueType {
 }
 
 /// The result of the journey's lawyer lookup: the matches plus, when there are
-/// none, a customer-appropriate alternative sentence instead of an empty screen.
+/// none, the server's customer-appropriate alternative.
+///
+/// `alternative` arrives as a JSON **object** (`reason`/`suggest`/`specialties`), not
+/// a string. It was previously read with `Json.str`, which calls `.toString()` on
+/// whatever it finds — so a no-match response produced the raw Dart map
+/// (`{reason: ..., suggest: ..., specialties: [...]}`) and the customer saw that
+/// under "لا يوجد محامٍ متاح". The map is now parsed field by field, and no caller
+/// renders it: the empty state shows one message and two buttons. The fields are
+/// kept because the shape is part of the API contract and dropping them would make
+/// the next `alternative` consumer re-derive them.
+class JourneyAlternative {
+  const JourneyAlternative({
+    this.reason = '',
+    this.suggest = '',
+    this.specialties = const [],
+  });
+
+  final String reason;
+  final String suggest;
+  final List<JourneySpecialty> specialties;
+
+  /// True when the server sent a usable alternative. A null/absent `alternative`
+  /// yields an all-empty instance, which is the honest "nothing to say" state.
+  bool get isPresent => reason.isNotEmpty || suggest.isNotEmpty;
+
+  factory JourneyAlternative.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return JourneyAlternative(
+      reason: j.str('reason'),
+      suggest: j.str('suggest'),
+      specialties: j
+          .list('specialties')
+          .map((e) => JourneySpecialty.fromJson(e.asMap))
+          .toList(),
+    );
+  }
+}
+
 class JourneyMatch {
   const JourneyMatch({
     this.lawyers = const [],
     this.matched = false,
-    this.alternative = '',
+    this.alternative,
   });
 
   final List<LawyerProfile> lawyers;
   final bool matched;
-  final String alternative;
+
+  /// Null when lawyers were found, or when the server sent no alternative object.
+  final JourneyAlternative? alternative;
 
   factory JourneyMatch.fromJson(Map<String, dynamic> map) {
     final j = Json(map);
+    // `alternative` is an object on a no-match response and null otherwise. Guard the
+    // type explicitly: a string or list here must not become a stringified map.
+    final rawAlt = map['alternative'];
     return JourneyMatch(
       lawyers: j.list('lawyers').map((e) => LawyerProfile.fromJson(e.asMap)).toList(),
       matched: j.boolean('matched'),
-      alternative: j.str('alternative'),
+      alternative: rawAlt is Map
+          ? JourneyAlternative.fromJson(Map<String, dynamic>.from(rawAlt))
+          : null,
     );
   }
 }

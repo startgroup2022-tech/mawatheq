@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/config/app_config.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/network/api_repository.dart';
 import '../../core/network/models.dart';
@@ -281,7 +282,6 @@ class _ConsultationJourneyScreenState extends State<ConsultationJourneyScreen> {
   Widget _lawyerStep() {
     if (_match.lawyers.isEmpty) {
       return _NoLawyerState(
-        alternative: _match.alternative,
         onAskAssistant: _openAssistant,
         onContact: _openContact,
       );
@@ -344,24 +344,24 @@ class _ConsultationJourneyScreenState extends State<ConsultationJourneyScreen> {
 /// The no-lawyer empty state for step 3.
 ///
 /// A specialty with no approved lawyer is a normal outcome, not an error: the
-/// `lawyer_specialties` table ships empty, so a fresh deployment has none. Showing a
-/// bare "nothing here" left the customer at a dead end, which is worse than the
-/// problem. This keeps the headline the journey already used and adds the two routes
-/// out — ask the assistant, or contact the firm — as real buttons rather than a
-/// sentence telling them to do something the app does not offer.
+/// `lawyer_specialties` table ships empty, so a deployment with no operator-linked
+/// lawyers has none. This state shows exactly one message and the two real routes
+/// out — ask the assistant, or contact the firm.
+///
+/// It deliberately renders **nothing else**. An earlier version echoed the server's
+/// `alternative` object here; that field is a map (`reason`/`suggest`/`specialties`),
+/// so `Json.str` stringified it and the customer saw raw `{reason: ..., ...}` text
+/// under the message. The empty state is the customer's last screen in the flow, so
+/// no backend diagnostic may reach it. The model now parses the object into typed
+/// fields and this widget reads none of them.
 ///
 /// The copy is Arabic-only, like the rest of the journey screen: the flow is driven
 /// by the Arabic taxonomy and has no English variant.
 class _NoLawyerState extends StatelessWidget {
   const _NoLawyerState({
-    required this.alternative,
     required this.onAskAssistant,
     required this.onContact,
   });
-
-  /// The server's own explanation, when it sent one. Rendered verbatim so the app
-  /// does not invent a reason the backend did not give.
-  final String alternative;
 
   final VoidCallback onAskAssistant;
   final VoidCallback onContact;
@@ -385,23 +385,13 @@ class _NoLawyerState extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.s4),
             Text(
-              'لا يوجد محامٍ متاح حالياً',
+              'لا يوجد محامٍ متاح',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.titleMedium,
             ),
-            const SizedBox(height: AppSpacing.s2),
-            Text(
-              alternative.isNotEmpty
-                  ? alternative
-                  : 'جرّب تخصصاً آخر أو تواصل معنا لترشيح محامٍ مناسب.',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
             const SizedBox(height: AppSpacing.s5),
-            // Both routes are real: the assistant opens the AI screen, contact opens
-            // the support page. Neither is a placeholder.
             PrimaryButton(
-              label: 'اسأل المساعد الذكي',
+              label: 'المساعد الذكي',
               icon: Icons.auto_awesome_outlined,
               onPressed: onAskAssistant,
               expand: true,
@@ -1248,12 +1238,9 @@ class _LawyerChoiceCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(10),
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const CircleAvatar(
-                radius: 22,
-                backgroundColor: AppColors.navy,
-                child: Icon(Icons.person, color: Colors.white),
-              ),
+              _LawyerAvatar(lawyer: lawyer),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -1263,24 +1250,49 @@ class _LawyerChoiceCard extends StatelessWidget {
                         style: TextStyle(
                             fontWeight: FontWeight.w700,
                             color: context.tokens.heading)),
-                    const SizedBox(height: 4),
-                    Row(
+                    if (lawyer.specialization.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(lawyer.specialization,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: context.tokens.textMuted, fontSize: 12.5)),
+                    ],
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 4,
                       children: [
-                        const Icon(Icons.star, size: 14, color: AppColors.gold),
-                        const SizedBox(width: 4),
-                        Text(lawyer.rating.toStringAsFixed(1),
-                            style: TextStyle(
-                                color: context.tokens.textMuted, fontSize: 12)),
-                        if (lawyer.jurisdiction.isNotEmpty) ...[
-                          const SizedBox(width: 10),
-                          Flexible(
-                            child: Text(lawyer.jurisdiction,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                    color: context.tokens.textSubtle, fontSize: 12)),
+                        _MetaChip(
+                          icon: Icons.star,
+                          iconColor: AppColors.gold,
+                          text: lawyer.rating.toStringAsFixed(1),
+                        ),
+                        if (lawyer.yearsExperience > 0)
+                          _MetaChip(
+                            icon: Icons.workspace_premium_outlined,
+                            text: '${lawyer.yearsExperience} سنة خبرة',
                           ),
-                        ],
+                        if (lawyer.jurisdiction.isNotEmpty)
+                          _MetaChip(
+                            icon: Icons.place_outlined,
+                            text: lawyer.jurisdiction,
+                          ),
                       ],
+                    ),
+                    const SizedBox(height: 6),
+                    // Availability comes from the backend's own slot calculation, so
+                    // the customer sees the same thing here as on the booking form.
+                    Text(
+                      lawyer.hasAvailability
+                          ? '${lawyer.nextSlotCount} موعد متاح'
+                          : 'لا توجد مواعيد منشورة',
+                      style: TextStyle(
+                          color: lawyer.hasAvailability
+                              ? AppColors.teal
+                              : context.tokens.textSubtle,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600),
                     ),
                   ],
                 ),
@@ -1297,3 +1309,94 @@ class _LawyerChoiceCard extends StatelessWidget {
   }
 }
 
+
+/// The lawyer's photo when they have one, and a branded initials disc when they do
+/// not. A missing photo is the common case on a young platform, so the fallback has
+/// to look deliberate rather than broken — it shows the lawyer's initials on the
+/// brand navy instead of a generic person glyph every card would repeat.
+class _LawyerAvatar extends StatelessWidget {
+  const _LawyerAvatar({required this.lawyer});
+
+  final LawyerProfile lawyer;
+
+  @override
+  Widget build(BuildContext context) {
+    final url = lawyer.photoUrl(AppConfig.siteBase);
+    if (url != null) {
+      return ClipOval(
+        child: Image.network(
+          url,
+          width: 44,
+          height: 44,
+          fit: BoxFit.cover,
+          // A broken image must degrade to the initials disc, not a broken-image icon.
+          errorBuilder: (_, __, ___) => _initials(),
+          loadingBuilder: (context, child, progress) =>
+              progress == null ? child : _initials(),
+        ),
+      );
+    }
+    return _initials();
+  }
+
+  Widget _initials() {
+    final parts = lawyer.name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty)
+        .toList();
+    // First character of the first two words. `substring` rather than `characters`
+    // because Arabic letters here are single UTF-16 units and the package is not a
+    // dependency of this screen.
+    final letters = parts.take(2).map((p) => p.substring(0, 1)).join();
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: const BoxDecoration(
+        color: AppColors.navy,
+        shape: BoxShape.circle,
+      ),
+      alignment: Alignment.center,
+      child: letters.isEmpty
+          ? const Icon(Icons.person, color: Colors.white, size: 22)
+          : Text(
+              letters,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16),
+            ),
+    );
+  }
+}
+
+/// One small labelled fact on a lawyer card (rating, experience, jurisdiction).
+class _MetaChip extends StatelessWidget {
+  const _MetaChip({required this.icon, required this.text, this.iconColor});
+
+  final IconData icon;
+  final String text;
+  final Color? iconColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: iconColor ?? context.tokens.textSubtle),
+        const SizedBox(width: 4),
+        // Flexible so a long value (a jurisdiction, a long year count) ellipsizes
+        // inside the Wrap instead of overflowing it. A chip is decorative metadata;
+        // truncating it is always better than a layout error.
+        Flexible(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: context.tokens.textMuted, fontSize: 12),
+          ),
+        ),
+      ],
+    );
+  }
+}
