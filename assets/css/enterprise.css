@@ -683,27 +683,38 @@ input[type=checkbox].lg, input[type=radio].lg{ width:22px; height:22px; min-heig
 /* ------------------------------------------------------------ public site --- */
 /* Mobile navigation for the marketing header (the desktop nav is unchanged).
    The breakpoint must match the one in style.css: eight nowrap labels plus the
-   brand and the two call-to-action buttons need ~1080px, so the panel takes over
-   below that rather than letting the row compress. */
+   brand and the two call-to-action buttons need ~1080px of usable row width, and
+   `.container` caps at 1180px with 24px padding, so the row only fits from about
+   1140px up. Below that the panel takes over rather than letting the links
+   overflow the row and draw over the brand and the buttons. */
 .nav-toggle{ display:none; }
-@media (max-width:1080px){
+@media (max-width:1140px){
   .site-header .container{ height:68px; }
   .nav-toggle{
     display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px; flex:none;
     border:1.5px solid var(--border); border-radius:var(--r-md); background:var(--surface); color:var(--navy-dark); cursor:pointer;
   }
   .nav-toggle svg{ width:20px; height:20px; stroke:currentColor; fill:none; stroke-width:1.9; stroke-linecap:round; }
+  .nav-toggle .nav-toggle-close{ display:none; }
+  .nav-toggle[aria-expanded="true"] .nav-toggle-open{ display:none; }
+  .nav-toggle[aria-expanded="true"] .nav-toggle-close{ display:block; }
   .main-nav{
     display:none; position:absolute; inset-inline:0; top:100%; flex-direction:column; align-items:stretch; gap:0;
     background:var(--surface); border-bottom:1px solid var(--border); box-shadow:var(--sh-md); padding:var(--s-2);
-    max-height:calc(100vh - 68px); overflow-y:auto;
+    max-height:calc(100vh - 68px); overflow-y:auto; animation:navPanelIn .18s ease;
   }
   .main-nav.is-open{ display:flex; }
   .main-nav a{ padding:14px var(--s-4); border-radius:var(--r-md); min-height:48px; display:flex; align-items:center; border-bottom:0; }
   .main-nav a:hover{ background:var(--surface-2); }
   .main-nav a[aria-current="page"], .main-nav a.is-active{ background:var(--surface-2); }
+  .nav-scrim{
+    display:none; position:fixed; inset:0; z-index:45; background:rgba(15,31,51,.28);
+    border:0; padding:0; cursor:pointer;
+  }
+  body.nav-open .nav-scrim{ display:block; }
   .header-actions .btn-outline{ display:none; }
 }
+@keyframes navPanelIn{ from{ opacity:0; transform:translateY(-6px); } to{ opacity:1; transform:none; } }
 @media (max-width:480px){
   .site-header .container{ gap:10px; }
   .header-actions{ gap:8px; }
