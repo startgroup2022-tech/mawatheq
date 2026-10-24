@@ -102,10 +102,14 @@ if ($root !== null) {
     $secrets = $docroot . '/config/secrets.php';
     $backup = $secrets . '.exec39.bak';
     $original = (string)file_get_contents($secrets);
+    // The config is restored by rewriting the same path, not by renaming the backup over
+    // it: `rename()` replaces the inode, so the file would come back owned by the CLI
+    // user's group instead of the one Apache reads through (www-data), and under a
+    // restrictive umask it would also come back 0600. Both make every page 500 while the
+    // suite itself still reports success. Rewriting keeps owner, group and mode intact.
     $stripped = preg_replace("/define\('DB_NAME'[^;]*;\s*/", '', $original, 1);
     check('the scratch config removes only the DB_NAME definition',
         $stripped !== null && $stripped !== $original && !str_contains($stripped, "define('DB_NAME'"));
-    file_put_contents($backup, $original);
     file_put_contents($secrets, $stripped);
 
     $cmd = "MAWATHEQ_DB_NAME=$scratch nohup php -S 127.0.0.1:$port -t " . escapeshellarg($docroot) . " >$log 2>&1 & echo $!";
@@ -148,7 +152,12 @@ if ($server) {
     usleep(300000);
 }
 if (isset($backup) && is_file($backup)) {
-    rename($backup, $secrets);
+    @unlink($backup);
+}
+if (isset($original) && $original !== '') {
+    // Restore in place so owner, group and mode survive; the content came from memory,
+    // so no backup file has to exist for this to work.
+    file_put_contents($secrets, $original);
 }
 check('the original config was restored',
     !is_file($secrets . '.exec39.bak') && str_contains((string)file_get_contents($secrets), "define('DB_NAME'"));
