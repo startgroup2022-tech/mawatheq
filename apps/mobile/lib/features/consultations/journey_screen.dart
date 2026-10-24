@@ -287,7 +287,7 @@ class _ConsultationJourneyScreenState extends State<ConsultationJourneyScreen> {
 
   Widget _lawyerStep() {
     if (_match.lawyers.isEmpty) {
-      return _NoLawyerState(
+      return NoLawyerState(
         onAskAssistant: _openAssistant,
         onContact: _openContact,
       );
@@ -347,74 +347,6 @@ class _ConsultationJourneyScreenState extends State<ConsultationJourneyScreen> {
   }
 }
 
-/// The no-lawyer empty state for step 3.
-///
-/// A specialty with no approved lawyer is a normal outcome, not an error: the
-/// `lawyer_specialties` table ships empty, so a deployment with no operator-linked
-/// lawyers has none. This state shows exactly one message and the two real routes
-/// out — ask the assistant, or contact the firm.
-///
-/// It deliberately renders **nothing else**. An earlier version echoed the server's
-/// `alternative` object here; that field is a map (`reason`/`suggest`/`specialties`),
-/// so `Json.str` stringified it and the customer saw raw `{reason: ..., ...}` text
-/// under the message. The empty state is the customer's last screen in the flow, so
-/// no backend diagnostic may reach it. The model now parses the object into typed
-/// fields and this widget reads none of them.
-///
-/// The copy is Arabic-only, like the rest of the journey screen: the flow is driven
-/// by the Arabic taxonomy and has no English variant.
-class _NoLawyerState extends StatelessWidget {
-  const _NoLawyerState({
-    required this.onAskAssistant,
-    required this.onContact,
-  });
-
-  final VoidCallback onAskAssistant;
-  final VoidCallback onContact;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSpacing.s6),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 68,
-              height: 68,
-              decoration: BoxDecoration(
-                color: context.tokens.infoBg,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.search_off, size: 30, color: AppColors.teal),
-            ),
-            const SizedBox(height: AppSpacing.s4),
-            Text(
-              'لا يوجد محامٍ متاح',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: AppSpacing.s5),
-            PrimaryButton(
-              label: 'المساعد الذكي',
-              icon: Icons.auto_awesome_outlined,
-              onPressed: onAskAssistant,
-              expand: true,
-            ),
-            const SizedBox(height: AppSpacing.s3),
-            SecondaryButton(
-              label: 'تواصل معنا',
-              icon: Icons.support_agent_outlined,
-              onPressed: onContact,
-              expand: true,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 /// The booking form at the end of the journey: date, time and the written topic.
 class _JourneyBookingScreen extends StatefulWidget {

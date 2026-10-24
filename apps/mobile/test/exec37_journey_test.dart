@@ -497,7 +497,7 @@ void main() {
       await tester.tap(find.text('إثبات عقد الزواج'));
       await tester.pumpAndSettle();
 
-      expect(find.text('لا يوجد محامٍ متاح'), findsOneWidget);
+      expect(find.text('لا يوجد محامي متاح'), findsOneWidget);
       // The customer sees one plain message and two buttons. No server diagnostic —
       // `alternative` is a map, and stringifying it produced raw `{reason: ...}` text.
       expect(find.textContaining('reason'), findsNothing);
