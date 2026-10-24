@@ -25,6 +25,15 @@ class AppConfig {
   static const String appNameAr = 'مواثيق';
   static const String appNameEn = 'Mawatheq';
 
+  /// The user-visible version, shown on the account screen.
+  ///
+  /// It must equal the `version:` line in `pubspec.yaml`. There is no
+  /// `package_info_plus` dependency (it is a platform plugin outside the approved
+  /// set), so the value is mirrored here; `exec52_app_version_test.dart` reads
+  /// `pubspec.yaml` and fails if the two drift, which is what keeps this honest
+  /// rather than a second copy that silently goes stale.
+  static const String appVersion = '1.5.0';
+
   /// Request timeout. Kept short so the UI can show a retry affordance quickly.
   static const Duration timeout = Duration(seconds: 30);
 

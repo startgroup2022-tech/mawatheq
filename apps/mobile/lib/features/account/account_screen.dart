@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/auth_controller.dart';
+import '../../core/config/app_config.dart';
 import '../../core/locale_controller.dart';
 import '../../core/network/api_repository.dart';
 import '../../core/network/models.dart';
@@ -360,7 +361,7 @@ class _AccountScreenState extends State<AccountScreen> {
         const SizedBox(height: 12),
         Center(
           child: Text(
-            'مواثيق · الإصدار 1.0.0',
+            'مواثيق · الإصدار ${AppConfig.appVersion}',
             style: Theme.of(context).textTheme.labelSmall,
           ),
         ),
