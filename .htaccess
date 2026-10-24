@@ -48,6 +48,15 @@ Options -Indexes
     # name, so nested files like .git/config bypassed it and exposed history and remote creds.
     RewriteRule ^\.git(?:/|$) - [F,L,NC]
     RewriteRule ^uploads/.*\.(?:php[0-9]?|phtml|phar|cgi|pl|asp|aspx)$ - [F,L,NC]
+
+    # Canonical trailing-slash URLs for the legal pages. Google Play's account-deletion
+    # requirement names a URL, and /delete-account/ has to reach the real page rather
+    # than the DirectoryIndex fallback — with no rule here the request for a directory
+    # that does not exist was answered by index.php, so the page returned HTTP 200 with
+    # the homepage's body and looked healthy while never being reachable. The rewrite
+    # targets the .php file directly and keeps the trailing slash, so one canonical URL
+    # serves the content.
+    RewriteRule ^(privacy|delete-account)/?$ $1.php [L,NC]
 </IfModule>
 
 # توجيه أخطاء 404 (اختياري - أنشئ الملف عند الحاجة)

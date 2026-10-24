@@ -16,6 +16,7 @@ require_once __DIR__ . '/site_social.php';
       </div>
       <div class="footer-links">
         <a href="/privacy.php"><?= t('footer_privacy') ?></a>
+        <a href="/delete-account.php"><?= is_rtl() ? 'حذف الحساب' : 'Delete account' ?></a>
         <a href="/terms.php"><?= t('footer_terms') ?></a>
         <a href="/contact.php"><?= t('footer_contact') ?></a>
         <a href="/knowledge.php"><?= t('feat6_title') ?></a>

@@ -78,7 +78,8 @@ foreach (($pageStyles ?? []) as $pageStyle) {
     </a>
     <button type="button" class="nav-toggle" data-nav-toggle aria-controls="mainNav"
             aria-expanded="false" aria-label="<?= is_rtl() ? 'فتح القائمة' : 'Open menu' ?>">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      <svg class="nav-toggle-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      <svg class="nav-toggle-close" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
     </button>
     <nav class="main-nav" id="mainNav" data-nav-spy aria-label="<?= is_rtl() ? 'القائمة الرئيسية' : 'Main navigation' ?>">
       <a href="/#platform"><?= t('nav_platform') ?></a>
@@ -99,3 +100,9 @@ foreach (($pageStyles ?? []) as $pageStyle) {
     </div>
   </div>
 </header>
+<?php /* Outside <header>: `backdrop-filter` on the header makes it the containing
+   block for fixed children, so a scrim inside it would size itself to the bar
+   instead of the viewport. It sits below the header's z-index so the bar and the
+   open panel stay visible and tappable while the page behind is dimmed. */ ?>
+<button type="button" class="nav-scrim" data-nav-scrim tabindex="-1" aria-hidden="true"
+        aria-label="<?= is_rtl() ? 'إغلاق القائمة' : 'Close menu' ?>"></button>

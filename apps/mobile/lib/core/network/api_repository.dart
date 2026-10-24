@@ -156,6 +156,21 @@ class ApiRepository {
     }
   }
 
+  /// `POST /api/v1/account/delete.php` — anonymise and deactivate this account.
+  ///
+  /// Google Play requires an in-app deletion route. The server verifies the password
+  /// and refuses while work is in flight; an `ApiException` carries its message so the
+  /// screen can show the blockers rather than a generic failure.
+  Future<void> deleteAccount({
+    required String password,
+    String confirm = 'DELETE',
+  }) async {
+    await _client.post(
+      '/account/delete.php',
+      body: {'password': password, 'confirm': confirm},
+    );
+  }
+
   /// `POST /api/v1/rotate-token.php` — issue a new token for this device.
   Future<String?> rotateToken(String deviceLabel) async {
     final json = await _client.post(
