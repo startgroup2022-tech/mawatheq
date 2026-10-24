@@ -2973,3 +2973,42 @@ clean import `7/38/234/640`, a second run changes nothing, and running it withou
 `upgrade_v59.sql` aborts with `ERROR 1644 (45000) … PREREQUISITE FAILED` leaving the
 database untouched. The order is **v59 → v63 → import → v63 again**; see the
 Execution 37 note on why the second v63 run is what fills the customer descriptions.
+
+## Execution 43 — the slider fallback, and why the owner saw "two static cards"
+
+### The carousel was correct; its *guard* was the defect
+
+`BannerCarousel` was a real `PageView` with a 4.5s auto-advance, RTL-aware swiping and
+pagination dots from the start — but `HomeTab` rendered it only when the API returned at
+least one banner, and `home_banners` ships empty. On a fresh install the top of the home
+screen was therefore just the two action cards, which is exactly what the owner rejected.
+The fix is `_slides => _banners.isNotEmpty ? _banners : kBuiltInHomeSlides`: four bundled
+photo slides (`assets/images/banners/*.jpg`) back the carousel when the operator has
+published none. Production's `api/v1/banners.php` returns `{"banners":[]}` today, so the
+built-in slides are what every install actually shows.
+
+### `assets/images/` in pubspec is not recursive
+
+A photo in `assets/images/banners/` is absent from the bundle until that directory is
+declared too. `Image.asset` then fails at paint, the `errorBuilder` swaps in the brand
+gradient, and the slider still renders — so every widget test passes while the owner sees
+four flat panels instead of photographs. `exec43_home_slider_test.dart` loads the real
+bytes with `rootBundle.load` for this reason; assert on the bundled photo, not on the
+widget's presence. Verified in the shipped APK: all four JPEGs present, 45–201 KB.
+
+### versionCode, not versionName, decides whether an APK installs
+
+A corrected build that keeps `1.5.1+13` cannot replace the build the owner already has —
+Android refuses a non-increasing `versionCode`. The release APK is `1.5.2+14`. Confirm
+with `aapt2 dump badging` (this image has no `unzip`; use `python3 -m zipfile` or
+`zipfile` in a script, and note `unzip`'s absence makes a naive `unzip … | grep` report
+"not found" for content that is present).
+
+### `delete-account.php` is the Play-required public URL
+
+The privacy page promised a deletion route and the in-app screen exists, but
+`/delete-account.php` did not, and `/delete-account/` was answered by the `DirectoryIndex`
+fallback — HTTP 200 with the homepage body, so it looked healthy while being unreachable.
+A trailing-slash URL needs an explicit `.htaccess` rewrite; the index fallback masks the
+404. Guests get the policy and a sign-in link; a signed-in client or lawyer gets the real
+form, and the page calls the same `account_delete()` as the app and `/account.php`.
