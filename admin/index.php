@@ -8,6 +8,7 @@ require_once __DIR__ . '/includes/admin_header.php';
 // employee may see. Rendering a separate page rather than hiding panels with CSS keeps those
 // figures out of the response body entirely, so they cannot be read from the page source.
 if (($_SESSION['admin_role'] ?? '') === 'staff') {
+    define('MAWATHEQ_ADMIN_STAFF_DASHBOARD', true);
     require_once __DIR__ . '/dashboard-staff.php';
     require_once __DIR__ . '/includes/admin_footer.php';
     exit;

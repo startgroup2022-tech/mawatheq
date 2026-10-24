@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
 import 'core/auth_controller.dart';
+import 'core/config/app_config.dart';
 import 'core/deep_link_service.dart';
 import 'core/locale_controller.dart';
 import 'core/network/api_repository.dart';
@@ -43,6 +46,9 @@ class _MawatheqAppState extends State<MawatheqApp> {
     // Validate any stored token once, before deciding which screen to show.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await context.read<AuthController>().restore();
+      // The session check resolved, so the ceiling is no longer needed. Cancelling
+      // it here also means a normal startup leaves no timer behind.
+      _splashCeiling?.cancel();
       if (!mounted) return;
       setState(() => _restored = true);
       final token = _pendingResetToken;
@@ -51,7 +57,25 @@ class _MawatheqAppState extends State<MawatheqApp> {
         _openResetScreen(token);
       }
     });
+
+    // Hard ceiling on the splash, independent of every request timeout below it.
+    // The session check is already bounded (AppConfig.startupTimeout), but this is
+    // the last line of defence: a future startup call that forgets its own timeout
+    // must not be able to hold a user on a logo. Reaching this only marks the check
+    // as done; a late `restore()` still updates the session normally.
+    _splashCeiling = Timer(AppConfig.splashCeiling, () {
+      if (mounted && !_restored) setState(() => _restored = true);
+    });
+
     widget.deepLinks?.onResetPassword = _onResetToken;
+  }
+
+  Timer? _splashCeiling;
+
+  @override
+  void dispose() {
+    _splashCeiling?.cancel();
+    super.dispose();
   }
 
   void _onResetToken(String token) {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/auth_controller.dart';
+import '../../core/guest_session.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../shared/widgets/brand_widgets.dart';
@@ -58,10 +59,27 @@ class _RegisterScreenState extends State<RegisterScreen> {
     });
 
     if (!ok && auth.error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(auth.error!)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(auth.error!)));
+      return;
     }
+
+    // Most deployments verify the email before issuing a token, so `ok` usually
+    // means "check your inbox" and the success screen below is shown. When the
+    // backend *does* sign the account in immediately, go straight Home — the same
+    // landing a sign-in gets — rather than leaving the customer on a form.
+    if (ok && auth.isSignedIn) _goHome();
+  }
+
+  /// Registration lands on Home when it signs the account in, exactly like sign-in.
+  void _goHome() {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => ProtectedDestination.dashboard.buildShell(),
+      ),
+      (route) => false,
+    );
   }
 
   @override
@@ -70,7 +88,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       // The server reports whether the verification email was actually handed off.
       // Never promise "we sent it" when delivery failed; point to the resend page
       // instead. A null (older backend) keeps the original positive wording.
-      final emailSent = context.watch<AuthController>().lastRegistrationEmailSent;
+      final emailSent = context
+          .watch<AuthController>()
+          .lastRegistrationEmailSent;
       final delivered = emailSent ?? true;
       return Scaffold(
         appBar: const BrandAppBar(),
@@ -98,8 +118,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('إنشاء حساب عميل',
-                    style: Theme.of(context).textTheme.titleLarge),
+                Text(
+                  'إنشاء حساب عميل',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
                 const SizedBox(height: 6),
                 Text(
                   'للأفراد والشركات. أما المحامون فينضمّون من صفحة الانضمام للمحامين على الموقع.',
@@ -113,8 +135,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     labelText: 'الاسم الكامل',
                     prefixIcon: Icon(Icons.person_outline, size: 20),
                   ),
-                  validator: (v) =>
-                      (v == null || v.trim().length < 3) ? 'أدخل الاسم الكامل' : null,
+                  validator: (v) => (v == null || v.trim().length < 3)
+                      ? 'أدخل الاسم الكامل'
+                      : null,
                 ),
                 const SizedBox(height: 14),
                 TextFormField(
@@ -126,7 +149,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     prefixIcon: Icon(Icons.mail_outline, size: 20),
                   ),
                   validator: (v) {
-                    if (v == null || v.trim().isEmpty) return 'أدخل البريد الإلكتروني';
+                    if (v == null || v.trim().isEmpty) {
+                      return 'أدخل البريد الإلكتروني';
+                    }
                     if (!v.contains('@')) return 'صيغة البريد غير صحيحة';
                     return null;
                   },
@@ -195,7 +220,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 }
 
-
 class _AccountTypeTab extends StatelessWidget {
   const _AccountTypeTab({
     required this.label,
@@ -225,7 +249,9 @@ class _AccountTypeTab extends StatelessWidget {
             textAlign: TextAlign.center,
             style: TextStyle(
               fontWeight: FontWeight.w700,
-              color: selected ? context.tokens.heading : context.tokens.textMuted,
+              color: selected
+                  ? context.tokens.heading
+                  : context.tokens.textMuted,
             ),
           ),
         ),

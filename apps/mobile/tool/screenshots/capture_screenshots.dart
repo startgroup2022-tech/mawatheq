@@ -82,12 +82,13 @@ const _banners = [
 ];
 
 const _specialties = [
-  {'id': 1, 'name': 'الأحوال الشخصية', 'icon_key': 'family', 'lawyer_count': 4},
-  {'id': 2, 'name': 'القضايا التجارية', 'icon_key': 'commercial', 'lawyer_count': 3},
-  {'id': 3, 'name': 'القضايا العمالية', 'icon_key': 'labor', 'lawyer_count': 2},
-  {'id': 4, 'name': 'العقارات والملكية', 'icon_key': 'property', 'lawyer_count': 5},
-  {'id': 5, 'name': 'القضايا الجزائية', 'icon_key': 'criminal', 'lawyer_count': 1},
-  {'id': 6, 'name': 'الملكية الفكرية', 'icon_key': 'ip', 'lawyer_count': 0},
+  {'id': 1, 'name': 'الأحوال الشخصية', 'description': 'شؤون الأسرة: الزواج والطلاق والنفقة والحضانة والميراث.', 'icon_key': 'family', 'lawyer_count': 0},
+  {'id': 2, 'name': 'الدعاوى التجارية', 'description': 'النزاعات التجارية والشركات والعقود والأوراق التجارية والإفلاس.', 'icon_key': 'commercial', 'lawyer_count': 0},
+  {'id': 3, 'name': 'الدعاوى العمالية', 'description': 'نزاعات العمل: حقوق وواجبات العامل وصاحب العمل ومستحقات نهاية الخدمة.', 'icon_key': 'labor', 'lawyer_count': 0},
+  {'id': 4, 'name': 'الدعاوى الجزائية', 'description': 'القضايا الجزائية والمطالبات المالية الناشئة عن الجرائم.', 'icon_key': 'criminal', 'lawyer_count': 0},
+  {'id': 5, 'name': 'الدعاوى العامة', 'description': 'الدعاوى المدنية والعقارية والعقود والتحكيم.', 'icon_key': 'general', 'lawyer_count': 0},
+  {'id': 6, 'name': 'دعاوى التنفيذ', 'description': 'تنفيذ الأحكام والسندات التنفيذية والمنازعات المتعلقة بها.', 'icon_key': 'enforcement', 'lawyer_count': 0},
+  {'id': 7, 'name': 'الدعاوى المتعلقة بالإنهاءات', 'description': 'إنهاءات الأوقاف والمواريث والصكوك والولايات.', 'icon_key': 'endowments', 'lawyer_count': 0},
 ];
 
 const _issueTypes = [
@@ -137,6 +138,70 @@ const _lawyers = [
     'hourly_rate': 300.0,
   },
 ];
+
+/// The production state while the taxonomy import has not been run: no operator
+/// banners and no server specialties. Everything else is the normal fixture.
+Future<(int, Object)> _apiNoBanners(Uri uri) async {
+  final p = uri.path;
+  if (p.endsWith('/banners.php')) {
+    return (200, {'ok': true, 'banners': <Object>[]});
+  }
+  if (p.endsWith('/journey.php') &&
+      uri.queryParameters['action'] == 'specialties') {
+    return (200, {'ok': true, 'specialties': <Object>[], 'ready': true});
+  }
+  return _api(uri);
+}
+
+/// The production state *after* MAWATHEQ_LEGAL_CLASSIFICATIONS_IMPORT.sql: still no
+/// operator banners, so the built-in slides carry the carousel, and the seven real
+/// categories now arrive from the server. `_specialties` holds the names and
+/// descriptions the import actually writes.
+Future<(int, Object)> _apiImportedTaxonomy(Uri uri) async {
+  final p = uri.path;
+  if (p.endsWith('/banners.php')) {
+    return (200, {'ok': true, 'banners': <Object>[]});
+  }
+  if (p.endsWith('/journey.php') &&
+      uri.queryParameters['action'] == 'specialties') {
+    return (200, {'ok': true, 'specialties': _specialties, 'ready': true});
+  }
+  return _api(uri);
+}
+
+/// The lawyer-availability empty state: the specialty has no lawyer, so the API
+/// returns an empty list plus the `alternative` object the old screen echoed. The
+/// captured screen must show none of it — only the message and the two buttons.
+Future<(int, Object)> _apiNoLawyer(Uri uri) async {
+  final p = uri.path;
+  if (p.endsWith('/banners.php')) {
+    return (200, {'ok': true, 'banners': _banners});
+  }
+  if (p.endsWith('/lawyers.php')) {
+    return (200, {'ok': true, 'lawyers': <Object>[]});
+  }
+  if (p.endsWith('/journey.php')) {
+    switch (uri.queryParameters['action']) {
+      case 'specialties':
+        return (200, {'ok': true, 'specialties': _specialties, 'ready': true});
+      case 'issue-types':
+        return (200, {'ok': true, 'issue_types': _issueTypes});
+      case 'lawyers':
+        return (200, {
+          'ok': true,
+          'matched': false,
+          'lawyers': <Object>[],
+          'alternative': {
+            'reason': 'لا يوجد حاليًا محامٍ متاح في هذا التخصص.',
+            'suggest': 'يمكنك اختيار تخصص آخر أو إرسال طلبك وسنرشّح لك محاميًا مناسبًا.',
+            'specialties': <Object>[],
+          },
+        });
+    }
+    return (200, {'ok': true});
+  }
+  return _api(uri);
+}
 
 Future<(int, Object)> _api(Uri uri) async {
   final p = uri.path;
@@ -367,6 +432,49 @@ void main() {
     ]);
   });
 
+  testWidgets('guest home fresh install (built-in slider)', (tester) async {
+    // The production state: `home_banners` is empty, so the built-in Mawatheq
+    // slides carry the carousel. This is the shot that proves the home is not just
+    // two static cards.
+    final t = _FakeTransport(_apiNoBanners);
+    await tester.pumpWidget(_app(
+      auth: await _auth(t),
+      repo: _repo(t),
+      home: HomeShell(repository: _repo(t)),
+    ));
+    await _settle(tester);
+    await _shot(tester, '10_guest_home_fresh_slider.png', <String>[
+      'استشارتك القانونية بخطوات بسيطة',
+      'احجز استشارة',
+      'اسأل المساعد الذكي',
+      'اختر تخصصك القانوني',
+    ]);
+  });
+
+  testWidgets('guest home with the imported taxonomy', (tester) async {
+    // The state production reaches after MAWATHEQ_LEGAL_CLASSIFICATIONS_IMPORT.sql:
+    // still no operator banners, so the built-in slider carries the carousel, and the
+    // seven real categories now come from the server. The names below are the ones the
+    // import writes, not invented placeholders — a screenshot of fake data would prove
+    // nothing about the delivery.
+    final t = _FakeTransport(_apiImportedTaxonomy);
+    await tester.pumpWidget(_app(
+      auth: await _auth(t),
+      repo: _repo(t),
+      home: HomeShell(repository: _repo(t)),
+    ));
+    await _settle(tester);
+    await _shot(tester, '11_guest_home_imported_taxonomy.png', <String>[
+      'استشارتك القانونية بخطوات بسيطة',
+      'احجز استشارة',
+      'اسأل المساعد الذكي',
+      'اختر تخصصك القانوني',
+      'الدعاوى العمالية',
+      'دعاوى التنفيذ',
+      'الدعاوى المتعلقة بالإنهاءات',
+    ]);
+  });
+
   testWidgets('signed-in home', (tester) async {
     final t = _FakeTransport(_api);
     await tester.pumpWidget(_app(
@@ -497,6 +605,49 @@ void main() {
     await _shot(tester, '09_consultations.png', <String>[
       'عقد إيجار تجاري',
       'المحامي عبدالله الحربي',
+    ]);
+  });
+
+  // The empty state the owner reported: one message and exactly two working
+  // buttons, with no server field, code or second paragraph on screen. Captured
+  // from both surfaces that can reach it.
+  testWidgets('journey — no lawyer available', (tester) async {
+    final t = _FakeTransport(_apiNoLawyer);
+    await tester.pumpWidget(_app(
+      auth: await _auth(t, signedIn: true),
+      repo: _repo(t),
+      home: ConsultationJourneyScreen(
+        repository: _repo(t),
+        initialSpecialty: const JourneySpecialty(
+          id: 4,
+          name: 'الدعاوى الجزائية',
+          iconKey: 'criminal',
+          lawyerCount: 0,
+        ),
+      ),
+    ));
+    await _settle(tester);
+    await tester.tap(find.text('طلاق أو خلع'));
+    await _settle(tester);
+    await _shot(tester, '12_journey_no_lawyer.png', <String>[
+      'لا يوجد محامي متاح',
+      'المساعد الذكي',
+      'تواصل معنا',
+    ]);
+  });
+
+  testWidgets('directory — no lawyer available', (tester) async {
+    final t = _FakeTransport(_apiNoLawyer);
+    await tester.pumpWidget(_app(
+      auth: await _auth(t),
+      repo: _repo(t),
+      home: PublicLawyersScreen(repository: _repo(t)),
+    ));
+    await _settle(tester);
+    await _shot(tester, '13_directory_no_lawyer.png', <String>[
+      'لا يوجد محامي متاح',
+      'المساعد الذكي',
+      'تواصل معنا',
     ]);
   });
 }

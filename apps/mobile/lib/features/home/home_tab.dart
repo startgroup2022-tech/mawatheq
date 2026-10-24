@@ -14,6 +14,7 @@ import '../../shared/widgets/auth_gate.dart';
 import '../../shared/widgets/banner_carousel.dart';
 import '../../shared/widgets/banner_link_screen.dart';
 import '../../shared/widgets/brand_widgets.dart';
+import '../../shared/widgets/home_slides.dart';
 import '../assistant/assistant_screen.dart';
 import '../consultations/consultations_screen.dart';
 import '../consultations/journey_screen.dart';
@@ -58,10 +59,6 @@ class _HomeTabState extends State<HomeTab> {
   List<HomeBanner> _banners = const [];
   List<JourneySpecialty> _specialties = const [];
 
-  /// The assistant's real provider state. Unknown until the server answers, and it
-  /// is fetched only for a signed-in account: the endpoint requires a session, so
-  /// asking as a guest would produce a guaranteed 401 dressed up as a failure.
-  AiStatus _ai = AiStatus.unknown;
   int _unread = 0;
 
   bool _loading = true;
@@ -135,14 +132,8 @@ class _HomeTabState extends State<HomeTab> {
       failure ??= 'تعذّر تحميل المحتوى. أعد المحاولة.';
     }
 
-    var ai = AiStatus.unknown;
     var unread = 0;
     if (signedIn) {
-      try {
-        ai = await _repo.aiStatus();
-      } catch (_) {
-        // Leave the assistant state unknown; the CTA explains itself either way.
-      }
       try {
         unread = (await _repo.notifications()).unreadCount;
       } catch (_) {
@@ -154,7 +145,6 @@ class _HomeTabState extends State<HomeTab> {
     setState(() {
       _banners = banners;
       _specialties = specialties;
-      _ai = ai;
       _unread = unread;
       _loading = false;
       _error = failure;
@@ -165,6 +155,20 @@ class _HomeTabState extends State<HomeTab> {
   /// locale or the session changes. Every other read uses [_auth] / [_locale],
   /// which do not listen — a listening read outside build is an error.
   bool get _rtl => context.watch<LocaleController?>()?.isRtl ?? true;
+
+  /// The slides the carousel shows: the operator's banners when there are any,
+  /// otherwise the built-in Mawatheq slides. This is what keeps a genuine slider on
+  /// the home screen even on a fresh install where `home_banners` is empty — the
+  /// state that previously left only the two action cards at the top of the page.
+  List<HomeBanner> get _slides =>
+      _banners.isNotEmpty ? _banners : kBuiltInHomeSlides;
+
+  /// The specialty cards. The backend list wins; when it is empty — the state of a
+  /// database whose Najiz classification has not been imported — the seven real
+  /// categories are shown so the section is never a blank box. The server list has
+  /// live lawyer counts, so it is preferred whenever it exists.
+  List<JourneySpecialty> get _specialtyCards =>
+      _specialties.isNotEmpty ? _specialties : kBuiltInSpecialties;
 
   @override
   Widget build(BuildContext context) {
@@ -183,15 +187,27 @@ class _HomeTabState extends State<HomeTab> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
         children: [
-          // 1. Slider. Rendered only when the operator has published banners: an
-          // empty frame with a large blank area is what made the home look broken.
-          if (_banners.isNotEmpty) ...[
-            BannerCarousel(
-              banners: _banners,
-              onTap: (banner) => _openBanner(banner),
-            ),
-            const SizedBox(height: 18),
-          ],
+          // 1. Slider. Always present: an operator banner when one is published,
+          // otherwise the built-in Mawatheq slides. It used to render nothing at all
+          // when the server sent no banners, which is the normal fresh-install state
+          // — so the top of the home screen was just the two action cards.
+          BannerCarousel(
+            banners: _slides,
+            onTap: (banner) => _openBanner(banner),
+          ),
+          const SizedBox(height: 14),
+
+          // 2. The two primary actions, directly below the slider and clearly
+          // separate from it. These are real buttons, not a pair of static cards:
+          // the first opens the consultation booking flow, the second opens the AI
+          // assistant. Both work for a guest (the sign-in prompt appears at the point
+          // of confirmation) and for a signed-in customer.
+          _PrimaryActions(
+            rtl: rtl,
+            onBook: _startBooking,
+            onAskAssistant: _openAssistant,
+          ),
+          const SizedBox(height: 22),
 
           // A failed section is reported inline, above content that still works,
           // with a retry. It must never replace the screen.
@@ -200,17 +216,7 @@ class _HomeTabState extends State<HomeTab> {
             const SizedBox(height: 18),
           ],
 
-          // 2. The two primary actions, directly under the slider.
-          _PrimaryActions(
-            rtl: rtl,
-            signedIn: auth?.isSignedIn ?? false,
-            aiAvailable: _ai.available,
-            onBook: _startBooking,
-            onAskAssistant: _openAssistant,
-          ),
-          const SizedBox(height: 22),
-
-          // 3. The legal specialties, from the backend.
+          // 2. The legal specialties, from the backend.
           SectionHeader(
             title: rtl ? 'اختر تخصصك القانوني' : 'Choose your specialty',
           ),
@@ -222,7 +228,7 @@ class _HomeTabState extends State<HomeTab> {
           ),
           const SizedBox(height: 14),
           _SpecialtyGrid(
-            specialties: _specialties,
+            specialties: _specialtyCards,
             rtl: rtl,
             onTap: _openSpecialty,
           ),
@@ -258,13 +264,24 @@ class _HomeTabState extends State<HomeTab> {
   void _openJourney({JourneySpecialty? specialty}) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => ConsultationJourneyScreen(initialSpecialty: specialty),
+        builder: (_) => ConsultationJourneyScreen(
+          // Carry the injected repository through. Without this the journey built its
+          // own client, so a test that supplied a fake transport was not exercising
+          // the journey at all — it was talking to the production host.
+          repository: widget.repository,
+          initialSpecialty: specialty,
+        ),
       ),
     );
   }
 
   /// Tapping a specialty opens the journey already scoped to it, so the customer
   /// does not pick the same specialty twice.
+  ///
+  /// A fallback card (shown because the server had no taxonomy) opens the journey at
+  /// its own first step instead: the id it carries is not a server id, so pre-scoping
+  /// to it would send the customer into an empty step. The journey then shows
+  /// whatever the backend actually has.
   void _openSpecialty(JourneySpecialty specialty) {
     if (!(_auth?.isSignedIn ?? false)) {
       // The visitor is told which service needs an account, and their intent is
@@ -272,7 +289,9 @@ class _HomeTabState extends State<HomeTab> {
       requireAccount(context, ProtectedDestination.consultations);
       return;
     }
-    _openJourney(specialty: specialty);
+    _openJourney(
+      specialty: _specialties.isEmpty ? null : specialty,
+    );
   }
 
   /// The assistant entry point.
@@ -292,7 +311,9 @@ class _HomeTabState extends State<HomeTab> {
       return;
     }
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const AssistantScreen()),
+      MaterialPageRoute(
+        builder: (_) => AssistantScreen(repository: widget.repository),
+      ),
     );
   }
 
@@ -349,14 +370,19 @@ class _HomeTabState extends State<HomeTab> {
     }
   }
 
-  /// A banner destination is resolved server-side; the app only maps the type onto
-  /// a local action. An external link is shown in full before leaving the app.
+  /// A slide destination is resolved server-side; the app only maps the type onto
+  /// a local action. An external link is shown in full before leaving the app. A
+  /// built-in slide uses the same vocabulary, so there is no special case for it.
   void _openBanner(HomeBanner banner) {
     switch (banner.linkType) {
       case 'url':
         Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => BannerLinkScreen(banner: banner)),
         );
+      case 'assistant':
+        _openAssistant();
+      case 'lawyers':
+        _openLawyers();
       case 'category':
       case 'specialty':
         _startBooking();
@@ -366,75 +392,52 @@ class _HomeTabState extends State<HomeTab> {
   }
 }
 
-/// The two primary actions, side by side, stacking on a narrow screen.
+/// The two primary actions, rendered as one row directly below the slider.
 ///
-/// They are deliberately the first thing under the slider: booking a consultation
-/// is what the app is for, and it used to sit below a large assistant card and a
-/// row of counters.
+/// These are real buttons rather than the pair of static cards the owner rejected,
+/// and they are deliberately outside the carousel: a control that slides out from
+/// under the customer's thumb is worse than one that stays put, and the labels keep
+/// the full width instead of being squeezed into a banner.
+///
+/// Both work for a guest. `HomeTab` owns the guest handling, so the callbacks it
+/// passes here are the same ones the rest of the screen uses: the sign-in prompt
+/// appears at the point of confirmation and the intent is remembered.
 class _PrimaryActions extends StatelessWidget {
   const _PrimaryActions({
     required this.rtl,
-    required this.signedIn,
-    required this.aiAvailable,
     required this.onBook,
     required this.onAskAssistant,
   });
 
   final bool rtl;
-  final bool signedIn;
-  final bool aiAvailable;
   final VoidCallback onBook;
   final VoidCallback onAskAssistant;
 
   @override
   Widget build(BuildContext context) {
-    // Two cards plus the gutter need roughly 320pt. Below that they stack, so the
-    // captions are not clipped on a small phone.
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final book = ActionCard(
-          icon: Icons.event_available_outlined,
-          label: rtl ? 'احجز استشارة' : 'Book a consultation',
-          caption: rtl ? 'اختر التخصص والمحامي والموعد' : 'Specialty, lawyer, slot',
-          onTap: onBook,
-        );
-        final ask = ActionCard(
-          icon: Icons.auto_awesome_outlined,
-          label: rtl ? 'اسأل المساعد الذكي' : 'Ask the AI assistant',
-          // Only a signed-in customer can reach the provider, so a guest sees what
-          // signing in unlocks rather than an availability claim about a service
-          // they cannot call yet.
-          caption: !signedIn
-              ? (rtl ? 'يتطلب تسجيل الدخول' : 'Sign in required')
-              : aiAvailable
-                  ? (rtl
-                      ? 'إجابة فورية مبنية على الأنظمة'
-                      : 'Instant, law-based answers')
-                  : (rtl ? 'غير متاح حالياً' : 'Unavailable right now'),
-          primary: false,
-          onTap: onAskAssistant,
-        );
-
-        if (constraints.maxWidth < 320) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [book, const SizedBox(height: 10), ask],
-          );
-        }
-        // IntrinsicHeight because the Row lives in a ListView: stretching to the
-        // cross axis inside an unbounded-height parent would ask for infinite
-        // height. It makes both cards match the taller one, so the pair is even.
-        return IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(child: book),
-              const SizedBox(width: 10),
-              Expanded(child: ask),
-            ],
+    // Side by side on a normal phone. Each is [Expanded] so the pair shares the row
+    // evenly and neither label is truncated; at 320px logical width they still fit
+    // because both labels are short.
+    return Row(
+      children: [
+        Expanded(
+          child: PrimaryButton(
+            label: rtl ? 'احجز استشارة' : 'Book a consultation',
+            icon: Icons.event_available_outlined,
+            expand: true,
+            onPressed: onBook,
           ),
-        );
-      },
+        ),
+        const SizedBox(width: AppSpacing.s3),
+        Expanded(
+          child: SecondaryButton(
+            label: rtl ? 'اسأل المساعد الذكي' : 'Ask the AI assistant',
+            icon: Icons.auto_awesome_outlined,
+            expand: true,
+            onPressed: onAskAssistant,
+          ),
+        ),
+      ],
     );
   }
 }

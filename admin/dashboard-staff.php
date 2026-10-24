@@ -15,6 +15,17 @@
  * Expected variables: $pdo, and the helpers loaded by admin_header.php.
  */
 
+// This file is a fragment that `index.php` includes for a `staff` account. Reaching it
+// directly would run its body with no session, no `$pdo` and none of the header's helpers,
+// which is a fatal error — an HTTP 500 for a URL nobody is meant to type. Guarding on the
+// include instead of assuming it, so a direct request is redirected to the console rather
+// than crashing. `index.php` defines the constant just before it includes this file.
+if (!defined('MAWATHEQ_ADMIN_STAFF_DASHBOARD')) {
+    require_once __DIR__ . '/includes/admin_guard.php';
+    header('Location: /admin/index.php');
+    exit;
+}
+
 $staffId = (int)($_SESSION['admin_id'] ?? 0);
 $grants = admin_staff_permissions($pdo, $staffId);
 

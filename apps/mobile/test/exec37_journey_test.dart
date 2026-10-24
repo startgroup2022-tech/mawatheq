@@ -8,6 +8,7 @@ import 'package:mawatheq_mobile/core/network/api_client.dart';
 import 'package:mawatheq_mobile/core/network/api_repository.dart';
 import 'package:mawatheq_mobile/core/network/models.dart';
 import 'package:mawatheq_mobile/core/storage/token_storage.dart';
+import 'package:mawatheq_mobile/features/assistant/assistant_screen.dart';
 import 'package:mawatheq_mobile/features/consultations/journey_screen.dart';
 import 'package:mawatheq_mobile/shared/widgets/brand_widgets.dart';
 
@@ -80,8 +81,15 @@ const _matchJson = '{"ok":true,"lawyers":['
     '{"id":1,"full_name":"Firm A Owner","rating":5,"jurisdiction":"السعودية"}],'
     '"matched":true,"alternative":null}';
 
+// `alternative` is an OBJECT on the wire, exactly as api/v1/journey.php sends it
+// (`includes/legal_journey.php::legal_journey_no_match_alternative`). The fixture used
+// to hold a bare string, which the server never produced — so it could not catch the
+// bug where `Json.str` stringified the map into the customer's empty state.
 const _emptyMatchJson = '{"ok":true,"lawyers":[],"matched":false,'
-    '"alternative":"لا يوجد محامٍ متاح في هذا التخصص حالياً، ويمكننا ترشيح محامٍ لك."}';
+    '"alternative":{"reason":"لا يوجد حاليًا محامٍ متاح في هذا التخصص.",'
+    '"suggest":"يمكنك اختيار تخصص آخر أو إرسال طلبك وسنرشّح لك محاميًا مناسبًا.",'
+    '"specialties":[{"id":2,"name":"الدعاوى التجارية","description":"منازعات تجارية.",'
+    '"icon_key":"commercial","lawyer_count":0}]}}';
 
 ApiRepository _repo(Future<(int, Object)> Function(Uri) handler) => ApiRepository(
       client: ApiClient(
@@ -184,12 +192,18 @@ void main() {
       expect(match.lawyers.single.name, 'Firm A Owner');
     });
 
-    test('an unstaffed specialty surfaces the alternative sentence', () async {
+    test('an unstaffed specialty surfaces a typed alternative, not a stringified map',
+        () async {
       final repo = _repo((_) async => (200, _emptyMatchJson));
       final match = await repo.journeyLawyers(categoryId: 4);
       expect(match.matched, isFalse);
       expect(match.lawyers, isEmpty);
-      expect(match.alternative, contains('ترشيح محامٍ'));
+      // The server sends an object; it must parse into typed fields. Reading it as a
+      // string is what dumped `{reason: ..., ...}` into the customer's screen.
+      expect(match.alternative, isNotNull);
+      expect(match.alternative!.reason, contains('محامٍ متاح'));
+      expect(match.alternative!.suggest, contains('محاميًا مناسبًا'));
+      expect(match.alternative!.specialties.single.name, 'الدعاوى التجارية');
     });
 
     test('booking sends the journey context under customer-safe names', () async {
@@ -483,8 +497,44 @@ void main() {
       await tester.tap(find.text('إثبات عقد الزواج'));
       await tester.pumpAndSettle();
 
-      expect(find.text('لا يوجد محامٍ متاح حالياً'), findsOneWidget);
-      expect(find.textContaining('ترشيح محامٍ'), findsOneWidget);
+      expect(find.text('لا يوجد محامي متاح'), findsOneWidget);
+      // The customer sees one plain message and two buttons. No server diagnostic —
+      // `alternative` is a map, and stringifying it produced raw `{reason: ...}` text.
+      expect(find.textContaining('reason'), findsNothing);
+      expect(find.textContaining('suggest'), findsNothing);
+
+      // The empty state is not a dead end: it offers the two real routes out.
+      expect(find.text('المساعد الذكي'), findsOneWidget);
+      expect(find.text('تواصل معنا'), findsOneWidget);
+    });
+
+    testWidgets('the empty state buttons open real destinations', (tester) async {
+      final repo = _repo((uri) async {
+        switch (uri.queryParameters['action']) {
+          case 'specialties':
+            return (200, _specialtiesJson);
+          case 'issue-types':
+            return (200, _issueTypesJson);
+          default:
+            return (200, _emptyMatchJson);
+        }
+      });
+      await tester.pumpWidget(
+        MaterialApp(home: ConsultationJourneyScreen(repository: repo)),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('الدعاوى الجزائية'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('إثبات عقد الزواج'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('المساعد الذكي'));
+      // The assistant shows an availability skeleton on open, so settle explicitly
+      // rather than waiting for the frame scheduler to go idle.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byType(AssistantScreen), findsOneWidget);
     });
 
     testWidgets('an empty submission is refused before it reaches the server',
