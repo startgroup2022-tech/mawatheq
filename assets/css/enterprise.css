@@ -682,13 +682,16 @@ input[type=checkbox].lg, input[type=radio].lg{ width:22px; height:22px; min-heig
 
 /* ------------------------------------------------------------ public site --- */
 /* Mobile navigation for the marketing header (the desktop nav is unchanged).
-   The breakpoint must match the one in style.css: eight nowrap labels plus the
-   brand and the two call-to-action buttons need ~1080px of usable row width, and
-   `.container` caps at 1180px with 24px padding, so the row only fits from about
-   1140px up. Below that the panel takes over rather than letting the links
-   overflow the row and draw over the brand and the buttons. */
+   The breakpoint must match the one in style.css, or the two disagree about when
+   the drawer takes over: eight nowrap labels plus the brand and the two
+   call-to-action buttons need ~1160px of usable row width, and `.container` caps
+   at 1360px with 24px padding, so the row only fits from about 1200px up. Below
+   that the panel takes over rather than letting the links overflow the row and
+   draw over the brand and the buttons.
+   The row itself stays a grid here (declared in style.css); this layer only adds
+   the toggle and the panel, so it must not restate `display` on the container. */
 .nav-toggle{ display:none; }
-@media (max-width:1140px){
+@media (max-width:1199px){
   .site-header .container{ height:68px; }
   .nav-toggle{
     display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px; flex:none;
