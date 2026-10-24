@@ -2899,3 +2899,77 @@ customer reads the version, wrong for several releases. It now reads
 if the constant drifts. There is no `package_info_plus` dependency (a platform plugin
 outside the approved set), so the mirror is deliberate and the test is what keeps it
 honest.
+
+## Execution 53 — the header fix, and re-pointing a shipped tag
+
+### The marketing header overlapped because the row could not hold the nav
+
+`.site-header .container` was a `space-between` flex row and `.main-nav` is
+`flex:1 1 auto` with `white-space:nowrap` links. Nothing constrained the nav, so
+past the width where the links stopped fitting they painted outside their own box
+and over the brand and the buttons. Measured on the live site: every width from
+1200px up had the links **13px** outside the nav's rect, intersecting both
+neighbours. The row is now a three-column grid (`auto minmax(0,1fr) auto`) so the
+columns cannot overlap by construction; `min-width:0` + `overflow:clip` on the nav
+is a second guard. The drawer breakpoint moved 1140px → **1199px**, measured.
+
+The pale streaks across the bar were the hero's teal radial glow showing through
+`rgba(246,248,250,.94)` + `backdrop-filter:blur(8px)`. The bar is opaque now. A blur
+can only smear what is behind it, and here that is a decorative gradient.
+
+`tests/e2e/header-audit.js` compares real rectangles — every visible header child
+must sit inside the row and no two may intersect — because a screenshot cannot tell
+"touching" from "overlapping" and a stale stylesheet makes both look wrong.
+
+### Both CSS layers carry the same media query, and they must agree
+
+`enterprise.css` has its own copy of the mobile-navigation query. It loads after
+`style.css`, so it wins ties: leaving it at 1140px while `style.css` said 1199px
+re-opened the drawer in a band where the desktop row was still laid out. When you
+move a header breakpoint, move it in **both** files.
+
+### Re-pointing a shipped tag: acceptable only when the tag is an ancestor of HEAD
+
+The brief named `v2026.10.23-exec43`, which already held an Exec 51 release
+(v1.4.0+11). Exec 52 responded by publishing a *new* tag and leaving it alone, on
+the rule that re-pointing breaks anyone who downloaded the old assets. Execution 53
+re-pointed it instead, and the reason is narrow: `git merge-base --is-ancestor
+<old-tag> HEAD` succeeded, so every commit the old tag referenced is still reachable
+from the new one — nothing was discarded, only the assets were superseded. The old
+APK/AAB stay on the release as an archive.
+
+Decide by ancestry, not by convenience. A tag that is **not** an ancestor of the new
+work must never be force-moved: its commits would become unreachable from the tag and
+the assets would silently describe code that no longer exists. Check with
+`git merge-base --is-ancestor <tag> HEAD` before `git tag -f`, and move the tag
+**after** the release assets are uploaded and verified, so the tag and the artifacts
+always describe the same build.
+
+### Verifying the download is not optional, and the local checksum is not enough
+
+`sha256sum -c SHA256SUMS.txt` against the working tree proves the files on disk.
+Download each asset over the public URL and checksum *those* bytes. Confirmed for
+this release: all seven assets returned HTTP 200 and all six checksums verified
+after download, and `aapt2 dump badging` on the **downloaded** APK reports
+`versionCode='13' versionName='1.5.1'` signed by `CN=Mawatheq Legal Platform`.
+
+`+` in an asset name is percent-encoded: the link works only as
+`…/MAWATHEQ_APP_v1.5.1%2B13_release.apk`.
+
+### Grepping an APK for a Dart string needs UTF-16LE
+
+A Dart AOT snapshot stores strings as UTF-16LE, so a UTF-8 grep of `lib/*/libapp.so`
+finds nothing even when the string is compiled in. Verify with a known-present string
+as the positive control, or you will conclude a string is missing when it is there.
+Confirmed present in the shipped APK: `1.5.1`, `احجز استشارة`, `اسأل المساعد الذكي`,
+`اختر تخصصك` — all UTF-16LE, none UTF-8.
+
+### The taxonomy import is data-only and idempotent — prove it by re-running
+
+`MAWATHEQ_TAXONOMY_IMPORT.sql` creates nothing; it clears the four `najiz_*` tables
+and re-inserts every row with its original id inside one transaction, guarded by a
+prerequisite check and a post-import count. Tested end-to-end on a scratch database:
+clean import `7/38/234/640`, a second run changes nothing, and running it without
+`upgrade_v59.sql` aborts with `ERROR 1644 (45000) … PREREQUISITE FAILED` leaving the
+database untouched. The order is **v59 → v63 → import → v63 again**; see the
+Execution 37 note on why the second v63 run is what fills the customer descriptions.
