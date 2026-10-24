@@ -2786,3 +2786,47 @@ checksum *that* — a `sha256sum` on the working tree proves nothing about the b
 reader downloads. Confirm the served APK is a real APK too
 (`apksigner verify`, `aapt2 dump badging`), because a stale asset returns 200 with the
 wrong bytes and a status check cannot see it.
+
+## Execution 51 — first Google Play release and the secrets.php inode trap
+
+### A file restored by `rename()` loses the group Apache reads through
+
+`tests/exec39_najiz_graceful_test.php` rewrites `config/secrets.php` for its
+unmigrated-database check and used to restore it with `rename($backup, $secrets)`.
+`rename()` replaces the **inode**, so the config came back owned by the CLI user's
+group instead of `www-data`, and under a restrictive umask it came back `0600` too.
+Apache then could not read it and **every** page that includes `config/config.php`
+returned HTTP 500 — while the suite itself reported success, because the file's
+*content* was correct. It now rewrites the file in place from the in-memory original,
+which preserves owner, group and mode. Restore a config file by writing it, never by
+renaming over it.
+
+The symptom to recognise: the `*_http_probe.php` suites fail in a batch with bare
+500s and `Failed opening required '.../config/secrets.php'` in the Apache error log,
+while the unit suites that use the PDO handle directly all pass. Check
+`sudo -u www-data test -r config/secrets.php` before debugging the probes.
+
+### The shell's umask leaks into everything the suite writes
+
+The keystore step sets `umask 077`. It persists in the session, so files created
+later — including a test's backup file — land `0600`. Run `umask 022` before a suite,
+and prefer in-place writes over any rename that carries a mode across.
+
+### A production upload key replaces the debug-signing caveat
+
+`apps/mobile/android/key.properties` (gitignored, mode `600`) points
+`storeFile` at an absolute path outside the repo. With it present,
+`build.gradle.kts` uses `signingConfigs.release`; the APK's signer becomes
+`CN=Mawatheq Legal Platform`, not `CN=Android Debug`. Confirm with
+`apksigner verify --print-certs`. The keystore and its password are **local only**
+and must never be committed or uploaded; losing the upload key means a Play key
+reset.
+
+### Play App Signing re-signs, so `assetlinks.json` changes after the first upload
+
+The upload-key fingerprint committed now is correct for **sideloaded** builds. Once
+Play App Signing is enabled, Google re-signs with its own key and Android App Links
+verify against the **Play signing-key** fingerprint (Play Console → App integrity).
+Both fingerprints can sit in the same `sha256_cert_fingerprints` array, so sideloaded
+and Play builds both verify. Replacing the array with only the upload key would
+silently break App Links on the Play build.
