@@ -134,9 +134,27 @@ matched. Relevant frames:
 
 ---
 
-## 7. What this execution did NOT verify
+## 7. Production status (checked read-only, 2026-10-24)
+
+A read-only probe of the live site shows the taxonomy is **already present in
+production**:
+
+```
+GET https://mawatheq.com/api/najiz_classify.php?action=stats
+{"ok":true,"stats":{"categories":7,"subcategories":38,"lawsuit_types":234,"judicial_requests":640}}
+```
+
+`GET /api/v1/journey.php?action=specialties` returns 7 specialties, and
+`/api/v1/banners.php` returns 200. These three endpoints were 404/500 during
+Execution 39, so the deployment gap recorded there has since been closed.
+
+No write command was run against the production database in this execution. The
+SQL import file ships as a reference and a repair tool for a new host or a restored
+backup; it is idempotent, so re-running it on the populated production database
+changes nothing.
+
+## 8. What this execution did NOT verify
 
 The Flutter tests, goldens and the blank-screen sweep run against a fake transport.
 They prove the screens build, render and handle canned JSON. They do **not** prove a
-live booking, a production login, a real document upload or a real AI call. The
-production taxonomy import is pending owner authorization (see the SQL import guide).
+live booking, a production login, a real document upload or a real AI call.
