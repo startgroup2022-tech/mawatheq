@@ -169,6 +169,40 @@ Future<(int, Object)> _apiImportedTaxonomy(Uri uri) async {
   return _api(uri);
 }
 
+/// The lawyer-availability empty state: the specialty has no lawyer, so the API
+/// returns an empty list plus the `alternative` object the old screen echoed. The
+/// captured screen must show none of it — only the message and the two buttons.
+Future<(int, Object)> _apiNoLawyer(Uri uri) async {
+  final p = uri.path;
+  if (p.endsWith('/banners.php')) {
+    return (200, {'ok': true, 'banners': _banners});
+  }
+  if (p.endsWith('/lawyers.php')) {
+    return (200, {'ok': true, 'lawyers': <Object>[]});
+  }
+  if (p.endsWith('/journey.php')) {
+    switch (uri.queryParameters['action']) {
+      case 'specialties':
+        return (200, {'ok': true, 'specialties': _specialties, 'ready': true});
+      case 'issue-types':
+        return (200, {'ok': true, 'issue_types': _issueTypes});
+      case 'lawyers':
+        return (200, {
+          'ok': true,
+          'matched': false,
+          'lawyers': <Object>[],
+          'alternative': {
+            'reason': 'لا يوجد حاليًا محامٍ متاح في هذا التخصص.',
+            'suggest': 'يمكنك اختيار تخصص آخر أو إرسال طلبك وسنرشّح لك محاميًا مناسبًا.',
+            'specialties': <Object>[],
+          },
+        });
+    }
+    return (200, {'ok': true});
+  }
+  return _api(uri);
+}
+
 Future<(int, Object)> _api(Uri uri) async {
   final p = uri.path;
   if (p.endsWith('/auth/login.php')) {
@@ -571,6 +605,49 @@ void main() {
     await _shot(tester, '09_consultations.png', <String>[
       'عقد إيجار تجاري',
       'المحامي عبدالله الحربي',
+    ]);
+  });
+
+  // The empty state the owner reported: one message and exactly two working
+  // buttons, with no server field, code or second paragraph on screen. Captured
+  // from both surfaces that can reach it.
+  testWidgets('journey — no lawyer available', (tester) async {
+    final t = _FakeTransport(_apiNoLawyer);
+    await tester.pumpWidget(_app(
+      auth: await _auth(t, signedIn: true),
+      repo: _repo(t),
+      home: ConsultationJourneyScreen(
+        repository: _repo(t),
+        initialSpecialty: const JourneySpecialty(
+          id: 4,
+          name: 'الدعاوى الجزائية',
+          iconKey: 'criminal',
+          lawyerCount: 0,
+        ),
+      ),
+    ));
+    await _settle(tester);
+    await tester.tap(find.text('طلاق أو خلع'));
+    await _settle(tester);
+    await _shot(tester, '12_journey_no_lawyer.png', <String>[
+      'لا يوجد محامي متاح',
+      'المساعد الذكي',
+      'تواصل معنا',
+    ]);
+  });
+
+  testWidgets('directory — no lawyer available', (tester) async {
+    final t = _FakeTransport(_apiNoLawyer);
+    await tester.pumpWidget(_app(
+      auth: await _auth(t),
+      repo: _repo(t),
+      home: PublicLawyersScreen(repository: _repo(t)),
+    ));
+    await _settle(tester);
+    await _shot(tester, '13_directory_no_lawyer.png', <String>[
+      'لا يوجد محامي متاح',
+      'المساعد الذكي',
+      'تواصل معنا',
     ]);
   });
 }

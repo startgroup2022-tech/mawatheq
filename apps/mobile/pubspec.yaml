@@ -1,7 +1,7 @@
 name: mawatheq_mobile
 description: "مواثيق — التطبيق القانوني المتكامل (Flutter) / Mawatheq legal platform mobile app"
 publish_to: 'none'
-version: 1.3.5+9
+version: 1.3.6+10
 
 environment:
   sdk: ^3.9.2
