@@ -80,16 +80,36 @@ img{ max-width:100%; display:block; }
    ragged three-line menu). When the row genuinely runs out of width the links
    collapse into the mobile panel at the breakpoint below instead of shrinking. */
 .site-header{
-  position:sticky; top:0; z-index:50; background:rgba(246,248,250,.94); backdrop-filter:blur(8px);
+  position:sticky; top:0; z-index:50;
+  /* Opaque, deliberately. The bar used to be `rgba(246,248,250,.94)` with a
+     `backdrop-filter` blur, and the hero's teal radial glow sits directly under
+     it — so the glow bled through the bar as pale streaks behind the brand and
+     the nav. The owner read those as "rays" crossing the header. A solid bar
+     removes the artefact outright; a blur can only ever smear what is behind it,
+     and what is behind it here is a decorative gradient, not content worth
+     showing through. */
+  background:#F6F8FA;
   border-bottom:1px solid var(--border);
+  box-shadow:0 1px 0 rgba(15,31,51,.03);
 }
-.site-header .container{ display:flex; align-items:center; justify-content:space-between; height:78px; gap:16px; }
+/* Three zones in one grid: brand | nav | actions. The nav column is
+   `minmax(0,1fr)`, so it absorbs the leftover space but can never push its
+   siblings — and with `min-width:0` plus `overflow:clip` its links are contained
+   even if a font swap makes them wider than the space available. That is the
+   defect this replaces: the row was a `space-between` flex row, so once the nav
+   outgrew its box it simply drew over the brand and the buttons. Grid columns
+   cannot overlap by construction, so the failure mode is gone rather than
+   merely tuned away. */
+.site-header .container{
+  display:grid; grid-template-columns:auto minmax(0,1fr) auto;
+  align-items:center; height:78px; gap:16px;
+}
 /* The header row is wider than the page grid on purpose. Eight nowrap links plus
-   the brand and the header actions need ~1140px; the shared `.container` caps at
+   the brand and the header actions need ~1180px; the shared `.container` caps at
    1180px (1132px usable), which left the row with almost no slack — a font swap
    alone was enough to overflow it. The header gets its own wider measure so the
    links always have room, and the page grid keeps its reading width. */
-.site-header .container{ max-width:1280px; }
+.site-header .container{ max-width:1360px; }
 /* The mobile menu button ships here so the marketing header still opens its
    navigation when the enhancement layer (enterprise.css) is unavailable. */
 .nav-toggle{ display:none; }
@@ -97,12 +117,13 @@ img{ max-width:100%; display:block; }
 .brand img{ height:40px; width:auto; flex:none; }
 /* The navigation is the part that gives way when the row runs short: its links
    may shrink their padding, and below the panel breakpoint they are replaced by
-   the drawer. It must never overflow its own box, because the links are nowrap
-   and an overflowing box is what pushed them over the brand and the buttons. */
-.main-nav{ display:flex; align-items:center; justify-content:center; flex:1 1 auto; min-width:0; gap:5px; }
+   the drawer. `min-width:0` + `overflow:clip` guarantee the links stay inside
+   this box — without them a nowrap row that outgrows its column paints over the
+   neighbours, which is what put the menu on top of the logo and the buttons. */
+.main-nav{ display:flex; align-items:center; justify-content:center; min-width:0; overflow:clip; gap:5px; }
 .main-nav a{
   flex:none; white-space:nowrap; font-weight:600; font-size:.86rem; color:var(--text);
-  padding:7px 5px; border-radius:7px; border-bottom:2px solid transparent;
+  padding:7px 7px; border-radius:7px; border-bottom:2px solid transparent;
   transition:color .18s ease, border-color .18s ease, background .18s ease;
 }
 .main-nav a:hover{ color:var(--teal); border-bottom-color:var(--teal); }
@@ -126,7 +147,7 @@ img{ max-width:100%; display:block; }
 /* Sticky header: once the page scrolls, the bar compresses so it stops competing
    with the content. The class is set by main.js; without JS the full-height bar
    is still correct, so this is additive only. */
-.site-header.is-scrolled{ background:rgba(246,248,250,.98); box-shadow:0 6px 18px rgba(15,31,51,.06); }
+.site-header.is-scrolled{ background:#F6F8FA; box-shadow:0 6px 18px rgba(15,31,51,.08); }
 .site-header.is-scrolled .container{ height:60px; }
 .site-header.is-scrolled .brand img{ height:32px; }
 .site-header.is-scrolled .header-actions .btn{ padding:8px 15px; }
@@ -447,15 +468,15 @@ html[dir="ltr"] .pro-select{ background-position:right 14px center; }
 .password-toggle:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
 
 /* The links collapse into a panel below this width. The desktop row is measured,
-   not guessed: brand (101) + eight nowrap labels (about 590 at the header scale)
-   + header actions (about 350) + the row's gaps need ~1080px of usable width, and
-   `.container` caps at 1180px with 24px of padding, so the row only fits from
-   about 1140px up. The panel therefore takes over at 1140px, not 1080px — at the
+   not guessed: brand (101) + eight nowrap labels (about 620 at the header scale)
+   + header actions (about 390) + the row's gaps need ~1160px of usable width, and
+   `.container` caps at 1360px with 24px of padding, so the row only fits from
+   about 1200px up. The panel therefore takes over at 1200px, not 1140px — at the
    old breakpoint the links overflowed their box and drew over the brand and the
-   buttons on every desktop width. The panel is absolutely positioned against
-   `.site-header` (which is the nearest positioned ancestor) so it can never widen
-   the document. */
-@media (max-width: 1140px){
+   buttons on every desktop width from 1200px up. The panel is absolutely
+   positioned against `.site-header` (which is the nearest positioned ancestor) so
+   it can never widen the document. */
+@media (max-width: 1199px){
   .hero-grid, .split{ grid-template-columns:1fr; }
   .features-grid{ grid-template-columns:1fr; }
   .steps{ grid-template-columns:1fr 1fr; row-gap:36px; }
@@ -464,11 +485,19 @@ html[dir="ltr"] .pro-select{ background-position:right 14px center; }
   .testi-grid{ grid-template-columns:1fr; }
   .main-nav{ display:none; }
   /* Marketing header on small screens: collapse the links into a dropdown that
-     the menu button toggles, and keep the header actions on one row. */
-  .site-header .container{ height:68px; gap:12px; }
+     the menu button toggles, and keep the header actions on one row. The row
+     goes back to flex here: the desktop grid's third column is the navigation,
+     and below this breakpoint the navigation leaves the flow (the panel is
+     absolute), which would leave an empty middle column. Flex with an
+     `margin-inline-start:auto` on the toggle reproduces the intended
+     brand-at-start / controls-at-end arrangement with three children. */
+  .site-header .container{
+    display:flex; height:68px; gap:12px;
+  }
   .nav-toggle{
     display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px; flex:none;
     border:1.5px solid var(--border); border-radius:11px; background:#fff; color:var(--navy-dark); cursor:pointer;
+    margin-inline-start:auto;
   }
   .nav-toggle svg{ width:20px; height:20px; stroke:currentColor; fill:none; stroke-width:1.9; stroke-linecap:round; }
   /* One button, two glyphs: the close icon is only drawn while the panel is open,
