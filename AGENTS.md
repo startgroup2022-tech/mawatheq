@@ -2616,3 +2616,95 @@ tables and the two `najiz_categories` customer columns already exist, raising
 `MAWATHEQ_DB_SCHEMA_FIX.sql` → the import → `MAWATHEQ_DB_VERIFY.sql`, and the result is
 7 / 38 / 234 / 640. Import the copy **downloaded from the release**, not the repo copy: a
 local file proves the working tree, not the bytes an operator receives.
+
+## Execution 43 — the home slider, the two buttons, and the taxonomy file
+
+### The "two static cards" report was about a fallback, not the carousel widget
+
+The slider was never removed. `HomeTab` rendered `BannerCarousel` **only when the server
+returned at least one banner**, and `home_banners` ships empty — so on a fresh install, the
+state production is in, the top of the home screen was just the two action cards. The fix is
+`_slides => _banners.isNotEmpty ? _banners : kBuiltInHomeSlides`: four built-in slides with
+bundled photographs, so a genuine slider renders before any operator publishes a banner. When
+a "the feature was replaced by something simpler" report arrives, check whether the real
+widget is still there behind a data-dependent branch before rewriting it.
+
+The two buttons are deliberately **outside** the carousel (`_PrimaryActions`, a
+`FilledButton` + `OutlinedButton` row), so they do not travel with a slide and their labels
+take the full width. `exec43_home_slider_test.dart` asserts both the presence and the
+**vertical order** (the booking button's top is below the carousel's bottom) — a layout that
+put them above, or inside a slide, still passes a presence-only check.
+
+### `assets/images/` in pubspec is not recursive
+
+The banner photos live in `assets/images/banners/`, so that directory needs its **own**
+`pubspec.yaml` entry. Without it `Image.asset` throws at paint, the slide's `errorBuilder`
+swaps in the brand gradient, and the slider still renders — four flat panels. Every other
+test passes. The guard is loading the real bytes: `rootBundle.load(slide.assetImage)` and
+asserting a non-trivial length, which a golden cannot do because a gradient and a photo are
+both "a picture".
+
+### RTL copy alignment: `CrossAxisAlignment.end` is the bug, not the fix
+
+The cross axis of a `Column` is horizontal, so `end` resolves to the **LEFT** under RTL and
+the Arabic copy was pushed against the wrong edge. The measurement test needs a **short**
+headline to catch it: a headline wide enough to fill the column stretches the `Text` to the
+full width, both margins come out equal, and the broken layout measures as fine. Every
+built-in slide headline is long enough to wrap in the test font — that is why a test written
+against the built-ins alone passed against the bug. `exec43_home_slider_test.dart` uses a
+deliberately short slide, then sweeps the real slides for the in-frame check.
+
+### The taxonomy SQL is a recovery tool, because production already holds the data
+
+`database/MAWATHEQ_LEGAL_CLASSIFICATIONS_IMPORT.sql` reproduces **7 / 38 / 234 / 640**
+exactly, verified by building a scratch database from `schema.sql` plus every `upgrade_v*.sql`
+in numeric order (143 tables) and running the file — and re-running it leaves the counts
+unchanged. Production is already at those counts (`api/najiz_classify.php?action=stats`), so
+the file is what rebuilds the classification after a loss or a server move, not a pending
+migration. **Import on production is the owner's decision**; nothing here performs it.
+
+The FK in `MAWATHEQ_DB_SCHEMA_FIX.sql` needs the base schema present. Run it against an empty
+database and `lawyer_specialties` fails with errno 150 (`Foreign key constraint is incorrectly
+formed`) because `lawyers` and `najiz_categories` do not exist yet — that is the missing
+prerequisite, not a defect in the file.
+
+### A lawyer with a declared specialization is discoverable; a matching *category name* is not a *practice-area key*
+
+`legal_journey_lawyer_category_index()` maps the lawyer's own `specialization` through
+`legal_journey_specialization_categories()`, whose keys are practice areas (`قانون جنائي`,
+`قانون تجاري`), **not** category names (`الدعاوى الجزائية`). Setting `specialization` to a
+category name matches nothing and the count stays 0 — the fix works, the test input was
+wrong. Verify with a practice-area key: `قانون جنائي` → `الدعاوى الجزائية`, `lawyer_count` 1,
+`matched: true`. The endpoint's lawyer objects carry `full_name`, not `name`.
+
+### Replacing a release's assets: delete first, and the DELETE body is empty
+
+The GitHub release API returns **204 with no body** on asset DELETE. `json.load()` on that
+raises `JSONDecodeError: Expecting value: line 1 column 1`; read the body and parse only when
+it is non-empty. Deleting all assets and re-uploading is the way to replace a build — a
+half-replaced set (delete succeeded, upload did not) is possible, so re-list the assets rather
+than assuming.
+
+The release tag has to point at the commit the APK was built from. The release is created
+with `target_commitish: <branch>`, which places the tag at that branch **at that moment**;
+after later commits, move it (`git tag -f -a <tag> -m ... HEAD && git push -f origin <tag>`)
+and confirm `git rev-parse <tag>^{commit}` equals `git rev-parse origin/<branch>`.
+
+A `+` in an asset name is percent-encoded in the download URL, so the APK link works only as
+`...MAWATHEQ_APP_v1.3.5%2B9_release.apk`. Download the published artifact and checksum it —
+a local `sha256sum` proves the file on disk, not the bytes served.
+
+### The website and the app are two different "homepages"
+
+The task's "homepage slider + two buttons + specialties" is the **Flutter app's** home
+(`HomeTab`), not `index.php`. `index.php` is the marketing site with its own `l2-*` sections
+and no carousel. Check which surface a UI request names before editing.
+
+### Release signing state is unchanged: debug key, v2 only
+
+The release APK is signed with `CN=Android Debug` and only APK Signature Scheme **v2**
+(`apksigner verify --verbose` → v1 false). Fine above minSdk 24; not uploadable to Google
+Play and App Links cannot verify against it until `android/key.properties` and a real
+`.jks` exist and `.well-known/assetlinks.json` carries the release fingerprint instead of
+`REPLACE_WITH_RELEASE_SHA256_FINGERPRINT`. The install guide and the release body say so
+rather than calling the artifact "release-signed".
