@@ -2830,3 +2830,72 @@ verify against the **Play signing-key** fingerprint (Play Console → App integr
 Both fingerprints can sit in the same `sha256_cert_fingerprints` array, so sideloaded
 and Play builds both verify. Replacing the array with only the upload key would
 silently break App Links on the Play build.
+
+## Execution 52 — in-app account deletion, the taxonomy SQL, and the release
+
+### Account deletion is anonymisation, and that is not a shortcut
+
+`includes/account_deletion.php` backs both `account.php` and `api/v1/account/delete.php`.
+Google Play requires an in-app deletion route and `privacy.php` promised one that did
+not exist, so this is a shipped capability rather than a support request.
+
+- **Every FK on `invoices`, `cases` and `consultations` is `ON DELETE CASCADE`.** A real
+  `DELETE FROM users` therefore takes the other party's records with it — an invoice the
+  platform issued, a consultation a lawyer was paid for. The account is anonymised
+  instead: identity columns overwritten, all `api_tokens` revoked, `status='suspended'`
+  so no login can succeed, and `deleted_at` stamped. The row survives, so the accounting
+  fact survives. Do not "simplify" this into a delete.
+- **The password is required.** A valid session or Bearer token is not enough; a token
+  left on a shared device must not be able to destroy the account.
+- The email becomes a per-account tombstone at `deleted.invalid`, so `UNIQUE(email)`
+  stays intact *and* the original address is free for a fresh registration.
+- Deletion is refused while work is in flight, and the blockers are named. Silently
+  deleting a client mid-matter would take the lawyer's case file with it.
+- `upgrade_v65.sql` adds `users.deleted_at` / `lawyers.deleted_at` (guarded, idempotent,
+  no positional `AFTER`).
+
+**Two enum bugs the test caught, both of which made the feature unusable in production:**
+`cases.status` was tested against `NOT IN ('closed','archived')` — no such values exist
+in `open|in_review|closed_won|closed_lost|closed_settled`, so **every** case counted as
+open and no client could ever delete an account. `invoices.status` was tested against
+`'partial'`; the real value is `'partially_paid'`. Read the enum, do not guess it.
+
+### The taxonomy import is data-only, and step 4 is mandatory
+
+`MAWATHEQ_TAXONOMY_IMPORT.sql` (repo root) is the exact deliverable: 7 specialties / 38
+sub-specialties / 234 case types / 640 judicial requests, verified by the file itself at
+its end. It creates no table and alters no schema, and a prerequisite guard aborts it with
+`PREREQUISITE FAILED: run upgrade_v59.sql first` when the `najiz_*` tables are absent.
+
+The order is **v59 → v63 → import → v63 again**. `v63` derives `customer_desc_ar` /
+`customer_icon_key` from rows that exist when it runs, so on a database where `v59` just
+created an empty table the first `v63` writes nothing; re-running it after the import
+fills all 7 descriptions. Verified on a clean scratch database: 7/38/234/640 and 7 filled
+descriptions.
+
+### The release tag already existed, so Exec 52 got its own
+
+`v2026.10.23-exec43` is Execution 51's release (v1.4.0+11, including the Play AAB). The
+brief asked for `v2026.10.23-exec43`, but re-pointing a shipped tag would break anyone who
+already downloaded those assets. Exec 52 publishes as **`v2026.10.23-exec52`** and leaves
+the earlier release untouched. Check `gh release list` before creating a tag from a brief
+that names one — the brief may predate a release that has since shipped.
+
+### Release verification that actually verifies
+
+Checksum the build, then **download over the public URL and checksum again**; a local
+`sha256sum` proves the files on disk, not the ones served. Confirmed for this release:
+APK `aefd9ff7…81b9` and SQL `785b7694…f17a`, both matching after download, and
+`aapt2 dump badging` on the downloaded APK reports `versionCode='12' versionName='1.5.0'`.
+
+A `+` in an asset name is percent-encoded in the download URL — the link only works as
+`%2B`: `…/MAWATHEQ_APP_v1.5.0%2B12_release.apk`.
+
+### The version shown in the app was a hardcoded lie
+
+The account screen printed `الإصدار 1.0.0` while the APK shipped 1.4.0 — the one place a
+customer reads the version, wrong for several releases. It now reads
+`AppConfig.appVersion`, and `exec52_app_version_test.dart` parses `pubspec.yaml` and fails
+if the constant drifts. There is no `package_info_plus` dependency (a platform plugin
+outside the approved set), so the mirror is deliberate and the test is what keeps it
+honest.
