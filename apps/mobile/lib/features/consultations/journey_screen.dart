@@ -219,10 +219,16 @@ class _ConsultationJourneyScreenState extends State<ConsultationJourneyScreen> {
 
   Widget _specialtyStep() {
     if (_specialties.isEmpty) {
-      return const EmptyState(
+      // A dead end otherwise: the customer opened booking and found nothing to
+      // choose. Retry is the real fix when the list failed to load, and the contact
+      // route is the honest answer when the platform genuinely has no published
+      // specialty — either way the screen offers a way forward.
+      return EmptyState(
         icon: Icons.gavel_outlined,
         title: 'لا توجد تخصصات متاحة',
-        message: 'سيتم إضافة التخصصات قريباً.',
+        message: 'تعذّر عرض التخصصات الآن. أعد المحاولة، أو تواصل معنا وسنساعدك مباشرة.',
+        actionLabel: 'إعادة المحاولة',
+        onAction: _loadSpecialties,
       );
     }
     return ListView.separated(

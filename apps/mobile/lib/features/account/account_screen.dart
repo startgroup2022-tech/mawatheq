@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/auth_controller.dart';
 import '../../core/locale_controller.dart';
 import '../../core/network/api_repository.dart';
 import '../../core/network/models.dart';
+import '../../core/public_content.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/theme/theme_controller.dart';
@@ -46,6 +49,30 @@ class _AccountScreenState extends State<AccountScreen> {
       // Invoices are optional on this screen; a failure here must not blank it.
       if (mounted) setState(() => _loadingInvoices = false);
     }
+  }
+
+  /// Opens the support address in the device's mail client.
+  ///
+  /// The tile previously had an empty callback, so tapping Support did nothing.
+  /// A mail client is not guaranteed (an emulator, a locked-down device), so the
+  /// address is copied to the clipboard and the customer is told, rather than the
+  /// tap appearing to fail.
+  Future<void> _contactSupport() async {
+    final address = PublicContent.supportEmail;
+    final uri = Uri(scheme: 'mailto', path: address);
+    var opened = false;
+    try {
+      opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      opened = false;
+    }
+    if (opened || !mounted) return;
+
+    await Clipboard.setData(ClipboardData(text: address));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('تم نسخ البريد $address')),
+    );
   }
 
   @override
@@ -215,8 +242,8 @@ class _AccountScreenState extends State<AccountScreen> {
         _SettingTile(
           icon: Icons.help_outline,
           label: 'الدعم',
-          value: 'info@mawatheq.com',
-          onTap: () {},
+          value: PublicContent.supportEmail,
+          onTap: _contactSupport,
         ),
         const SizedBox(height: 22),
 
