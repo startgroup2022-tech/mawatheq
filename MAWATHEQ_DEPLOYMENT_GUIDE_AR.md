@@ -438,6 +438,8 @@ curl -s https://mawatheq.com/api/v1/banners.php
 | قائمة المطابقة فارغة في رحلة الاستشارة | لا محامٍ سجّل هذا التخصص | المحامي يحدّد تخصصاته من `/lawyer/specialties.php` — وهذا سلوك مقصود لا خطأ |
 | خطأ 500 في `consultation-journey.php` | لم يُطبَّق `upgrade_v63.sql` | طبّق الخطوة 6 |
 | خطأ 500 في `admin/banners.php` أو `api/v1/banners.php` | لم يُطبَّق `upgrade_v64.sql` (جدول `home_banners` غير موجود) | طبّق الخطوة 7 |
+| خطأ 500 في `lawyer/wallet.php` أو `admin/wallets.php` | لم يُطبَّق `upgrade_v66.sql` (جداول المحفظة غير موجودة) | طبّق `upgrade_v66.sql` |
+| رأس الموقع ما زال متراكباً بعد النشر | الوسيط أو المتصفّح يخدّم `style.css` القديم (28KB بدل 33KB) | تحقّق أن الرابط يحمل `?v=`، وأن الملف المرفوع هو النسخة الجديدة |
 | شريط البانرات لا يظهر في التطبيق | لا بانر منشور، أو كل البانرات مخفيّة/خارج نافذة العرض | أضف بانراً من `admin/banners.php` وتحقّق من الحالة والتواريخ |
 | البانر يظهر لكن لا ينقر | وجهته لم تتحقّق (رابط غير https، أو تخصص/تصنيف محذوف) فخُفِّضت إلى «بلا وجهة» | صحّح الوجهة من لوحة البانرات |
 | البرنامج لا يعمل بعد الترحيل | مغلق افتراضياً | فعّله من إعدادات البرنامج |
@@ -505,6 +507,8 @@ curl -s https://mawatheq.com/api/v1/banners.php
 - [ ] `upgrade_v57.sql`
 - [ ] `upgrade_v62.sql`
 - [ ] `upgrade_v63.sql`
+- [ ] `upgrade_v65.sql`
+- [ ] **`upgrade_v66.sql` — جداول محفظة المحامي** (بدونه `lawyer/wallet.php` و`admin/wallets.php` يعطيان 500)
 - [ ] `php database/repair/02_migration_ledger.php` ينتهي بـ `0`
 - [ ] مجلد `mawatheq-private/consultation-attachments/` بصلاحية `02770`
 - [ ] فكّ `MAWATHEQ_WEBSITE_FINAL.zip` في `public_html`
@@ -520,6 +524,11 @@ curl -s https://mawatheq.com/api/v1/banners.php
 - [ ] **التطبيق يفتح على الرئيسية مباشرة — بلا شرائح تعريفية ولا صفحة تسويقية**
 - [ ] **الرئيسية تعرض: البانر المتحرّك + التخصصات القانونية + الخدمات السريعة**
 - [ ] **التصفّح كزائر يعمل، والمحتوى المحمي يطلب تسجيل الدخول بدل أن ينكسر**
+- [ ] **`upgrade_v66.sql` مُطبَّق — جداول `lawyer_wallets` و`wallet_transactions` و`wallet_withdrawals` و`wallet_commission_rules` و`notification_preferences` موجودة**
+- [ ] **`/lawyer/wallet.php` يفتح للمحامي ويعرض الرصيد من الدفتر (لا رقم مُختلق)**
+- [ ] **`/admin/wallets.php` يفتح لمدير النظام ويعرض المحافظ وطلبات السحب**
+- [ ] **رأس الموقع على `mawatheq.com` بعد النشر: لا تراكب بين الشعار والقائمة والأزرار عند 360/390/768/1024/1200/1440/1920**
+- [ ] **رابط `style.css` يحمل `?v=<filemtime>` — لا يبقى ملف قديم في ذاكرة المتصفّح أو الوسيط**
 - [ ] برنامج المسوّقين **مغلق** حتى تفتحه عن قصد
 
 ---

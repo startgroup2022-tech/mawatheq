@@ -173,11 +173,13 @@ function account_delete(PDO $pdo, string $accountType, int $accountId, string $p
         $pdo->prepare('UPDATE api_tokens SET revoked_at=NOW() WHERE user_type=? AND user_id=? AND revoked_at IS NULL')
             ->execute([$accountType, $accountId]);
 
-        // The in-app notifications and the rate-limit buckets are keyed by account.
-        foreach (['notifications'] as $t) {
-            try { $pdo->prepare("DELETE FROM `$t` WHERE user_type=? AND user_id=?")->execute([$accountType, $accountId]); }
-            catch (Throwable $e) { /* table shape varies; not fatal */ }
-        }
+        // The in-app notifications are keyed by recipient, not by account: deleting
+        // `user_type`/`user_id` here matched no column and silently removed nothing, so
+        // a deleted account's private notifications stayed readable. Use the real columns.
+        try {
+            $pdo->prepare('DELETE FROM notifications WHERE recipient_type=? AND recipient_id=?')
+                ->execute([$accountType, $accountId]);
+        } catch (Throwable $e) { /* table shape varies; not fatal */ }
 
         $pdo->commit();
     } catch (Throwable $e) {

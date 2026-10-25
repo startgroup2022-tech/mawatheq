@@ -37,9 +37,9 @@ $dir  = is_rtl() ? 'rtl' : 'ltr';
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/css/style.css">
-<link rel="stylesheet" href="/assets/css/enterprise.css">
-<link rel="stylesheet" href="/assets/css/landing.css">
+<link rel="stylesheet" href="<?= asset_url('/assets/css/style.css') ?>">
+<link rel="stylesheet" href="<?= asset_url('/assets/css/enterprise.css') ?>">
+<link rel="stylesheet" href="<?= asset_url('/assets/css/landing.css') ?>">
 <?php
 // Page-specific stylesheets. A page sets $pageStyles before including this header, so the
 // link lands in <head> rather than being emitted mid-body. Public pages that carry their own
