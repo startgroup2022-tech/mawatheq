@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'api_client.dart';
 import 'api_exception.dart';
+import 'lawyer_models.dart';
 import 'models.dart';
 
 /// Reads and writes through the platform's existing `/api/v1/` endpoints.
@@ -552,6 +553,271 @@ class ApiRepository {
             .map((e) => HomeBanner.fromJson(Map<String, dynamic>.from(e)))
             .toList()
         : <HomeBanner>[];
+  }
+
+  // -------------------------------------------------------- lawyer surface
+
+  /// `GET /api/v1/lawyer-dashboard.php` — the lawyer's own figures.
+  Future<LawyerDashboard> lawyerDashboard() async {
+    final json = await _client.get('/lawyer-dashboard.php');
+    return LawyerDashboard.fromJson(json);
+  }
+
+  // -------------------------------------------------------- lawyer profile
+
+  /// `GET /api/v1/lawyer-profile.php?action=profile`
+  Future<LawyerProfileDetail> lawyerProfile() async {
+    final json = await _client.get('/lawyer-profile.php', query: {'action': 'profile'});
+    return LawyerProfileDetail.fromJson(json);
+  }
+
+  /// `GET /api/v1/lawyer-profile.php?action=settings`
+  Future<LawyerSettings> lawyerSettings() async {
+    final json = await _client.get('/lawyer-profile.php', query: {'action': 'settings'});
+    return LawyerSettings.fromJson(json);
+  }
+
+  /// `GET /api/v1/lawyer-profile.php?action=specialties`
+  Future<List<SpecialtyOption>> specialtyCatalogue() async {
+    final json = await _client.get('/lawyer-profile.php', query: {'action': 'specialties'});
+    return ((json['specialties'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => SpecialtyOption.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  /// `POST /api/v1/lawyer-profile.php` action=save-profile
+  Future<void> saveLawyerProfile(Map<String, dynamic> fields) async {
+    await _client.post('/lawyer-profile.php', body: {'action': 'save-profile', ...fields});
+  }
+
+  /// `POST /api/v1/lawyer-profile.php` action=save-specialties
+  Future<void> saveSpecialties(List<int> categoryIds) async {
+    await _client.post('/lawyer-profile.php', body: {
+      'action': 'save-specialties',
+      'category_ids': categoryIds,
+    });
+  }
+
+  /// `POST /api/v1/lawyer-profile.php` action=save-availability
+  Future<void> saveAvailability(List<Map<String, dynamic>> slots) async {
+    await _client.post('/lawyer-profile.php', body: {
+      'action': 'save-availability',
+      'slots': slots,
+    });
+  }
+
+  /// `POST /api/v1/lawyer-profile.php` action=save-settings
+  Future<void> saveLawyerSettings({
+    required bool inApp,
+    required bool email,
+    bool? profileVisible,
+  }) async {
+    await _client.post('/lawyer-profile.php', body: {
+      'action': 'save-settings',
+      'in_app': inApp,
+      'email': email,
+      if (profileVisible != null) 'profile_visible': profileVisible,
+    });
+  }
+
+  /// `POST /api/v1/lawyer-profile.php` action=change-password
+  Future<void> changeLawyerPassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    await _client.post('/lawyer-profile.php', body: {
+      'action': 'change-password',
+      'current_password': currentPassword,
+      'new_password': newPassword,
+    });
+  }
+
+  /// `POST /api/v1/lawyer-profile.php` action=sign-out-all
+  Future<void> signOutAllDevices() async {
+    await _client.post('/lawyer-profile.php', body: {'action': 'sign-out-all'});
+  }
+
+  /// `POST /api/v1/consultations.php` with an `action` — confirm, complete or
+  /// cancel a booking. The server scopes it to the lawyer's tenant.
+  Future<void> changeConsultationStatus({
+    required int consultationId,
+    required String status,
+  }) async {
+    await _client.post('/consultations.php', body: {
+      'action': 'change-status',
+      'consultation_id': consultationId,
+      'status': status,
+    });
+  }
+
+  // --------------------------------------------------------------- wallet
+
+  /// `GET /api/v1/wallet.php?action=summary`
+  Future<WalletSummary> walletSummary() async {
+    final json = await _client.get('/wallet.php', query: {'action': 'summary'});
+    return WalletSummary.fromJson(json);
+  }
+
+  /// `GET /api/v1/wallet.php?action=statement`
+  Future<WalletStatement> walletStatement({String? from, String? to}) async {
+    final json = await _client.get('/wallet.php', query: {
+      'action': 'statement',
+      if (from != null) 'from': from,
+      if (to != null) 'to': to,
+    });
+    return WalletStatement.fromJson(json);
+  }
+
+  /// `GET /api/v1/wallet.php?action=transactions`
+  Future<List<WalletTransaction>> walletTransactions({int limit = 50, int offset = 0}) async {
+    final json = await _client.get('/wallet.php', query: {
+      'action': 'transactions',
+      'limit': '$limit',
+      'offset': '$offset',
+    });
+    return ((json['transactions'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => WalletTransaction.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  /// `GET /api/v1/wallet.php?action=withdrawals`
+  Future<List<WalletWithdrawal>> walletWithdrawals() async {
+    final json = await _client.get('/wallet.php', query: {'action': 'withdrawals'});
+    return ((json['withdrawals'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => WalletWithdrawal.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  /// `POST /api/v1/wallet.php` action=request-withdrawal
+  Future<void> requestWithdrawal({required String amount, String? method, String? note}) async {
+    await _client.post('/wallet.php', body: {
+      'action': 'request-withdrawal',
+      'amount': amount,
+      if (method != null) 'method': method,
+      if (note != null) 'note': note,
+    });
+  }
+
+  /// `POST /api/v1/wallet.php` action=save-payout
+  Future<void> savePayoutDetails({
+    required String method,
+    required Map<String, String> details,
+    String? holder,
+  }) async {
+    await _client.post('/wallet.php', body: {
+      'action': 'save-payout',
+      'method': method,
+      if (holder != null) 'holder': holder,
+      'details': details,
+    });
+  }
+
+  // ---------------------------------------------------------------- calls
+
+  /// `GET /api/v1/calls.php?action=state&consultation_id=N`
+  Future<CallState> callState(int consultationId) async {
+    final json = await _client.get('/calls.php', query: {
+      'action': 'state',
+      'consultation_id': '$consultationId',
+    });
+    return CallState.fromJson(json);
+  }
+
+  /// `POST /api/v1/calls.php` action=start — begin (or rejoin) a call.
+  Future<CallJoinInfo> startCall({required int consultationId, required String callType}) async {
+    final json = await _client.post('/calls.php', body: {
+      'action': 'start',
+      'consultation_id': consultationId,
+      'call_type': callType,
+    });
+    return CallJoinInfo.fromJson(json);
+  }
+
+  /// `GET /api/v1/calls.php?action=token&call_id=N`
+  Future<CallJoinInfo> callToken(int callId) async {
+    final json = await _client.get('/calls.php', query: {'action': 'token', 'call_id': '$callId'});
+    return CallJoinInfo.fromJson(json);
+  }
+
+  /// `POST /api/v1/calls.php` action=accept
+  Future<CallSession> acceptCall(int callId) async {
+    final json = await _client.post('/calls.php', body: {'action': 'accept', 'call_id': callId});
+    return CallSession.fromJson(Map<String, dynamic>.from(json['call'] as Map));
+  }
+
+  /// `POST /api/v1/calls.php` action=reject
+  Future<void> rejectCall(int callId) async {
+    await _client.post('/calls.php', body: {'action': 'reject', 'call_id': callId});
+  }
+
+  /// `POST /api/v1/calls.php` action=end
+  Future<void> endCall(int callId, {String reason = 'hangup'}) async {
+    await _client.post('/calls.php', body: {'action': 'end', 'call_id': callId, 'reason': reason});
+  }
+
+  /// `POST /api/v1/calls.php` action=joined
+  Future<void> callJoined(int callId, String token) async {
+    await _client.post('/calls.php', body: {'action': 'joined', 'call_id': callId, 'token': token});
+  }
+
+  /// `POST /api/v1/calls.php` action=signal — relay one SDP/ICE payload.
+  Future<int> sendCallSignal({
+    required int callId,
+    required String token,
+    required String kind,
+    dynamic data,
+  }) async {
+    final json = await _client.post('/calls.php', body: {
+      'action': 'signal',
+      'call_id': callId,
+      'token': token,
+      'payload': {'kind': kind, 'data': data},
+    });
+    return json['signal_id'] is num ? (json['signal_id'] as num).toInt() : 0;
+  }
+
+  /// `GET /api/v1/calls.php?action=poll` — drain the other party's signals.
+  Future<List<CallSignal>> pollCallSignals({
+    required int callId,
+    required String token,
+    required int afterId,
+  }) async {
+    final json = await _client.get('/calls.php', query: {
+      'action': 'poll',
+      'call_id': '$callId',
+      'token': token,
+      'after_id': '$afterId',
+    });
+    return ((json['signals'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => CallSignal.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  /// `GET /api/v1/calls.php?action=incoming` — a ringing call for me, if any.
+  Future<CallSession?> incomingCall() async {
+    final json = await _client.get('/calls.php', query: {'action': 'incoming'});
+    final call = json['call'];
+    if (call is! Map) return null;
+    return CallSession.fromJson(Map<String, dynamic>.from(call));
+  }
+
+  /// `GET /api/v1/calls.php?action=history`
+  Future<List<CallSession>> callHistory() async {
+    final json = await _client.get('/calls.php', query: {'action': 'history'});
+    return ((json['calls'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => CallSession.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  /// `GET /api/v1/calls.php?action=get&call_id=N`
+  Future<CallSession> callDetail(int callId) async {
+    final json = await _client.get('/calls.php', query: {'action': 'get', 'call_id': '$callId'});
+    return CallSession.fromJson(Map<String, dynamic>.from(json['call'] as Map));
   }
 }
 

@@ -14,6 +14,8 @@ import 'core/theme/theme_controller.dart';
 
 import 'features/auth/password_reset_screens.dart';
 import 'features/home/home_shell.dart';
+import 'features/calls/incoming_call_watcher.dart';
+import 'features/lawyer/lawyer_shell.dart';
 import 'features/public/splash_screen.dart';
 
 /// Root widget: wires locale + direction, then routes from the splash to the
@@ -156,17 +158,20 @@ class _MawatheqAppState extends State<MawatheqApp> {
                 if (mounted) setState(() => _splashDone = true);
               },
             )
-          : switch (auth.status) {
-              // Signed in, a guest, or an unauthenticated visitor (including an
-              // expired session) all open the same shell on the same home. Only
-              // the greeting and the account tab differ, which is what keeps the
-              // product one product across the sign-in boundary.
-              AuthStatus.signedIn ||
-              AuthStatus.guest ||
-              AuthStatus.signedOut =>
-                const HomeShell(),
-              _ => const HomeShell(),
-            },
+          : IncomingCallWatcher(
+              child: switch (auth.status) {
+                // A signed-in lawyer gets the lawyer workspace: consultations, wallet
+                // and their own dashboard. A signed-in client — and a guest, and an
+                // unauthenticated visitor — get the customer shell. The role is read
+                // from the server's `me.php` response, never from a local flag.
+                AuthStatus.signedIn when auth.user.isLawyer => const LawyerShell(),
+                AuthStatus.signedIn ||
+                AuthStatus.guest ||
+                AuthStatus.signedOut =>
+                  const HomeShell(),
+                _ => const HomeShell(),
+              },
+            ),
     );
   }
 }

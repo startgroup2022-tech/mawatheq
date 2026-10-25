@@ -4,6 +4,15 @@ require_once __DIR__ . '/includes/admin_header.php';
 require_once __DIR__ . '/../includes/ai_provider.php';
 require_once __DIR__ . '/../includes/audit_log.php';
 require_once __DIR__ . '/../includes/ngenius.php';
+// The in-app calling module is optional in the same way smtp.php is: a deployment
+// that has not shipped `includes/calls.php` (or has not run upgrade_v67) must still
+// render this page. The card below is only drawn when the module is present.
+$callsModuleFile = __DIR__ . '/../includes/calls.php';
+$callsModuleAvailable = is_file($callsModuleFile);
+if ($callsModuleAvailable) {
+    require_once $callsModuleFile;
+    $callsModuleAvailable = function_exists('call_provider_settings');
+}
 // The SMTP transport is an optional module: a deployment that did not ship `smtp.php`
 // must still render this page and keep sending mail through the legacy mail() path.
 $smtpModuleFile = __DIR__ . '/../includes/smtp.php';
@@ -107,6 +116,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'ngeni
     if(!$secretError)$saved = true;
 }
 
+// In-app calling (voice/video). The TURN credential is stored encrypted, exactly
+// like the gateway secrets above, so a database dump does not leak it.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'call_settings' && $callsModuleAvailable) {
+    save_setting($pdo, 'call_enabled', isset($_POST['call_enabled']) ? '1' : '0');
+    save_setting($pdo, 'call_provider', in_array($_POST['call_provider'] ?? '', ['webrtc','jitsi'], true) ? $_POST['call_provider'] : 'webrtc');
+    save_setting($pdo, 'call_stun_urls', trim((string)($_POST['call_stun_urls'] ?? '')));
+    save_setting($pdo, 'call_turn_urls', trim((string)($_POST['call_turn_urls'] ?? '')));
+    save_setting($pdo, 'call_turn_username', trim((string)($_POST['call_turn_username'] ?? '')));
+    $turnCredential = trim((string)($_POST['call_turn_credential'] ?? ''));
+    if (isset($_POST['revoke_call_turn_credential'])) {
+        secret_store_setting($pdo, 'call_turn_credential', '');
+    } elseif ($turnCredential !== '') {
+        if (!secret_store_setting($pdo, 'call_turn_credential', $turnCredential)) {
+            $secretError = 'تعذر تشفير بيانات TURN؛ اضبط MAWATHEQ_ENCRYPTION_KEY أولاً.';
+        }
+    }
+    save_setting($pdo, 'call_ring_timeout_seconds', (string)max(10, min(180, (int)($_POST['call_ring_timeout_seconds'] ?? 45))));
+    save_setting($pdo, 'call_max_duration_minutes', (string)max(5, min(480, (int)($_POST['call_max_duration_minutes'] ?? 120))));
+    if (!$secretError) {
+        log_action($pdo, 'تحديث إعدادات الاتصال الصوتي والمرئي');
+        $saved = true;
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'password') {
     if (strlen($_POST['new_password'] ?? '') < 8) {
         $pwError = 'كلمة المرور يجب أن تكون 8 أحرف على الأقل.';
@@ -180,6 +213,12 @@ $mailSettings = smtp_settings($pdo);
 $mailDiag = mail_diagnostics($pdo);
 $mailConfigured = smtp_configured($mailSettings);
 $settings['smtp_password'] = '';
+
+// Calling state. `call_provider_state()` is the single predicate the API also uses,
+// so the badge here and the app's behaviour cannot disagree.
+$callSettings = $callsModuleAvailable ? call_provider_settings($pdo) : null;
+$callState = $callsModuleAvailable ? call_provider_state($pdo) : null;
+$callTurnCredentialConfigured = $callsModuleAvailable && ($callSettings['call_turn_credential'] ?? '') !== '';
 ?>
 <div class="app-content">
   <div class="pg-head"><div><h1>الإعدادات</h1><p>إعدادات المنصة، مزوّد الذكاء الاصطناعي، بوابة الدفع، وحسابك الشخصي</p></div></div>
@@ -607,6 +646,67 @@ $settings['smtp_password'] = '';
     btn.disabled = false; btn.textContent = 'اختبار الاتصال';
   }
   </script>
+
+  <?php if ($callsModuleAvailable): ?>
+  <form class="dash-card" method="post">
+    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
+    <input type="hidden" name="action" value="call_settings">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+      <h3>الاتصال الصوتي والمرئي داخل التطبيق</h3>
+      <?php
+        $callBadgeClass = $callState['available'] ? 'status-approved' : 'status-pending';
+        $callBadgeText = $callState['available'] ? 'مهيّأ' : 'غير مهيّأ';
+      ?>
+      <span class="status-badge <?= $callBadgeClass ?>"><?= htmlspecialchars($callBadgeText) ?></span>
+    </div>
+    <p style="font-size:.85rem;margin-bottom:14px"><?= htmlspecialchars($callState['message']) ?></p>
+
+    <div class="field">
+      <label><input type="checkbox" name="call_enabled" value="1" <?= ($callSettings['call_enabled'] ?? '1') === '1' ? 'checked' : '' ?>> تفعيل الاتصال الصوتي والمرئي</label>
+    </div>
+    <div class="field">
+      <label>نوع مزوّد الاتصال</label>
+      <select name="call_provider">
+        <option value="webrtc" <?= ($callSettings['call_provider'] ?? 'webrtc') === 'webrtc' ? 'selected' : '' ?>>WebRTC مباشر بين الطرفين (افتراضي)</option>
+        <option value="jitsi" <?= ($callSettings['call_provider'] ?? '') === 'jitsi' ? 'selected' : '' ?>>Jitsi Meet</option>
+      </select>
+      <small>«WebRTC مباشر» يربط الطرفين دون وسيط؛ يتطلب خادم TURN للشبكات المقيّدة. «Jitsi Meet» يستخدم غرفة خارجية مضمّنة.</small>
+    </div>
+    <div class="field">
+      <label>عناوين STUN (سطر لكل عنوان)</label>
+      <textarea name="call_stun_urls" dir="ltr" rows="2" placeholder="stun:stun.l.google.com:19302"><?= htmlspecialchars($callSettings['call_stun_urls'] ?? '') ?></textarea>
+      <small>يكفي STUN للشبكات العادية. لا يحمل أي بيانات اعتماد.</small>
+    </div>
+    <div class="field">
+      <label>عناوين TURN (سطر لكل عنوان)</label>
+      <textarea name="call_turn_urls" dir="ltr" rows="2" placeholder="turn:turn.example.com:3478"><?= htmlspecialchars($callSettings['call_turn_urls'] ?? '') ?></textarea>
+      <small>مطلوب للمكالمات عبر شبكات الاتصالات المقيّدة (Symmetric NAT). بدون TURN قد تفشل الوسائط بين بعض الشبكات — وهذا قيد موثّق وليس عطلاً.</small>
+    </div>
+    <div class="grid-2">
+      <div class="field">
+        <label>اسم مستخدم TURN</label>
+        <input type="text" name="call_turn_username" dir="ltr" value="<?= htmlspecialchars($callSettings['call_turn_username'] ?? '') ?>">
+      </div>
+      <div class="field">
+        <label>كلمة مرور TURN</label>
+        <input type="password" name="call_turn_credential" value="" autocomplete="new-password" placeholder="<?= $callTurnCredentialConfigured ? 'محفوظة — أدخل قيمة جديدة للتدوير' : 'أدخل كلمة المرور' ?>">
+        <?php if ($callTurnCredentialConfigured): ?><label><input type="checkbox" name="revoke_call_turn_credential" value="1"> إلغاء وحذف كلمة المرور المحفوظة</label><?php endif; ?>
+        <small>محفوظة مشفّرة ولا يُعاد عرضها.</small>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div class="field">
+        <label>مهلة الرنين (ثانية)</label>
+        <input type="number" name="call_ring_timeout_seconds" min="10" max="180" value="<?= (int)($callSettings['call_ring_timeout_seconds'] ?? 45) ?>">
+      </div>
+      <div class="field">
+        <label>أقصى مدة للمكالمة (دقيقة)</label>
+        <input type="number" name="call_max_duration_minutes" min="5" max="480" value="<?= (int)($callSettings['call_max_duration_minutes'] ?? 120) ?>">
+      </div>
+    </div>
+    <button class="btn btn-primary" type="submit">حفظ إعدادات الاتصال</button>
+  </form>
+  <?php endif; ?>
 
   <form class="dash-card" method="post"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
     <input type="hidden" name="action" value="password">

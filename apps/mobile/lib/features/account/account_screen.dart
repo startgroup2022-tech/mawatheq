@@ -21,14 +21,23 @@ import '../public/pricing_screen.dart';
 /// The permission list is rendered exactly as the server reported it, so the
 /// screen never claims a capability the account does not have.
 class AccountScreen extends StatefulWidget {
-  const AccountScreen({super.key});
+  const AccountScreen({super.key, this.repository, this.onOpenProfessionalProfile});
+
+  /// The shared repository, so an embedding can inject a test edge. Falls back to the
+  /// default client, which is what the customer shell relies on.
+  final ApiRepository? repository;
+
+  /// Shown only when supplied. The lawyer shell passes one, because a lawyer has a
+  /// professional profile the customer does not; the customer shell passes nothing
+  /// and the tile is absent.
+  final VoidCallback? onOpenProfessionalProfile;
 
   @override
   State<AccountScreen> createState() => _AccountScreenState();
 }
 
 class _AccountScreenState extends State<AccountScreen> {
-  final _repo = ApiRepository();
+  late final ApiRepository _repo = widget.repository ?? ApiRepository();
   List<Invoice> _invoices = const [];
   bool _loadingInvoices = true;
 
@@ -296,6 +305,14 @@ class _AccountScreenState extends State<AccountScreen> {
         const SizedBox(height: 22),
 
         SectionHeader(title: 'الإعدادات'),
+        // Lawyer-only: the professional profile is what clients see, so it sits at the
+        // top of the settings block when the shell supplies the route.
+        if (widget.onOpenProfessionalProfile != null)
+          _SettingTile(
+            icon: Icons.badge_outlined,
+            label: 'الملف المهني',
+            onTap: widget.onOpenProfessionalProfile!,
+          ),
         _SettingTile(
           icon: Icons.language,
           label: 'اللغة',
