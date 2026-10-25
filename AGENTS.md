@@ -3012,3 +3012,97 @@ fallback — HTTP 200 with the homepage body, so it looked healthy while being u
 A trailing-slash URL needs an explicit `.htaccess` rewrite; the index fallback masks the
 404. Guests get the policy and a sign-in link; a signed-in client or lawyer gets the real
 form, and the page calls the same `account_delete()` as the app and `/account.php`.
+
+## Execution 56 — the lawyer wallet, and three defects the audit turned up
+
+### The wallet is a minor-unit ledger, and the commission is its own row
+
+`includes/wallet.php` + `database/upgrade_v66.sql` (v65 was already taken). Every
+amount is an integer in the currency's minor units — `wallet_to_minor()` /
+`wallet_from_minor()` at the edges, nothing in between is a float. SAR/AED/QAR/EGP/
+USD/EUR are 2 decimals, the legacy BHD/KWD/OMR/JOD are 3, so the arithmetic must go
+through the currency helpers rather than assuming ×100.
+
+A confirmed payment writes **two** rows: a `payment` credit for the gross and a
+`commission` debit for the platform's cut. Crediting the net and then debiting the
+cut double-counts the commission — the balance is right but the statement shows a
+fee that was never charged twice, and `wallet_totals()` reports the commission from
+those rows. Each row carries its own idempotency key (`wallet_pay_<id>` /
+`wallet_comm_<id>`), and the UNIQUE index on `idempotency_key` is the real guard, so
+a retried hook is a no-op. Verified end to end: a 250.00 payment credits exactly
+25000 minor, and re-recording it moves the balance by 0.
+
+The payment hook lives in `finance_record_payment()`, beside the affiliate hook and
+wrapped the same way (`is_file()` + `try/catch` + `error_log`): the wallet *observes*
+a confirmed payment, so a wallet fault must never roll back money the client has
+already paid, and the tables are absent on a database that has not run v66.
+
+### `asset_url()` — a stale stylesheet looks exactly like a layout bug
+
+Production was serving `assets/css/style.css` at **28,769 bytes** while the repo
+version is **33,253 bytes**. The production copy predates the Exec 53 grid header,
+so `.main-nav` computed `display:flex` with a 577px box and two links painted
+outside it at every width ≥1199px — identical to the original defect. Nothing in
+the app could tell the two apart; only the byte count and the missing
+`grid-template-columns` rule did.
+
+Every stylesheet/script link in all four shells and the auth pages now goes through
+`asset_url()` (`config/config.php`), which appends `?v=<filemtime>`. A host that
+serves a long `max-age` for static files can no longer pin an old copy: the URL
+changes when the file does. The auth pages matter here — they load `style.css`
+*only* (see the hardening section), so they are the ones most exposed to a stale
+copy.
+
+### `run_all_tests.sh` did not seed what the HTTP probes log in with
+
+`executive08_http_probe` authenticates as `client-firm<N>@example.com`, which only
+`tests/seed_phase6_business.php` creates. The runner never ran it, so the probe
+failed at "client 1 (firm A) logs in" and the suite reported 42/43 — a green-looking
+run hiding a probe that could not have passed. The runner now runs `seed_phase6.php`,
+`seed_phase6_business.php` and `seed_crm_demo.php` before the loop (all idempotent).
+With the seed present the probe is 53/53.
+
+### `AppConfig.appVersion` is a second copy of the version, and it drifted
+
+`pubspec.yaml` said `1.5.2+14` while `lib/core/config/app_config.dart` still said
+`1.5.1`, so the account screen displayed the wrong version.
+`exec52_app_version_test.dart` reads `pubspec.yaml` and exists to catch exactly this;
+it was the only failing test in the 253-test Flutter suite. Bump both together.
+
+### Calling already exists — it is Jitsi Meet, not a placeholder
+
+`includes/consultation_room.php` embeds `meet.jit.si/<room_code>` in an iframe for
+`consultation_type` `video`/`voice` (voice starts video-muted), with
+`allow="camera; microphone; fullscreen; display-capture; autoplay"`. `room_code` is
+generated once per consultation and stored. The page is reached through
+`tenant_owner_where()` on `consultations`, so a lawyer outside the tenant gets the
+"not found" branch, and `consultation_type` text/other falls through to the polling
+chat. There is **no** WebRTC code in the repo and no TURN server — Jitsi's public
+infrastructure carries the media, which is the documented dependency: a real
+two-party call has not been verified in this environment (no browser-to-browser
+session with two authenticated participants was run), so treat "calling works" as
+unverified rather than done.
+
+### `android-37.0` is not `android-37`
+
+A fresh sandbox needs the toolchain reinstalled, and the current `sdkmanager`
+installs the platform as `platforms/android-37.0` while AGP (pinned `compileSdk = 37`
+for `permission_handler_android`) looks for the hash string `android-37`. The build
+fails with `Failed to find target with hash string 'android-37'`. Symlink it:
+`ln -sfn platforms/android-37.0 platforms/android-37`. Flutter must also match the
+repo: 3.35.4 fails dependency resolution (`timezone 0.11.2` needs Dart ^3.10.0);
+**3.47.7** is what `pubspec.lock` resolves against.
+
+### The lawyer surfaces, and what is real
+
+`lawyer/wallet.php` (balance, statement, withdrawal request), `lawyer/settings.php`
+(profile, password, notification preferences, sessions, deletion), the dashboard
+wallet KPI, and the console pages `admin/wallets.php` (super_admin + support),
+`admin/wallet-withdrawals.php` and `admin/wallet-settings.php` (super_admin only —
+money movement is not a support task). All 24 `lawyer/*.php` pages render 200 with
+no PHP notice; the wallet and settings pages 302 to login for an anonymous request.
+
+Client/lawyer is **one** Flutter app (`apps/mobile`, `com.mawatheq.app`): the same
+shell serves both, and `AuthController.signIn(asLawyer:)` picks
+`/api/v1/auth/lawyer-login.php` over `/api/v1/auth/login.php`. There is no separate
+lawyer APK to build, which is why the release ships one artifact.
