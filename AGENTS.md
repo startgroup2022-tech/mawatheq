@@ -3144,3 +3144,77 @@ Measure this from pixels, not computed styles: `getBoundingClientRect()` per nav
 against the nav container's own rect at 360/390/768/1024/1199/1200/1280/1440/1920.
 `display:none` below 1024 is the drawer, and that is correct — the failure is links whose
 right edge exceeds the container, not the drawer.
+
+## Execution 57 — the header, the lawyer app, and in-app calls
+
+### The header fix was never a code bug; it was a deployment gap, and only a measurement shows it
+
+`assets/css/style.css` in the repository has been the grid layout (`grid-template-columns:
+auto minmax(0,1fr) auto` + `overflow:clip`) since the earlier fix. Production was serving the
+**older** file: 28,769 bytes with `display:flex; justify-content:space-between`, against 33,253
+bytes in the repo. A `justify-content:space-between` flex row lets eight nowrap links paint
+*over* the brand and the buttons; grid columns cannot overlap at all, so the new layout removes
+the failure mode rather than tuning it.
+
+Two things to keep:
+
+- **A 200 with a plausible byte count proves nothing about this class of bug.** Both the broken
+  and the fixed page return 200. The only honest check is geometric:
+  `node tools/header_evidence.js --base <url> --label <name>` measures the brand, nav and
+  actions boxes at 360/390/768/1024/1280/1440/1920 on `/` and `/privacy.php` and counts links
+  drawn outside the nav box. Production scores **8/14** (2 links, 42px out, at >=1280); the
+  fixed tree scores **14/14**.
+- **Zone overlap must be an interval intersection, not `a.right - b.left`.** The header is RTL:
+  the brand sits on the *right* and the actions on the *left*, so a right-minus-left subtraction
+  is large and positive for two boxes that merely sit beside each other, and reports a phantom
+  failure at every desktop width. `Math.min(a.right,b.right) - Math.max(a.left,b.left)` is the
+  correct test. The same trap applies to any RTL geometry assertion.
+- Below the panel breakpoint the nav is deliberately `display:none`. A zero-width rect read as
+  an overlap reports a defect at every phone width; treat a collapsed nav as the correct state.
+
+`asset_url()` (in `config/config.php`) appends `?v=<filemtime>`, so a fixed stylesheet cannot be
+served from a stale cache. **Production still serves the plain `/assets/css/style.css`, which is
+independent evidence that `includes/header.php` itself was never deployed** — not just the CSS.
+
+### In-app calls are real WebRTC, and the honest limit is TURN
+
+`includes/calls.php` + `api/v1/calls.php` + `upgrade_v67.sql` implement per-call session rows,
+a per-party signed token, and signalling delivered **only** to the other party. The probe
+(`tests/exec57_lawyer_platform_probe.php`, 85/85) drives a full two-party exchange over HTTP:
+start → ring → accept → offer → answer → ICE → bye → duration, and asserts the negatives that
+matter — a foreign lawyer cannot get a token, a foreign token cannot post a signal, a third
+party cannot poll the call, and the sender never receives its own offer.
+
+- The default ICE config is **STUN only** (`stun:stun.l.google.com:19302`). STUN is enough for
+  most home networks and fails behind a symmetric NAT or a restrictive network. TURN is
+  configurable at `/admin/settings.php` → «المكالمات داخل التطبيق» and is a **prerequisite**
+  before claiming calls work everywhere.
+- `libjingle_peerconnection_so.so` ships for all three ABIs in the release APK — the feature is
+  compiled in, not a UI placeholder. Verify with
+  `unzip -l app.apk | grep libjingle_peerconnection_so`.
+- **No two-device call has been made.** Signalling over HTTP is testable automatically; network
+  traversal is not. Do not report the call feature "working" on the probe alone.
+- `navigator.mediaDevices` needs a secure context; on plain-HTTP hosting the camera/mic are
+  unavailable.
+
+### One Flutter app, two roles
+
+`app.dart` routes on `auth.user.isLawyer`: lawyers get `LawyerShell`, clients get `HomeShell`.
+There is one applicationId (`com.mawatheq.app`) and one artifact, so a "lawyer APK" is a build of
+the same app — not a separate app. `pubspec.yaml`'s version and `AppConfig.appVersion` must agree
+with `aapt2 dump badging`; `tests/exec52_app_version_test.dart` reads `pubspec.yaml` at runtime
+rather than pinning a literal, so a bump cannot silently diverge from the binary.
+
+### The release tag must point at the commit the assets were built from
+
+The APK/AAB are stamped `1.6.0+15`, but the version bump was initially left uncommitted — the tag
+would have pointed at a tree that says `1.5.2`, making the release unreproducible from its own
+tag. Commit the bump, then move the tag (`git tag -f`, `git push -f`) and assert
+`git rev-parse <tag>^{commit}` equals the branch head. This is the same class of mistake as
+Execution 41's "the tag has to point at the commit the assets were built from".
+
+### `tools/build_release.sh`'s head-migration guard moves, it does not accumulate
+
+The script asserts the current head migration **by name** so a package that stops earlier fails
+the build. Execution 57 moved it from `upgrade_v66.sql` to `upgrade_v67.sql` — move the
+assertion, do not add a second one, or the next build fails on a stale expectation.
