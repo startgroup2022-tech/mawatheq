@@ -70,6 +70,24 @@ $firmId = $w1['firm_id'] !== null ? (int)$w1['firm_id'] : null;
 $pdo->prepare('DELETE FROM wallet_commission_rules WHERE firm_id <=> ?')->execute([$firmId]);
 check('no rule means a 0% rate, so the lawyer keeps the whole fee', wallet_commission_rate($pdo, $firmId) === 0.0);
 
+// A platform-wide rule (firm_id IS NULL) must be visible to a firm-scoped wallet. The
+// first version of this lookup used `firm_id <=> ?` alone, so a lawyer in a firm could
+// never see the default rate and the platform silently charged no commission at all.
+$globalRule = $pdo->prepare("INSERT INTO wallet_commission_rules (firm_id,service_key,rate_percent) VALUES (NULL,'default',7.500)");
+$globalRule->execute();
+$created['rules'][] = (int)$pdo->lastInsertId();
+check('a firm-scoped wallet resolves the platform-wide rule',
+    wallet_commission_rate($pdo, $firmId) === 7.5);
+// A firm-specific rule still wins over the platform default.
+$pdo->prepare("INSERT INTO wallet_commission_rules (firm_id,service_key,rate_percent) VALUES (?,'default',12.000)")
+    ->execute([$firmId]);
+$created['rules'][] = (int)$pdo->lastInsertId();
+check('a firm-specific rule overrides the platform default',
+    wallet_commission_rate($pdo, $firmId) === 12.0);
+// Clear both so the rest of the section measures the documented default of zero.
+$pdo->prepare('DELETE FROM wallet_commission_rules WHERE firm_id <=> ? OR firm_id IS NULL')->execute([$firmId]);
+check('clearing every rule returns to 0%', wallet_commission_rate($pdo, $firmId) === 0.0);
+
 // A payment of 100.00 with no rule credits the full amount.
 $clientId = wallet_probe_client($pdo, $suffix);
 $created['users'][] = $clientId;

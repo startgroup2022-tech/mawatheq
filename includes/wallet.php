@@ -251,9 +251,13 @@ function wallet_ledger_add(PDO $pdo, int $walletId, array $entry): array {
  * a lawyer's fee. The rate is a commercial decision made in the admin console.
  */
 function wallet_commission_rate(PDO $pdo, ?int $firmId, string $serviceKey = 'default'): float {
+    // A firm-scoped wallet must still see the platform-wide rule (firm_id IS NULL), or
+    // the default commission is unreachable for every lawyer in a firm — which is most
+    // of them. `firm_id <=> ?` alone matches only the exact firm, so the rule lookup
+    // prefers a firm-specific row and falls back to the platform default.
     $stmt = $pdo->prepare("SELECT rate_percent FROM wallet_commission_rules
-        WHERE is_active=1 AND firm_id <=> ? AND service_key IN (?, 'default')
-        ORDER BY (service_key = ?) DESC, (firm_id IS NOT NULL) DESC, id DESC LIMIT 1");
+        WHERE is_active=1 AND (firm_id <=> ? OR firm_id IS NULL) AND service_key IN (?, 'default')
+        ORDER BY (firm_id IS NOT NULL) DESC, (service_key = ?) DESC, id DESC LIMIT 1");
     try {
         $stmt->execute([$firmId, $serviceKey, $serviceKey]);
     } catch (Throwable $e) {
