@@ -3106,3 +3106,41 @@ Client/lawyer is **one** Flutter app (`apps/mobile`, `com.mawatheq.app`): the sa
 shell serves both, and `AuthController.signIn(asLawyer:)` picks
 `/api/v1/auth/lawyer-login.php` over `/api/v1/auth/login.php`. There is no separate
 lawyer APK to build, which is why the release ships one artifact.
+
+### The commission lookup must fall back to the platform-wide rule
+
+`wallet_commission_rate()` matched the wallet's firm with `firm_id <=> ?` alone. That
+matches a firm-specific row and **never** a row with `firm_id IS NULL` — the platform
+default, which is the only rule most deployments ever configure. So a lawyer who belongs
+to a firm resolved the rate to `0.0`, the platform charged no commission, and the admin
+console showed the rate as saved while it was unreachable. The predicate is now
+`(firm_id <=> ? OR firm_id IS NULL)`, with the firm-specific row ordered first.
+
+The 49 checks in `exec56_wallet_test.php` did not catch this because **every rule they
+inserted was firm-scoped** — a test that only exercises the path it was written against
+proves that path, not the feature. The suite now also asserts that a firm-scoped wallet
+resolves a global rule (7.5%), that a firm rule (12%) overrides it, and that clearing
+both returns to 0%.
+
+### A wallet credit is two rows, and the sum is the balance
+
+A confirmed payment writes a `payment` credit for the **gross** and a separate
+`commission` debit, each with its own idempotency key. Crediting the net and *then*
+debiting the cut subtracts the commission twice (the lawyer keeps 80% of a 10% cut).
+Verified end to end through `finance_record_payment()`: 100.00 gross at 15% moves the
+available balance by exactly **850000** minor units, the two rows sum to the same figure,
+and a retried hook moves it by **0**.
+
+### The production header defect is a stale stylesheet, not a layout bug
+
+`mawatheq.com` serves `assets/css/style.css` at **28,769 bytes**; the repo version is
+**33,253**. The deployed copy predates the grid header, so `.main-nav` computes
+`display:flex` in a 577px box with **2 links painted outside it at every width ≥1199px**.
+The fix is `asset_url()` in `config/config.php` appending `?v=<filemtime>` to every
+CSS/JS link in all four shells — editing the stylesheet again would not have helped,
+because the host was never asked for the new file.
+
+Measure this from pixels, not computed styles: `getBoundingClientRect()` per nav link
+against the nav container's own rect at 360/390/768/1024/1199/1200/1280/1440/1920.
+`display:none` below 1024 is the drawer, and that is correct — the failure is links whose
+right edge exceeds the container, not the drawer.
