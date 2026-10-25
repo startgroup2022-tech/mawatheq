@@ -32,7 +32,7 @@ class AppConfig {
   /// set), so the value is mirrored here; `exec52_app_version_test.dart` reads
   /// `pubspec.yaml` and fails if the two drift, which is what keeps this honest
   /// rather than a second copy that silently goes stale.
-  static const String appVersion = '1.5.1';
+  static const String appVersion = '1.5.2';
 
   /// Request timeout. Kept short so the UI can show a retry affordance quickly.
   static const Duration timeout = Duration(seconds: 30);
