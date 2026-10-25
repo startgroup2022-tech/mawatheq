@@ -512,6 +512,9 @@ mariadb -u USERNAME -p DBNAME -e "SELECT kind, amount_minor, gross_minor, commis
 | خطأ 500 في `consultation-journey.php` | لم يُطبَّق `upgrade_v63.sql` | طبّق الخطوة 6 |
 | خطأ 500 في `admin/banners.php` أو `api/v1/banners.php` | لم يُطبَّق `upgrade_v64.sql` (جدول `home_banners` غير موجود) | طبّق الخطوة 7 |
 | خطأ 500 في `lawyer/wallet.php` أو `admin/wallets.php` | لم يُطبَّق `upgrade_v66.sql` (جداول المحفظة غير موجودة) | طبّق `upgrade_v66.sql` |
+| خطأ 500 في `api/v1/calls.php` أو زر المكالمة لا يستجيب | لم يُطبَّق `upgrade_v67.sql` (جداول `call_*` غير موجودة) | طبّق `upgrade_v67.sql` |
+| المكالمة تتصل ثم تنقطع فوراً | لا يوجد خادم TURN (شبكة مقيّدة أو NAT متماثل) | أدخل بيانات TURN في `/admin/settings.php` ← «المكالمات داخل التطبيق» |
+| بطاقة «المكالمات» لا تظهر في الإعدادات | الملف `includes/calls.php` لم يُرفع | ارفع `includes/calls.php` مع ملفات الموقع |
 | رأس الموقع ما زال متراكباً بعد النشر | الوسيط أو المتصفّح يخدّم `style.css` القديم (28KB بدل 33KB) | تحقّق أن الرابط يحمل `?v=`، وأن الملف المرفوع هو النسخة الجديدة |
 | شريط البانرات لا يظهر في التطبيق | لا بانر منشور، أو كل البانرات مخفيّة/خارج نافذة العرض | أضف بانراً من `admin/banners.php` وتحقّق من الحالة والتواريخ |
 | البانر يظهر لكن لا ينقر | وجهته لم تتحقّق (رابط غير https، أو تخصص/تصنيف محذوف) فخُفِّضت إلى «بلا وجهة» | صحّح الوجهة من لوحة البانرات |
@@ -583,6 +586,7 @@ mariadb -u USERNAME -p DBNAME -e "SELECT kind, amount_minor, gross_minor, commis
 - [ ] `upgrade_v64.sql` — جدول `home_banners`
 - [ ] `upgrade_v65.sql`
 - [ ] **`upgrade_v66.sql` — جداول محفظة المحامي** (بدونه `lawyer/wallet.php` و`admin/wallets.php` يعطيان 500)
+- [ ] **`upgrade_v67.sql` — جداول المكالمات** (`call_sessions`، `call_events`، `call_participants`) — بدونه `api/v1/calls.php` يعطي 500 وزر المكالمة في التطبيق لا يعمل
 - [ ] `php database/repair/02_migration_ledger.php` ينتهي بـ `0`
 - [ ] مجلد `mawatheq-private/consultation-attachments/` بصلاحية `02770`
 - [ ] فكّ `MAWATHEQ_WEBSITE_FINAL.zip` في `public_html`
@@ -603,6 +607,13 @@ mariadb -u USERNAME -p DBNAME -e "SELECT kind, amount_minor, gross_minor, commis
 - [ ] **`/admin/wallets.php` يفتح لمدير النظام ويعرض المحافظ وطلبات السحب**
 - [ ] **رأس الموقع على `mawatheq.com` بعد النشر: لا تراكب بين الشعار والقائمة والأزرار عند 360/390/768/1024/1200/1440/1920**
 - [ ] **رابط `style.css` يحمل `?v=<filemtime>` — لا يبقى ملف قديم في ذاكرة المتصفّح أو الوسيط**
+- [ ] **`upgrade_v67.sql` مُطبَّق — جداول `call_sessions` و`call_events` و`call_participants` موجودة**
+- [ ] **`/admin/settings.php` يعرض بطاقة «المكالمات داخل التطبيق» بحالة الجاهزية**
+- [ ] **`GET /api/v1/calls.php` بدون مصادقة يردّ 401 لا 500**
+- [ ] **تطبيق المحامي: لوحة القيادة تعرض أرقاماً من الخادم (استشارات، قضايا، محفظة)**
+- [ ] **تطبيق المحامي: تبويب «الاستشارات» يعرض الطلبات الجديدة ويقبل/يرفض**
+- [ ] **تطبيق المحامي: زر المكالمة الصوتية/المرئية يبدأ جلسة، والطرف الآخر يستقبلها**
+- [ ] **شريط التنقّل السفلي في تطبيق العميل ثابت في الأقسام الخمسة وتبقى حالة كل تبويب**
 - [ ] برنامج المسوّقين **مغلق** حتى تفتحه عن قصد
 
 ---
