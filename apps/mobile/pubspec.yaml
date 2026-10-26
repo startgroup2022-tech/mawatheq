@@ -1,7 +1,7 @@
 name: mawatheq_mobile
 description: "مواثيق — التطبيق القانوني المتكامل (Flutter) / Mawatheq legal platform mobile app"
 publish_to: 'none'
-version: 1.1.0+2
+version: 1.6.1+16
 
 environment:
   sdk: ^3.9.2
@@ -63,6 +63,7 @@ dependencies:
   # just made and never claims the server sent it.
   flutter_local_notifications: ^22.3.2
   timezone: ^0.11.2
+  flutter_webrtc: ^1.6.2+hotfix.4
 
 dev_dependencies:
   flutter_test:
@@ -74,6 +75,10 @@ flutter:
 
   assets:
     - assets/images/
+    # `assets/images/` is not recursive, so the banner photos need their own entry.
+    # Without it `Image.asset` throws at first paint and every built-in slide falls
+    # back to its gradient — a slider of four flat panels.
+    - assets/images/banners/
     # The Arabic type families are bundled rather than fetched at runtime. The app
     # has to render Arabic correctly on a first launch with no network, and a
     # runtime download of a font is a visible reflow at best and a fallback face at

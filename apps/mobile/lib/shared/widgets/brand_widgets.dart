@@ -443,6 +443,7 @@ class DashboardCard extends StatelessWidget {
     required this.label,
     this.icon,
     this.accent,
+    this.onTap,
   });
 
   final String value;
@@ -450,9 +451,14 @@ class DashboardCard extends StatelessWidget {
   final IconData? icon;
   final Color? accent;
 
+  /// Optional destination. When supplied the card becomes a button and gains the
+  /// 44px minimum hit area the accessibility audit requires; without it the card
+  /// stays a plain figure, so an existing caller is unaffected.
+  final VoidCallback? onTap;
+
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final card = Container(
       padding: const EdgeInsets.all(AppSpacing.s4),
       decoration: BoxDecoration(
         color: context.tokens.surface,
@@ -480,6 +486,15 @@ class DashboardCard extends StatelessWidget {
           const SizedBox(height: 2),
           Text(label, style: Theme.of(context).textTheme.bodySmall),
         ],
+      ),
+    );
+    if (onTap == null) return card;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppRadius.lg),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 44),
+        child: card,
       ),
     );
   }
@@ -915,6 +930,82 @@ class EmptyState extends StatelessWidget {
               const SizedBox(height: AppSpacing.s5),
               SecondaryButton(label: actionLabel!, onPressed: onAction),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The one empty state for "this specialty has no available lawyer".
+///
+/// It is shared by the consultation journey and the public lawyer directory so the
+/// two surfaces cannot drift: the customer sees the same sentence and the same two
+/// routes out wherever they hit the state.
+///
+/// The body is deliberately **only** a message and the two buttons. It once echoed
+/// the server's `alternative` object, which stringified a map and printed raw
+/// `{reason: ..., suggest: ...}` text under the message — no backend diagnostic,
+/// status code or placeholder may reach a customer-facing empty state. If a future
+/// edit wants to surface a reason, it belongs in the message copy, reviewed, not in
+/// a raw field.
+///
+/// Both actions are real: [onAskAssistant] opens the AI assistant and [onContact]
+/// opens the support/contact page. Neither is a no-op, and neither is disabled when
+/// the assistant has no configured provider — the assistant reports its own honest
+/// state rather than the empty state pretending an answer is impossible.
+class NoLawyerState extends StatelessWidget {
+  const NoLawyerState({
+    super.key,
+    required this.onAskAssistant,
+    required this.onContact,
+    this.message = 'لا يوجد محامي متاح',
+  });
+
+  final VoidCallback onAskAssistant;
+  final VoidCallback onContact;
+
+  /// The single message. Overridable only so a caller can localise it; the default
+  /// is the exact wording the brief requires.
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(AppSpacing.s6),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 68,
+              height: 68,
+              decoration: BoxDecoration(
+                color: context.tokens.infoBg,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.search_off, size: 30, color: AppColors.teal),
+            ),
+            const SizedBox(height: AppSpacing.s4),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: AppSpacing.s5),
+            PrimaryButton(
+              label: 'المساعد الذكي',
+              icon: Icons.auto_awesome_outlined,
+              onPressed: onAskAssistant,
+              expand: true,
+            ),
+            const SizedBox(height: AppSpacing.s3),
+            SecondaryButton(
+              label: 'تواصل معنا',
+              icon: Icons.support_agent_outlined,
+              onPressed: onContact,
+              expand: true,
+            ),
           ],
         ),
       ),

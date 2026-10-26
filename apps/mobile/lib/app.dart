@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
 import 'core/auth_controller.dart';
+import 'core/config/app_config.dart';
 import 'core/deep_link_service.dart';
 import 'core/locale_controller.dart';
 import 'core/network/api_repository.dart';
@@ -11,6 +14,8 @@ import 'core/theme/theme_controller.dart';
 
 import 'features/auth/password_reset_screens.dart';
 import 'features/home/home_shell.dart';
+import 'features/calls/incoming_call_watcher.dart';
+import 'features/lawyer/lawyer_shell.dart';
 import 'features/public/splash_screen.dart';
 
 /// Root widget: wires locale + direction, then routes from the splash to the
@@ -43,6 +48,9 @@ class _MawatheqAppState extends State<MawatheqApp> {
     // Validate any stored token once, before deciding which screen to show.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await context.read<AuthController>().restore();
+      // The session check resolved, so the ceiling is no longer needed. Cancelling
+      // it here also means a normal startup leaves no timer behind.
+      _splashCeiling?.cancel();
       if (!mounted) return;
       setState(() => _restored = true);
       final token = _pendingResetToken;
@@ -51,7 +59,25 @@ class _MawatheqAppState extends State<MawatheqApp> {
         _openResetScreen(token);
       }
     });
+
+    // Hard ceiling on the splash, independent of every request timeout below it.
+    // The session check is already bounded (AppConfig.startupTimeout), but this is
+    // the last line of defence: a future startup call that forgets its own timeout
+    // must not be able to hold a user on a logo. Reaching this only marks the check
+    // as done; a late `restore()` still updates the session normally.
+    _splashCeiling = Timer(AppConfig.splashCeiling, () {
+      if (mounted && !_restored) setState(() => _restored = true);
+    });
+
     widget.deepLinks?.onResetPassword = _onResetToken;
+  }
+
+  Timer? _splashCeiling;
+
+  @override
+  void dispose() {
+    _splashCeiling?.cancel();
+    super.dispose();
   }
 
   void _onResetToken(String token) {
@@ -132,17 +158,20 @@ class _MawatheqAppState extends State<MawatheqApp> {
                 if (mounted) setState(() => _splashDone = true);
               },
             )
-          : switch (auth.status) {
-              // Signed in, a guest, or an unauthenticated visitor (including an
-              // expired session) all open the same shell on the same home. Only
-              // the greeting and the account tab differ, which is what keeps the
-              // product one product across the sign-in boundary.
-              AuthStatus.signedIn ||
-              AuthStatus.guest ||
-              AuthStatus.signedOut =>
-                const HomeShell(),
-              _ => const HomeShell(),
-            },
+          : IncomingCallWatcher(
+              child: switch (auth.status) {
+                // A signed-in lawyer gets the lawyer workspace: consultations, wallet
+                // and their own dashboard. A signed-in client — and a guest, and an
+                // unauthenticated visitor — get the customer shell. The role is read
+                // from the server's `me.php` response, never from a local flag.
+                AuthStatus.signedIn when auth.user.isLawyer => const LawyerShell(),
+                AuthStatus.signedIn ||
+                AuthStatus.guest ||
+                AuthStatus.signedOut =>
+                  const HomeShell(),
+                _ => const HomeShell(),
+              },
+            ),
     );
   }
 }

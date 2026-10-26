@@ -1,15 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/auth_controller.dart';
+import '../../core/config/app_config.dart';
 import '../../core/locale_controller.dart';
 import '../../core/network/api_repository.dart';
 import '../../core/network/models.dart';
+import '../../core/public_content.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/theme/theme_controller.dart';
 import '../../shared/widgets/brand_widgets.dart';
-import '../auth/login_screen.dart';
+import '../home/home_shell.dart';
 import '../public/pricing_screen.dart';
 
 /// Profile, permissions, invoices and session controls.
@@ -17,14 +21,23 @@ import '../public/pricing_screen.dart';
 /// The permission list is rendered exactly as the server reported it, so the
 /// screen never claims a capability the account does not have.
 class AccountScreen extends StatefulWidget {
-  const AccountScreen({super.key});
+  const AccountScreen({super.key, this.repository, this.onOpenProfessionalProfile});
+
+  /// The shared repository, so an embedding can inject a test edge. Falls back to the
+  /// default client, which is what the customer shell relies on.
+  final ApiRepository? repository;
+
+  /// Shown only when supplied. The lawyer shell passes one, because a lawyer has a
+  /// professional profile the customer does not; the customer shell passes nothing
+  /// and the tile is absent.
+  final VoidCallback? onOpenProfessionalProfile;
 
   @override
   State<AccountScreen> createState() => _AccountScreenState();
 }
 
 class _AccountScreenState extends State<AccountScreen> {
-  final _repo = ApiRepository();
+  late final ApiRepository _repo = widget.repository ?? ApiRepository();
   List<Invoice> _invoices = const [];
   bool _loadingInvoices = true;
 
@@ -46,6 +59,102 @@ class _AccountScreenState extends State<AccountScreen> {
       // Invoices are optional on this screen; a failure here must not blank it.
       if (mounted) setState(() => _loadingInvoices = false);
     }
+  }
+
+  /// Opens the support address in the device's mail client.
+  ///
+  /// The tile previously had an empty callback, so tapping Support did nothing.
+  /// A mail client is not guaranteed (an emulator, a locked-down device), so the
+  /// address is copied to the clipboard and the customer is told, rather than the
+  /// tap appearing to fail.
+  Future<void> _contactSupport() async {
+    final address = PublicContent.supportEmail;
+    final uri = Uri(scheme: 'mailto', path: address);
+    var opened = false;
+    try {
+      opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      opened = false;
+    }
+    if (opened || !mounted) return;
+
+    await Clipboard.setData(ClipboardData(text: address));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('تم نسخ البريد $address')),
+    );
+  }
+
+  /// Google Play requires an in-app route to delete an account.
+  ///
+  /// The password is collected here and verified by the server; a token alone must
+  /// never be enough to destroy an account. A refusal that names blockers (an open
+  /// case, an upcoming consultation) is shown verbatim, because "delete failed" with
+  /// no reason is what makes a customer contact support instead.
+  Future<void> _deleteAccount() async {
+    final password = await _askPassword();
+    if (password == null || password.isEmpty || !mounted) return;
+
+    final confirmed = await ConfirmationDialog.show(
+      context,
+      title: 'حذف الحساب',
+      message:
+          'سيتم إلغاء تفعيل حسابك وإزالة بياناتك الشخصية وإبطال جميع أجهزة الدخول. '
+          'لا يمكن التراجع عن هذا الإجراء.',
+      confirmLabel: 'حذف نهائي',
+      destructive: true,
+    );
+    if (!confirmed || !mounted) return;
+
+    try {
+      await _repo.deleteAccount(password: password);
+      if (!mounted) return;
+      await context.read<AuthController>().signOut();
+      if (!mounted) return;
+      context.read<AuthController>().enterGuest();
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const HomeShell()),
+        (route) => false,
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم حذف الحساب.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString())),
+      );
+    }
+  }
+
+  /// A single-field password prompt. Returns null when dismissed.
+  Future<String?> _askPassword() {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('تأكيد كلمة المرور'),
+        content: TextField(
+          controller: controller,
+          obscureText: true,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'كلمة المرور',
+            hintText: 'أدخل كلمة المرور لحذف الحساب',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('إلغاء'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text),
+            child: const Text('متابعة'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -196,6 +305,14 @@ class _AccountScreenState extends State<AccountScreen> {
         const SizedBox(height: 22),
 
         SectionHeader(title: 'الإعدادات'),
+        // Lawyer-only: the professional profile is what clients see, so it sits at the
+        // top of the settings block when the shell supplies the route.
+        if (widget.onOpenProfessionalProfile != null)
+          _SettingTile(
+            icon: Icons.badge_outlined,
+            label: 'الملف المهني',
+            onTap: widget.onOpenProfessionalProfile!,
+          ),
         _SettingTile(
           icon: Icons.language,
           label: 'اللغة',
@@ -215,8 +332,15 @@ class _AccountScreenState extends State<AccountScreen> {
         _SettingTile(
           icon: Icons.help_outline,
           label: 'الدعم',
-          value: 'info@mawatheq.com',
-          onTap: () {},
+          value: PublicContent.supportEmail,
+          onTap: _contactSupport,
+        ),
+        // Google Play requires an in-app account-deletion route; privacy.php on the
+        // website promises one. It is the last tile, away from the everyday actions.
+        _SettingTile(
+          icon: Icons.delete_outline,
+          label: 'حذف الحساب',
+          onTap: _deleteAccount,
         ),
         const SizedBox(height: 22),
 
@@ -234,8 +358,12 @@ class _AccountScreenState extends State<AccountScreen> {
 
             await context.read<AuthController>().signOut();
             if (!context.mounted) return;
+            // Signing out returns to the product as a guest, not to the sign-in
+            // form. The shell renders the same home for a guest, so the customer
+            // keeps their place instead of being dropped on a wall.
+            context.read<AuthController>().enterGuest();
             Navigator.of(context).pushAndRemoveUntil(
-              MaterialPageRoute(builder: (_) => const LoginScreen()),
+              MaterialPageRoute(builder: (_) => const HomeShell()),
               (route) => false,
             );
           },
@@ -250,7 +378,7 @@ class _AccountScreenState extends State<AccountScreen> {
         const SizedBox(height: 12),
         Center(
           child: Text(
-            'مواثيق · الإصدار 1.0.0',
+            'مواثيق · الإصدار ${AppConfig.appVersion}',
             style: Theme.of(context).textTheme.labelSmall,
           ),
         ),

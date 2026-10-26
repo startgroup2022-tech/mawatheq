@@ -2192,3 +2192,1201 @@ They prove the screens build, render, and handle canned JSON. They prove nothing
 booking, a production login, a real document upload or an AI call. Do not let a green suite stand in
 for those in a delivery report — list them as untested.
 
+## EXECUTION 43 — the "two static cards" home screen
+
+### The slider was conditional on a table that ships empty
+
+`home_tab.dart` rendered `BannerCarousel` **only when `GET /api/v1/banners.php` returned at least one
+row**. `home_banners` is created empty by `upgrade_v64.sql` on purpose (see Execution 38: never invent
+a promotion), so on production the carousel rendered `SizedBox.shrink()` and the top of the home was
+just the two action cards. That is precisely the owner's complaint, and it is the general shape to
+watch for: **an enhancement that is conditional on operator-supplied data looks like a missing
+feature on every fresh install.** `home_slides.dart` now supplies four built-in Mawatheq slides that
+render when the API returns none; published banners still take priority.
+
+### A `Timer` re-armed inside `initState` outlives `dispose`
+
+The carousel's auto-advance is a single cancellable `Timer?` re-armed after each move and cancelled in
+`dispose`, behind an `autoAdvance` flag, honouring `MediaQuery.disableAnimations`. A `Future.delayed`
+chain re-arms itself with no handle to cancel and keeps calling `setState` on a disposed state — the
+"passes alone, flakes in a suite" failure, because a short widget test finishes before the delay fires.
+
+### The swipe test must fling in the RTL-advance direction
+
+A `PageView` reverses its scroll axis under `Directionality.rtl`, so the fling that advances to the
+*next* slide is the **rightward** one (`Offset(+400, 0)`), not the leftward. The leftward fling is the
+one that goes back. An assertion of `page == 1` after a leftward fling fails with `Actual: <0.0>` and
+reads like a broken carousel.
+
+### The taller slider pushes lower sections out of the lazy build window
+
+`exec39_home_resilience_test` and `exec41_blank_screen_sweep_test` mounted the home on Flutter's
+default 800x600 test surface and asserted on sections below the slider. Adding ~206px of carousel put
+those sections outside the `ListView`'s lazy build window, so `find.text(...)` failed on widgets that
+are genuinely on the page. Set a phone surface (`1080x2280`, DPR 3.0) and `scrollUntilVisible`/`drag`
+to the section, which is what a person does anyway. **A test that asserts on an off-screen widget of a
+lazy list is asserting on the scroll position, not on the feature.**
+
+### `flutter.minSdkVersion` is 24 and the release is debug-signed
+
+Re-confirmed by reading the built artifact: `aapt2 dump badging` → `minSdkVersion:'24'
+targetSdkVersion:'36'`, `compileSdkVersion='37'`; `apksigner verify --print-certs` → `CN=Android Debug`.
+No `key.properties` exists in the repo, so this is expected. The APK carries the new slide strings in
+`lib/*/libapp.so` as UTF-16LE — search for a string you *know* is compiled in before concluding a
+`grep` proves an absence.
+
+### The release tag must be moved after the branch is pushed
+
+`target_commitish: main` creates the tag at `main` **at that moment**. The APK is built from the
+feature branch, so the tag landed one commit behind the built source. After creating the release, move
+it: `git tag -f -a <tag> -m "..." <commit>` then `git push -f origin <tag>`, and confirm
+`git rev-parse <tag>^{commit}` equals the built commit. A reader clicking the tag otherwise gets
+sources that do not match the APK.
+
+### A screenshot fixture is a claim about the product, so it must hold real data
+
+`capture_screenshots.dart`'s `_specialties` held invented names (`الملكية الفكرية`,
+`العقارات والملكية`) that the taxonomy import never writes, so `01`/`02`/`03` showed a taxonomy the
+platform does not have — and two of the real keys (`enforcement`, `endowments`) were absent, which is
+how the missing icons went unnoticed. A golden is evidence; fabricated data in it is evidence of
+nothing. The fixture now carries the seven real categories and descriptions, captured from the
+endpoint against an imported database.
+
+To make that capture reproducible without a live server: run the endpoint's own include
+(`config/config.php` + `includes/legal_journey.php`) in a CLI script with
+`MAWATHEQ_DB_NAME`/`MAWATHEQ_DB_USER`/`MAWATHEQ_DB_PASS` exported, then feed the emitted JSON
+through the real `ApiClient`/`ApiRepository` in a widget test. A hand-written stub only proves the
+test agrees with itself.
+
+## EXECUTION 44 — the bundled photo that was never bundled
+
+### `assets/` directory entries in pubspec are not recursive
+
+The four built-in slides named `assets/images/banners/banner_*.jpg` and the photos were on disk, but
+`pubspec.yaml` declared only `assets/images/`. Flutter does **not** descend into subdirectories of a
+declared asset directory, so none of the four files entered the bundle. At paint, `Image.asset`
+threw, the `errorBuilder` swapped in the brand gradient, and the slider rendered four flat panels —
+the exact complaint Execution 43 was opened to fix, while every test passed.
+
+The failure mode is the dangerous part: **an `errorBuilder` that degrades to a plausible fallback
+turns a missing asset into a silent visual regression.** Nothing logs, nothing throws visibly, and
+the screen still looks like a designed slider. `tests/exec43_home_slider_test.dart` now loads the
+real bytes for every built-in slide (`rootBundle.load(...)`), which is the only assertion that can
+distinguish "the photo rendered" from "the gradient rendered". Verify it bites by deleting the
+`- assets/images/banners/` line and watching the test fail with `Unable to load asset`. Check
+`build/unit_test_assets/` (or the APK's `assets/`) to confirm what actually shipped.
+
+### Photo provenance has to be recorded, and re-encoding destroys it
+
+Two of the four photos are **CC BY 2.0**, which requires attribution wherever they are redistributed;
+the other two are CC0/public-domain. The files arrived re-encoded, so EXIF and any source URL were
+stripped and the images alone cannot tell you their licence. They are recorded in
+`apps/mobile/IMAGE_ATTRIBUTION.md` — keep it beside the assets and update it when an image is
+swapped. The file deliberately lives at `apps/mobile/`, **not** under `assets/`, so it is not bundled
+into the APK.
+
+### Two more silent-fallback traps in this area
+
+- **A dead asset path is indistinguishable from a missing file.** One slide pointed at
+  `banner_desk.jpg`; the file is `banner_office.jpg`. Same gradient fallback, same silence.
+- **`_NoLawyerState` keyed its language off the ambient `Directionality`.** The journey screen is
+  Arabic-only (it is driven by the Arabic taxonomy), so under an LTR widget-test harness the empty
+  state rendered English and the assertion failed. Match the screen's own convention — it has no
+  English variant — rather than inferring a locale from the frame.
+
+### `pumpAndSettle` never returns once a screen shows `LoadingSkeleton`
+
+The journey and assistant screens render `LoadingSkeleton`, whose `AnimationController` runs
+`repeat(reverse: true)`, so the frame scheduler never goes idle and `pumpAndSettle` times out after
+10s. Pump explicit frames (`pump()` then `pump(Duration(milliseconds: 400))`) in any test whose
+destination is one of those screens.
+
+### A widget-test repository must share the session's token store
+
+`_signedIn()` built the `AuthController` and the `ApiRepository` on **separate** `_MemoryTokenStore`
+instances, so the token `signIn` wrote was not the one the home's request read; the client then fell
+through to the default `TokenStorage` → `flutter_secure_storage`, whose platform channel never
+answers in a widget test. The home sat on its skeleton forever and the test failed as a
+`pumpAndSettle` timeout that pointed at the destination screen rather than at the harness. Pass one
+store to both.
+
+### `putenv()` inside the PHP script does not beat a pre-set environment
+
+`config/config.php` reads `getenv()`, and a variable already exported by the shell wins over a
+`putenv()` call made later in the same script — so a probe that sets its DB name in PHP connects to
+whatever the shell exported, or to nothing, and appears to hang or fail for the wrong reason. Export
+on the command line (`MAWATHEQ_DB_NAME=… php probe.php`). A probe that then *hangs* rather than
+erroring is usually this.
+
+### GitHub release assets are CDN-cached; verify with a cache-buster
+
+After replacing an asset (`DELETE` then re-`POST` to `uploads.github.com`), an immediate download of
+`SHA256SUMS.txt` can still serve the **previous** bytes, so `sha256sum -c` reports the just-updated
+file as `FAILED` while every other file passes. The upload is fine; the edge cache is stale. Re-fetch
+with `?cb=$(date +%s%N)` and `Cache-Control: no-cache` before concluding a checksum is wrong. Build
+`SHA256SUMS.txt` from the **downloaded** bytes, not from the working tree, or a mid-run asset update
+leaves the manifest describing a file that no longer exists.
+
+### `unzip` is not installed; use Python's `zipfile`
+
+Verifying an APK's contents (`lib/*/libapp.so` strings, `classes.dex`) works with
+`zipfile.ZipFile(...).read(...)`. Dart AOT strings are UTF-16LE, so search
+`s.encode('utf-16-le')`, and include a positive control (a string you know is compiled in) before
+concluding a miss.
+
+
+## Execution 45 — the fixes that hid behind the layer that was tested
+
+Two navigation defects in the Flutter app, both invisible at the layer the tests
+covered. This is the recurring shape worth remembering: **a widget that is only ever
+tested where its parent supplies the missing piece can be broken everywhere else.**
+
+### A screen that returns a bare `Column` works as a tab and dies as a route
+
+`AssistantScreen` returned a `Column` with no `Scaffold`. As a bottom-nav tab the
+shell supplies the `Scaffold`, so it rendered and the tab-level tests passed. Pushed
+as a route — which the home action *and* the journey's no-lawyer state both do — the
+`TextField` threw `No Material widget found`, and the screen arrived with no app bar
+and no way back. It now takes an `embedded` flag: `true` as a tab, `false` when
+pushed, in which case it supplies its own `Scaffold` and app bar. Any screen in this
+app that is reachable both ways needs the same treatment; test the *pushed* path,
+because that is the one nothing else exercises.
+
+### Sign-out must land on the home screen, not the sign-in form
+
+`account_screen.dart` pushed `LoginScreen` on sign-out. The product contract is that
+sign-in, registration, sign-out and session restore all land on the home screen, so
+sign-out now calls `enterGuest()` and opens `HomeShell`. A guest sees the same home as
+a signed-in user, minus account-specific data.
+
+### The RTL cross-axis trap, restated
+
+`Column(crossAxisAlignment: ...)` lays out on the **horizontal** axis, so under RTL
+`CrossAxisAlignment.end` resolves to the **left** edge. Arabic copy that should start
+at the right must use `CrossAxisAlignment.start`, which follows the text direction.
+The "obvious" `rtl ? end : start` is exactly backwards. Measure the margins
+(`tester.getTopLeft`/`getTopRight` on the text) rather than reading the code: the fix
+is only provable as a number (before: left 22 / right 211; after: left 211 / right 22).
+
+### The taxonomy SQL is verified by importing it, not by reading it
+
+`database/MAWATHEQ_LEGAL_CLASSIFICATIONS_IMPORT.sql` is the deliverable for the Najiz
+classification. Verify it the way that can fail: load `schema.sql` + every
+`upgrade_v*.sql` into a scratch database, import the file, and count. It lands
+**7 categories / 38 subcategories / 234 case types / 640 judicial requests**, and a
+second import inserts nothing (idempotent). `database/MAWATHEQ_DB_VERIFY.sql` reports
+all checks `OK` with zero orphans and zero duplicates.
+
+Deployment order matters and is not obvious: **v59 → v63 → import → v63 again.** v63
+derives `customer_desc_ar` / `customer_icon_key` from the existing rows, so its first
+run against an empty table writes nothing; the second run fills all seven.
+
+Never run `schema.sql` against an existing production database, and never import the
+taxonomy without owner authorization — the guide
+(`MAWATHEQ_TAXONOMY_IMPORT_GUIDE_AR.md`) makes the backup a prerequisite, not a
+suggestion.
+
+### Building the APK in a reset sandbox
+
+Three environment pieces are missing after a sandbox reset and each fails
+differently (see also the Execution 41 notes): `sudo apt-get install -y
+openjdk-21-jdk-headless`, `export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64`,
+`export ANDROID_HOME=/workspace/android-sdk` (and `ANDROID_SDK_ROOT` to match). The
+build takes ~4 minutes and must be backgrounded; poll on `pgrep -f GradleWrapperMain`,
+not the `flutter` command name, which the Gradle wrapper renames.
+
+### The release asset checksum must be taken from the *download*
+
+`sha256sum -c` on the local file proves the disk, not the bytes GitHub serves. Fetch
+the published URL back and compare — the APK is 60 MB and downloads in seconds, so
+there is no reason to skip it. The tag must also point at the commit the assets were
+built from: verify with
+`git ls-remote --tags <url> <tag>` against `git rev-parse HEAD`.
+
+Note `exec43` and `exec44` releases already existed at baseline; Execution 45 is
+`v2026.10.23-exec45` (`1.3.1+5`), not a second `exec43`.
+
+## Execution 46 — approved lawyers invisible, and the setgid build guard
+
+### `lawyer_specialties` ships empty on purpose, so it cannot be the only way in
+
+`legal_journey_specialties()` and `legal_journey_lawyers_for_specialty()` used to require
+an explicit `lawyer_specialties` row. That table is created **empty** by
+`upgrade_v63.sql` — linking a lawyer to an expertise is an operator action, and inventing
+one would route a real customer to a lawyer who cannot help. The requirement therefore
+made *every* approved lawyer invisible: production showed seven specialties all at
+`lawyer_count: 0` while `lawyers.php` listed a real criminal-law lawyer.
+
+`legal_journey_lawyer_category_index()` is now the single source. A lawyer's categories
+are their explicit rows when any exist; only a lawyer with none falls back to their own
+`lawyers.specialization`, resolved through `legal_journey_specialization_categories()`
+against the **live category names** (never hardcoded ids). An explicit link always wins.
+A specialization outside the controlled list contributes nothing — silence, never a
+guess. Both readers derive from this one index, so the count and the list cannot
+disagree, which is the specific way this bug hid: `0 lawyers` looked like a fact.
+
+`tests/exec46_lawyer_visibility_test.php` pins all five properties. Note that
+`legal_journey_ready()` stays as it was — it must remain safe on an unmigrated database.
+
+### `chmod 755` does not clear a directory's setgid bit
+
+This is why `execution29_1_release_smoke_test` failed at baseline. `normalize()` in
+`tools/build_release.sh` used `chmod 755`, but a directory already at `2755` stays
+`2755` — so a source tree under a setgid parent (the checked-out `vendor/` is one)
+produced `2755` in the package and the `every packaged file is 644 or 755` guard could
+never be satisfied. Clear the special bits first:
+
+```bash
+find "$dir" -exec chmod a-s {} + 2>/dev/null
+find "$dir" -type d -exec chmod 755 {} +
+find "$dir" -type f -exec chmod 644 {} +
+```
+
+The symptom is a guard that reports a failure it seems to have just fixed. When a
+permissions guard and a `chmod` disagree, check the setuid/setgid/sticky bits.
+
+### The journey `alternative` is an object, not a string
+
+`api/v1/journey.php` sends `alternative` as `{reason, suggest, specialties}`. A client
+that reads it as a string puts the raw map on the customer's screen. The Dart model
+parses it into typed fields; the empty state shows one message and two real routes out
+(`المساعد الذكي` / `تواصل معنا`) and never a server diagnostic.
+
+### `exec33_najiz_classification_test` asserts `>= 2` import runs
+
+A manual import leaves `najiz_import_runs` with one row, so the suite fails
+`import runs recorded` and reads like a regression. It imports only when
+`najiz_categories` is empty, so leave the taxonomy empty on a fresh build, or truncate
+the taxonomy tables first. Running the suite alone (`php tests/…`) is the quickest way
+to tell this from a real failure.
+
+### Release assets are replaced, not accumulated
+
+A release tag can already exist from an earlier session and carry a **stale** APK — here
+`v2026.10.23-exec43` held a `v1.2.0+3` build while the branch was at `1.3.2+6`. Check
+the existing release before creating one (`already_exists` on `tag_name`), delete the
+superseded assets by id, upload the new ones, and move the tag
+(`git tag -f -a … && git push -f origin <tag>`) so it points at the commit the artifacts
+were built from. **Asset uploads go to `uploads.github.com`, not `api.github.com`** —
+the API host returns a bare 404 for the upload POST. A release DELETE of an asset
+returns **204 with an empty body**, so parse the response only when it is non-empty.
+
+## Execution 47 — splash-screen hang, and the taxonomy SQL verified by importing it
+
+### A bounded *request* is not a bounded *screen*
+
+The app could sit on the splash screen for 30 seconds. `AuthController.restore()`
+awaited `GET /api/v1/me.php` and had no budget of its own, so it inherited
+`ApiClient`'s 30 s timeout — and nothing bounded the splash independently.
+`_showSplash` is `!_restored || !_splashDone`, so a request that completes the TCP
+handshake and then never answers (a captive portal, a hotel/airport Wi-Fi login wall,
+a loaded server) holds the logo for the full timeout. On a slower device that is
+indistinguishable from a hang.
+
+Three layers, innermost first, because each one alone is defeated by a future caller
+that forgets the one above it:
+
+| Layer | File | Budget |
+|---|---|---|
+| Session check | `lib/core/auth_controller.dart` | `restore()` → `startupTimeout` (5 s) |
+| Named budgets | `lib/core/config/app_config.dart` | `startupTimeout`, `splashCeiling` (8 s) |
+| Hard ceiling | `lib/app.dart` | 8 s `Timer`, cancelled when the check resolves |
+
+**The stored token is deliberately kept on a timeout.** An unreachable session is not a
+revoked one; clearing the token would sign a user out for a temporary network problem.
+`sessionExpired` stays down for the same reason — the welcome screen must not claim the
+session expired when it merely could not be reached.
+
+**The older startup tests could not catch this, and it is worth knowing why:** every one
+of them uses a fake transport that resolves on the next microtask, so `restore()` always
+finished before the splash was observable. `exec47_startup_hang_test.dart` drives the
+**real** `MawatheqApp` through the provider set `main.dart` supplies, with a transport
+that stalls `/me.php`. Omitting `ApiRepository` from that set is a real trap — `HomeShell`
+reads it, so a test without it is not exercising the shipping tree.
+
+### The taxonomy SQL is verified by applying it, on a database built like production
+
+`database/MAWATHEQ_LEGAL_CLASSIFICATIONS_IMPORT.sql` (292,050 bytes, SHA-256
+`10b09093e2ab3f4242efef5e00bb9105ddbf86bcd83df3d755b76816f1468134`) lands on exactly
+**7 categories / 38 subcategories / 234 case types / 640 judicial requests**, and a second
+run inserts nothing. It carries its own prerequisite guard and refuses with
+`PLEASE RUN MAWATHEQ_DB_SCHEMA_FIX.sql FIRST` rather than importing half the data.
+
+To reproduce that verification, build the scratch database as **`schema.sql` then the
+upgrades** — not the upgrades alone. `upgrade_v63.sql` creates `lawyer_specialties` with a
+foreign key to `lawyers`; on a database built from upgrades alone that table does not
+exist, so v63 dies with `errno: 150 "Foreign key constraint is incorrectly formed"`,
+MySQL stops the file at that statement, and the two `najiz_categories` presentation
+columns below it are never added. The import then correctly refuses — and the symptom
+looks like a bug in the import rather than the documented partial-schema failure mode.
+
+**Production already has the taxonomy**, confirmed live:
+`GET https://mawatheq.com/api/najiz_classify.php?action=stats` →
+`{"categories":7,"subcategories":38,"lawsuit_types":234,"judicial_requests":640}`. The SQL
+file is therefore a **disaster-recovery artifact**, not a pending import. Do not treat a
+missing import as the explanation for an empty journey on production; check the stats
+endpoint first.
+
+### Reading a minSdk off the artifact
+
+`minSdk = flutter.minSdkVersion` is Flutter's default, which appears nowhere in this repo.
+Read it from the built APK, never from a neighbouring comment or from memory:
+
+```bash
+aapt2 dump badging app-release.apk | grep -E "minSdkVersion|targetSdkVersion"
+# minSdkVersion:'24'   targetSdkVersion:'36'
+```
+
+`aapt2` and `apksigner` live in `/workspace/android-sdk/build-tools/35.0.0/`.
+
+### The release-tag trap, restated
+
+`v2026.10.23-exec43` already existed from an earlier session and carried a **stale**
+`v1.2.0+3` APK while the branch was at `1.3.2+6`. Before creating a release, check whether
+the tag exists and what it points at. Create with `target_commitish` set to the exact SHA
+the artifacts were built from, then confirm all three agree:
+
+```bash
+git rev-parse v<tag>^{commit}
+git rev-parse HEAD
+git ls-remote <remote> refs/heads/<branch> | cut -f1
+```
+
+Asset uploads go to `uploads.github.com`; `api.github.com` returns a bare 404 for the
+upload POST. Download the APK back and checksum it — a local `sha256sum` proves the bytes
+on disk, not the bytes served.
+
+## Execution 48 — the two buttons go below the slider, and "latest" is not "newest"
+
+### Where the two primary actions belong
+
+`احجز استشارة` and `اسأل المساعد الذكي` are **one row directly below the carousel**,
+rendered by `_PrimaryActions` in `home_tab.dart` — not inside a slide. Execution 43 had
+put them inside each slide to answer the "two static cards" complaint, which fixed that
+but broke this: the controls travelled with the banner and their labels were squeezed
+into the frame. Keep them outside. The carousel's job is the slides; the actions are a
+sibling of it.
+
+`ActionCard` is the *rejected* widget — a static card that goes nowhere. The actions are
+a real `FilledButton` and `OutlinedButton`. `exec43_home_slider_test.dart` asserts the
+widget types, asserts `ActionCard` is absent, and asserts the buttons' top is below the
+carousel's bottom, because "present somewhere on the screen" would pass for the wrong
+layout.
+
+### A screen that builds its own client cannot be tested
+
+`HomeTab` accepted an injected `repository` but never passed it to
+`ConsultationJourneyScreen` or `AssistantScreen`, so both fell back to `ApiRepository()`
+and talked to production. A fake transport was silently ignored and the assertion still
+passed. Any screen pushed from a screen that takes a repository must receive it.
+
+### `/releases/latest` is chosen by `published_at`, not `created_at`
+
+Recreating a release object (delete + create) refreshes `published_at`; editing one does
+not. When a corrected build must be the one `/releases/latest` resolves to — because
+that is the URL a customer is given — check it, do not assume the newest `created_at`
+wins:
+
+```bash
+curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+  https://api.github.com/repos/<owner>/<repo>/releases/latest | \
+  python3 -c "import sys,json;print(json.load(sys.stdin)['tag_name'])"
+```
+
+Deleting the release object leaves the git tag intact, so already-shared download URLs
+keep the same shape.
+
+### A `grep` for a compiled string must prove it can find one
+
+Dart AOT stores strings as **UTF-16LE** in `libapp.so`. A UTF-8 grep for an Arabic string
+returns nothing even when the string is compiled in — which is how "the APK does not
+contain the fix" gets concluded wrongly. Encode before searching, and include a negative
+control (`libflutter.so`):
+
+```python
+d = zipfile.ZipFile('app.apk').read('lib/arm64-v8a/libapp.so')
+assert 'احجز استشارة'.encode('utf-16-le') in d
+```
+
+### The delivered SQL file must be the one verified
+
+`MAWATHEQ_LEGAL_CLASSIFICATIONS_IMPORT.sql` **refuses to run** unless the `najiz_*`
+tables and the two `najiz_categories` customer columns already exist, raising
+`PLEASE RUN MAWATHEQ_DB_SCHEMA_FIX.sql FIRST` before writing any row. The order is
+`MAWATHEQ_DB_SCHEMA_FIX.sql` → the import → `MAWATHEQ_DB_VERIFY.sql`, and the result is
+7 / 38 / 234 / 640. Import the copy **downloaded from the release**, not the repo copy: a
+local file proves the working tree, not the bytes an operator receives.
+
+## Execution 43 — the home slider, the two buttons, and the taxonomy file
+
+### The "two static cards" report was about a fallback, not the carousel widget
+
+The slider was never removed. `HomeTab` rendered `BannerCarousel` **only when the server
+returned at least one banner**, and `home_banners` ships empty — so on a fresh install, the
+state production is in, the top of the home screen was just the two action cards. The fix is
+`_slides => _banners.isNotEmpty ? _banners : kBuiltInHomeSlides`: four built-in slides with
+bundled photographs, so a genuine slider renders before any operator publishes a banner. When
+a "the feature was replaced by something simpler" report arrives, check whether the real
+widget is still there behind a data-dependent branch before rewriting it.
+
+The two buttons are deliberately **outside** the carousel (`_PrimaryActions`, a
+`FilledButton` + `OutlinedButton` row), so they do not travel with a slide and their labels
+take the full width. `exec43_home_slider_test.dart` asserts both the presence and the
+**vertical order** (the booking button's top is below the carousel's bottom) — a layout that
+put them above, or inside a slide, still passes a presence-only check.
+
+### `assets/images/` in pubspec is not recursive
+
+The banner photos live in `assets/images/banners/`, so that directory needs its **own**
+`pubspec.yaml` entry. Without it `Image.asset` throws at paint, the slide's `errorBuilder`
+swaps in the brand gradient, and the slider still renders — four flat panels. Every other
+test passes. The guard is loading the real bytes: `rootBundle.load(slide.assetImage)` and
+asserting a non-trivial length, which a golden cannot do because a gradient and a photo are
+both "a picture".
+
+### RTL copy alignment: `CrossAxisAlignment.end` is the bug, not the fix
+
+The cross axis of a `Column` is horizontal, so `end` resolves to the **LEFT** under RTL and
+the Arabic copy was pushed against the wrong edge. The measurement test needs a **short**
+headline to catch it: a headline wide enough to fill the column stretches the `Text` to the
+full width, both margins come out equal, and the broken layout measures as fine. Every
+built-in slide headline is long enough to wrap in the test font — that is why a test written
+against the built-ins alone passed against the bug. `exec43_home_slider_test.dart` uses a
+deliberately short slide, then sweeps the real slides for the in-frame check.
+
+### The taxonomy SQL is a recovery tool, because production already holds the data
+
+`database/MAWATHEQ_LEGAL_CLASSIFICATIONS_IMPORT.sql` reproduces **7 / 38 / 234 / 640**
+exactly, verified by building a scratch database from `schema.sql` plus every `upgrade_v*.sql`
+in numeric order (143 tables) and running the file — and re-running it leaves the counts
+unchanged. Production is already at those counts (`api/najiz_classify.php?action=stats`), so
+the file is what rebuilds the classification after a loss or a server move, not a pending
+migration. **Import on production is the owner's decision**; nothing here performs it.
+
+The FK in `MAWATHEQ_DB_SCHEMA_FIX.sql` needs the base schema present. Run it against an empty
+database and `lawyer_specialties` fails with errno 150 (`Foreign key constraint is incorrectly
+formed`) because `lawyers` and `najiz_categories` do not exist yet — that is the missing
+prerequisite, not a defect in the file.
+
+### A lawyer with a declared specialization is discoverable; a matching *category name* is not a *practice-area key*
+
+`legal_journey_lawyer_category_index()` maps the lawyer's own `specialization` through
+`legal_journey_specialization_categories()`, whose keys are practice areas (`قانون جنائي`,
+`قانون تجاري`), **not** category names (`الدعاوى الجزائية`). Setting `specialization` to a
+category name matches nothing and the count stays 0 — the fix works, the test input was
+wrong. Verify with a practice-area key: `قانون جنائي` → `الدعاوى الجزائية`, `lawyer_count` 1,
+`matched: true`. The endpoint's lawyer objects carry `full_name`, not `name`.
+
+### Replacing a release's assets: delete first, and the DELETE body is empty
+
+The GitHub release API returns **204 with no body** on asset DELETE. `json.load()` on that
+raises `JSONDecodeError: Expecting value: line 1 column 1`; read the body and parse only when
+it is non-empty. Deleting all assets and re-uploading is the way to replace a build — a
+half-replaced set (delete succeeded, upload did not) is possible, so re-list the assets rather
+than assuming.
+
+The release tag has to point at the commit the APK was built from. The release is created
+with `target_commitish: <branch>`, which places the tag at that branch **at that moment**;
+after later commits, move it (`git tag -f -a <tag> -m ... HEAD && git push -f origin <tag>`)
+and confirm `git rev-parse <tag>^{commit}` equals `git rev-parse origin/<branch>`.
+
+A `+` in an asset name is percent-encoded in the download URL, so the APK link works only as
+`...MAWATHEQ_APP_v1.3.5%2B9_release.apk`. Download the published artifact and checksum it —
+a local `sha256sum` proves the file on disk, not the bytes served.
+
+### The website and the app are two different "homepages"
+
+The task's "homepage slider + two buttons + specialties" is the **Flutter app's** home
+(`HomeTab`), not `index.php`. `index.php` is the marketing site with its own `l2-*` sections
+and no carousel. Check which surface a UI request names before editing.
+
+### Release signing state is unchanged: debug key, v2 only
+
+The release APK is signed with `CN=Android Debug` and only APK Signature Scheme **v2**
+(`apksigner verify --verbose` → v1 false). Fine above minSdk 24; not uploadable to Google
+Play and App Links cannot verify against it until `android/key.properties` and a real
+`.jks` exist and `.well-known/assetlinks.json` carries the release fingerprint instead of
+`REPLACE_WITH_RELEASE_SHA256_FINGERPRINT`. The install guide and the release body say so
+rather than calling the artifact "release-signed".
+
+## Execution 50 — lawyer visibility is a file-version gap, not a data gap
+
+### The symptom and the trap
+
+The owner reported «لا يوجد محامٍ متاح» in the consultation journey while an
+approved lawyer existed. The instinct is to look for missing data — there was none.
+Two facts rule data out and point at code:
+
+* `GET /api/v1/lawyers.php?category_id=4` returned `{"lawyers":[]}` on production
+  but one lawyer locally, and the seven `najiz_categories.name_ar` values on
+  production are byte-identical to the ones in the code (compare per name in UTF-8,
+  not by eyeballing — a diacritic difference looks identical in a terminal).
+* The lawyer's `status` is `approved`.
+
+**Root cause:** production runs an `includes/legal_journey.php` older than commit
+`d1de2ca`. The old `legal_journey_lawyers_for_specialty()` joins
+`lawyer_specialties` only; the current one falls back to the lawyer's declared
+`specialization`. A lawyer with no `lawyer_specialties` row is invisible to the old
+code no matter how correct the declared specialty is. So "an endpoint returns an
+empty list" can mean "the server is running a different version of one file" —
+check the deployed file against the repo before assuming the data is wrong.
+
+### Two ways to close it, and they do not conflict
+
+* **Preferred:** deploy `includes/legal_journey.php`. The fallback is the correct
+  behaviour and needs no data change.
+* **Deploy-without-code:** `database/MAWATHEQ_LAWYER_SPECIALTY_BACKFILL.sql` writes
+  the missing `lawyer_specialties` links with a single `INSERT IGNORE ... SELECT`,
+  so the old code sees the lawyer. It is generated by
+  `tools/generate_lawyer_specialty_backfill.php`, which calls the *same* PHP map the
+  code uses (`legal_journey_specialization_categories()`), so the SQL cannot drift
+  from the runtime behaviour. Regenerate it when that map changes.
+
+`INSERT IGNORE` plus `UNIQUE(lawyer_id, category_id)` makes the file idempotent and
+means a link an operator created by hand is never replaced. No `UPDATE`, no
+`DELETE`, no DDL. Verified by replaying it on a database staged to match production:
+the old-code count for the category went 0 → 1 and a second run changed nothing.
+
+### One shared empty state, not two copies
+
+The "no lawyer" state existed twice (the journey and the public directory) and the
+two copies had already drifted. It is now one widget, `NoLawyerState` in
+`lib/shared/widgets/brand_widgets.dart`: one message (`لا يوجد محامي متاح`) and
+exactly two working buttons. It deliberately does **not** echo the server's
+`alternative` object — that object is server copy, and rendering it is how a second
+paragraph and an internal reason code reached the customer. The shared widget is the
+guard against the drift, not just the wording.
+
+### The release build reads `git archive`, so commit before building
+
+Same rule as Execution 38: `tools/build_release.sh` stages from `git archive
+"$COMMIT"`, so an uncommitted file is absent from the package. A migration or a
+screenshot that exists only in the working tree does not ship.
+
+### Bump `versionCode` in `pubspec.yaml`, and read it back off the APK
+
+`android/app/build.gradle.kts` sets `versionCode = flutter.versionCode`, which comes
+from `version: X.Y.Z+N` in `apps/mobile/pubspec.yaml` — there is no separate version
+constant to edit. Never state the built version from the pubspec alone; read it off
+the artifact:
+
+```bash
+/workspace/android-sdk/build-tools/35.0.0/aapt2 dump badging app-release.apk | grep ^package
+# package: ... versionCode='10' versionName='1.3.6'
+```
+
+The release APK is **debug-signed** (`CN=Android Debug`) whenever
+`android/key.properties` is absent, which is the state of a fresh checkout. It
+installs for testing but cannot go to Play and will not verify Android App Links.
+
+### Verify the published download, not the local file
+
+Checksum the local build, then download the asset over the public release URL and
+checksum *that* — a `sha256sum` on the working tree proves nothing about the bytes a
+reader downloads. Confirm the served APK is a real APK too
+(`apksigner verify`, `aapt2 dump badging`), because a stale asset returns 200 with the
+wrong bytes and a status check cannot see it.
+
+## Execution 51 — first Google Play release and the secrets.php inode trap
+
+### A file restored by `rename()` loses the group Apache reads through
+
+`tests/exec39_najiz_graceful_test.php` rewrites `config/secrets.php` for its
+unmigrated-database check and used to restore it with `rename($backup, $secrets)`.
+`rename()` replaces the **inode**, so the config came back owned by the CLI user's
+group instead of `www-data`, and under a restrictive umask it came back `0600` too.
+Apache then could not read it and **every** page that includes `config/config.php`
+returned HTTP 500 — while the suite itself reported success, because the file's
+*content* was correct. It now rewrites the file in place from the in-memory original,
+which preserves owner, group and mode. Restore a config file by writing it, never by
+renaming over it.
+
+The symptom to recognise: the `*_http_probe.php` suites fail in a batch with bare
+500s and `Failed opening required '.../config/secrets.php'` in the Apache error log,
+while the unit suites that use the PDO handle directly all pass. Check
+`sudo -u www-data test -r config/secrets.php` before debugging the probes.
+
+### The shell's umask leaks into everything the suite writes
+
+The keystore step sets `umask 077`. It persists in the session, so files created
+later — including a test's backup file — land `0600`. Run `umask 022` before a suite,
+and prefer in-place writes over any rename that carries a mode across.
+
+### A production upload key replaces the debug-signing caveat
+
+`apps/mobile/android/key.properties` (gitignored, mode `600`) points
+`storeFile` at an absolute path outside the repo. With it present,
+`build.gradle.kts` uses `signingConfigs.release`; the APK's signer becomes
+`CN=Mawatheq Legal Platform`, not `CN=Android Debug`. Confirm with
+`apksigner verify --print-certs`. The keystore and its password are **local only**
+and must never be committed or uploaded; losing the upload key means a Play key
+reset.
+
+### Play App Signing re-signs, so `assetlinks.json` changes after the first upload
+
+The upload-key fingerprint committed now is correct for **sideloaded** builds. Once
+Play App Signing is enabled, Google re-signs with its own key and Android App Links
+verify against the **Play signing-key** fingerprint (Play Console → App integrity).
+Both fingerprints can sit in the same `sha256_cert_fingerprints` array, so sideloaded
+and Play builds both verify. Replacing the array with only the upload key would
+silently break App Links on the Play build.
+
+## Execution 52 — in-app account deletion, the taxonomy SQL, and the release
+
+### Account deletion is anonymisation, and that is not a shortcut
+
+`includes/account_deletion.php` backs both `account.php` and `api/v1/account/delete.php`.
+Google Play requires an in-app deletion route and `privacy.php` promised one that did
+not exist, so this is a shipped capability rather than a support request.
+
+- **Every FK on `invoices`, `cases` and `consultations` is `ON DELETE CASCADE`.** A real
+  `DELETE FROM users` therefore takes the other party's records with it — an invoice the
+  platform issued, a consultation a lawyer was paid for. The account is anonymised
+  instead: identity columns overwritten, all `api_tokens` revoked, `status='suspended'`
+  so no login can succeed, and `deleted_at` stamped. The row survives, so the accounting
+  fact survives. Do not "simplify" this into a delete.
+- **The password is required.** A valid session or Bearer token is not enough; a token
+  left on a shared device must not be able to destroy the account.
+- The email becomes a per-account tombstone at `deleted.invalid`, so `UNIQUE(email)`
+  stays intact *and* the original address is free for a fresh registration.
+- Deletion is refused while work is in flight, and the blockers are named. Silently
+  deleting a client mid-matter would take the lawyer's case file with it.
+- `upgrade_v65.sql` adds `users.deleted_at` / `lawyers.deleted_at` (guarded, idempotent,
+  no positional `AFTER`).
+
+**Two enum bugs the test caught, both of which made the feature unusable in production:**
+`cases.status` was tested against `NOT IN ('closed','archived')` — no such values exist
+in `open|in_review|closed_won|closed_lost|closed_settled`, so **every** case counted as
+open and no client could ever delete an account. `invoices.status` was tested against
+`'partial'`; the real value is `'partially_paid'`. Read the enum, do not guess it.
+
+### The taxonomy import is data-only, and step 4 is mandatory
+
+`MAWATHEQ_TAXONOMY_IMPORT.sql` (repo root) is the exact deliverable: 7 specialties / 38
+sub-specialties / 234 case types / 640 judicial requests, verified by the file itself at
+its end. It creates no table and alters no schema, and a prerequisite guard aborts it with
+`PREREQUISITE FAILED: run upgrade_v59.sql first` when the `najiz_*` tables are absent.
+
+The order is **v59 → v63 → import → v63 again**. `v63` derives `customer_desc_ar` /
+`customer_icon_key` from rows that exist when it runs, so on a database where `v59` just
+created an empty table the first `v63` writes nothing; re-running it after the import
+fills all 7 descriptions. Verified on a clean scratch database: 7/38/234/640 and 7 filled
+descriptions.
+
+### The release tag already existed, so Exec 52 got its own
+
+`v2026.10.23-exec43` is Execution 51's release (v1.4.0+11, including the Play AAB). The
+brief asked for `v2026.10.23-exec43`, but re-pointing a shipped tag would break anyone who
+already downloaded those assets. Exec 52 publishes as **`v2026.10.23-exec52`** and leaves
+the earlier release untouched. Check `gh release list` before creating a tag from a brief
+that names one — the brief may predate a release that has since shipped.
+
+### Release verification that actually verifies
+
+Checksum the build, then **download over the public URL and checksum again**; a local
+`sha256sum` proves the files on disk, not the ones served. Confirmed for this release:
+APK `aefd9ff7…81b9` and SQL `785b7694…f17a`, both matching after download, and
+`aapt2 dump badging` on the downloaded APK reports `versionCode='12' versionName='1.5.0'`.
+
+A `+` in an asset name is percent-encoded in the download URL — the link only works as
+`%2B`: `…/MAWATHEQ_APP_v1.5.0%2B12_release.apk`.
+
+### The version shown in the app was a hardcoded lie
+
+The account screen printed `الإصدار 1.0.0` while the APK shipped 1.4.0 — the one place a
+customer reads the version, wrong for several releases. It now reads
+`AppConfig.appVersion`, and `exec52_app_version_test.dart` parses `pubspec.yaml` and fails
+if the constant drifts. There is no `package_info_plus` dependency (a platform plugin
+outside the approved set), so the mirror is deliberate and the test is what keeps it
+honest.
+
+## Execution 53 — the header fix, and re-pointing a shipped tag
+
+### The marketing header overlapped because the row could not hold the nav
+
+`.site-header .container` was a `space-between` flex row and `.main-nav` is
+`flex:1 1 auto` with `white-space:nowrap` links. Nothing constrained the nav, so
+past the width where the links stopped fitting they painted outside their own box
+and over the brand and the buttons. Measured on the live site: every width from
+1200px up had the links **13px** outside the nav's rect, intersecting both
+neighbours. The row is now a three-column grid (`auto minmax(0,1fr) auto`) so the
+columns cannot overlap by construction; `min-width:0` + `overflow:clip` on the nav
+is a second guard. The drawer breakpoint moved 1140px → **1199px**, measured.
+
+The pale streaks across the bar were the hero's teal radial glow showing through
+`rgba(246,248,250,.94)` + `backdrop-filter:blur(8px)`. The bar is opaque now. A blur
+can only smear what is behind it, and here that is a decorative gradient.
+
+`tests/e2e/header-audit.js` compares real rectangles — every visible header child
+must sit inside the row and no two may intersect — because a screenshot cannot tell
+"touching" from "overlapping" and a stale stylesheet makes both look wrong.
+
+### Both CSS layers carry the same media query, and they must agree
+
+`enterprise.css` has its own copy of the mobile-navigation query. It loads after
+`style.css`, so it wins ties: leaving it at 1140px while `style.css` said 1199px
+re-opened the drawer in a band where the desktop row was still laid out. When you
+move a header breakpoint, move it in **both** files.
+
+### Re-pointing a shipped tag: acceptable only when the tag is an ancestor of HEAD
+
+The brief named `v2026.10.23-exec43`, which already held an Exec 51 release
+(v1.4.0+11). Exec 52 responded by publishing a *new* tag and leaving it alone, on
+the rule that re-pointing breaks anyone who downloaded the old assets. Execution 53
+re-pointed it instead, and the reason is narrow: `git merge-base --is-ancestor
+<old-tag> HEAD` succeeded, so every commit the old tag referenced is still reachable
+from the new one — nothing was discarded, only the assets were superseded. The old
+APK/AAB stay on the release as an archive.
+
+Decide by ancestry, not by convenience. A tag that is **not** an ancestor of the new
+work must never be force-moved: its commits would become unreachable from the tag and
+the assets would silently describe code that no longer exists. Check with
+`git merge-base --is-ancestor <tag> HEAD` before `git tag -f`, and move the tag
+**after** the release assets are uploaded and verified, so the tag and the artifacts
+always describe the same build.
+
+### Verifying the download is not optional, and the local checksum is not enough
+
+`sha256sum -c SHA256SUMS.txt` against the working tree proves the files on disk.
+Download each asset over the public URL and checksum *those* bytes. Confirmed for
+this release: all seven assets returned HTTP 200 and all six checksums verified
+after download, and `aapt2 dump badging` on the **downloaded** APK reports
+`versionCode='13' versionName='1.5.1'` signed by `CN=Mawatheq Legal Platform`.
+
+`+` in an asset name is percent-encoded: the link works only as
+`…/MAWATHEQ_APP_v1.5.1%2B13_release.apk`.
+
+### Grepping an APK for a Dart string needs UTF-16LE
+
+A Dart AOT snapshot stores strings as UTF-16LE, so a UTF-8 grep of `lib/*/libapp.so`
+finds nothing even when the string is compiled in. Verify with a known-present string
+as the positive control, or you will conclude a string is missing when it is there.
+Confirmed present in the shipped APK: `1.5.1`, `احجز استشارة`, `اسأل المساعد الذكي`,
+`اختر تخصصك` — all UTF-16LE, none UTF-8.
+
+### The taxonomy import is data-only and idempotent — prove it by re-running
+
+`MAWATHEQ_TAXONOMY_IMPORT.sql` creates nothing; it clears the four `najiz_*` tables
+and re-inserts every row with its original id inside one transaction, guarded by a
+prerequisite check and a post-import count. Tested end-to-end on a scratch database:
+clean import `7/38/234/640`, a second run changes nothing, and running it without
+`upgrade_v59.sql` aborts with `ERROR 1644 (45000) … PREREQUISITE FAILED` leaving the
+database untouched. The order is **v59 → v63 → import → v63 again**; see the
+Execution 37 note on why the second v63 run is what fills the customer descriptions.
+
+## Execution 43 — the slider fallback, and why the owner saw "two static cards"
+
+### The carousel was correct; its *guard* was the defect
+
+`BannerCarousel` was a real `PageView` with a 4.5s auto-advance, RTL-aware swiping and
+pagination dots from the start — but `HomeTab` rendered it only when the API returned at
+least one banner, and `home_banners` ships empty. On a fresh install the top of the home
+screen was therefore just the two action cards, which is exactly what the owner rejected.
+The fix is `_slides => _banners.isNotEmpty ? _banners : kBuiltInHomeSlides`: four bundled
+photo slides (`assets/images/banners/*.jpg`) back the carousel when the operator has
+published none. Production's `api/v1/banners.php` returns `{"banners":[]}` today, so the
+built-in slides are what every install actually shows.
+
+### `assets/images/` in pubspec is not recursive
+
+A photo in `assets/images/banners/` is absent from the bundle until that directory is
+declared too. `Image.asset` then fails at paint, the `errorBuilder` swaps in the brand
+gradient, and the slider still renders — so every widget test passes while the owner sees
+four flat panels instead of photographs. `exec43_home_slider_test.dart` loads the real
+bytes with `rootBundle.load` for this reason; assert on the bundled photo, not on the
+widget's presence. Verified in the shipped APK: all four JPEGs present, 45–201 KB.
+
+### versionCode, not versionName, decides whether an APK installs
+
+A corrected build that keeps `1.5.1+13` cannot replace the build the owner already has —
+Android refuses a non-increasing `versionCode`. The release APK is `1.5.2+14`. Confirm
+with `aapt2 dump badging` (this image has no `unzip`; use `python3 -m zipfile` or
+`zipfile` in a script, and note `unzip`'s absence makes a naive `unzip … | grep` report
+"not found" for content that is present).
+
+### `delete-account.php` is the Play-required public URL
+
+The privacy page promised a deletion route and the in-app screen exists, but
+`/delete-account.php` did not, and `/delete-account/` was answered by the `DirectoryIndex`
+fallback — HTTP 200 with the homepage body, so it looked healthy while being unreachable.
+A trailing-slash URL needs an explicit `.htaccess` rewrite; the index fallback masks the
+404. Guests get the policy and a sign-in link; a signed-in client or lawyer gets the real
+form, and the page calls the same `account_delete()` as the app and `/account.php`.
+
+## Execution 56 — the lawyer wallet, and three defects the audit turned up
+
+### The wallet is a minor-unit ledger, and the commission is its own row
+
+`includes/wallet.php` + `database/upgrade_v66.sql` (v65 was already taken). Every
+amount is an integer in the currency's minor units — `wallet_to_minor()` /
+`wallet_from_minor()` at the edges, nothing in between is a float. SAR/AED/QAR/EGP/
+USD/EUR are 2 decimals, the legacy BHD/KWD/OMR/JOD are 3, so the arithmetic must go
+through the currency helpers rather than assuming ×100.
+
+A confirmed payment writes **two** rows: a `payment` credit for the gross and a
+`commission` debit for the platform's cut. Crediting the net and then debiting the
+cut double-counts the commission — the balance is right but the statement shows a
+fee that was never charged twice, and `wallet_totals()` reports the commission from
+those rows. Each row carries its own idempotency key (`wallet_pay_<id>` /
+`wallet_comm_<id>`), and the UNIQUE index on `idempotency_key` is the real guard, so
+a retried hook is a no-op. Verified end to end: a 250.00 payment credits exactly
+25000 minor, and re-recording it moves the balance by 0.
+
+The payment hook lives in `finance_record_payment()`, beside the affiliate hook and
+wrapped the same way (`is_file()` + `try/catch` + `error_log`): the wallet *observes*
+a confirmed payment, so a wallet fault must never roll back money the client has
+already paid, and the tables are absent on a database that has not run v66.
+
+### `asset_url()` — a stale stylesheet looks exactly like a layout bug
+
+Production was serving `assets/css/style.css` at **28,769 bytes** while the repo
+version is **33,253 bytes**. The production copy predates the Exec 53 grid header,
+so `.main-nav` computed `display:flex` with a 577px box and two links painted
+outside it at every width ≥1199px — identical to the original defect. Nothing in
+the app could tell the two apart; only the byte count and the missing
+`grid-template-columns` rule did.
+
+Every stylesheet/script link in all four shells and the auth pages now goes through
+`asset_url()` (`config/config.php`), which appends `?v=<filemtime>`. A host that
+serves a long `max-age` for static files can no longer pin an old copy: the URL
+changes when the file does. The auth pages matter here — they load `style.css`
+*only* (see the hardening section), so they are the ones most exposed to a stale
+copy.
+
+### `run_all_tests.sh` did not seed what the HTTP probes log in with
+
+`executive08_http_probe` authenticates as `client-firm<N>@example.com`, which only
+`tests/seed_phase6_business.php` creates. The runner never ran it, so the probe
+failed at "client 1 (firm A) logs in" and the suite reported 42/43 — a green-looking
+run hiding a probe that could not have passed. The runner now runs `seed_phase6.php`,
+`seed_phase6_business.php` and `seed_crm_demo.php` before the loop (all idempotent).
+With the seed present the probe is 53/53.
+
+### `AppConfig.appVersion` is a second copy of the version, and it drifted
+
+`pubspec.yaml` said `1.5.2+14` while `lib/core/config/app_config.dart` still said
+`1.5.1`, so the account screen displayed the wrong version.
+`exec52_app_version_test.dart` reads `pubspec.yaml` and exists to catch exactly this;
+it was the only failing test in the 253-test Flutter suite. Bump both together.
+
+### Calling already exists — it is Jitsi Meet, not a placeholder
+
+`includes/consultation_room.php` embeds `meet.jit.si/<room_code>` in an iframe for
+`consultation_type` `video`/`voice` (voice starts video-muted), with
+`allow="camera; microphone; fullscreen; display-capture; autoplay"`. `room_code` is
+generated once per consultation and stored. The page is reached through
+`tenant_owner_where()` on `consultations`, so a lawyer outside the tenant gets the
+"not found" branch, and `consultation_type` text/other falls through to the polling
+chat. There is **no** WebRTC code in the repo and no TURN server — Jitsi's public
+infrastructure carries the media, which is the documented dependency: a real
+two-party call has not been verified in this environment (no browser-to-browser
+session with two authenticated participants was run), so treat "calling works" as
+unverified rather than done.
+
+### `android-37.0` is not `android-37`
+
+A fresh sandbox needs the toolchain reinstalled, and the current `sdkmanager`
+installs the platform as `platforms/android-37.0` while AGP (pinned `compileSdk = 37`
+for `permission_handler_android`) looks for the hash string `android-37`. The build
+fails with `Failed to find target with hash string 'android-37'`. Symlink it:
+`ln -sfn platforms/android-37.0 platforms/android-37`. Flutter must also match the
+repo: 3.35.4 fails dependency resolution (`timezone 0.11.2` needs Dart ^3.10.0);
+**3.47.7** is what `pubspec.lock` resolves against.
+
+### The lawyer surfaces, and what is real
+
+`lawyer/wallet.php` (balance, statement, withdrawal request), `lawyer/settings.php`
+(profile, password, notification preferences, sessions, deletion), the dashboard
+wallet KPI, and the console pages `admin/wallets.php` (super_admin + support),
+`admin/wallet-withdrawals.php` and `admin/wallet-settings.php` (super_admin only —
+money movement is not a support task). All 24 `lawyer/*.php` pages render 200 with
+no PHP notice; the wallet and settings pages 302 to login for an anonymous request.
+
+Client/lawyer is **one** Flutter app (`apps/mobile`, `com.mawatheq.app`): the same
+shell serves both, and `AuthController.signIn(asLawyer:)` picks
+`/api/v1/auth/lawyer-login.php` over `/api/v1/auth/login.php`. There is no separate
+lawyer APK to build, which is why the release ships one artifact.
+
+### The commission lookup must fall back to the platform-wide rule
+
+`wallet_commission_rate()` matched the wallet's firm with `firm_id <=> ?` alone. That
+matches a firm-specific row and **never** a row with `firm_id IS NULL` — the platform
+default, which is the only rule most deployments ever configure. So a lawyer who belongs
+to a firm resolved the rate to `0.0`, the platform charged no commission, and the admin
+console showed the rate as saved while it was unreachable. The predicate is now
+`(firm_id <=> ? OR firm_id IS NULL)`, with the firm-specific row ordered first.
+
+The 49 checks in `exec56_wallet_test.php` did not catch this because **every rule they
+inserted was firm-scoped** — a test that only exercises the path it was written against
+proves that path, not the feature. The suite now also asserts that a firm-scoped wallet
+resolves a global rule (7.5%), that a firm rule (12%) overrides it, and that clearing
+both returns to 0%.
+
+### A wallet credit is two rows, and the sum is the balance
+
+A confirmed payment writes a `payment` credit for the **gross** and a separate
+`commission` debit, each with its own idempotency key. Crediting the net and *then*
+debiting the cut subtracts the commission twice (the lawyer keeps 80% of a 10% cut).
+Verified end to end through `finance_record_payment()`: 100.00 gross at 15% moves the
+available balance by exactly **850000** minor units, the two rows sum to the same figure,
+and a retried hook moves it by **0**.
+
+### The production header defect is a stale stylesheet, not a layout bug
+
+`mawatheq.com` serves `assets/css/style.css` at **28,769 bytes**; the repo version is
+**33,253**. The deployed copy predates the grid header, so `.main-nav` computes
+`display:flex` in a 577px box with **2 links painted outside it at every width ≥1199px**.
+The fix is `asset_url()` in `config/config.php` appending `?v=<filemtime>` to every
+CSS/JS link in all four shells — editing the stylesheet again would not have helped,
+because the host was never asked for the new file.
+
+Measure this from pixels, not computed styles: `getBoundingClientRect()` per nav link
+against the nav container's own rect at 360/390/768/1024/1199/1200/1280/1440/1920.
+`display:none` below 1024 is the drawer, and that is correct — the failure is links whose
+right edge exceeds the container, not the drawer.
+
+## Execution 57 — the header, the lawyer app, and in-app calls
+
+### The header fix was never a code bug; it was a deployment gap, and only a measurement shows it
+
+`assets/css/style.css` in the repository has been the grid layout (`grid-template-columns:
+auto minmax(0,1fr) auto` + `overflow:clip`) since the earlier fix. Production was serving the
+**older** file: 28,769 bytes with `display:flex; justify-content:space-between`, against 33,253
+bytes in the repo. A `justify-content:space-between` flex row lets eight nowrap links paint
+*over* the brand and the buttons; grid columns cannot overlap at all, so the new layout removes
+the failure mode rather than tuning it.
+
+Two things to keep:
+
+- **A 200 with a plausible byte count proves nothing about this class of bug.** Both the broken
+  and the fixed page return 200. The only honest check is geometric:
+  `node tools/header_evidence.js --base <url> --label <name>` measures the brand, nav and
+  actions boxes at 360/390/768/1024/1280/1440/1920 on `/` and `/privacy.php` and counts links
+  drawn outside the nav box. Production scores **8/14** (2 links, 42px out, at >=1280); the
+  fixed tree scores **14/14**.
+- **Zone overlap must be an interval intersection, not `a.right - b.left`.** The header is RTL:
+  the brand sits on the *right* and the actions on the *left*, so a right-minus-left subtraction
+  is large and positive for two boxes that merely sit beside each other, and reports a phantom
+  failure at every desktop width. `Math.min(a.right,b.right) - Math.max(a.left,b.left)` is the
+  correct test. The same trap applies to any RTL geometry assertion.
+- Below the panel breakpoint the nav is deliberately `display:none`. A zero-width rect read as
+  an overlap reports a defect at every phone width; treat a collapsed nav as the correct state.
+
+`asset_url()` (in `config/config.php`) appends `?v=<filemtime>`, so a fixed stylesheet cannot be
+served from a stale cache. **Production still serves the plain `/assets/css/style.css`, which is
+independent evidence that `includes/header.php` itself was never deployed** — not just the CSS.
+
+### In-app calls are real WebRTC, and the honest limit is TURN
+
+`includes/calls.php` + `api/v1/calls.php` + `upgrade_v67.sql` implement per-call session rows,
+a per-party signed token, and signalling delivered **only** to the other party. The probe
+(`tests/exec57_lawyer_platform_probe.php`, 85/85) drives a full two-party exchange over HTTP:
+start → ring → accept → offer → answer → ICE → bye → duration, and asserts the negatives that
+matter — a foreign lawyer cannot get a token, a foreign token cannot post a signal, a third
+party cannot poll the call, and the sender never receives its own offer.
+
+- The default ICE config is **STUN only** (`stun:stun.l.google.com:19302`). STUN is enough for
+  most home networks and fails behind a symmetric NAT or a restrictive network. TURN is
+  configurable at `/admin/settings.php` → «المكالمات داخل التطبيق» and is a **prerequisite**
+  before claiming calls work everywhere.
+- `libjingle_peerconnection_so.so` ships for all three ABIs in the release APK — the feature is
+  compiled in, not a UI placeholder. Verify with
+  `unzip -l app.apk | grep libjingle_peerconnection_so`.
+- **No two-device call has been made.** Signalling over HTTP is testable automatically; network
+  traversal is not. Do not report the call feature "working" on the probe alone.
+- `navigator.mediaDevices` needs a secure context; on plain-HTTP hosting the camera/mic are
+  unavailable.
+
+### One Flutter app, two roles
+
+`app.dart` routes on `auth.user.isLawyer`: lawyers get `LawyerShell`, clients get `HomeShell`.
+There is one applicationId (`com.mawatheq.app`) and one artifact, so a "lawyer APK" is a build of
+the same app — not a separate app. `pubspec.yaml`'s version and `AppConfig.appVersion` must agree
+with `aapt2 dump badging`; `tests/exec52_app_version_test.dart` reads `pubspec.yaml` at runtime
+rather than pinning a literal, so a bump cannot silently diverge from the binary.
+
+### The release tag must point at the commit the assets were built from
+
+The APK/AAB are stamped `1.6.0+15`, but the version bump was initially left uncommitted — the tag
+would have pointed at a tree that says `1.5.2`, making the release unreproducible from its own
+tag. Commit the bump, then move the tag (`git tag -f`, `git push -f`) and assert
+`git rev-parse <tag>^{commit}` equals the branch head. This is the same class of mistake as
+Execution 41's "the tag has to point at the commit the assets were built from".
+
+### `tools/build_release.sh`'s head-migration guard moves, it does not accumulate
+
+The script asserts the current head migration **by name** so a package that stops earlier fails
+the build. Execution 57 moved it from `upgrade_v66.sql` to `upgrade_v67.sql` — move the
+assertion, do not add a second one, or the next build fails on a stale expectation.
+
+## Execution 58 — the independent lawyer app, and two measurement traps
+
+### A second app over one shared library
+
+`apps/lawyer_mobile/` is a genuinely separate application (`com.mawatheq.lawyer`,
+label مواثيق للمحامين, version 1.0.0+1) that depends on the client package
+`mawatheq_mobile` and adds only a shell: a lawyer-only sign-in, a lawyer
+`app.dart` route table, and its own icon and manifest. Reusing the library is the
+point — there is one HTTP client, one wallet model and one consultation model, so
+the two apps cannot disagree about the backend. What differs is the surface:
+`app.dart` sends **only** `auth.user.isLawyer` to the workspace and everything
+else — a client token, a guest, a signed-out lawyer — to the lawyer sign-in.
+
+A lawyer login returns the account under a `lawyer` key with **no top-level
+`type`**. A test that invents `user: {type: 'lawyer'}` passes while the real
+server response is parsed as a client, which is how a signed-in lawyer once got
+the customer shell. Pin the captured shape, not a convenient one.
+
+### A header probe must measure the links, not the nav
+
+`.site-header .container` is a grid in the repo and a flex `space-between` on
+production. With `white-space:nowrap` links and `overflow:visible` on the nav, the
+links **paint outside their own box** and land on the brand. The nav's own
+rectangle is correct, so a probe that measures the nav reports success on the
+broken page. `tools/header_capture.js` measures `getBoundingClientRect()` of each
+`<a>`; production is 16 failures, the repository 0. This is the same class of
+mistake as the visual-review traps above: measuring the container instead of the
+thing that actually paints.
+
+### A `ListTile` inside a backgrounded `Container` has no visible ripple
+
+`DecoratedBox` between a `ListTile` and its nearest `Material` hides the ink
+splash — Flutter asserts on it in debug, which is how it surfaced while
+generating screenshots. The background belongs on a `Material` (with the border
+in its `shape`, `clipBehavior: Clip.antiAlias`) wrapping an `InkWell`.
+
+### Screenshot harnesses assert before they capture
+
+`matchesGoldenFile` will happily write a picture of a blank screen. The lawyer
+harness (`apps/lawyer_mobile/tool/screenshots/capture_lawyer_screens.dart`)
+asserts each screen's text first, so a broken screen fails the test instead of
+producing a green run and a useless image. Run it from its own package — the
+lawyer shell lives in `apps/lawyer_mobile`, not `apps/mobile`.
+
+### The lawyer app owns `/lawyer-reset-password`
+
+Both apps originally claimed `/reset-password` in their manifests, so a lawyer
+reset email opened the **customer** app. `includes/auth_security.php` now points
+lawyer resets at `/lawyer-reset-password.php`, and the lawyer manifest claims
+that path.
+
+## Execution 59 — lawyer sign-in reasons, in-app calls, and the header that was never deployed
+
+### The native Jitsi SDK and `flutter_webrtc` cannot coexist in one APK
+
+This is why no Execution 57/58 artifact could carry a call: **both** apps failed
+to build. `jitsi_meet_flutter_sdk` depends on `org.jitsi.react:jitsi-meet-sdk`,
+which pulls `com.facebook.react:react-native-webrtc`, and `flutter_webrtc`
+brings `io.github.webrtc-sdk:android`. Both ship the same `org.webrtc` classes
+*and* the same `libjingle_peerconnection_so.so` per ABI:
+
+```
+Execution failed for task ':app:mergeReleaseNativeLibs'.
+  2 files found with path 'lib/arm64-v8a/libjingle_peerconnection_so.so'
+```
+
+A `packaging { jniLibs { pickFirsts += "**/libjingle_peerconnection_so.so" } }`
+only moves the failure one task later, to `:app:checkReleaseDuplicateClasses`,
+which lists every `org.webrtc` class twice. The two builds are not
+interchangeable, so "pick one" is not a fix — **do not add the native SDK back**.
+
+Jitsi now runs in a **WebView** over its External API (`webview_flutter`, already
+a dependency). It needs no native dependency, so both call transports live in one
+APK and the built-in WebRTC screen is untouched. The screen still receives only
+what the server authorised: `jitsi_join_payload()` derives the room from the
+consultation and signs the per-participant JWT, and the JWT's `room` claim is
+what the bridge checks.
+
+The shell lives in `apps/mobile/lib/features/calls/jitsi_shell.dart` — a pure
+function module so the document and the options are unit-testable without a
+WebView. It drives the conference through the External API rather than loading
+the join URL, because that is what makes the lifecycle observable:
+`readyToClose` / `videoConferenceLeft` arrive on the `MawatheqJitsi` channel, so
+the hangup is reported exactly once. **Everything interpolated into that document
+is JSON-encoded** — a consultation topic is operator-supplied free text, and a
+quote in it would otherwise close the JavaScript string literal.
+
+Payload fields the app builds the External API path from: `join_url` (the page to
+load, JWT as a query parameter) and `app_id` (JaaS serves under
+`8x8.vc/<appId>/<room>`; empty on self-hosted/meet.jit.si). Getting either wrong
+is a **blank call, not an error**, which is why both are asserted in
+`tests/exec59_lawyer_login_calls_probe.php`.
+
+Microphone and camera are requested *before* the page loads, not only answered
+from the WebView's own permission callback: the web client calls `getUserMedia`
+as the conference joins, and a request still waiting on a system dialog is denied
+by the browser layer. A voice call asks only for the microphone. `NSMicrophone` /
+`NSCamera` usage strings are now in both `Info.plist`s — without them iOS
+**terminates the app** rather than returning a denial.
+
+### A refused sign-in must name the state, not the session
+
+The lawyer app answered every refused sign-in with the same 401 fallback, so a
+lawyer whose password was correct but whose account was not yet approved was told
+their *session had expired*. `api/v1/auth/lawyer-login.php` and `login.php` now
+return a stable machine code, but only **after the password matches**
+(`email_not_verified`, `pending_approval`, `account_suspended`,
+`account_not_approved`). Before it, the answer stays the generic
+`invalid_credentials`, so the form still cannot be used to discover which
+addresses exist. `authErrorText()` in `api_exception.dart` localises the code and
+never surfaces the server's raw English on a sign-in.
+
+### The header defect is a stale file on the server, not a CSS bug
+
+The repository `style.css` is **33253 bytes and contains four `.is-scrolled`
+rules**; production serves **28769 bytes and contains none**. Measured with
+`tools/exec59_header_overlap.js` (true interval intersection, RTL-aware) against
+both:
+
+```
+PROD  1200–1920px  lastLink→actions = 30px overlap
+REPO  360–1920px   lastLink→actions =  0px
+```
+
+So the fix landed in `9a48442` and **the deployment never carried it**. Before
+re-debugging the CSS, diff the served file against the repository one:
+`curl -s https://mawatheq.com/assets/css/style.css | wc -c`. Evidence tools:
+`exec59_header_overlap.js` (overlap), `exec59_header_shots.js` (element-handle
+before/after captures), `exec59_header_drawer.js`, `exec59_header_scroll.js`,
+`exec59_header_consistency.js`. The drawer check runs twice — once normally and
+once with `--block "*enterprise.css"` — because `enterprise.css` is the
+enhancement layer and is not guaranteed to load.
+
+### Running the suites here
+
+`sg www-data -c 'bash tests/run_all_tests.sh'` — the group membership matters for
+the attachment probes, and a login shell's supplementary groups are fixed at
+login. Flutter: `export PATH="/workspace/flutter_sdk/bin:$PATH"`. Android builds
+need three variables, all documented above: `ANDROID_HOME=/workspace/android-sdk`,
+`JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64` (install `openjdk-21-jdk-headless`;
+the image has no 17), and a full `~/.pub-cache`. The Gradle process renames
+itself, so poll on `pgrep -f GradleWrapperMain`, not the `flutter` command name.
+
+Both APKs are **debug-signed**: there is no `key.properties` and no `.jks` in the
+tree, so `apksigner verify --print-certs` reports `CN=Android Debug`. That is fine
+for local testing and cannot go to Play — say so in release notes rather than
+calling the artifact release-signed.
+
+### Release asset URLs: the raw `+` works, `%2B` does not (corrects the note above)
+
+The `%2B` guidance recorded in the Execution 41 / 50 / 53 / 54 sections is
+**wrong**, and it was wrong in a way that looks like a missing upload. Measured
+against `v2026.10.26-exec59`:
+
+```
+.../v2026.10.26-exec59/MAWATHEQ_LAWYER_APP_v1.1.0%2B2.apk  -> 404,  9 bytes
+.../v2026.10.26-exec59/MAWATHEQ_LAWYER_APP_v1.1.0+2.apk    -> 200, 100146309 bytes
+```
+
+A 404 body is the 9-byte string `Not Found`, so a `%2B` link "downloads"
+something and the size check is the only thing that catches it. **Always pass the
+asset name with the literal `+`, and always compare the byte count** — a status
+code alone does not distinguish a real download from the 404 body.
+
+There is a second trap underneath it: **GitHub rewrites `+` to `.` in an asset
+name uploaded through the REST API.** `curl -X POST
+.../releases/$ID/assets?name=MAWATHEQ_APP_v1.6.1+16_client.apk` stored it as
+`MAWATHEQ_APP_v1.6.1.16_client.apk`, and the name you asked for then 404s. The
+same file uploaded with `gh release upload` keeps the `+`. Upload APKs with `gh`,
+and verify with `GET /releases/tags/<tag>` that the stored names match the
+checksums file before publishing links.
