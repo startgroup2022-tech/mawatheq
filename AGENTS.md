@@ -3366,3 +3366,27 @@ Both APKs are **debug-signed**: there is no `key.properties` and no `.jks` in th
 tree, so `apksigner verify --print-certs` reports `CN=Android Debug`. That is fine
 for local testing and cannot go to Play — say so in release notes rather than
 calling the artifact release-signed.
+
+### Release asset URLs: the raw `+` works, `%2B` does not (corrects the note above)
+
+The `%2B` guidance recorded in the Execution 41 / 50 / 53 / 54 sections is
+**wrong**, and it was wrong in a way that looks like a missing upload. Measured
+against `v2026.10.26-exec59`:
+
+```
+.../v2026.10.26-exec59/MAWATHEQ_LAWYER_APP_v1.1.0%2B2.apk  -> 404,  9 bytes
+.../v2026.10.26-exec59/MAWATHEQ_LAWYER_APP_v1.1.0+2.apk    -> 200, 100146309 bytes
+```
+
+A 404 body is the 9-byte string `Not Found`, so a `%2B` link "downloads"
+something and the size check is the only thing that catches it. **Always pass the
+asset name with the literal `+`, and always compare the byte count** — a status
+code alone does not distinguish a real download from the 404 body.
+
+There is a second trap underneath it: **GitHub rewrites `+` to `.` in an asset
+name uploaded through the REST API.** `curl -X POST
+.../releases/$ID/assets?name=MAWATHEQ_APP_v1.6.1+16_client.apk` stored it as
+`MAWATHEQ_APP_v1.6.1.16_client.apk`, and the name you asked for then 404s. The
+same file uploaded with `gh release upload` keeps the `+`. Upload APKs with `gh`,
+and verify with `GET /releases/tags/<tag>` that the stored names match the
+checksums file before publishing links.
