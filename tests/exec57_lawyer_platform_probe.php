@@ -369,6 +369,56 @@ if ($adminCode === 200 && stripos($adminBody, 'totp') !== false) {
 }
 
 // ---------------------------------------------------------------------------
+echo "\n6b. Every lawyer web page renders real content\n";
+// ---------------------------------------------------------------------------
+// A page can return 200 with a plausible byte count and still be blank: an uncaught
+// Throwable aborts the include *after* the shell has printed <head> and the sidebar, so
+// the content area is empty while every status check passes. `php -l` does not catch it.
+// The shell alone is ~14KB, so a page at or below that is a page whose body never ran.
+$ljar = sys_get_temp_dir() . '/e57law.cookies';
+@unlink($ljar);
+$pdo->exec('DELETE FROM auth_rate_limits');
+$ch = curl_init($base . '/lawyer-login.php');
+curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_COOKIEJAR => $ljar, CURLOPT_COOKIEFILE => $ljar]);
+$lhtml = (string)curl_exec($ch);
+curl_close($ch);
+preg_match('/name="csrf_token" value="([^"]+)"/', $lhtml, $lm);
+$ch = curl_init($base . '/lawyer-login.php');
+curl_setopt_array($ch, [
+    CURLOPT_RETURNTRANSFER => true, CURLOPT_COOKIEJAR => $ljar, CURLOPT_COOKIEFILE => $ljar,
+    CURLOPT_POST => true,
+    CURLOPT_POSTFIELDS => http_build_query(['csrf_token' => $lm[1] ?? '', 'email' => 'owner-a@example.com', 'password' => $pass]),
+]);
+curl_exec($ch);
+curl_close($ch);
+
+// A page that redirects (302) is doing its job; one that 403s is a guard working. What
+// must not happen is a 200 whose <main> is empty — the shell printed and the body aborted.
+//
+// Measure the *visible text inside <main>*, not the total byte count: the lawyer shell is
+// about 10KB, so a total-bytes threshold flags working pages (the first version of this
+// check reported 8 healthy pages as BLANK). A rendered page here carries 700+ characters
+// of Arabic in <main>; an aborted one carries none.
+$lawyerPages = ['dashboard.php','consultations.php','cases.php','wallet.php','profile.php','settings.php','invoices.php','calendar.php','availability.php','specialties.php','drafting.php','hr.php','branches.php','conflicts.php','court-orders.php','firm.php'];
+$blank = 0;
+foreach ($lawyerPages as $pg) {
+    $ch = curl_init($base . '/lawyer/' . $pg);
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_COOKIEFILE => $ljar, CURLOPT_FOLLOWLOCATION => false]);
+    $body = (string)curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($code !== 200) continue;              // a guard or a redirect, asserted elsewhere
+    $err = preg_match('/Fatal error|Parse error|Uncaught|SQLSTATE/i', $body);
+    preg_match('/<main[^>]*>(.*?)<\/main>/s', $body, $mm);
+    $text = trim(preg_replace('/\s+/u', ' ', html_entity_decode(strip_tags($mm[1] ?? ''), ENT_QUOTES | ENT_HTML5, 'UTF-8')));
+    if ($err || mb_strlen($text) < 200) {
+        $blank++;
+        check("lawyer/$pg renders content", "code=$code mainText=" . mb_strlen($text) . ($err ? ' PHP-ERROR' : ' BLANK'), 'renders');
+    }
+}
+check('no lawyer page renders blank or with a PHP error', $blank, 0);
+
+// ---------------------------------------------------------------------------
 echo "\n7. Cleanup\n";
 // ---------------------------------------------------------------------------
 $pdo->prepare('DELETE FROM call_sessions WHERE id=?')->execute([$callId]);
