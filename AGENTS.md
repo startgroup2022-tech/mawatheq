@@ -3269,3 +3269,100 @@ Both apps originally claimed `/reset-password` in their manifests, so a lawyer
 reset email opened the **customer** app. `includes/auth_security.php` now points
 lawyer resets at `/lawyer-reset-password.php`, and the lawyer manifest claims
 that path.
+
+## Execution 59 — lawyer sign-in reasons, in-app calls, and the header that was never deployed
+
+### The native Jitsi SDK and `flutter_webrtc` cannot coexist in one APK
+
+This is why no Execution 57/58 artifact could carry a call: **both** apps failed
+to build. `jitsi_meet_flutter_sdk` depends on `org.jitsi.react:jitsi-meet-sdk`,
+which pulls `com.facebook.react:react-native-webrtc`, and `flutter_webrtc`
+brings `io.github.webrtc-sdk:android`. Both ship the same `org.webrtc` classes
+*and* the same `libjingle_peerconnection_so.so` per ABI:
+
+```
+Execution failed for task ':app:mergeReleaseNativeLibs'.
+  2 files found with path 'lib/arm64-v8a/libjingle_peerconnection_so.so'
+```
+
+A `packaging { jniLibs { pickFirsts += "**/libjingle_peerconnection_so.so" } }`
+only moves the failure one task later, to `:app:checkReleaseDuplicateClasses`,
+which lists every `org.webrtc` class twice. The two builds are not
+interchangeable, so "pick one" is not a fix — **do not add the native SDK back**.
+
+Jitsi now runs in a **WebView** over its External API (`webview_flutter`, already
+a dependency). It needs no native dependency, so both call transports live in one
+APK and the built-in WebRTC screen is untouched. The screen still receives only
+what the server authorised: `jitsi_join_payload()` derives the room from the
+consultation and signs the per-participant JWT, and the JWT's `room` claim is
+what the bridge checks.
+
+The shell lives in `apps/mobile/lib/features/calls/jitsi_shell.dart` — a pure
+function module so the document and the options are unit-testable without a
+WebView. It drives the conference through the External API rather than loading
+the join URL, because that is what makes the lifecycle observable:
+`readyToClose` / `videoConferenceLeft` arrive on the `MawatheqJitsi` channel, so
+the hangup is reported exactly once. **Everything interpolated into that document
+is JSON-encoded** — a consultation topic is operator-supplied free text, and a
+quote in it would otherwise close the JavaScript string literal.
+
+Payload fields the app builds the External API path from: `join_url` (the page to
+load, JWT as a query parameter) and `app_id` (JaaS serves under
+`8x8.vc/<appId>/<room>`; empty on self-hosted/meet.jit.si). Getting either wrong
+is a **blank call, not an error**, which is why both are asserted in
+`tests/exec59_lawyer_login_calls_probe.php`.
+
+Microphone and camera are requested *before* the page loads, not only answered
+from the WebView's own permission callback: the web client calls `getUserMedia`
+as the conference joins, and a request still waiting on a system dialog is denied
+by the browser layer. A voice call asks only for the microphone. `NSMicrophone` /
+`NSCamera` usage strings are now in both `Info.plist`s — without them iOS
+**terminates the app** rather than returning a denial.
+
+### A refused sign-in must name the state, not the session
+
+The lawyer app answered every refused sign-in with the same 401 fallback, so a
+lawyer whose password was correct but whose account was not yet approved was told
+their *session had expired*. `api/v1/auth/lawyer-login.php` and `login.php` now
+return a stable machine code, but only **after the password matches**
+(`email_not_verified`, `pending_approval`, `account_suspended`,
+`account_not_approved`). Before it, the answer stays the generic
+`invalid_credentials`, so the form still cannot be used to discover which
+addresses exist. `authErrorText()` in `api_exception.dart` localises the code and
+never surfaces the server's raw English on a sign-in.
+
+### The header defect is a stale file on the server, not a CSS bug
+
+The repository `style.css` is **33253 bytes and contains four `.is-scrolled`
+rules**; production serves **28769 bytes and contains none**. Measured with
+`tools/exec59_header_overlap.js` (true interval intersection, RTL-aware) against
+both:
+
+```
+PROD  1200–1920px  lastLink→actions = 30px overlap
+REPO  360–1920px   lastLink→actions =  0px
+```
+
+So the fix landed in `9a48442` and **the deployment never carried it**. Before
+re-debugging the CSS, diff the served file against the repository one:
+`curl -s https://mawatheq.com/assets/css/style.css | wc -c`. Evidence tools:
+`exec59_header_overlap.js` (overlap), `exec59_header_shots.js` (element-handle
+before/after captures), `exec59_header_drawer.js`, `exec59_header_scroll.js`,
+`exec59_header_consistency.js`. The drawer check runs twice — once normally and
+once with `--block "*enterprise.css"` — because `enterprise.css` is the
+enhancement layer and is not guaranteed to load.
+
+### Running the suites here
+
+`sg www-data -c 'bash tests/run_all_tests.sh'` — the group membership matters for
+the attachment probes, and a login shell's supplementary groups are fixed at
+login. Flutter: `export PATH="/workspace/flutter_sdk/bin:$PATH"`. Android builds
+need three variables, all documented above: `ANDROID_HOME=/workspace/android-sdk`,
+`JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64` (install `openjdk-21-jdk-headless`;
+the image has no 17), and a full `~/.pub-cache`. The Gradle process renames
+itself, so poll on `pgrep -f GradleWrapperMain`, not the `flutter` command name.
+
+Both APKs are **debug-signed**: there is no `key.properties` and no `.jks` in the
+tree, so `apksigner verify --print-certs` reports `CN=Android Debug`. That is fine
+for local testing and cannot go to Play — say so in release notes rather than
+calling the artifact release-signed.
