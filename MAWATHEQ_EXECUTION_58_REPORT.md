@@ -75,13 +75,16 @@ node tools/header_capture.js http://127.0.0.1:8080 /tmp/evidence/after
 → 204 checks, 0 failure(s)
 ```
 
+Both runs were re-executed during this execution; the numbers above are the live
+output, not carried over from an earlier report.
+
 The 16 production failures are overlaps at 1210 / 1280 / 1440 / 1920 px, in both
 the top-of-page and scrolled states, on `/` and on `/privacy.php`. The
 repository passes all 204 checks across 360, 390, 768, 980, 1024, 1210, 1280,
 1440 and 1920 px.
 
-**Before/after screenshots** are in `screenshots/header/` — the `_before` set is
-production, the `after` set is the fixed stylesheet.
+**Before/after screenshots** are in `screenshots/header_before/` (production)
+and `screenshots/header_after/` (fixed) inside the screenshot archive.
 
 ### Modified files
 
@@ -320,7 +323,7 @@ Run `sha256sum -c SHA256SUMS.txt` in the download directory.
 | `MAWATHEQ_DB_MIGRATIONS_SAFE.zip` | schema + upgrades + repair tooling |
 | `MAWATHEQ_DEPLOYMENT_GUIDE_AR.md` | Operator guide |
 | `screenshots/lawyer/*.png` | 6 lawyer screens |
-| `screenshots/header/*.png` | header before/after |
+| `screenshots/header_before/`, `screenshots/header_after/` | header before/after |
 
 ### Signing
 
