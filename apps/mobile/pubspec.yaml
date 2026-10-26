@@ -64,7 +64,6 @@ dependencies:
   flutter_local_notifications: ^22.3.2
   timezone: ^0.11.2
   flutter_webrtc: ^1.6.2+hotfix.4
-  jitsi_meet_flutter_sdk: ^13.2.0
 
 dev_dependencies:
   flutter_test:

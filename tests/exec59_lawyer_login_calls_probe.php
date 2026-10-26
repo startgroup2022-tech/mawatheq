@@ -188,6 +188,16 @@ check('the initiating lawyer is the moderator', ($start['meeting']['moderator'] 
 check('the meeting names the domain', ($start['meeting']['domain'] ?? '') === 'meet.jit.si');
 check('the free host reports it cannot enforce identity', ($start['meeting']['access']['enforceable'] ?? true) === false);
 
+// The app opens the meeting in a WebView through Jitsi's External API, so the
+// payload must carry the page to load. A missing or malformed join_url is a blank
+// call rather than an error, which is why it is asserted here.
+$joinUrl = (string)($start['meeting']['join_url'] ?? '');
+check('the meeting carries a join URL for the app', $joinUrl !== '');
+check('the join URL is https', str_starts_with($joinUrl, 'https://'));
+check('the join URL points at the meeting domain', str_contains($joinUrl, '//meet.jit.si/'));
+check('the join URL carries the room', str_contains($joinUrl, $lawyerRoom));
+check('a host without a signed token sends no jwt parameter', !str_contains($joinUrl, 'jwt='));
+
 // The client joins: same room, not a moderator.
 [$c, $tok] = getJson("/api/v1/calls.php?action=token&call_id=$callId", $clientToken);
 check('client can fetch the call token', $c === 200);
@@ -253,6 +263,14 @@ check('a JaaS deployment issues a signed join token', !empty($start2['meeting'][
 check('the issued token is scoped to the issued room', (jwtPayload((string)$start2['meeting']['jwt'])['room'] ?? '') === $signedRoom);
 check('a voice call is recorded as a voice call', ($start2['meeting']['call_type'] ?? '') === 'voice');
 check('a JaaS deployment reports identity is enforced', ($start2['meeting']['access']['enforceable'] ?? false) === true);
+
+// JaaS serves every tenant under 8x8.vc/<appId>/<room>, and the app builds the
+// External API path from these two values. Getting either wrong is a blank call.
+check('a JaaS deployment reports its app id to the app', ($start2['meeting']['app_id'] ?? '') === 'vpaas-magic-cookie-e59');
+$jaasUrl = (string)($start2['meeting']['join_url'] ?? '');
+check('the JaaS join URL is under the app id path', str_contains($jaasUrl, '/vpaas-magic-cookie-e59/'));
+check('the JaaS join URL carries the signed token', str_contains($jaasUrl, 'jwt='));
+check('the JaaS join URL carries the room', str_contains($jaasUrl, $signedRoom));
 
 echo "\n== cleanup ==\n";
 foreach ($created['consultations'] as $cid) {

@@ -43,7 +43,12 @@
 					<string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
 					<key>UISceneStoryboardFile</key>
 					<string>Main</string>
-				</dict>
+				<key>NSMicrophoneUsageDescription</key>
+<string>يحتاج التطبيق إلى الميكروفون لإجراء المكالمات الصوتية والمرئية مع المحامي أو العميل.</string>
+<key>NSCameraUsageDescription</key>
+<string>يحتاج التطبيق إلى الكاميرا لإجراء مكالمات الفيديو.</string>
+</dict>
+
 			</array>
 		</dict>
 	</dict>

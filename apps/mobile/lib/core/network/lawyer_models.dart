@@ -396,6 +396,8 @@ class CallMeeting {
     required this.moderator,
     required this.language,
     this.jwt,
+    this.appId = '',
+    this.joinUrl = '',
     this.callType = 'video',
     this.enforceable = false,
     this.accessMessage = '',
@@ -408,6 +410,16 @@ class CallMeeting {
   final bool moderator;
   final String language;
   final String? jwt;
+
+  /// The JaaS app id, empty on a self-hosted or meet.jit.si deployment. It is
+  /// already part of the public JaaS URL, so it is not a secret; the app needs it
+  /// to build the External API path for that tenant.
+  final String appId;
+
+  /// The server-built page for this participant, kept for diagnostics and for a
+  /// fallback that opens the meeting outside the app.
+  final String joinUrl;
+
   final String callType;
   final bool enforceable;
   final String accessMessage;
@@ -425,6 +437,8 @@ class CallMeeting {
       moderator: j.raw['moderator'] == true,
       language: j.str('language').isEmpty ? 'ar' : j.str('language'),
       jwt: j.str('jwt').isEmpty ? null : j.str('jwt'),
+      appId: j.str('app_id'),
+      joinUrl: j.str('join_url'),
       callType: j.str('call_type').isEmpty ? 'video' : j.str('call_type'),
       enforceable: access['enforceable'] == true,
       accessMessage: (access['message'] ?? '').toString(),

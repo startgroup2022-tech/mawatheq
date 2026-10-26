@@ -209,13 +209,47 @@ function jitsi_jwt(PDO $pdo, string $room, array $user, bool $moderator): ?strin
 }
 
 /**
+ * The page the app opens to carry one participant's call.
+ *
+ * Jitsi runs in a WebView rather than a bundled native SDK: the native Jitsi SDK
+ * pulls a second WebRTC build into the APK (`com.facebook.react:react-native-webrtc`)
+ * that collides with the one `flutter_webrtc` already ships for the built-in
+ * peer-to-peer screen — the same `org.webrtc` classes and the same
+ * `libjingle_peerconnection_so.so` — and Gradle refuses to merge them. The hosted
+ * web client needs no native dependency at all, so both call paths coexist in one
+ * APK, and the access control is unchanged because the JWT is still issued and
+ * signed here.
+ *
+ * JaaS serves every tenant under `8x8.vc/<appId>/<room>`, so the app id is part of
+ * the path there; on a self-hosted or meet.jit.si deployment the room is the whole
+ * path. The token rides as a query parameter, which is the shape the web client
+ * reads it from.
+ */
+function jitsi_join_url(PDO $pdo, string $room, ?string $jwt): string {
+    $s = jitsi_settings($pdo);
+    $domain = jitsi_domain($pdo);
+    if ($domain === '') return '';
+
+    $appId = trim((string)($s['jitsi_app_id'] ?? ''));
+    $isJaas = $appId !== '' && str_contains($domain, '8x8.vc');
+    $path = $isJaas ? $appId . '/' . $room : $room;
+
+    $url = 'https://' . $domain . '/' . $path;
+    if ($jwt !== null && $jwt !== '') {
+        $url .= '?jwt=' . rawurlencode($jwt);
+    }
+    return $url;
+}
+
+/**
  * Everything the mobile app needs to open a branded Jitsi call for one participant.
  *
  * The lawyer is the moderator: they host the consultation, and on a host that
  * enforces authentication that is what lets them admit or remove a participant.
  *
- * @return array{provider:string, domain:string, room:string, jwt:?string, subject:string,
- *               display_name:string, moderator:bool, language:string, access:array}
+ * @return array{provider:string, domain:string, app_id:string, room:string, jwt:?string,
+ *               join_url:string, subject:string, display_name:string, moderator:bool,
+ *               language:string, access:array}
  */
 function jitsi_join_payload(PDO $pdo, array $consultation, string $type, int $id, array $user): array {
     $room = jitsi_room_for_consultation($pdo, $consultation);
@@ -229,11 +263,18 @@ function jitsi_join_payload(PDO $pdo, array $consultation, string $type, int $id
         $subject .= ': ' . mb_substr($topic, 0, 60, 'UTF-8');
     }
 
+    $jwt = jitsi_jwt($pdo, $room, $user + ['type' => $type, 'id' => $id], $moderator);
+    $settings = jitsi_settings($pdo);
+
     return [
         'provider' => 'jitsi',
         'domain' => jitsi_domain($pdo),
+        // Not a secret: the app id is already part of the public JaaS URL. The app
+        // needs it to build the External API path for a JaaS tenant.
+        'app_id' => trim((string)($settings['jitsi_app_id'] ?? '')),
         'room' => $room,
-        'jwt' => jitsi_jwt($pdo, $room, $user + ['type' => $type, 'id' => $id], $moderator),
+        'jwt' => $jwt,
+        'join_url' => jitsi_join_url($pdo, $room, $jwt),
         'subject' => $subject,
         'display_name' => (string)($user['name'] ?? ''),
         'moderator' => $moderator,
