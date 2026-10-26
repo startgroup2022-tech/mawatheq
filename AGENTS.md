@@ -3218,3 +3218,54 @@ Execution 41's "the tag has to point at the commit the assets were built from".
 The script asserts the current head migration **by name** so a package that stops earlier fails
 the build. Execution 57 moved it from `upgrade_v66.sql` to `upgrade_v67.sql` — move the
 assertion, do not add a second one, or the next build fails on a stale expectation.
+
+## Execution 58 — the independent lawyer app, and two measurement traps
+
+### A second app over one shared library
+
+`apps/lawyer_mobile/` is a genuinely separate application (`com.mawatheq.lawyer`,
+label مواثيق للمحامين, version 1.0.0+1) that depends on the client package
+`mawatheq_mobile` and adds only a shell: a lawyer-only sign-in, a lawyer
+`app.dart` route table, and its own icon and manifest. Reusing the library is the
+point — there is one HTTP client, one wallet model and one consultation model, so
+the two apps cannot disagree about the backend. What differs is the surface:
+`app.dart` sends **only** `auth.user.isLawyer` to the workspace and everything
+else — a client token, a guest, a signed-out lawyer — to the lawyer sign-in.
+
+A lawyer login returns the account under a `lawyer` key with **no top-level
+`type`**. A test that invents `user: {type: 'lawyer'}` passes while the real
+server response is parsed as a client, which is how a signed-in lawyer once got
+the customer shell. Pin the captured shape, not a convenient one.
+
+### A header probe must measure the links, not the nav
+
+`.site-header .container` is a grid in the repo and a flex `space-between` on
+production. With `white-space:nowrap` links and `overflow:visible` on the nav, the
+links **paint outside their own box** and land on the brand. The nav's own
+rectangle is correct, so a probe that measures the nav reports success on the
+broken page. `tools/header_capture.js` measures `getBoundingClientRect()` of each
+`<a>`; production is 16 failures, the repository 0. This is the same class of
+mistake as the visual-review traps above: measuring the container instead of the
+thing that actually paints.
+
+### A `ListTile` inside a backgrounded `Container` has no visible ripple
+
+`DecoratedBox` between a `ListTile` and its nearest `Material` hides the ink
+splash — Flutter asserts on it in debug, which is how it surfaced while
+generating screenshots. The background belongs on a `Material` (with the border
+in its `shape`, `clipBehavior: Clip.antiAlias`) wrapping an `InkWell`.
+
+### Screenshot harnesses assert before they capture
+
+`matchesGoldenFile` will happily write a picture of a blank screen. The lawyer
+harness (`apps/lawyer_mobile/tool/screenshots/capture_lawyer_screens.dart`)
+asserts each screen's text first, so a broken screen fails the test instead of
+producing a green run and a useless image. Run it from its own package — the
+lawyer shell lives in `apps/lawyer_mobile`, not `apps/mobile`.
+
+### The lawyer app owns `/lawyer-reset-password`
+
+Both apps originally claimed `/reset-password` in their manifests, so a lawyer
+reset email opened the **customer** app. `includes/auth_security.php` now points
+lawyer resets at `/lawyer-reset-password.php`, and the lawyer manifest claims
+that path.
