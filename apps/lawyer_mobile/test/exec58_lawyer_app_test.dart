@@ -13,6 +13,7 @@ import 'package:provider/provider.dart';
 
 import 'package:mawatheq_lawyer/core/lawyer_config.dart';
 import 'package:mawatheq_lawyer/features/auth/lawyer_login_screen.dart';
+import 'package:mawatheq_mobile/features/lawyer/lawyer_settings_screen.dart';
 
 /// Execution 58 — the independent lawyer app.
 ///
@@ -231,6 +232,32 @@ void main() {
       final pubspecVersion = match!.group(1)!.split('+').first;
       expect(LawyerConfig.appVersion, pubspecVersion,
           reason: 'lib/core/lawyer_config.dart and pubspec.yaml must agree');
+    });
+  });
+
+  group('settings rows are tappable', () {
+    testWidgets('a settings row paints its ink splash on its own Material',
+        (tester) async {
+      // The row used to be a ListTile inside a Container with a background. The
+      // DecoratedBox sat between the tile and the nearest Material, so the splash
+      // was painted underneath it — the row looked tappable and showed nothing on
+      // a tap. Flutter asserts on exactly that, which is how this was found while
+      // generating the delivery screenshots.
+      await _pumpPhone(
+        tester,
+        LawyerSettingsScreen(repository: _repo((_) async => (200, {'ok': true}))),
+      );
+
+      final tiles = find.byType(ListTile);
+      expect(tiles, findsWidgets, reason: 'the settings screen must render rows');
+      for (final tile in tiles.evaluate()) {
+        final material = find.ancestor(
+          of: find.byWidget(tile.widget),
+          matching: find.byType(Material),
+        );
+        expect(material, findsWidgets,
+            reason: 'every settings row needs a Material ancestor for its splash');
+      }
     });
   });
 }

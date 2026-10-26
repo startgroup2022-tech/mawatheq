@@ -253,28 +253,36 @@ class _Tile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
+    // The rounded background has to live on a Material, not a plain Container:
+    // ListTile paints its ink splash on the nearest Material ancestor, so a
+    // DecoratedBox in between hides every tap ripple (and trips a debug assert).
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
         color: context.tokens.surface,
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: context.tokens.border),
-      ),
-      child: ListTile(
-        // 48px minimum height keeps the row a legal touch target.
-        minVerticalPadding: 12,
-        leading: Icon(icon, color: danger ? AppColors.danger : context.tokens.textMuted),
-        title: Text(
-          label,
-          style: TextStyle(
-            color: danger ? AppColors.danger : context.tokens.text,
-            fontWeight: FontWeight.w600,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          side: BorderSide(color: context.tokens.border),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: ListTile(
+            // 48px minimum height keeps the row a legal touch target.
+            minVerticalPadding: 12,
+            leading: Icon(icon, color: danger ? AppColors.danger : context.tokens.textMuted),
+            title: Text(
+              label,
+              style: TextStyle(
+                color: danger ? AppColors.danger : context.tokens.text,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            trailing: value != null
+                ? Text(value!, style: TextStyle(color: context.tokens.textMuted))
+                : const Icon(Icons.chevron_left, size: 20),
           ),
         ),
-        trailing: value != null
-            ? Text(value!, style: TextStyle(color: context.tokens.textMuted))
-            : const Icon(Icons.chevron_left, size: 20),
-        onTap: onTap,
       ),
     );
   }
