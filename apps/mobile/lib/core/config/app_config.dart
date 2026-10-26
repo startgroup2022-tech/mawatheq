@@ -15,6 +15,24 @@ class AppConfig {
     defaultValue: 'https://mawatheq.com/api/v1',
   );
 
+  /// Runtime override for [apiBase].
+  ///
+  /// [apiBase] is a compile-time constant, which is correct for this app: it is
+  /// baked into the build. It is wrong for the second shell that reuses this
+  /// library — the lawyer app ships its own `LawyerConfig.apiBase` and must be able
+  /// to point the shared client at it. The lawyer app calls [setBaseUrl] once at
+  /// startup. When it is not called the constant is used, so this app's behaviour
+  /// is unchanged.
+  static String? _runtimeBase;
+
+  /// Point the shared HTTP client at a different API root for this process.
+  static void setBaseUrl(String? url) {
+    _runtimeBase = (url == null || url.isEmpty) ? null : url;
+  }
+
+  /// The API root every request actually uses.
+  static String get baseUrl => _runtimeBase ?? apiBase;
+
   /// Public marketing site, used for links the app does not implement natively
   /// (for example the 2FA enrolment page).
   static const String siteBase = String.fromEnvironment(
@@ -32,7 +50,7 @@ class AppConfig {
   /// set), so the value is mirrored here; `exec52_app_version_test.dart` reads
   /// `pubspec.yaml` and fails if the two drift, which is what keeps this honest
   /// rather than a second copy that silently goes stale.
-  static const String appVersion = '1.6.0';
+  static const String appVersion = '1.6.1';
 
   /// Request timeout. Kept short so the UI can show a retry affordance quickly.
   static const Duration timeout = Duration(seconds: 30);

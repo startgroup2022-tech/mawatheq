@@ -102,6 +102,7 @@ if ($method === 'GET') {
                 'call_type' => $call['call_type'],
                 'ice_servers' => call_ice_servers($pdo),
                 'call' => $call,
+                'meeting' => call_meeting_payload($pdo, $call, $type, $id),
             ]);
             // no break
 
@@ -138,6 +139,7 @@ if ($method === 'POST') {
                 'reused' => $result['reused'] ?? false,
                 'token' => $issued['token'] ?? null,
                 'ice_servers' => call_ice_servers($pdo),
+                'meeting' => call_meeting_payload($pdo, $result['call'], $type, $id),
             ], $result['reused'] ?? false ? 200 : 201);
         }
 

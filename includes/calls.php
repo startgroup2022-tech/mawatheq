@@ -143,6 +143,19 @@ function call_provider_state(PDO $pdo): array {
     if ($s['call_enabled'] !== '1') {
         return ['available' => false, 'blocking' => 'disabled', 'turn' => false, 'message' => 'الاتصال الصوتي والمرئي غير مُفعّل على المنصة.'];
     }
+
+    // Jitsi is an externally hosted service: it carries its own media path, so the
+    // STUN/TURN requirement below does not apply to it. Reporting "no ICE" for a
+    // Jitsi deployment would be wrong — the app never opens a peer connection.
+    if ($s['call_provider'] === 'jitsi') {
+        require_once __DIR__ . '/jitsi.php';
+        if (!jitsi_configured($pdo)) {
+            return ['available' => false, 'blocking' => 'no_provider', 'turn' => false, 'message' => 'لم يتم ضبط خادم Jitsi بعد.'];
+        }
+        $access = jitsi_access_control($pdo);
+        return ['available' => true, 'blocking' => null, 'turn' => false, 'message' => $access['message']];
+    }
+
     $stun = call_parse_url_list($s['call_stun_urls']);
     $turn = call_parse_url_list($s['call_turn_urls']);
     if (!$stun && !$turn) {
@@ -555,6 +568,43 @@ function call_mark_joined(PDO $pdo, int $callId, string $type, int $id): void {
     $pdo->prepare("UPDATE call_participants SET state='joined', joined_at=COALESCE(joined_at, NOW()) WHERE call_id=? AND participant_type=? AND participant_id=?")
         ->execute([$callId, $type, $id]);
     call_log_event($pdo, $callId, 'joined', $type, $id);
+}
+
+/**
+ * The meeting a participant should open for a call, or null when the provider is
+ * the built-in peer-to-peer WebRTC path (which needs no room — it uses the short
+ * lived call token and the ICE servers instead).
+ *
+ * This is the single place that decides which provider the app is told to use, so
+ * the client and the lawyer app can never disagree about how a call is carried.
+ * Authorisation happens before this is called: the caller has already been checked
+ * against the call's participant list.
+ */
+function call_meeting_payload(PDO $pdo, array $call, string $type, int $id): ?array {
+    $settings = call_provider_settings($pdo);
+    if (($settings['call_provider'] ?? 'webrtc') !== 'jitsi') {
+        return null;
+    }
+    require_once __DIR__ . '/jitsi.php';
+
+    $cons = $pdo->prepare('SELECT * FROM consultations WHERE id=?');
+    $cons->execute([(int)$call['consultation_id']]);
+    $consultation = $cons->fetch();
+    if (!$consultation) return null;
+
+    // The display name is the participant's own name, resolved from their own table
+    // by the authenticated id — never from request input.
+    $table = $type === 'lawyer' ? 'lawyers' : 'users';
+    $who = $pdo->prepare("SELECT full_name, email FROM {$table} WHERE id=?");
+    $who->execute([$id]);
+    $row = $who->fetch() ?: ['full_name' => '', 'email' => ''];
+
+    $payload = jitsi_join_payload($pdo, $consultation, $type, $id, [
+        'name' => (string)$row['full_name'],
+        'email' => (string)$row['email'],
+    ]);
+    $payload['call_type'] = (string)$call['call_type'];
+    return $payload;
 }
 
 /**

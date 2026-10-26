@@ -20,9 +20,30 @@ $stmt = $pdo->prepare('SELECT * FROM lawyers WHERE email = ?');
 $stmt->execute([$email]);
 $lawyer = $stmt->fetch();
 
-if (!$lawyer || !password_verify($password, $lawyer['password_hash']) || empty($lawyer['email_verified']) || ($lawyer['status'] ?? '') !== 'approved') {
+// Wrong credentials stay deliberately generic so the endpoint cannot be used to
+// discover which lawyer emails exist. The specific states below are only reported
+// once the password has already been verified, exactly as `lawyer-login.php` does
+// on the website — so the app and the portal tell a lawyer the same thing.
+if (!$lawyer || !password_verify($password, $lawyer['password_hash'])) {
     auth_rate_limit_failure($pdo, 'lawyer', $email);
-    api_error('invalid email or password', 401);
+    api_error('invalid_credentials', 401);
+}
+
+// A stable machine code, not prose: the app localises it. Returning the same
+// generic 401 for these made the mobile app show "session expired" to a lawyer
+// whose password was correct but whose account was simply not approved yet.
+if (empty($lawyer['email_verified'])) {
+    api_error('email_not_verified', 403);
+}
+$status = (string)($lawyer['status'] ?? '');
+if ($status === 'pending') {
+    api_error('pending_approval', 403);
+}
+if ($status === 'suspended') {
+    api_error('account_suspended', 403);
+}
+if ($status !== 'approved') {
+    api_error('account_not_approved', 403);
 }
 auth_rate_limit_clear($pdo, 'lawyer', $email);
 

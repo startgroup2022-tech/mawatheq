@@ -14,8 +14,34 @@
  *   php tests/exec39_najiz_graceful_test.php
  */
 
+// Self-repair. This suite temporarily removes the DB_NAME definition from
+// config/secrets.php (section 3). A run killed between the strip and the restore leaves
+// the file without DB_NAME, and config/config.php then falls back to an empty name, so
+// every later suite in the same run dies with "No database selected" — a failure that
+// has nothing to do with them. Put the line back before the config is first read.
+$secretsPath = realpath(__DIR__ . '/..') . '/config/secrets.php';
+if (is_file($secretsPath)) {
+    $current = (string)file_get_contents($secretsPath);
+    if (!str_contains($current, "define('DB_NAME'")) {
+        $repaired = preg_replace(
+            "/define\('DB_HOST'[^;]*;\s*/",
+            "$0" . "define('DB_NAME', 'mawatheq_test');\n",
+            $current, 1
+        );
+        if ($repaired !== null && $repaired !== $current) {
+            file_put_contents($secretsPath, $repaired);
+            $configRepaired = true;
+        }
+    }
+}
+
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/najiz_import.php';
+// Printed after the config loads: echoing first would send output before session_start().
+if (!empty($configRepaired)) {
+    echo "  note: repaired config/secrets.php (DB_NAME was missing from an interrupted run)\n";
+}
+
 
 $passed = 0;
 $failed = 0;
@@ -110,6 +136,15 @@ if ($root !== null) {
     $stripped = preg_replace("/define\('DB_NAME'[^;]*;\s*/", '', $original, 1);
     check('the scratch config removes only the DB_NAME definition',
         $stripped !== null && $stripped !== $original && !str_contains($stripped, "define('DB_NAME'"));
+    // Register the restore *before* the strip. The cleanup section runs the same
+    // restore, but it only runs on a normal exit; this handler also covers a fatal
+    // error, an explicit exit or a signal, so the live config is put back even when
+    // the suite does not reach its cleanup.
+    register_shutdown_function(static function () use ($secrets, $original): void {
+        if (is_file($secrets) && (string)file_get_contents($secrets) !== $original) {
+            file_put_contents($secrets, $original);
+        }
+    });
     file_put_contents($secrets, $stripped);
 
     $cmd = "MAWATHEQ_DB_NAME=$scratch nohup php -S 127.0.0.1:$port -t " . escapeshellarg($docroot) . " >$log 2>&1 & echo $!";
@@ -151,13 +186,15 @@ if ($server) {
     exec("kill $server 2>/dev/null");
     usleep(300000);
 }
-if (isset($backup) && is_file($backup)) {
-    @unlink($backup);
-}
 if (isset($original) && $original !== '') {
     // Restore in place so owner, group and mode survive; the content came from memory,
     // so no backup file has to exist for this to work.
     file_put_contents($secrets, $original);
+}
+if (isset($backup) && is_file($backup)) {
+    // Removed only after the restore, so there is no moment where neither the backup
+    // nor the live DB_NAME definition exists.
+    @unlink($backup);
 }
 check('the original config was restored',
     !is_file($secrets . '.exec39.bak') && str_contains((string)file_get_contents($secrets), "define('DB_NAME'"));

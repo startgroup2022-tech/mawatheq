@@ -68,6 +68,23 @@ function api_login(string $base, PDO $pdo, string $path, string $email): string 
 echo "Execution 57 — lawyer platform HTTP probe\n";
 echo "=========================================\n\n";
 
+// Resolve the fixture by identity, not by id. This probe used to assume `owner-a` was
+// lawyer 1 and that consultation 1 was theirs. Those ids belong to whichever suite
+// seeded last, so once other suites ran the probe asserted against another tenant's
+// rows and reported 32 failures that had nothing to do with the code. The owner is the
+// account the probe logs in as; the consultation is one it is actually a party to.
+$ownerAId = (int)$pdo->query("SELECT id FROM lawyers WHERE email='owner-a@example.com'")->fetchColumn();
+$ownerBId = (int)$pdo->query("SELECT id FROM lawyers WHERE email='owner-b@example.com'")->fetchColumn();
+$clientFirm1Id = (int)$pdo->query("SELECT id FROM users WHERE email='client-firm1@example.com'")->fetchColumn();
+$fixtureConsultationId = (int)$pdo->query(
+    "SELECT id FROM consultations WHERE lawyer_id = $ownerAId ORDER BY id DESC LIMIT 1"
+)->fetchColumn();
+if ($ownerAId === 0 || $fixtureConsultationId === 0) {
+    fwrite(STDERR, "fixture missing: run tests/seed_phase6.php and tests/seed_phase6_business.php first\n");
+    exit(2);
+}
+echo "fixture: owner-a=lawyer $ownerAId, client-firm1=user $clientFirm1Id, consultation $fixtureConsultationId\n\n";
+
 // ---------------------------------------------------------------------------
 echo "1. Role isolation\n";
 // ---------------------------------------------------------------------------
@@ -80,7 +97,7 @@ check('a client token is refused the lawyer dashboard', $code, 403);
 check('a client token is refused the lawyer wallet', $code, 403);
 [$code] = api($base, '/api/v1/lawyer-profile.php?action=profile', $clientToken);
 check('a client token is refused the lawyer profile', $code, 403);
-[$code] = api($base, '/api/v1/calls.php?action=state&consultation_id=1', $clientToken);
+[$code] = api($base, '/api/v1/calls.php?action=state&consultation_id=' . $fixtureConsultationId, $clientToken);
 check('a client may read call state for its own consultation', $code, 200);
 
 [$code] = api($base, '/api/v1/lawyer-dashboard.php');
@@ -101,11 +118,11 @@ check('it carries an activity feed', is_array($dash['recent_activity'] ?? null))
 // The figures must match the database, not a client-side tally.
 // `consultations` has no deleted_at column; the endpoint scopes by lawyer_id.
 $stmt = $pdo->prepare("SELECT COUNT(*) FROM consultations WHERE lawyer_id=? AND status='pending'");
-$stmt->execute([1]);
+$stmt->execute([$ownerAId]);
 check('the pending count matches the database', (int)$dash['consultations']['pending'], (int)$stmt->fetchColumn());
 
 $stmt = $pdo->prepare('SELECT COUNT(*) FROM lawyer_wallets WHERE lawyer_id=?');
-$stmt->execute([1]);
+$stmt->execute([$ownerAId]);
 check('the wallet row exists for the lawyer', (int)$stmt->fetchColumn() >= 1);
 
 // ---------------------------------------------------------------------------
@@ -152,7 +169,7 @@ echo "\n4. Profile and settings\n";
 // ---------------------------------------------------------------------------
 [$code, $prof] = api($base, '/api/v1/lawyer-profile.php?action=profile', $lawyerToken);
 check('the profile returns 200', $code, 200);
-check('the profile carries the lawyer id', (int)($prof['profile']['id'] ?? 0), 1);
+check('the profile carries the lawyer id', (int)($prof['profile']['id'] ?? 0), $ownerAId);
 check('status is exposed read-only', array_key_exists('status', $prof['profile'] ?? []));
 check('email_verified is exposed read-only', array_key_exists('email_verified', $prof['profile'] ?? []));
 check('availability is a list', is_array($prof['availability'] ?? null));
@@ -169,12 +186,12 @@ check('the catalogue is a list', is_array($cat['specialties'] ?? null));
 
 // A lawyer cannot approve themselves: the update names only its own columns, so
 // posting `status` must not change it.
-$before = (string)$pdo->query('SELECT status FROM lawyers WHERE id=1')->fetchColumn();
+$before = (string)$pdo->query("SELECT status FROM lawyers WHERE id=$ownerAId")->fetchColumn();
 [$code] = api($base, '/api/v1/lawyer-profile.php', $lawyerToken, 'POST', [
     'action' => 'save-profile', 'full_name' => 'Firm A Owner', 'specialization' => 'تجاري', 'status' => 'approved',
 ]);
 check('save-profile succeeds', $code, 200);
-$after = (string)$pdo->query('SELECT status FROM lawyers WHERE id=1')->fetchColumn();
+$after = (string)$pdo->query("SELECT status FROM lawyers WHERE id=$ownerAId")->fetchColumn();
 check('a posted status did not change the account status', $after, $before);
 
 // A tampered specialty id must be dropped, not stored.
@@ -184,15 +201,15 @@ $badId = (int)$pdo->query('SELECT COALESCE(MAX(id),0)+99999 FROM najiz_categorie
 ]);
 check('save-specialties accepts the request', $code, 200);
 check('a nonexistent specialty id is not stored', (int)($saved['saved'] ?? -1), 0);
-$stmt = $pdo->prepare('SELECT COUNT(*) FROM lawyer_specialties WHERE lawyer_id=1 AND category_id=?');
-$stmt->execute([$badId]);
+$stmt = $pdo->prepare('SELECT COUNT(*) FROM lawyer_specialties WHERE lawyer_id=? AND category_id=?');
+$stmt->execute([$ownerAId, $badId]);
 check('the bad id left no row', (int)$stmt->fetchColumn(), 0);
 
 // ---------------------------------------------------------------------------
 echo "\n5. Two-party call signalling, end to end\n";
 // ---------------------------------------------------------------------------
 // Consultation 1 belongs to client 3 and lawyer 1.
-[$code, $state] = api($base, '/api/v1/calls.php?action=state&consultation_id=1', $clientToken);
+[$code, $state] = api($base, '/api/v1/calls.php?action=state&consultation_id=' . $fixtureConsultationId, $clientToken);
 check('call state returns 200', $code, 200);
 check('the client may call on its own consultation', ($state['available'] ?? false) === true, true);
 check('the state carries at least one ICE server', count($state['ice_servers'] ?? []) >= 1);
@@ -200,11 +217,11 @@ check('the state explains itself', !empty($state['message']));
 
 // A lawyer who is not on the consultation must not be able to start a call on it.
 $otherLawyer = api_login($base, $pdo, '/api/v1/auth/lawyer-login.php', 'owner-b@example.com');
-[$code] = api($base, '/api/v1/calls.php?action=state&consultation_id=1', $otherLawyer);
+[$code] = api($base, '/api/v1/calls.php?action=state&consultation_id=' . $fixtureConsultationId, $otherLawyer);
 check('a foreign lawyer is refused the consultation', $code, 404);
 
 [$code, $started] = api($base, '/api/v1/calls.php', $clientToken, 'POST', [
-    'action' => 'start', 'consultation_id' => 1, 'call_type' => 'video',
+    'action' => 'start', 'consultation_id' => $fixtureConsultationId, 'call_type' => 'video',
 ]);
 check('the client starts a call', in_array($code, [200, 201], true), true);
 $callId = (int)($started['call']['id'] ?? 0);
@@ -358,7 +375,7 @@ $pdo->prepare('DELETE FROM call_sessions WHERE id=?')->execute([$callId]);
 $stmt = $pdo->prepare('SELECT COUNT(*) FROM call_sessions WHERE id=?');
 $stmt->execute([$callId]);
 check('the probe call is removed', (int)$stmt->fetchColumn(), 0);
-$pdo->prepare('DELETE FROM lawyer_availability WHERE lawyer_id=1')->execute();
+$pdo->prepare('DELETE FROM lawyer_availability WHERE lawyer_id=?')->execute([$ownerAId]);
 
 echo "\n" . ($failures === 0 ? "ALL PASS" : "$failures FAILURE(S)") . " — $checks checks\n";
 exit($failures === 0 ? 0 : 1);

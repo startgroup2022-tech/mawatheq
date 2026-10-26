@@ -8,6 +8,7 @@ import '../../core/network/api_repository.dart';
 import '../../core/network/lawyer_models.dart';
 import '../../core/theme/app_colors.dart';
 import 'call_service.dart';
+import 'jitsi_call_screen.dart';
 
 /// Opens a call, or explains why it cannot be opened.
 ///
@@ -37,7 +38,7 @@ class CallLauncher {
       if (!context.mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => CallScreen(
+          builder: (_) => callScreenFor(
             repository: repo,
             join: join,
             callType: callType,
@@ -64,6 +65,46 @@ class CallLauncher {
       ),
     );
   }
+}
+
+/// Chooses the screen that actually carries the call.
+///
+/// When the server says the call runs on Jitsi it hands back a `meeting` block, and
+/// the native Jitsi UI is opened. Otherwise the built-in peer-to-peer WebRTC screen
+/// is used. The decision is the server's — the app does not guess from a setting it
+/// cannot see, so the two apps can never pick different transports for one call.
+Widget callScreenFor({
+  required ApiRepository repository,
+  required CallJoinInfo join,
+  required String callType,
+  String peerName = '',
+  bool outgoing = true,
+}) {
+  final meeting = join.meeting;
+  if (meeting != null) {
+    return JitsiCallScreen(
+      meeting: meeting,
+      peerName: peerName,
+      onLeft: () => _reportHangup(repository, join.call.id),
+    );
+  }
+  return CallScreen(
+    repository: repository,
+    join: join,
+    callType: callType,
+    peerName: peerName,
+    outgoing: outgoing,
+  );
+}
+
+/// Records the end of a Jitsi call.
+///
+/// The Jitsi UI runs outside the app, so nothing else notices when it closes. The
+/// server already computes the duration from its own clock; this only tells it the
+/// call is over, and a failure is swallowed because a hangup that cannot be reported
+/// must not surface an error to a user who has already left the call.
+void _reportHangup(ApiRepository repository, int callId) {
+  repository.endCall(callId).catchError((_) => <String, dynamic>{});
 }
 
 /// The call screen, used for both an outgoing and an accepted incoming call.

@@ -15,12 +15,32 @@ import 'api_exception.dart';
 /// server-side. The app never reaches the database and never talks to the AI
 /// provider directly — see MAWATHEQ_MOBILE_API_CONTRACT.md.
 class ApiClient {
-  ApiClient({http.Client? client, TokenStore? tokens})
+  ApiClient({http.Client? client, TokenStore? tokens, String? baseUrl})
       : _http = client ?? http.Client(),
-        _tokens = tokens ?? TokenStorage();
+        _tokens = tokens ?? TokenStorage(),
+        _baseOverride = baseUrl;
 
   final http.Client _http;
   final TokenStore _tokens;
+
+  /// Overrides [AppConfig.apiBase] for this client.
+  ///
+  /// The base URL is a build-time constant, which is right for the customer app
+  /// but wrong for the second shell that reuses this library: the lawyer app ships
+  /// its own `LawyerConfig.apiBase` and must be able to point the shared client at
+  /// it. Without this the lawyer app silently ignored its own configuration and
+  /// used the customer app's default — a mismatch that is invisible until the two
+  /// defaults differ.
+  String? _baseOverride;
+
+  /// Re-point this client at a different API root.
+  ///
+  /// Exists so a repository constructed with an injected transport can still be
+  /// told which host to use; without it the override was silently dropped whenever
+  /// a caller supplied its own client.
+  void setBaseUrl(String? url) {
+    _baseOverride = (url == null || url.isEmpty) ? null : url;
+  }
 
   /// Test/DI seam: allows a fake transport without touching the secure store.
   http.Client get transport => _http;
@@ -40,9 +60,10 @@ class ApiClient {
   }
 
   Uri _uri(String path, [Map<String, dynamic>? query]) {
-    final base = AppConfig.apiBase.endsWith('/')
-        ? AppConfig.apiBase.substring(0, AppConfig.apiBase.length - 1)
-        : AppConfig.apiBase;
+    final configured = _baseOverride ?? AppConfig.baseUrl;
+    final base = configured.endsWith('/')
+        ? configured.substring(0, configured.length - 1)
+        : configured;
     final normalized = path.startsWith('/') ? path : '/$path';
     return Uri.parse('$base$normalized').replace(
       queryParameters: query?.map((k, v) => MapEntry(k, '$v')),
@@ -50,7 +71,8 @@ class ApiClient {
   }
 
   /// Decodes the standard envelope and raises [ApiException] on failure.
-  Map<String, dynamic> _decode(http.Response response) {
+  Map<String, dynamic> _decode(http.Response response,
+      {bool authAttempt = false}) {
     final status = response.statusCode;
     final body = utf8.decode(response.bodyBytes);
 
@@ -72,7 +94,7 @@ class ApiClient {
     // 202 is used by login when email verification is still required.
     throw ApiException(
       kindForStatus(status),
-      messageFromBody(body, status),
+      messageFromBody(body, status, authAttempt: authAttempt),
       statusCode: status,
     );
   }
@@ -98,6 +120,7 @@ class ApiClient {
     String path, {
     Map<String, dynamic>? body,
     bool auth = true,
+    bool authAttempt = false,
   }) async {
     try {
       final response = await _http
@@ -107,7 +130,7 @@ class ApiClient {
             body: jsonEncode(body ?? const <String, dynamic>{}),
           )
           .timeout(AppConfig.timeout);
-      return _decode(response);
+      return _decode(response, authAttempt: authAttempt);
     } on ApiException {
       rethrow;
     } catch (error) {

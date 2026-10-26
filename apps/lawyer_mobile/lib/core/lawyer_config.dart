@@ -29,7 +29,7 @@ class LawyerConfig {
   /// The user-visible version. Must equal the `version:` line in `pubspec.yaml`;
   /// `exec58_lawyer_app_test.dart` reads the pubspec and fails if they drift, the
   /// same guard the client app uses.
-  static const String appVersion = '1.0.0';
+  static const String appVersion = '1.1.0';
 
   /// Shown under the brand mark on the sign-in screen.
   static const String appNameAr = 'مواثيق للمحامين';

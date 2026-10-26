@@ -13,6 +13,16 @@ if ($callsModuleAvailable) {
     require_once $callsModuleFile;
     $callsModuleAvailable = function_exists('call_provider_settings');
 }
+// Jitsi is a separate optional module, exactly like `smtp.php`: a deployment that
+// did not ship `includes/jitsi.php` must still render this page, and the WebRTC path
+// must keep working. It is required here so the settings page can show the real
+// access-control state rather than guessing.
+$jitsiModuleFile = __DIR__ . '/../includes/jitsi.php';
+$jitsiModuleAvailable = false;
+if (is_file($jitsiModuleFile)) {
+    require_once $jitsiModuleFile;
+    $jitsiModuleAvailable = function_exists('jitsi_settings');
+}
 // The SMTP transport is an optional module: a deployment that did not ship `smtp.php`
 // must still render this page and keep sending mail through the legacy mail() path.
 $smtpModuleFile = __DIR__ . '/../includes/smtp.php';
@@ -134,6 +144,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'call_
     }
     save_setting($pdo, 'call_ring_timeout_seconds', (string)max(10, min(180, (int)($_POST['call_ring_timeout_seconds'] ?? 45))));
     save_setting($pdo, 'call_max_duration_minutes', (string)max(5, min(480, (int)($_POST['call_max_duration_minutes'] ?? 120))));
+
+    // Jitsi hosting. The private key is a credential, so it is encrypted at rest like
+    // the TURN password above and never re-displayed.
+    if ($jitsiModuleAvailable) {
+        save_setting($pdo, 'jitsi_domain', trim((string)($_POST['jitsi_domain'] ?? '')) ?: 'meet.jit.si');
+        save_setting($pdo, 'jitsi_app_id', trim((string)($_POST['jitsi_app_id'] ?? '')));
+        save_setting($pdo, 'jitsi_api_key_id', trim((string)($_POST['jitsi_api_key_id'] ?? '')));
+        save_setting($pdo, 'jitsi_moderator_email', trim((string)($_POST['jitsi_moderator_email'] ?? '')));
+        $jitsiKey = trim((string)($_POST['jitsi_private_key'] ?? ''));
+        if (isset($_POST['revoke_jitsi_private_key'])) {
+            secret_store_setting($pdo, 'jitsi_private_key', '');
+        } elseif ($jitsiKey !== '') {
+            // A PEM body is long; the AI key limit of 500 does not apply. Validate it
+            // parses before storing, so a truncated paste is refused here rather than
+            // silently downgrading every call to an unverified room.
+            if (@openssl_pkey_get_private($jitsiKey) === false) {
+                $secretError = 'تعذر قراءة مفتاح JaaS الخاص؛ تأكد من لصق المفتاح كاملاً بصيغة PEM.';
+            } elseif (!secret_store_setting($pdo, 'jitsi_private_key', $jitsiKey)) {
+                $secretError = 'تعذر تشفير مفتاح JaaS؛ اضبط MAWATHEQ_ENCRYPTION_KEY أولاً.';
+            }
+        }
+    }
+
     if (!$secretError) {
         log_action($pdo, 'تحديث إعدادات الاتصال الصوتي والمرئي');
         $saved = true;
@@ -218,6 +251,11 @@ $settings['smtp_password'] = '';
 // so the badge here and the app's behaviour cannot disagree.
 $callSettings = $callsModuleAvailable ? call_provider_settings($pdo) : null;
 $callState = $callsModuleAvailable ? call_provider_state($pdo) : null;
+// Jitsi is only consulted when it is both present and the selected provider, so a
+// WebRTC deployment never evaluates it.
+$jitsiSettings = ($jitsiModuleAvailable && ($callSettings['call_provider'] ?? '') === 'jitsi') ? jitsi_settings($pdo) : null;
+$jitsiAccess = $jitsiSettings !== null ? jitsi_access_control($pdo) : null;
+$jitsiKeyConfigured = $jitsiSettings !== null && ($jitsiSettings['jitsi_private_key'] ?? '') !== '';
 $callTurnCredentialConfigured = $callsModuleAvailable && ($callSettings['call_turn_credential'] ?? '') !== '';
 ?>
 <div class="app-content">
@@ -704,6 +742,48 @@ $callTurnCredentialConfigured = $callsModuleAvailable && ($callSettings['call_tu
         <input type="number" name="call_max_duration_minutes" min="5" max="480" value="<?= (int)($callSettings['call_max_duration_minutes'] ?? 120) ?>">
       </div>
     </div>
+
+    <?php if ($jitsiModuleAvailable): ?>
+    <hr style="margin:18px 0;border:none;border-top:1px solid var(--border,#e5e7eb)">
+    <h4 style="margin:0 0 6px">استضافة Jitsi</h4>
+    <?php if ($jitsiAccess !== null): ?>
+      <p style="font-size:.85rem;margin-bottom:14px">
+        <span class="status-badge <?= $jitsiAccess['enforceable'] ? 'status-approved' : 'status-pending' ?>">
+          <?= $jitsiAccess['enforceable'] ? 'دخول محمي برمز موقّع' : 'حماية باسم الغرفة فقط' ?>
+        </span>
+        <?= htmlspecialchars($jitsiAccess['message']) ?>
+      </p>
+    <?php else: ?>
+      <p style="font-size:.85rem;margin-bottom:14px">يُستخدم فقط عند اختيار «Jitsi Meet» كمزوّد للاتصال.</p>
+    <?php endif; ?>
+    <div class="field">
+      <label>نطاق Jitsi</label>
+      <input type="text" name="jitsi_domain" dir="ltr" value="<?= htmlspecialchars($jitsiSettings['jitsi_domain'] ?? 'meet.jit.si') ?>" placeholder="meet.jit.si">
+      <small>للاستخدام المجاني <span dir="ltr">meet.jit.si</span>. للتحقق الإلزامي من المشاركين استخدم نطاق JaaS: <span dir="ltr">8x8.vc</span> مع بيانات الحساب أدناه.</small>
+    </div>
+    <div class="grid-2">
+      <div class="field">
+        <label>AppID (JaaS)</label>
+        <input type="text" name="jitsi_app_id" dir="ltr" value="<?= htmlspecialchars($jitsiSettings['jitsi_app_id'] ?? '') ?>" placeholder="vpaas-magic-cookie-...">
+      </div>
+      <div class="field">
+        <label>معرّف مفتاح API (kid)</label>
+        <input type="text" name="jitsi_api_key_id" dir="ltr" value="<?= htmlspecialchars($jitsiSettings['jitsi_api_key_id'] ?? '') ?>" placeholder="vpaas-magic-cookie-.../abc123">
+      </div>
+    </div>
+    <div class="field">
+      <label>المفتاح الخاص (PEM)</label>
+      <textarea name="jitsi_private_key" dir="ltr" rows="4" placeholder="<?= $jitsiKeyConfigured ? 'محفوظ — ألصق مفتاحاً جديداً للتدوير' : '-----BEGIN PRIVATE KEY-----' ?>" autocomplete="off"></textarea>
+      <?php if ($jitsiKeyConfigured): ?><label><input type="checkbox" name="revoke_jitsi_private_key" value="1"> إلغاء وحذف المفتاح المحفوظ</label><?php endif; ?>
+      <small>يُحفظ مشفّراً ولا يُعاد عرضه. بدون المفتاح تُفتح الغرف باسم عشوائي دون تحقق إلزامي — والحالة أعلاه تُظهر ذلك بصراحة.</small>
+    </div>
+    <div class="field">
+      <label>البريد الإلكتروني للمضيف (اختياري)</label>
+      <input type="email" name="jitsi_moderator_email" dir="ltr" value="<?= htmlspecialchars($jitsiSettings['jitsi_moderator_email'] ?? '') ?>">
+      <small>يُسجَّل مع منشئ الغرفة لدى JaaS عند الحاجة إلى إشعارات الإدارة.</small>
+    </div>
+    <?php endif; ?>
+
     <button class="btn btn-primary" type="submit">حفظ إعدادات الاتصال</button>
   </form>
   <?php endif; ?>

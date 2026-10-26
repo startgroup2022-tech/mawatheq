@@ -136,7 +136,7 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> {
       final rootNavigator = Navigator.of(context, rootNavigator: true);
       await rootNavigator.push(
         MaterialPageRoute(
-          builder: (_) => CallScreen(
+          builder: (_) => callScreenFor(
             repository: widget.repository,
             join: join,
             callType: widget.call.callType,

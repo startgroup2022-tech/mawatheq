@@ -381,13 +381,64 @@ class CallSession {
   }
 }
 
-/// The media configuration the server hands the client for one call.
+/// The externally hosted meeting a participant should open, when the provider is
+/// Jitsi. `null` on the built-in peer-to-peer WebRTC path, which needs no room.
+///
+/// `jwt` is a per-participant, room-scoped token the bridge verifies. It is `null`
+/// on a host that cannot enforce it (the free `meet.jit.si`), and `access.enforceable`
+/// says so — the UI must not call a room private when it is only unguessable.
+class CallMeeting {
+  const CallMeeting({
+    required this.domain,
+    required this.room,
+    required this.subject,
+    required this.displayName,
+    required this.moderator,
+    required this.language,
+    this.jwt,
+    this.callType = 'video',
+    this.enforceable = false,
+    this.accessMessage = '',
+  });
+
+  final String domain;
+  final String room;
+  final String subject;
+  final String displayName;
+  final bool moderator;
+  final String language;
+  final String? jwt;
+  final String callType;
+  final bool enforceable;
+  final String accessMessage;
+
+  bool get hasToken => jwt != null && jwt!.isNotEmpty;
+
+  factory CallMeeting.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    final access = (map['access'] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{};
+    return CallMeeting(
+      domain: j.str('domain'),
+      room: j.str('room'),
+      subject: j.str('subject'),
+      displayName: j.str('display_name'),
+      moderator: j.raw['moderator'] == true,
+      language: j.str('language').isEmpty ? 'ar' : j.str('language'),
+      jwt: j.str('jwt').isEmpty ? null : j.str('jwt'),
+      callType: j.str('call_type').isEmpty ? 'video' : j.str('call_type'),
+      enforceable: access['enforceable'] == true,
+      accessMessage: (access['message'] ?? '').toString(),
+    );
+  }
+}
+
 class CallJoinInfo {
   const CallJoinInfo({
     required this.call,
     required this.token,
     this.expiresAt = '',
     this.iceServers = const <Map<String, dynamic>>[],
+    this.meeting,
   });
 
   final CallSession call;
@@ -395,8 +446,12 @@ class CallJoinInfo {
   final String expiresAt;
   final List<Map<String, dynamic>> iceServers;
 
+  /// Non-null when the call is carried by Jitsi rather than peer-to-peer WebRTC.
+  final CallMeeting? meeting;
+
   factory CallJoinInfo.fromJson(Map<String, dynamic> map) {
     final j = Json(map);
+    final meeting = (map['meeting'] as Map?)?.cast<String, dynamic>();
     return CallJoinInfo(
       call: CallSession.fromJson(j.object('call')?.asMap ?? const <String, dynamic>{}),
       token: j.str('token'),
@@ -405,6 +460,7 @@ class CallJoinInfo {
           .whereType<Map>()
           .map((e) => e.cast<String, dynamic>())
           .toList(),
+      meeting: meeting == null ? null : CallMeeting.fromJson(meeting),
     );
   }
 }

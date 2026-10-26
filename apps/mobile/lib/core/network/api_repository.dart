@@ -11,7 +11,12 @@ import 'models.dart';
 /// capability the backend does not already provide — where an endpoint is missing
 /// (drafting, firm HR/CRM, 2FA) the app documents the gap instead of faking it.
 class ApiRepository {
-  ApiRepository({ApiClient? client}) : _client = client ?? ApiClient();
+  ApiRepository({ApiClient? client, String? baseUrl})
+      : _client = client ?? ApiClient(baseUrl: baseUrl) {
+    // Apply the override to an injected client too, so a caller that supplies its
+    // own transport does not silently fall back to the compiled-in default host.
+    if (client != null && baseUrl != null) _client.setBaseUrl(baseUrl);
+  }
 
   final ApiClient _client;
 
@@ -31,6 +36,7 @@ class ApiRepository {
     final json = await _client.post(
       '/auth/login.php',
       auth: false,
+      authAttempt: true,
       body: {
         'email': email,
         'password': password,
@@ -58,6 +64,7 @@ class ApiRepository {
     final json = await _client.post(
       '/auth/lawyer-login.php',
       auth: false,
+      authAttempt: true,
       body: {
         'email': email,
         'password': password,
@@ -138,6 +145,7 @@ class ApiRepository {
     await _client.post(
       '/auth/reset-password.php',
       auth: false,
+      authAttempt: true,
       body: {
         'token': token,
         'password': password,

@@ -429,6 +429,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.20.3"
+  jitsi_meet_flutter_sdk:
+    dependency: transitive
+    description:
+      name: jitsi_meet_flutter_sdk
+      sha256: "713abf18ce3a3c61af7f38e1b12726c8480fe0ef2df8f18bb29e4ec384970c46"
+      url: "https://pub.dev"
+    source: hosted
+    version: "13.2.0"
   jni:
     dependency: transitive
     description:
@@ -531,7 +539,7 @@ packages:
       path: "../mobile"
       relative: true
     source: path
-    version: "1.6.0+15"
+    version: "1.6.1+16"
   meta:
     dependency: transitive
     description:
