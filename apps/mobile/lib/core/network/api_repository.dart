@@ -67,7 +67,7 @@ class ApiRepository {
     return LoginOutcome(
       verificationRequired: false,
       token: json['token']?.toString(),
-      user: SessionUser.fromJson(json),
+      user: SessionUser.fromJson(json, defaultType: 'lawyer'),
     );
   }
 

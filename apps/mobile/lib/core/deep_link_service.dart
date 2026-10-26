@@ -19,15 +19,23 @@ class IncomingLink {
   /// The host is checked explicitly as well as the path: App Links verification
   /// already restricts the host at the OS level, but a parser that trusted any host
   /// would hand a custom-scheme or other-domain link straight to the reset screen.
-  static IncomingLink? tryParse(Uri uri, {Set<String>? allowedHosts}) {
+  ///
+  /// [resetPaths] lets the lawyer app accept its own path (`/lawyer-reset-password`)
+  /// as well. The two apps ship as separate packages with separate application ids,
+  /// so Android resolves the link to the app whose manifest declared that path; the
+  /// default keeps the customer app's behaviour byte-identical.
+  static IncomingLink? tryParse(
+    Uri uri, {
+    Set<String>? allowedHosts,
+    Set<String>? resetPaths,
+  }) {
     final hosts = allowedHosts ?? _defaultHosts;
     if (uri.scheme != 'https' || !hosts.contains(uri.host.toLowerCase())) {
       return null;
     }
+    final paths = resetPaths ?? _defaultResetPaths;
     final path = uri.path.replaceAll(RegExp(r'/+'), '/').toLowerCase();
-    final isResetPath =
-        path == '/reset-password.php' || path == '/reset-password';
-    if (!isResetPath) return null;
+    if (!paths.contains(path)) return null;
     final token = uri.queryParameters['token'] ?? '';
     if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(token)) return null;
     return IncomingLink.resetPassword(token);
@@ -36,6 +44,17 @@ class IncomingLink {
   static final Set<String> _defaultHosts = {
     'mawatheq.com',
     'www.mawatheq.com',
+  };
+
+  static const Set<String> _defaultResetPaths = {
+    '/reset-password.php',
+    '/reset-password',
+  };
+
+  /// The lawyer app's reset paths, declared in its own manifest.
+  static const Set<String> lawyerResetPaths = {
+    '/lawyer-reset-password.php',
+    '/lawyer-reset-password',
   };
 }
 
@@ -65,12 +84,21 @@ class AppLinksSource implements LinkSource {
 /// channel. The initial link (app launched cold) and the stream (app already
 /// running) are both surfaced to one callback.
 class DeepLinkService {
-  DeepLinkService({LinkSource? links, void Function(String token)? onResetPassword})
-      : _links = links ?? AppLinksSource() {
+  DeepLinkService({
+    LinkSource? links,
+    void Function(String token)? onResetPassword,
+    Set<String>? resetPaths,
+  })  : _links = links ?? AppLinksSource(),
+        _resetPaths = resetPaths ?? IncomingLink._defaultResetPaths {
     if (onResetPassword != null) this.onResetPassword = onResetPassword;
   }
 
   final LinkSource _links;
+
+  /// Which reset paths this app owns. The customer app keeps the default; the lawyer
+  /// app passes [IncomingLink.lawyerResetPaths] so its own link is recognized and the
+  /// customer path is not.
+  final Set<String> _resetPaths;
 
   void Function(String token)? _onResetPassword;
 
@@ -108,7 +136,7 @@ class DeepLinkService {
   }
 
   void _handle(Uri uri) {
-    final link = IncomingLink.tryParse(uri);
+    final link = IncomingLink.tryParse(uri, resetPaths: _resetPaths);
     if (link == null || !link.isReset) return;
     final handler = _onResetPassword;
     if (handler == null) {

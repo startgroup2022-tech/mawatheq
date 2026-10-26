@@ -443,6 +443,7 @@ class DashboardCard extends StatelessWidget {
     required this.label,
     this.icon,
     this.accent,
+    this.onTap,
   });
 
   final String value;
@@ -450,9 +451,14 @@ class DashboardCard extends StatelessWidget {
   final IconData? icon;
   final Color? accent;
 
+  /// Optional destination. When supplied the card becomes a button and gains the
+  /// 44px minimum hit area the accessibility audit requires; without it the card
+  /// stays a plain figure, so an existing caller is unaffected.
+  final VoidCallback? onTap;
+
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final card = Container(
       padding: const EdgeInsets.all(AppSpacing.s4),
       decoration: BoxDecoration(
         color: context.tokens.surface,
@@ -480,6 +486,15 @@ class DashboardCard extends StatelessWidget {
           const SizedBox(height: 2),
           Text(label, style: Theme.of(context).textTheme.bodySmall),
         ],
+      ),
+    );
+    if (onTap == null) return card;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppRadius.lg),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 44),
+        child: card,
       ),
     );
   }

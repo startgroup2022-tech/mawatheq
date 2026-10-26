@@ -121,9 +121,21 @@ class SessionUser {
   /// `permissions`) at the top level, next to `profile`, which holds the user's own
   /// record. Read the top level first and fall back to `profile` so an older server
   /// that nested them still works.
-  factory SessionUser.fromJson(Map<String, dynamic> map) {
+  ///
+  /// The two login endpoints nest the account under a different key each — the
+  /// client endpoint sends `user`, the lawyer endpoint sends `lawyer` — and
+  /// **neither sends a top-level `type`**. Without [defaultType] the `type` field
+  /// fell back to `'client'` for both, so a lawyer signing in was handed a session
+  /// the app believed was a client and was routed into the customer shell. The
+  /// caller knows which endpoint it called, so it passes the type explicitly; the
+  /// value is still only a display/routing hint, because every protected endpoint
+  /// re-derives the role from the token server-side.
+  factory SessionUser.fromJson(Map<String, dynamic> map, {String? defaultType}) {
     final json = Json(map);
-    final profile = json.object('profile') ?? json;
+    final profile = json.object('profile') ??
+        json.object('user') ??
+        json.object('lawyer') ??
+        json;
 
     // The API may nest permissions, or send them flat.
     final perms = <String>[];
@@ -157,7 +169,7 @@ class SessionUser {
     }
 
     return SessionUser(
-      type: json.str('type', fallback: 'client'),
+      type: json.str('type', fallback: defaultType ?? 'client'),
       id: profile.intg('id'),
       name: profile.str('full_name', fallback: profile.str('name')),
       email: profile.str('email'),

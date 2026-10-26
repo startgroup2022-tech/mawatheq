@@ -16,12 +16,21 @@ import 'lawyer_wallet_screen.dart';
 /// equal cards — a dashboard where everything has the same weight tells the reader
 /// nothing.
 class LawyerDashboardScreen extends StatefulWidget {
-  const LawyerDashboardScreen({super.key, this.repository, this.onOpenConsultations});
+  const LawyerDashboardScreen({
+    super.key,
+    this.repository,
+    this.onOpenConsultations,
+    this.onOpenCases,
+  });
 
   final ApiRepository? repository;
 
   /// Lets the shell switch to the consultations tab instead of pushing a copy.
   final VoidCallback? onOpenConsultations;
+
+  /// Opens the case list. Supplied by the shell so the dashboard never constructs a
+  /// screen it cannot navigate back from.
+  final VoidCallback? onOpenCases;
 
   @override
   State<LawyerDashboardScreen> createState() => _LawyerDashboardScreenState();
@@ -85,7 +94,7 @@ class _LawyerDashboardScreenState extends State<LawyerDashboardScreen> {
         if (d.pending > 0)
           _NeedsActionCard(count: d.pending, onTap: widget.onOpenConsultations ?? () {}),
         const SizedBox(height: 14),
-        _StatGrid(data: d),
+        _StatGrid(data: d, onOpenCases: widget.onOpenCases),
         const SizedBox(height: 18),
         if (d.upcoming.isNotEmpty) ...[
           SectionHeader(
@@ -178,11 +187,14 @@ class _NeedsActionCard extends StatelessWidget {
   }
 }
 
-/// The four headline numbers.
+/// The four headline numbers. The cases and clients figures open their list; the
+/// two that have no dedicated list yet stay plain figures rather than pretending to
+/// be buttons.
 class _StatGrid extends StatelessWidget {
-  const _StatGrid({required this.data});
+  const _StatGrid({required this.data, this.onOpenCases});
 
   final LawyerDashboard data;
+  final VoidCallback? onOpenCases;
 
   @override
   Widget build(BuildContext context) {
@@ -198,6 +210,7 @@ class _StatGrid extends StatelessWidget {
         value: '${data.casesActive}',
         icon: Icons.folder_open_outlined,
         accent: AppColors.navy,
+        onTap: onOpenCases,
       ),
       DashboardCard(
         label: 'عملاء',

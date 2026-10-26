@@ -523,10 +523,19 @@ void main() {
     testWidgets('offers the five lawyer destinations, not the customer ones', (tester) async {
       final repo = _repo((req) async {
         if (req.url.path.contains('lawyer-login')) {
+          // Exactly what /auth/lawyer-login.php returns: the account is nested
+          // under `lawyer` and there is no top-level `type`. The earlier mock
+          // invented `user: {type: 'lawyer'}`, which the server never sends — and
+          // that hid a real defect where a signed-in lawyer was parsed as a client
+          // and routed into the customer shell.
           return (200, {
             'ok': true,
             'token': 'tok',
-            'user': {'id': 1, 'name': 'فهد الشمري', 'email': 'f@example.com', 'type': 'lawyer'},
+            'lawyer': {
+              'id': 1,
+              'full_name': 'فهد الشمري',
+              'email': 'f@example.com',
+            },
           });
         }
         return (200, _dashboardJson);
@@ -534,6 +543,14 @@ void main() {
       // Drive the real sign-in path so the shell sees the same state production gives it.
       final auth = AuthController(repository: repo, tokens: _MemoryTokenStore());
       await auth.signIn(email: 'f@example.com', password: 'secret123', asLawyer: true);
+
+      // The regression guard for the routing defect: the lawyer-login payload has
+      // no top-level `type`, so without the explicit default the session would be
+      // typed `client` and `app.dart` would build the customer shell instead.
+      expect(auth.user.isLawyer, isTrue,
+          reason: 'a lawyer-login response must produce a lawyer-typed session');
+      expect(auth.user.name, 'فهد الشمري',
+          reason: 'the name lives under the `lawyer` key');
 
       await _pumpPhone(
         tester,

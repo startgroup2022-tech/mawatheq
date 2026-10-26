@@ -8,5 +8,15 @@
         "57:21:BF:0C:FD:D9:F6:FC:EF:5D:C3:BA:F8:6B:21:C9:EC:26:56:C2:AD:4F:B0:6A:3C:DA:18:9A:35:5E:CD:09"
       ]
     }
+  },
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.mawatheq.lawyer",
+      "sha256_cert_fingerprints": [
+        "97:86:FF:60:CB:44:83:5A:60:71:E4:9D:6F:53:37:20:98:50:1F:69:B0:D3:27:F9:D0:20:93:74:68:45:46:90"
+      ]
+    }
   }
 ]

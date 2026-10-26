@@ -6,6 +6,7 @@ import '../../core/network/api_repository.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../shared/widgets/brand_widgets.dart';
 import '../account/account_screen.dart';
+import '../cases/cases_screen.dart';
 import '../notifications/notifications_screen.dart';
 import 'lawyer_consultations_screen.dart';
 import 'lawyer_dashboard_screen.dart';
@@ -63,6 +64,13 @@ class _LawyerShellState extends State<LawyerShell> {
           return _LawyerHomeTab(
             repository: widget.repository,
             onOpenConsultations: () => _onTab(1),
+            // Pushed on the shell's own navigator so the platform back gesture
+            // returns to the dashboard rather than closing the app.
+            onOpenCases: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => CasesScreen(repository: widget.repository),
+              ),
+            ),
           );
       }
     });
@@ -156,10 +164,15 @@ class _LawyerShellState extends State<LawyerShell> {
 /// The dashboard tab root: an app bar with the lawyer's name and the notification
 /// bell over the dashboard body.
 class _LawyerHomeTab extends StatelessWidget {
-  const _LawyerHomeTab({required this.repository, required this.onOpenConsultations});
+  const _LawyerHomeTab({
+    required this.repository,
+    required this.onOpenConsultations,
+    required this.onOpenCases,
+  });
 
   final ApiRepository? repository;
   final VoidCallback onOpenConsultations;
+  final VoidCallback onOpenCases;
 
   @override
   Widget build(BuildContext context) {
@@ -169,6 +182,11 @@ class _LawyerHomeTab extends StatelessWidget {
       appBar: BrandAppBar(
         subtitle: user.name.isNotEmpty ? user.name : 'لوحة المحامي',
         actions: [
+          IconButton(
+            tooltip: 'القضايا',
+            icon: const Icon(Icons.folder_open_outlined),
+            onPressed: onOpenCases,
+          ),
           IconButton(
             tooltip: 'الإشعارات',
             icon: const Icon(Icons.notifications_none),
@@ -183,6 +201,7 @@ class _LawyerHomeTab extends StatelessWidget {
       body: LawyerDashboardScreen(
         repository: repository,
         onOpenConsultations: onOpenConsultations,
+        onOpenCases: onOpenCases,
       ),
     );
   }
