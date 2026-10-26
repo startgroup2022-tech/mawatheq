@@ -618,6 +618,82 @@ mariadb -u USERNAME -p DBNAME -e "SELECT kind, amount_minor, gross_minor, commis
 
 ---
 
+## 10.1 التنفيذ 59 — رأس الموقع، المكالمات داخل التطبيق، محفظة المحامي
+
+### أ) سبب بقاء رأس الموقع مكسوراً على الإنتاج
+
+**الملف لم يصل.** نسخة `assets/css/style.css` المخدومة على `mawatheq.com` حجمها
+**28769 بايت** ولا تحتوي أي قاعدة `.is-scrolled`، بينما نسخة المستودع **33253 بايت**
+وتحتوي أربع قواعد. القياس نفسه على الملفين يعطي:
+
+```
+الإنتاج  1200–1920px   تراكب آخر رابط بالقائمة مع الأزرار = 30px
+المستودع 360–1920px    تراكب = 0px
+```
+
+فالإصلاح موجود في المستودع منذ `9a48442`، ولم يُرفع. كذلك نسخة `includes/header.php`
+المخدومة لا تستدعي `asset_url()`، ولذلك يظهر الرابط بلا `?v=`:
+
+```
+الإنتاج   href="/assets/css/style.css"
+المستودع href="/assets/css/style.css?v=1792885837"
+```
+
+**الخطوة المطلوبة:** أعد رفع شجرة الموقع كاملة (لا ملف CSS وحده)، ثم تحقّق:
+
+```bash
+curl -s https://mawatheq.com/assets/css/style.css | wc -c        # يجب 33253
+curl -s https://mawatheq.com/ | grep -o 'style.css?v=[0-9]*'     # يجب أن يظهر ?v=
+```
+
+بعد ظهور `?v=` يطلب المتصفّح الملف مرة واحدة، فلا تبقى نسخة قديمة في ذاكرته.
+لو بقي التراكب بعد الرفع، فالملف لم يُستبدل فعلاً — لا تُعِد تشخيص CSS.
+
+### ب) المكالمات داخل التطبيق — Jitsi داخل WebView
+
+الحزمة الأصلية `jitsi_meet_flutter_sdk` لا يمكن أن تُبنى مع `flutter_webrtc`: كلتاهما
+تحمل أصناف `org.webrtc` والملف الأصلي `libjingle_peerconnection_so.so` نفسه، فيفشل
+دمج APK. لذلك يعمل Jitsi الآن داخل **WebView** عبر External API، بلا أي اعتماد أصلي،
+وتبقى شاشة WebRTC المدمجة كما هي.
+
+التحكم بالوصول لم يتغيّر: الخادم هو من يشتقّ اسم الغرفة ويوقّع رمز JWT لكل مشارك، ورمز
+الغرفة داخل JWT هو ما يفرضه الجسر. التطبيق لا يخترع غرفة ولا رمزاً.
+
+- `GET /api/v1/calls.php` بدون مصادقة يردّ 401.
+- استجابة `start` و`token` تحمل `meeting.join_url` و`meeting.app_id` إضافة إلى
+  `room` و`jwt` و`call_type`. لا تحذف هذه الحقول: غيابها يعني مكالمة فارغة لا خطأ.
+- للإنتاج الموصى به: اضبط **Jitsi as a Service (JaaS)** من `/admin/settings.php`
+  (المعرّف، رقم المفتاح، والمفتاح الخاص). بدون JaaS يعمل `meet.jit.si` لكنه يعلن
+  صراحة أنه **لا يفرض التحقق من الهوية** (اسم الغرفة فقط). لا تقل للعميل إن المكالمة
+  محمية إن لم يكن JaaS مضبوطاً.
+
+### ج) محفظة المحامي وجداولها
+
+`upgrade_v66.sql` و`upgrade_v67.sql` **إلزاميان** لهذا الإصدار:
+
+- `upgrade_v66.sql` — `lawyer_wallets`، `wallet_transactions`، `wallet_withdrawals`،
+  `wallet_commission_rules`، `notification_preferences`.
+- `upgrade_v67.sql` — `call_sessions`، `call_events`، `call_participants`.
+
+بدونهما: `/lawyer/wallet.php` و`/admin/wallets.php` و`api/v1/calls.php` تعطي 404 أو 500.
+
+### د) قائمة تحقّق مختصرة للتنفيذ 59
+
+- [ ] `assets/css/style.css` على الإنتاج = **33253 بايت** ويحتوي `.is-scrolled`
+- [ ] رابط `style.css` يحمل `?v=` (أي أن `includes/header.php` المرفوع يستدعي `asset_url()`)
+- [ ] لا تراكب في الرأس عند 360/390/768/1024/1200/1440/1920
+- [ ] `upgrade_v66.sql` و`upgrade_v67.sql` مُطبَّقان
+- [ ] `/lawyer/wallet.php` و`/admin/wallets.php` يفتحان (لا 404)
+- [ ] `/api/v1/calls.php` بدون مصادقة يردّ **401**
+- [ ] `/delete-account.php` يفتح ويعمل، و`/privacy.php` يفتح
+- [ ] `/api/v1/auth/lawyer-login.php` يردّ `invalid_credentials` لبيانات خاطئة، و
+      `pending_approval` أو `email_not_verified` لكلمة مرور صحيحة وحساب غير مكتمل
+- [ ] تطبيق المحامي `com.mawatheq.lawyer` 1.1.0+2 وتطبيق العميل `com.mawatheq.app`
+      1.6.1+16 — النسختان **موقّعتان بمفتاح التصحيح** (لا يوجد مفتاح إصدار في
+      المستودع) ولا تُرفعان إلى Google Play قبل توقيعهما بمفتاحك
+
+---
+
 ## 11. بعد النشر
 
 1. **راقب `error_log`** أول 24 ساعة بحثاً عن أي خطأ في `affiliate_` أو المرفقات.
