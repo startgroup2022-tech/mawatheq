@@ -3468,3 +3468,62 @@ a "before" state with a **copy** (`cp file /tmp/before.php`), never by writing f
 needs `antiword` or `catdoc`; `executive09_sso_test` needs `vendor/autoload.php`
 (`php /tmp/composer install`). None of the three is a code failure, and all three
 report as one. Install them before reading a red suite as a regression.
+
+
+## Execution 61B — signing recovery, and why a missing upload key is not a rebuild
+
+### The client upload key was never in this environment, and it must not be replaced
+
+`com.mawatheq.app` is already on Google Play, signed with the upload key
+`CN=Mawatheq Legal Platform` (alias `mawatheq-upload`, keystore
+`mawatheq-upload-key.jks`, SHA-256 `5721bf0cfdd9f6fcef5dc3baf86b21c9ec2656c2ad4fb06a3cda189a355ecd09`).
+Exec 51/52/53 built with it and the guides say it is "stored locally only". It is not in
+the repo, any git ref or blob, the filesystem, the environment, GitHub Actions, or any org
+repo — it did not survive the sandbox reset.
+
+**Do not generate a replacement key for `com.mawatheq.app`.** A different key on a
+published `applicationId` either gets rejected by Play or breaks the upgrade chain for
+installed users. The only correct move is Google's **upload-key reset**
+(Play Console → Setup → App integrity → *Request upload key reset*), which keeps the real
+app-signing key (held by Google) and only re-anchors the upload key. If Play App Signing is
+**not** enabled on that app, the upload key *is* the app-signing key and a reset is
+impossible — check `App integrity` before promising anything.
+
+A client AAB built without the key is debug-signed; name the file so it cannot be mistaken
+for an uploadable artifact (e.g. `..._debug-signed_PENDING-UPLOAD-KEY.aab`). Verify with
+`keytool -printcert -jarfile <aab> | grep Owner` — `CN=Android Debug` means "do not upload".
+
+### The lawyer app had no production key, so a new one is legitimate
+
+`com.mawatheq.lawyer` has never shipped. The `97:86:FF:60:…:90` fingerprint that was in
+`.well-known/assetlinks.json` was the **debug** key (Exec 58, §331), not a release key.
+A first release therefore *does* get a new upload key. Generate it with PKCS12 + RSA-4096
+and keep it outside the repo (`/workspace/project/mawatheq-private/signing`, `0700`/`0600`,
+same pattern as the attachment root), with the password in a sibling `0600` file and
+`android/key.properties` (gitignored) pointing at it.
+
+**The sandbox is not a vault.** A key generated there must be exported to a durable store
+before the release is used — `docs/exec61b/EXTRACT_LAWYER_KEY.sh` does the copy and prints
+only the (public) fingerprint.
+
+### Read the identity out of the bundle, not out of the config
+
+`aapt2 dump badging` does not read an `.aab`. Use bundletool
+(`java -jar bundletool-all-<v>.jar dump manifest --bundle=<aab>`) to confirm `package`,
+`versionCode`, `versionName`, `minSdk`, `targetSdk` from the bytes that will be uploaded.
+`keytool -printcert -jarfile <aab>` reads the signature. Both together are the check; a
+gradle file or `pubspec.yaml` only says what was *intended*.
+
+### App Links fingerprints are the *app-signing* key's, and Play may hold it
+
+Once Play App Signing is on, the certificate that verifies App Links is the app-signing key
+Google holds — **not** the upload key. Update `.well-known/assetlinks.json` from Play
+Console → App integrity → *App signing key certificate*, or the link opens the browser.
+
+### Publishing an Android release artifact
+
+Assets carry the version and version code (`MAWATHEQ_APP_v1.7.0+17_...aab`); a `+` in an
+asset name must be `%2B` in the download URL. Checksum the build, then **download from the
+release and checksum again** — a local `sha256sum -c` proves the disk, not the served bytes.
+Never commit or upload a keystore, `key.properties`, or the password file; confirm with
+`git status --short | grep -iE '\.jks|\.pw|key\.properties'` before every push.
