@@ -46,6 +46,16 @@ versionName / minSdk / targetSdk)، ومن قائمة الأذونات، ومن 
 
 > تحقّق بصمة الملف: `sha256sum -c MAWATHEQ_EXECUTION_61_COMPLETE.sha256`.
 
+### ملفات APK للاختبار المباشر (نفس الكود، نفس التوقيع)
+
+| البند | تطبيق العملاء | تطبيق المحامين |
+|---|---|---|
+| الملف | `MAWATHEQ_CLIENT_v1.7.0+17_release.apk` | `MAWATHEQ_LAWYER_v1.1.0+2_release.apk` |
+| الحجم (بايت) | 98,522,355 | 100,162,849 |
+| SHA-256 | `d029ef5ca148a27410702026cade362a12d2a5fc5c2b507906f9eaa45e51ba8f` | `97cbec6aa2774e0a4665f28d49cf9f00023cac418f114f538ebb9efd9d91c51a` |
+
+> ملفات APK للاختبار الجانبي فقط؛ الملف الذي يُرفع إلى Google Play هو **AAB**.
+
 ### الأذونات (متطابقة بين التطبيقين، ولا جديد عن الإصدار السابق)
 
 `INTERNET`, `ACCESS_NETWORK_STATE`, `CAMERA`, `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS`,
