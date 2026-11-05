@@ -1091,27 +1091,40 @@ class _LoadingSkeletonState extends State<LoadingSkeleton>
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: List.generate(
-        widget.count,
-        (index) => Padding(
-          padding: const EdgeInsets.only(bottom: AppSpacing.s3),
-          child: AnimatedBuilder(
-            animation: _controller,
-            builder: (context, child) => Container(
-              height: widget.height,
-              decoration: BoxDecoration(
-                color: Color.lerp(
-                  context.tokens.surface3,
-                  context.tokens.surface2,
-                  _controller.value,
-                ),
-                borderRadius: BorderRadius.circular(AppRadius.lg),
+    final children = List.generate(
+      widget.count,
+      (index) => Padding(
+        padding: const EdgeInsets.only(bottom: AppSpacing.s3),
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) => Container(
+            height: widget.height,
+            decoration: BoxDecoration(
+              color: Color.lerp(
+                context.tokens.surface3,
+                context.tokens.surface2,
+                _controller.value,
               ),
+              borderRadius: BorderRadius.circular(AppRadius.lg),
             ),
           ),
         ),
       ),
+    );
+    // A fixed column of tall tiles overflows a short viewport (a 360x640 phone
+    // leaves ~470px under the app bar and bottom nav, less than six 88px tiles).
+    // When the parent bounds the height, lay the tiles out in a non-scrolling
+    // viewport so the extra ones are simply not built; when the parent is itself a
+    // scrollable the height is unbounded and a plain column is the correct shape.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (!constraints.hasBoundedHeight) return Column(children: children);
+        return ListView(
+          padding: EdgeInsets.zero,
+          physics: const NeverScrollableScrollPhysics(),
+          children: children,
+        );
+      },
     );
   }
 }

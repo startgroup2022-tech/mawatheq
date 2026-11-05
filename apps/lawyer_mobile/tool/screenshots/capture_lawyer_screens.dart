@@ -9,8 +9,14 @@
 // Run from this package:
 //   flutter test tool/screenshots/capture_lawyer_screens.dart --update-goldens
 // PNGs land in tool/screenshots/goldens_lawyer/.
+//
+// Google Play store-listing mode: the default surface is 1080x2280 (2.11:1),
+// above Play's 2:1 screenshot ceiling. With MAWATHEQ_STORE_SHOTS=1 the same
+// screens render at 1080x1920 (9:16) into goldens_lawyer_store/:
+//   MAWATHEQ_STORE_SHOTS=1 flutter test tool/screenshots/capture_lawyer_screens.dart --update-goldens
 
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -355,6 +361,11 @@ Future<void> _settle(WidgetTester tester) async {
 ///
 /// `matchesGoldenFile` will happily write a picture of a blank screen, so without
 /// this a broken screen would be a green test and a useless image.
+///
+/// When [storeShots] is true the harness renders at Play's maximum 2:1 surface
+/// (1080x1920) and writes to `goldens_lawyer_store/` instead of `goldens_lawyer/`.
+final bool storeShots = Platform.environment['MAWATHEQ_STORE_SHOTS'] == '1';
+
 Future<void> _shot(WidgetTester tester, String file, List<String> mustContain) async {
   final text = tester
       .widgetList<Text>(find.byType(Text))
@@ -363,7 +374,12 @@ Future<void> _shot(WidgetTester tester, String file, List<String> mustContain) a
   for (final needle in mustContain) {
     expect(text, contains(needle), reason: '$file should show "$needle"');
   }
-  await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens_lawyer/$file'));
+  await expectLater(
+    find.byType(MaterialApp),
+    matchesGoldenFile(
+      '${storeShots ? 'goldens_lawyer_store' : 'goldens_lawyer'}/$file',
+    ),
+  );
 }
 
 void main() {
@@ -374,7 +390,9 @@ void main() {
   setUp(() {
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     final view = binding.platformDispatcher.views.first;
-    view.physicalSize = const Size(1080, 2280);
+    view.physicalSize = storeShots
+        ? const Size(1080, 1920)
+        : const Size(1080, 2280);
     view.devicePixelRatio = 3.0;
     binding.platformDispatcher.accessibilityFeaturesTestValue =
         const FakeAccessibilityFeatures(disableAnimations: true);

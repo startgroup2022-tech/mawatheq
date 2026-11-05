@@ -9,8 +9,16 @@
 // Run with:
 //   flutter test tool/screenshots/capture_screenshots.dart --update-goldens
 // The PNGs land in tool/screenshots/goldens/.
+//
+// Google Play store-listing mode: the default surface is 1080x2280, whose aspect
+// ratio (2.11:1) exceeds Play's 2:1 ceiling, so the goldens cannot be uploaded as
+// store screenshots as-is. With MAWATHEQ_STORE_SHOTS=1 the same screens render at
+// 1080x1920 (9:16, within Play's limits) into goldens_store/, leaving the existing
+// goldens untouched:
+//   MAWATHEQ_STORE_SHOTS=1 flutter test tool/screenshots/capture_screenshots.dart --update-goldens
 
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -366,6 +374,12 @@ Future<void> _settle(WidgetTester tester) async {
 /// The assertion is the point: `matchesGoldenFile` is happy to write a picture of a
 /// blank screen, so without this a broken screen would produce a green test and a
 /// useless image. `expect` before `expectLater` makes a blank screen a failure.
+///
+/// When [storeShots] is true the harness renders at Play's maximum 2:1 surface
+/// (1080x1920) and writes to `goldens_store/` instead of `goldens/`, so the
+/// checked-in widget-test goldens are not disturbed.
+final bool storeShots = Platform.environment['MAWATHEQ_STORE_SHOTS'] == '1';
+
 Future<void> _shot(
   WidgetTester tester,
   String file,
@@ -380,7 +394,7 @@ Future<void> _shot(
   }
   await expectLater(
     find.byType(MaterialApp),
-    matchesGoldenFile('goldens/$file'),
+    matchesGoldenFile('${storeShots ? 'goldens_store' : 'goldens'}/$file'),
   );
 }
 
@@ -403,7 +417,9 @@ void main() {
   setUp(() {
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     final view = binding.platformDispatcher.views.first;
-    view.physicalSize = const Size(1080, 2280);
+    view.physicalSize = storeShots
+        ? const Size(1080, 1920)
+        : const Size(1080, 2280);
     view.devicePixelRatio = 3.0;
     binding.platformDispatcher.accessibilityFeaturesTestValue =
         const FakeAccessibilityFeatures(disableAnimations: true);
