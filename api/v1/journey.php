@@ -11,7 +11,12 @@
  *
  *   ?action=specialties                     → legal specialties, as cards
  *   ?action=issue-types&category_id=N       → plain-language issue types
- *   ?action=lawyers&category_id=N           → approved lawyers providing specialty N
+ *   ?action=lawyers&category_id=N           → approved lawyers providing specialty N,
+ *                                             narrowed by the booking filters
+ *                                             (country, city, experience, min_fee,
+ *                                             max_fee, available_only, q)
+ *   ?action=filters                         → the filter vocabulary (countries, cities
+ *                                             per country, experience bands)
  *   ?action=lawyer&lawyer_id=N              → one lawyer's full comparison profile
  *   ?action=availability&lawyer_id=N        → real open slots for the coming days
  *
@@ -56,11 +61,11 @@ try {
         case 'lawyers':
             $cid = (int)($_GET['category_id'] ?? 0);
             if ($cid <= 0) api_error('category_id is required');
-            $lawyers = legal_journey_lawyers_for_specialty($pdo, $cid, [
-                'jurisdiction' => $_GET['jurisdiction'] ?? '',
-                'max_fee'      => $_GET['max_fee'] ?? '',
-                'q'            => $_GET['q'] ?? '',
-            ]);
+            // Every professional filter (country, city, experience band, fee range,
+            // availability) goes through the one normaliser, so the app and the website
+            // filter identically. `available_only` is sent as `1`/`true`/`on`.
+            $filters = legal_journey_filter_params($_GET);
+            $lawyers = legal_journey_lawyers_for_specialty($pdo, $cid, $filters);
             // Present each lawyer's fee with the tenant's currency so the app never
             // formats money itself.
             require_once __DIR__ . '/../../includes/currency.php';
@@ -70,12 +75,24 @@ try {
                     : null;
             }
             unset($lw);
+            $specialtyHasLawyers = count(legal_journey_lawyers_for_specialty($pdo, $cid, [])) > 0;
             api_json([
-                'ok'          => true,
-                'lawyers'     => $lawyers,
-                'matched'     => count($lawyers) > 0,
-                'alternative' => count($lawyers) === 0 ? legal_journey_no_match_alternative($pdo, $cid) : null,
+                'ok'            => true,
+                'lawyers'       => $lawyers,
+                'count'         => count($lawyers),
+                'matched'       => count($lawyers) > 0,
+                'filters'       => $filters,
+                'filtered_out'  => count($lawyers) === 0 && $specialtyHasLawyers,
+                'alternative'   => (count($lawyers) === 0 && !$specialtyHasLawyers)
+                    ? legal_journey_no_match_alternative($pdo, $cid) : null,
             ]);
+            break;
+
+        case 'filters':
+            // The vocabulary the client renders, read from the same constants the server
+            // filters with — so an option the app shows can never be one the backend
+            // silently ignores.
+            api_json(['ok' => true] + legal_journey_filter_options());
             break;
 
         case 'lawyer':

@@ -337,6 +337,63 @@ function legal_journey_issue_types(PDO $pdo, int $categoryId, string $q = ''): a
 }
 
 /**
+ * The professional booking filters, normalised from request input.
+ *
+ * One normaliser for the website and the API, so the two clients cannot disagree
+ * about what a filter means. An unknown value degrades to "no filter" rather than
+ * to a wrong filter:
+ *
+ *   specialization  category id (the journey's specialty); 0 = any
+ *   country         ISO alpha-2 code; '' = any
+ *   city            must belong to the chosen country, else dropped
+ *   experience      band key from lawyer_experience_bands(); unknown = any
+ *   min_fee/max_fee numbers; min > max is swapped so a range still works
+ *   available_only  true = only lawyers with a real open slot in the coming days
+ *
+ * @return array<string,mixed>
+ */
+function legal_journey_filter_params(array $input): array {
+    require_once __DIR__ . '/lawyer_experience.php';
+    require_once __DIR__ . '/cities.php';
+
+    $categoryId = (int)($input['category_id'] ?? 0);
+    $countryRaw = $input['country'] ?? ($input['country_code'] ?? '');
+    $country = (is_string($countryRaw) && $countryRaw !== '' && country_is_valid($countryRaw))
+        ? strtoupper(trim($countryRaw)) : '';
+
+    $city = trim((string)($input['city'] ?? ''));
+    // A city without a country, or one outside the country, is dropped — the filter
+    // must not silently mean "any city".
+    if ($city !== '' && ($country === '' || !city_is_valid($country, $city))) $city = '';
+
+    $expRaw = trim((string)($input['experience'] ?? ''));
+    $experience = lawyer_experience_band($expRaw) ? $expRaw : '';
+
+    $minFee = isset($input['min_fee']) && $input['min_fee'] !== '' ? (float)$input['min_fee'] : null;
+    $maxFee = isset($input['max_fee']) && $input['max_fee'] !== '' ? (float)$input['max_fee'] : null;
+    if ($minFee !== null && $minFee < 0) $minFee = 0.0;
+    if ($maxFee !== null && $maxFee < 0) $maxFee = 0.0;
+    if ($minFee !== null && $maxFee !== null && $minFee > $maxFee) {
+        [$minFee, $maxFee] = [$maxFee, $minFee];
+    }
+
+    $avail = $input['available_only'] ?? ($input['available'] ?? '');
+    $availableOnly = ($avail === true || $avail === 1 || $avail === '1' || $avail === 'true' || $avail === 'on');
+
+    return [
+        'category_id'    => $categoryId,
+        'country'        => $country,
+        'city'           => $city,
+        'experience'     => $experience,
+        'min_fee'        => $minFee,
+        'max_fee'        => $maxFee,
+        'available_only' => $availableOnly,
+        'jurisdiction'   => trim((string)($input['jurisdiction'] ?? '')),
+        'q'              => trim((string)($input['q'] ?? '')),
+    ];
+}
+
+/**
  * Approved lawyers who actually provide a specialty, with everything the customer
  * needs to compare them: fee, rating, experience and real availability.
  *
@@ -344,6 +401,13 @@ function legal_journey_issue_types(PDO $pdo, int $categoryId, string $q = ''): a
  * for this category. No other lawyer is ever returned, which is what the brief means
  * by "do not show unrelated lawyers as matches".
  *
+ * Every filter is applied server-side, with bound parameters, against the real
+ * columns — specialization (via the category index), country, city, experience band,
+ * fee range and actual availability. When `available_only` is set, a lawyer's real
+ * slots are computed and a lawyer with none is removed before the result is returned,
+ * so an unavailable slot is never advertised.
+ *
+ * @param array $opts see legal_journey_filter_params()
  * @return array<int,array<string,mixed>>
  */
 function legal_journey_lawyers_for_specialty(PDO $pdo, int $categoryId, array $opts = []): array {
@@ -354,20 +418,37 @@ function legal_journey_lawyers_for_specialty(PDO $pdo, int $categoryId, array $o
     $ids = array_values(array_unique(legal_journey_lawyer_category_index($pdo)[$categoryId] ?? []));
     if (!$ids) return [];
 
-    $jurisdiction = trim((string)($opts['jurisdiction'] ?? ''));
-    $maxFee       = isset($opts['max_fee']) && $opts['max_fee'] !== '' ? (float)$opts['max_fee'] : null;
-    $q            = trim((string)($opts['q'] ?? ''));
+    $f = legal_journey_filter_params($opts + ['category_id' => $categoryId]);
 
     $ph = implode(',', array_fill(0, count($ids), '?'));
     $sql = "SELECT l.id, l.full_name, l.specialization, l.bio, l.years_experience,
-                   l.hourly_rate, l.rating, l.photo_path, l.jurisdiction
+                   l.hourly_rate, l.rating, l.photo_path, l.jurisdiction, l.country_code, l.city
               FROM lawyers l
              WHERE l.id IN ($ph) AND l.status = 'approved'";
     $params = $ids;
 
-    if ($jurisdiction !== '') { $sql .= ' AND l.jurisdiction = ?'; $params[] = $jurisdiction; }
-    if ($maxFee !== null)     { $sql .= ' AND (l.hourly_rate IS NULL OR l.hourly_rate <= ?)'; $params[] = $maxFee; }
-    if ($q !== '')            { $sql .= ' AND l.full_name LIKE ?'; $params[] = '%' . $q . '%'; }
+    if ($f['jurisdiction'] !== '') { $sql .= ' AND l.jurisdiction = ?'; $params[] = $f['jurisdiction']; }
+    // Country matches on either representation, so a lawyer whose row predates
+    // upgrade_v68.sql (only `jurisdiction`) is still found.
+    if ($f['country'] !== '') {
+        require_once __DIR__ . '/cities.php';
+        $name = jurisdiction_for_country($f['country']);
+        $sql .= ' AND (l.country_code = ? OR l.jurisdiction = ?)';
+        $params[] = $f['country'];
+        $params[] = $name ?? '';
+    }
+    if ($f['city'] !== '')       { $sql .= ' AND l.city = ?'; $params[] = $f['city']; }
+    if ($f['min_fee'] !== null)  { $sql .= ' AND l.hourly_rate IS NOT NULL AND l.hourly_rate >= ?'; $params[] = $f['min_fee']; }
+    if ($f['max_fee'] !== null)  { $sql .= ' AND (l.hourly_rate IS NULL OR l.hourly_rate <= ?)'; $params[] = $f['max_fee']; }
+    if ($f['q'] !== '')          { $sql .= ' AND l.full_name LIKE ?'; $params[] = '%' . $f['q'] . '%'; }
+
+    if ($f['experience'] !== '') {
+        require_once __DIR__ . '/lawyer_experience.php';
+        $band = lawyer_experience_band($f['experience']);
+        $sql .= ' AND l.years_experience >= ?';
+        $params[] = $band['min'];
+        if ($band['max'] !== null) { $sql .= ' AND l.years_experience <= ?'; $params[] = $band['max']; }
+    }
 
     $sql .= ' ORDER BY l.rating DESC, l.years_experience DESC, l.id';
 
@@ -376,15 +457,31 @@ function legal_journey_lawyers_for_specialty(PDO $pdo, int $categoryId, array $o
     $lawyers = $stmt->fetchAll();
 
     $today = date('Y-m-d');
-    foreach ($lawyers as &$lw) {
+    $out = [];
+    foreach ($lawyers as $lw) {
         $lw['id'] = (int)$lw['id'];
         $lw['hourly_rate'] = $lw['hourly_rate'] !== null ? (float)$lw['hourly_rate'] : null;
         $lw['rating'] = $lw['rating'] !== null ? (float)$lw['rating'] : null;
         $lw['years_experience'] = (int)$lw['years_experience'];
+        $lw['country_code'] = lawyer_country_code($lw);
+        $lw['city'] = $lw['city'] !== null && $lw['city'] !== '' ? (string)$lw['city'] : null;
+        $lw['location'] = lawyer_location_label($lw['country_code'], $lw['city']);
         $lw['availability'] = legal_journey_availability_summary($pdo, $lw['id'], $today);
+        // Availability is a real filter, not a badge: when it is requested, a lawyer
+        // with no open slot is removed rather than shown with an empty slot line.
+        if ($f['available_only'] && ($lw['availability']['slot_count'] ?? 0) < 1) continue;
+        $out[] = $lw;
     }
-    unset($lw);
-    return $lawyers;
+    return $out;
+}
+
+/**
+ * The count of lawyers matching a specialty and the current filters, without the
+ * availability post-filter's cost of building each card. The website and the API both
+ * show this so the customer sees how many results a filter produced.
+ */
+function legal_journey_lawyers_count(PDO $pdo, int $categoryId, array $opts = []): int {
+    return count(legal_journey_lawyers_for_specialty($pdo, $categoryId, $opts));
 }
 
 /**
@@ -471,7 +568,7 @@ function legal_journey_lawyer_profile(PDO $pdo, int $lawyerId): ?array {
     try {
         $s = $pdo->prepare(
             "SELECT id, full_name, specialization, bio, years_experience, hourly_rate,
-                    rating, photo_path, jurisdiction, qualifications
+                    rating, photo_path, jurisdiction, country_code, city, qualifications
                FROM lawyers WHERE id = ? AND status = 'approved'"
         );
         $s->execute([$lawyerId]);
@@ -481,13 +578,52 @@ function legal_journey_lawyer_profile(PDO $pdo, int $lawyerId): ?array {
     }
     if (!$lw) return null;
 
+    require_once __DIR__ . '/cities.php';
     $lw['id'] = (int)$lw['id'];
     $lw['hourly_rate'] = $lw['hourly_rate'] !== null ? (float)$lw['hourly_rate'] : null;
     $lw['rating'] = $lw['rating'] !== null ? (float)$lw['rating'] : null;
     $lw['years_experience'] = (int)$lw['years_experience'];
+    $lw['country_code'] = lawyer_country_code($lw);
+    $lw['city'] = ($lw['city'] ?? '') !== '' ? (string)$lw['city'] : null;
+    $lw['location'] = lawyer_location_label($lw['country_code'], $lw['city']);
     $lw['availability'] = legal_journey_availability_summary($pdo, $lw['id']);
     $lw['specialties'] = legal_journey_specialties_for_lawyer($pdo, $lw['id']);
     return $lw;
+}
+
+/**
+ * The filter vocabulary the customer-facing UI offers, read from the same constants
+ * the server filters with — so the options a client renders can never drift from the
+ * values the backend accepts.
+ *
+ *   countries   [{code, name}]     the countries lawyers can practise in
+ *   cities      {code: [city]}     the cities per country (dependent selector)
+ *   experience  [{key, label}]     the non-overlapping experience bands
+ *
+ * @return array<string,mixed>
+ */
+function legal_journey_filter_options(): array {
+    require_once __DIR__ . '/cities.php';
+    require_once __DIR__ . '/lawyer_experience.php';
+
+    $countries = [];
+    foreach (country_options() as $code => $labels) {
+        $countries[] = ['code' => $code, 'name' => is_rtl() ? $labels['ar'] : $labels['en']];
+    }
+
+    $cities = [];
+    foreach (city_options() as $code => $list) $cities[$code] = array_values($list);
+
+    $experience = [];
+    foreach (lawyer_experience_bands() as $b) {
+        $experience[] = ['key' => $b['key'], 'label' => is_rtl() ? $b['label_ar'] : $b['label_en']];
+    }
+
+    return [
+        'countries'  => $countries,
+        'cities'     => $cities,
+        'experience' => $experience,
+    ];
 }
 
 /** The customer-visible specialties a lawyer provides (names only, never internal ids). */

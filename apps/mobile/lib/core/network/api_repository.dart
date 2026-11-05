@@ -383,10 +383,15 @@ class ApiRepository {
 
   /// The approved lawyers who provide one specialty, with a fallback message when
   /// there are none so the customer is never shown a dead end.
+  ///
+  /// [filters] carries the professional booking filters (country, city, experience,
+  /// fee range, availability). They are applied server-side by the same normaliser
+  /// the website uses, so both clients return the same set for the same choices.
   Future<JourneyMatch> journeyLawyers({
     required int categoryId,
     String? jurisdiction,
     String? query,
+    JourneyFilters? filters,
   }) async {
     final json = await _client.get(
       '/journey.php',
@@ -396,9 +401,21 @@ class ApiRepository {
         'category_id': categoryId,
         if (jurisdiction != null && jurisdiction.isNotEmpty) 'jurisdiction': jurisdiction,
         if (query != null && query.isNotEmpty) 'q': query,
+        ...?filters?.toQuery(),
       },
     );
     return JourneyMatch.fromJson(json);
+  }
+
+  /// The filter vocabulary (countries, cities per country, experience bands) the
+  /// journey filter sheet renders. Public, like the rest of the journey.
+  Future<JourneyFilterOptions> journeyFilters() async {
+    final json = await _client.get(
+      '/journey.php',
+      auth: false,
+      query: {'action': 'filters'},
+    );
+    return JourneyFilterOptions.fromJson(json);
   }
 
   // ------------------------------------------------------------ lawyers

@@ -378,6 +378,9 @@ class LawyerProfile {
     required this.name,
     this.specialization = '',
     this.jurisdiction = '',
+    this.city = '',
+    this.countryCode = '',
+    this.location = '',
     this.rating = 0,
     this.hourlyRate = 0,
     this.yearsExperience = 0,
@@ -392,6 +395,16 @@ class LawyerProfile {
   final String name;
   final String specialization;
   final String jurisdiction;
+
+  /// The city the lawyer practises in, and its ISO country code. Both are optional
+  /// and may be empty on a lawyer whose row predates the country/city migration.
+  final String city;
+  final String countryCode;
+
+  /// The server's combined "city، country" label (`location`), already formatted and
+  /// direction-correct, so the app never assembles the two parts itself.
+  final String location;
+
   final double rating;
   final double hourlyRate;
   final int yearsExperience;
@@ -440,6 +453,9 @@ class LawyerProfile {
       name: j.str('full_name', fallback: j.str('name')),
       specialization: j.str('specialization'),
       jurisdiction: j.str('jurisdiction'),
+      city: j.str('city'),
+      countryCode: j.str('country_code'),
+      location: j.str('location'),
       rating: j.dbl('rating'),
       hourlyRate: j.dbl('hourly_rate'),
       yearsExperience: j.intg('years_experience'),
@@ -861,10 +877,20 @@ class JourneyMatch {
     this.lawyers = const [],
     this.matched = false,
     this.alternative,
+    this.count = 0,
+    this.filteredOut = false,
   });
 
   final List<LawyerProfile> lawyers;
   final bool matched;
+
+  /// The server's own count of matching lawyers. The journey shows it so the
+  /// customer sees the result of a filter, and the app never recounts the list.
+  final int count;
+
+  /// True when the specialty does have lawyers but the active filters excluded
+  /// them all — the copy differs from "this specialty has no lawyer at all".
+  final bool filteredOut;
 
   /// Null when lawyers were found, or when the server sent no alternative object.
   final JourneyAlternative? alternative;
@@ -877,11 +903,134 @@ class JourneyMatch {
     return JourneyMatch(
       lawyers: j.list('lawyers').map((e) => LawyerProfile.fromJson(e.asMap)).toList(),
       matched: j.boolean('matched'),
+      count: j.intg('count'),
+      filteredOut: j.boolean('filtered_out'),
       alternative: rawAlt is Map
           ? JourneyAlternative.fromJson(Map<String, dynamic>.from(rawAlt))
           : null,
     );
   }
+}
+
+/// One professional booking filter's vocabulary, from `?action=filters`.
+///
+/// The countries and their cities and the experience bands all come from the server,
+/// so the options the app renders are exactly the values the backend accepts — an
+/// option the app invented would be silently ignored by the filter.
+class JourneyFilterOptions {
+  const JourneyFilterOptions({
+    this.countries = const [],
+    this.cities = const {},
+    this.experience = const [],
+  });
+
+  final List<JourneyFilterCountry> countries;
+
+  /// Country code → its cities, in the server's display order.
+  final Map<String, List<String>> cities;
+
+  final List<JourneyFilterBand> experience;
+
+  factory JourneyFilterOptions.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    final cityMap = <String, List<String>>{};
+    final rawCities = map['cities'];
+    if (rawCities is Map) {
+      rawCities.forEach((key, value) {
+        if (value is List) {
+          cityMap['$key'] = value.whereType<String>().toList();
+        }
+      });
+    }
+    return JourneyFilterOptions(
+      countries: j.list('countries').map((e) => JourneyFilterCountry.fromJson(e.asMap)).toList(),
+      cities: cityMap,
+      experience: j.list('experience').map((e) => JourneyFilterBand.fromJson(e.asMap)).toList(),
+    );
+  }
+}
+
+class JourneyFilterCountry {
+  const JourneyFilterCountry({required this.code, required this.name});
+  final String code;
+  final String name;
+
+  factory JourneyFilterCountry.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return JourneyFilterCountry(code: j.str('code'), name: j.str('name'));
+  }
+}
+
+class JourneyFilterBand {
+  const JourneyFilterBand({required this.key, required this.label});
+  final String key;
+  final String label;
+
+  factory JourneyFilterBand.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return JourneyFilterBand(key: j.str('key'), label: j.str('label'));
+  }
+}
+
+/// The active booking filters, as the journey screen holds them. Sent to the server
+/// as query parameters; an empty field is omitted so the server applies no filter.
+class JourneyFilters {
+  const JourneyFilters({
+    this.country = '',
+    this.city = '',
+    this.experience = '',
+    this.minFee = '',
+    this.maxFee = '',
+    this.availableOnly = false,
+    this.query = '',
+  });
+
+  final String country;
+  final String city;
+  final String experience;
+  final String minFee;
+  final String maxFee;
+  final bool availableOnly;
+  final String query;
+
+  bool get isEmpty =>
+      country.isEmpty &&
+      city.isEmpty &&
+      experience.isEmpty &&
+      minFee.isEmpty &&
+      maxFee.isEmpty &&
+      !availableOnly &&
+      query.isEmpty;
+
+  JourneyFilters copyWith({
+    String? country,
+    String? city,
+    String? experience,
+    String? minFee,
+    String? maxFee,
+    bool? availableOnly,
+    String? query,
+  }) {
+    return JourneyFilters(
+      country: country ?? this.country,
+      city: city ?? this.city,
+      experience: experience ?? this.experience,
+      minFee: minFee ?? this.minFee,
+      maxFee: maxFee ?? this.maxFee,
+      availableOnly: availableOnly ?? this.availableOnly,
+      query: query ?? this.query,
+    );
+  }
+
+  Map<String, dynamic> toQuery() => {
+        if (country.isNotEmpty) 'country': country,
+        if (city.isNotEmpty) 'city': city,
+        if (experience.isNotEmpty) 'experience': experience,
+        if (minFee.isNotEmpty) 'min_fee': minFee,
+        if (maxFee.isNotEmpty) 'max_fee': maxFee,
+        if (availableOnly) 'available_only': '1',
+        if (query.isNotEmpty) 'q': query,
+      };
 }
 
 /// One recording or document staged against a draft token, from
