@@ -3390,3 +3390,81 @@ name uploaded through the REST API.** `curl -X POST
 same file uploaded with `gh release upload` keeps the `+`. Upload APKs with `gh`,
 and verify with `GET /releases/tags/<tag>` that the stored names match the
 checksums file before publishing links.
+
+## Execution 60 — lawyer country/city, the admin lawyer form, and booking filters
+
+### A screenshot "bug" in a form is usually three independent defects
+
+The owner's screenshot of the Add Lawyer modal showed a faded/hidden Save button,
+overlapping labels and a clipped specialization field. Those are three separate
+causes, and fixing one proves nothing about the others:
+
+- **The footer was clipped** because the modal card was `calc(100dvh - 32px)` tall
+  while the overlay still carried `padding: 24px`. The card was therefore 16px
+  taller than the space the padding left for it, and the last 16px — the footer —
+  fell off the bottom. The fix is the overlay padding (24px → 16px) so the two
+  numbers agree. When a footer is clipped, measure the card against
+  `viewport − 2×overlay padding`, not the fields inside it.
+- **The labels overlapped** because a `.field` in a two-column grid had no
+  `min-width: 0`, so a long value forced the column wider than its track. Add
+  `min-width: 0` to any grid/flex child that holds user text.
+- **The specialization field** was a bare `<select>` with no search. It is now a
+  search box over the *same* native `<select>` (`assets/js/specialization-combo.js`),
+  which keeps `required` and the no-JS path intact. Do not replace the select with
+  a custom listbox — the server validates against `specialization_options()` and a
+  custom widget is how the value stops matching that list.
+
+### A dependent selector is two halves, and the server half is the one that matters
+
+`render_city_select()` + `assets/js/lawyer-form.js` change the city list when the
+country changes. The browser half is convenience; the **server** half
+(`city_is_valid()`) is the rule — a posted city that does not belong to the posted
+country is refused, because a `<select>` is trivially bypassed with a crafted POST.
+Both the admin form and the journey filters read the same `includes/cities.php`, so
+they cannot offer different cities for the same country.
+
+### A country is stored twice on purpose
+
+`lawyers.jurisdiction` is the localised *name* (`السعودية`) and predates this work;
+`lawyers.country_code` is the ISO *key* (`SA`) that the filters join on. Keep both:
+a name is not a stable key (it changes with the language) and the code is not a
+display value. `lawyer_country_code()` reads whichever the row has, so a lawyer
+created before `upgrade_v68.sql` still filters correctly.
+
+### The experience bands are defined once, and "20+" is stored as 20
+
+`includes/lawyer_experience.php` holds the bands (0–4, 5–10, 11–15, 16–20, 21+).
+They are non-overlapping and leave no gap, so every lawyer lands in exactly one —
+a band that overlapped would make a filter return the same lawyer twice. A display
+value like `20+` normalises to `20`: the `+` carries no numeric meaning a filter
+can use, and storing the string would make the numeric comparison compare text.
+
+### `available_only` is a filter, not a badge
+
+It counts each lawyer's real open slots (`legal_journey_availability_summary()`)
+and removes those with none. A badge that says "unavailable" while the card stays
+in the list is not filtering, and it makes the result count a lie.
+
+### Two API surfaces, one filter implementation
+
+`api/v1/journey.php` (the journey) and `api/v1/lawyers.php` (the directory) both
+apply the filters through the shared helpers in `includes/legal_journey.php` and
+`includes/lawyer_experience.php`. When the website and the app must agree, they
+call one function — never two copies of the same `WHERE` clause. The parity check
+in `tests/exec60_lawyer_form_filters_test.php` asserts the two endpoints return the
+same lawyer for the same filter.
+
+### `git show HEAD:<file> > <file>` overwrites uncommitted work — commit first
+
+While capturing before/after screenshots, `git show HEAD:includes/specialization_field.php`
+was used to stage the "before" state of a file that had **uncommitted** changes, and
+the new functions were lost (they had to be rewritten from the tests and CSS). Stage
+a "before" state with a **copy** (`cp file /tmp/before.php`), never by writing from
+`HEAD` over the working tree, and commit before any before/after capture.
+
+### `zip` and `antiword` are environment, not defects
+
+`tests/execution29_1_release_smoke_test.php` needs `zip`; `executive09_features_test`
+needs `antiword` or `catdoc`; `executive09_sso_test` needs `vendor/autoload.php`
+(`php /tmp/composer install`). None of the three is a code failure, and all three
+report as one. Install them before reading a red suite as a regression.
