@@ -304,7 +304,7 @@ Sign-in is available to approved Mawatheq lawyers only.
 | تحليل تطبيق العملاء | `flutter analyze` | نظيف — 0 مشاكل |
 | اختبارات تطبيق العملاء | `flutter test` | **316** اختبارًا ناجحًا |
 | تحليل تطبيق المحامين | `flutter analyze` | نظيف — 0 مشاكل |
-| اختبارات تطبيق المحامين | `flutter test` | **8** اختبارات ناجحة |
+| اختبارات تطبيق المحامين | `flutter test` | **9** اختبارات ناجحة |
 | لقطات العملاء (مثبَّتة) | `flutter test tool/screenshots/capture_screenshots.dart` | 13/13 |
 | لقطات المحامين (مثبَّتة) | `flutter test tool/screenshots/capture_lawyer_screens.dart` | 6/6 |
 | لقطات المتجر (عملاء) | `MAWATHEQ_STORE_SHOTS=1 ...` | 13/13 @ 1080×1920 |
@@ -312,6 +312,12 @@ Sign-in is available to approved Mawatheq lawyers only.
 
 **تحقق الهوية:** `bundletool dump manifest` على كل حزمة (انظر القسم 2).
 **تحقق التوقيع:** `jarsigner -verify -verbose -certs` على كل حزمة.
+
+**عزل الأدوار:** `apps/lawyer_mobile/test/exec61_role_isolation_test.dart` يقود جذر
+`LawyerApp` الحقيقي ويسجّل خروج محامٍ من شاشة الحساب المشتركة، ثم يتأكد أن التطبيق
+يعود إلى شاشة دخول المحامين ولا يعرض واجهة العملاء (`HomeShell`) إطلاقاً. الشاشتان
+تتشاركان `AccountScreen`، لذا يثبّت الاختبار هذا السلوك حتى لا يُسلّم تعديل مستقبلي
+واجهة العملاء لمحامٍ.
 
 ### ما لم يُختبر / Not tested
 
