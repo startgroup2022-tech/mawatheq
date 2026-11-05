@@ -104,4 +104,11 @@ $rows = array_map(function ($lw) {
     return $lw;
 }, $rows);
 
-api_json(['ok' => true, 'lawyers' => $rows]);
+// Report the count the same way the specialty branch does, so the website and the
+// app can render "N lawyers" from either endpoint without special-casing.
+api_json([
+    'ok'           => true,
+    'lawyers'      => $rows,
+    'count'        => count($rows),
+    'filtered_out' => count($rows) === 0 && $filtersActive,
+]);
