@@ -243,7 +243,8 @@ so it is listed as recommended-not-required in §8.)
 
 - **PHP:** `tests/run_all_tests.sh` → **46/46 suites pass**, 0 failures.
   `exec60_lawyer_form_filters_test.php` alone: **139 checks, 0 failures**.
-- **Playwright:** full suite green (see the PR for the final count).
+- **Playwright:** full suite **750 passed, 6 skipped, 0 failed** (six viewports,
+  RTL + LTR).
 - **Flutter:** `flutter analyze` clean; `flutter test` **316 tests pass**,
   including `exec60_journey_filters_test.dart` (**11 tests**).
 
