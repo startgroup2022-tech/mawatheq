@@ -3527,3 +3527,58 @@ asset name must be `%2B` in the download URL. Checksum the build, then **downloa
 release and checksum again** — a local `sha256sum -c` proves the disk, not the served bytes.
 Never commit or upload a keystore, `key.properties`, or the password file; confirm with
 `git status --short | grep -iE '\.jks|\.pw|key\.properties'` before every push.
+
+## Execution 61B — signing recovery and the rules it left behind
+
+### A shared archive URL is a disclosure, even if it is password-protected
+
+The v1 lawyer key archive and its password were both sent over a public URL. Treat
+that as a full disclosure: the key was destroyed and regenerated (v2). Do not argue
+"the zip was encrypted" — the password travelled the same channel as the file.
+
+Rotation is only free when the app was **never published**. The lawyer app
+(`com.mawatheq.lawyer`) had no release, so a new key costs nothing. The client app
+(`com.mawatheq.app`) **is** published, so its lost key cannot be swapped — a different
+key on a live listing breaks the update chain. The two cases look similar and are not.
+
+### Where keys must and must not live
+
+- Keystores and their passwords live **outside the repository**, in
+  `/workspace/project/mawatheq-private/signing/` (`0700`, files `0600`). The repo is
+  **public**, so a committed key is a published key.
+- `key.properties` is gitignored in both apps; keep it that way. `git ls-files | grep
+  -iE '\.jks$|\.keystore$|key\.properties$'` must stay empty.
+- A build environment is **not** a vault. Every archive delivered from it must be
+  paired with a durable copy in a password manager, and the encrypted backup is the
+  hand-off mechanism: `openssl enc -aes-256-cbc -pbkdf2 -iter 200000` over a tar of
+  key + password + README, with a **separate** backup passphrase.
+
+### Read identity and signature from inside the artifact, never from config
+
+`pubspec.yaml` and `build.gradle.kts` state intent; the bundle states fact. Read the
+id with `bundletool dump manifest --bundle <aab>` and the signer with
+`keytool -printcert -jarfile <aab>` / `apksigner verify --print-certs <apk>`. An AAB
+built before `key.properties` existed is debug-signed and looks identical by name.
+
+### APKs are v2/v3-signed, so `keytool -printcert -jarfile` can come back empty
+
+For an APK, `keytool` often prints nothing because the signature is APK Signature
+Scheme v2/v3 (a block inside the zip), not a JAR signature. Use
+`$ANDROID_HOME/build-tools/36.0.0/apksigner verify --print-certs <apk>`. For an AAB,
+`keytool -printcert -jarfile` does work (bundles are JAR-signed).
+
+### The client upload key is lost — the fix is a Play Console reset, not a new key
+
+`docs/exec61b/CLIENT_UPLOAD_KEY_RESET_AR.md` is the procedure. It is gated on one
+question that must be answered first: **is Play App Signing enabled?** If yes, only the
+*upload* key is lost and a reset restores publishing with no user impact (the app
+signing key stays with Google). If no, the lost key is the signing key and the app can
+never be updated on `com.mawatheq.app`. Never change the `applicationId` to work
+around a lost key without an explicit owner decision.
+
+### APKs in a release must carry their signature type in the filename
+
+`…_PRODUCTION-SIGNED.apk` vs `…_DEBUG-SIGNED.apk`, and the client AAB is named
+`…_PENDING-UPLOAD-KEY.aab`. A debug-signed client APK cannot be installed over the
+Play build — the operator must uninstall first. The filename is the only place that
+warning survives a download.
