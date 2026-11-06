@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/config/app_config.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/network/api_repository.dart';
 import '../../core/network/models.dart';
@@ -13,6 +14,8 @@ import '../../core/theme/app_tokens.dart';
 import '../../shared/specialty_icons.dart';
 import '../../shared/widgets/brand_widgets.dart';
 import '../../shared/widgets/capture_sheet.dart';
+import '../assistant/assistant_screen.dart';
+import '../public/public_info_screen.dart';
 
 /// رحلة الاستشارة على الجوال — the same journey the website runs.
 ///
@@ -61,6 +64,12 @@ class _ConsultationJourneyScreenState extends State<ConsultationJourneyScreen> {
 
   JourneySpecialty? _chosenSpecialty;
   JourneyIssueType? _chosenIssueType;
+
+  /// The professional booking filters, and the vocabulary they are built from. The
+  /// options come from the server so the sheet can never offer a value the backend
+  /// would ignore. Both are only needed on the lawyer step.
+  JourneyFilters _filters = const JourneyFilters();
+  JourneyFilterOptions _filterOptions = const JourneyFilterOptions();
 
   @override
   void initState() {
@@ -140,9 +149,29 @@ class _ConsultationJourneyScreenState extends State<ConsultationJourneyScreen> {
       _loading = true;
       _error = null;
       _match = const JourneyMatch();
+      // A new specialty starts with a clean filter set; carrying the previous
+      // specialty's filters over would silently narrow an unrelated search.
+      _filters = const JourneyFilters();
+    });
+    // The filter vocabulary is loaded alongside the first result so the sheet is
+    // ready when the customer opens it; a failure to load it never blocks the list.
+    _loadFilterOptions();
+    await _loadLawyers();
+  }
+
+  /// Fetch the lawyer list for the current specialty and filter set.
+  Future<void> _loadLawyers() async {
+    final specialty = _chosenSpecialty;
+    if (specialty == null) return;
+    setState(() {
+      _loading = true;
+      _error = null;
     });
     try {
-      final match = await _repo.journeyLawyers(categoryId: specialty.id);
+      final match = await _repo.journeyLawyers(
+        categoryId: specialty.id,
+        filters: _filters,
+      );
       if (!mounted) return;
       setState(() {
         _match = match;
@@ -155,6 +184,34 @@ class _ConsultationJourneyScreenState extends State<ConsultationJourneyScreen> {
         _error = e.message;
       });
     }
+  }
+
+  Future<void> _loadFilterOptions() async {
+    try {
+      final options = await _repo.journeyFilters();
+      if (!mounted) return;
+      setState(() => _filterOptions = options);
+    } on ApiException {
+      // The filter sheet degrades to whatever vocabulary it already has rather than
+      // turning the lawyer list into an error screen.
+    }
+  }
+
+  /// Opens the filter sheet and applies the returned filters, if the customer
+  /// confirms. A dismissed sheet leaves the current filters untouched.
+  Future<void> _openFilters() async {
+    final result = await showModalBottomSheet<JourneyFilters>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: context.tokens.surface,
+      builder: (_) => _JourneyFilterSheet(
+        initial: _filters,
+        options: _filterOptions,
+      ),
+    );
+    if (result == null) return;
+    setState(() => _filters = result);
+    await _loadLawyers();
   }
 
   void _back() {
@@ -216,10 +273,16 @@ class _ConsultationJourneyScreenState extends State<ConsultationJourneyScreen> {
 
   Widget _specialtyStep() {
     if (_specialties.isEmpty) {
-      return const EmptyState(
+      // A dead end otherwise: the customer opened booking and found nothing to
+      // choose. Retry is the real fix when the list failed to load, and the contact
+      // route is the honest answer when the platform genuinely has no published
+      // specialty — either way the screen offers a way forward.
+      return EmptyState(
         icon: Icons.gavel_outlined,
         title: 'لا توجد تخصصات متاحة',
-        message: 'سيتم إضافة التخصصات قريباً.',
+        message: 'تعذّر عرض التخصصات الآن. أعد المحاولة، أو تواصل معنا وسنساعدك مباشرة.',
+        actionLabel: 'إعادة المحاولة',
+        onAction: _loadSpecialties,
       );
     }
     return ListView.separated(
@@ -277,13 +340,46 @@ class _ConsultationJourneyScreenState extends State<ConsultationJourneyScreen> {
   }
 
   Widget _lawyerStep() {
+    // The filters and the count are always reachable, even when the current filter
+    // set excluded every lawyer — otherwise the customer would have no way back to
+    // a wider search.
+    return Column(
+      children: [
+        _JourneyFilterBar(
+          active: !_filters.isEmpty,
+          count: _match.count,
+          onOpen: _openFilters,
+          onClear: _filters.isEmpty
+              ? null
+              : () async {
+                  setState(() => _filters = const JourneyFilters());
+                  await _loadLawyers();
+                },
+        ),
+        Expanded(child: _lawyerStepBody()),
+      ],
+    );
+  }
+
+  Widget _lawyerStepBody() {
     if (_match.lawyers.isEmpty) {
-      return EmptyState(
-        icon: Icons.search_off,
-        title: 'لا يوجد محامٍ متاح حالياً',
-        message: _match.alternative.isNotEmpty
-            ? _match.alternative
-            : 'جرّب تخصصاً آخر أو تواصل معنا لترشيح محامٍ مناسب.',
+      // "Your filters excluded everyone" and "this specialty has no lawyer" are
+      // different problems with different fixes, so they get different copy.
+      if (_match.filteredOut || !_filters.isEmpty) {
+        return EmptyState(
+          icon: Icons.filter_alt_off_outlined,
+          title: 'لا يوجد محامٍ يطابق الفلاتر',
+          message: 'جرّب توسيع نطاق البحث أو مسح الفلاتر لعرض جميع المحامين لهذا التخصص.',
+          actionLabel: 'مسح الفلاتر',
+          onAction: () async {
+            setState(() => _filters = const JourneyFilters());
+            await _loadLawyers();
+          },
+        );
+      }
+      return NoLawyerState(
+        onAskAssistant: _openAssistant,
+        onContact: _openContact,
       );
     }
     return ListView.separated(
@@ -306,6 +402,25 @@ class _ConsultationJourneyScreenState extends State<ConsultationJourneyScreen> {
     );
   }
 
+  /// Opens the AI assistant from the empty state. The assistant reports its own
+  /// honest unavailable state when no provider is configured; the empty state never
+  /// claims an answer is possible.
+  void _openAssistant() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const AssistantScreen()),
+    );
+  }
+
+  /// Opens the contact/support page. A customer who found no lawyer needs a human
+  /// route, not a dead end.
+  void _openContact() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const PublicInfoScreen(section: InfoSection.contact),
+      ),
+    );
+  }
+
   /// Opens the booking screen carrying the journey choice, so the consultation is
   /// stored with the customer's specialty and issue type.
   void _startBooking(LawyerProfile lawyer) {
@@ -321,6 +436,7 @@ class _ConsultationJourneyScreenState extends State<ConsultationJourneyScreen> {
     );
   }
 }
+
 
 /// The booking form at the end of the journey: date, time and the written topic.
 class _JourneyBookingScreen extends StatefulWidget {
@@ -1150,12 +1266,9 @@ class _LawyerChoiceCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(10),
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const CircleAvatar(
-                radius: 22,
-                backgroundColor: AppColors.navy,
-                child: Icon(Icons.person, color: Colors.white),
-              ),
+              _LawyerAvatar(lawyer: lawyer),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -1165,24 +1278,56 @@ class _LawyerChoiceCard extends StatelessWidget {
                         style: TextStyle(
                             fontWeight: FontWeight.w700,
                             color: context.tokens.heading)),
-                    const SizedBox(height: 4),
-                    Row(
+                    if (lawyer.specialization.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(lawyer.specialization,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: context.tokens.textMuted, fontSize: 12.5)),
+                    ],
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 4,
                       children: [
-                        const Icon(Icons.star, size: 14, color: AppColors.gold),
-                        const SizedBox(width: 4),
-                        Text(lawyer.rating.toStringAsFixed(1),
-                            style: TextStyle(
-                                color: context.tokens.textMuted, fontSize: 12)),
-                        if (lawyer.jurisdiction.isNotEmpty) ...[
-                          const SizedBox(width: 10),
-                          Flexible(
-                            child: Text(lawyer.jurisdiction,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                    color: context.tokens.textSubtle, fontSize: 12)),
+                        _MetaChip(
+                          icon: Icons.star,
+                          iconColor: AppColors.gold,
+                          text: lawyer.rating.toStringAsFixed(1),
+                        ),
+                        if (lawyer.yearsExperience > 0)
+                          _MetaChip(
+                            icon: Icons.workspace_premium_outlined,
+                            text: '${lawyer.yearsExperience} سنة خبرة',
                           ),
-                        ],
+                        // Prefer the server's combined "city، country" label; fall back
+                        // to the legacy jurisdiction name for an older record.
+                        if (lawyer.location.isNotEmpty)
+                          _MetaChip(
+                            icon: Icons.place_outlined,
+                            text: lawyer.location,
+                          )
+                        else if (lawyer.jurisdiction.isNotEmpty)
+                          _MetaChip(
+                            icon: Icons.place_outlined,
+                            text: lawyer.jurisdiction,
+                          ),
                       ],
+                    ),
+                    const SizedBox(height: 6),
+                    // Availability comes from the backend's own slot calculation, so
+                    // the customer sees the same thing here as on the booking form.
+                    Text(
+                      lawyer.hasAvailability
+                          ? '${lawyer.nextSlotCount} موعد متاح'
+                          : 'لا توجد مواعيد منشورة',
+                      style: TextStyle(
+                          color: lawyer.hasAvailability
+                              ? AppColors.teal
+                              : context.tokens.textSubtle,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600),
                     ),
                   ],
                 ),
@@ -1199,3 +1344,316 @@ class _LawyerChoiceCard extends StatelessWidget {
   }
 }
 
+
+/// The lawyer's photo when they have one, and a branded initials disc when they do
+/// not. A missing photo is the common case on a young platform, so the fallback has
+/// to look deliberate rather than broken — it shows the lawyer's initials on the
+/// brand navy instead of a generic person glyph every card would repeat.
+class _LawyerAvatar extends StatelessWidget {
+  const _LawyerAvatar({required this.lawyer});
+
+  final LawyerProfile lawyer;
+
+  @override
+  Widget build(BuildContext context) {
+    final url = lawyer.photoUrl(AppConfig.siteBase);
+    if (url != null) {
+      return ClipOval(
+        child: Image.network(
+          url,
+          width: 44,
+          height: 44,
+          fit: BoxFit.cover,
+          // A broken image must degrade to the initials disc, not a broken-image icon.
+          errorBuilder: (_, __, ___) => _initials(),
+          loadingBuilder: (context, child, progress) =>
+              progress == null ? child : _initials(),
+        ),
+      );
+    }
+    return _initials();
+  }
+
+  Widget _initials() {
+    final parts = lawyer.name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty)
+        .toList();
+    // First character of the first two words. `substring` rather than `characters`
+    // because Arabic letters here are single UTF-16 units and the package is not a
+    // dependency of this screen.
+    final letters = parts.take(2).map((p) => p.substring(0, 1)).join();
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: const BoxDecoration(
+        color: AppColors.navy,
+        shape: BoxShape.circle,
+      ),
+      alignment: Alignment.center,
+      child: letters.isEmpty
+          ? const Icon(Icons.person, color: Colors.white, size: 22)
+          : Text(
+              letters,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16),
+            ),
+    );
+  }
+}
+
+/// One small labelled fact on a lawyer card (rating, experience, jurisdiction).
+class _MetaChip extends StatelessWidget {
+  const _MetaChip({required this.icon, required this.text, this.iconColor});
+
+  final IconData icon;
+  final String text;
+  final Color? iconColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: iconColor ?? context.tokens.textSubtle),
+        const SizedBox(width: 4),
+        // Flexible so a long value (a jurisdiction, a long year count) ellipsizes
+        // inside the Wrap instead of overflowing it. A chip is decorative metadata;
+        // truncating it is always better than a layout error.
+        Flexible(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: context.tokens.textMuted, fontSize: 12),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+
+/// The bar above the lawyer list: the matching count, a Filters button, and a Clear
+/// action that appears only when a filter is active. The count is the server's own,
+/// so it always describes the list below it.
+class _JourneyFilterBar extends StatelessWidget {
+  const _JourneyFilterBar({
+    required this.active,
+    required this.count,
+    required this.onOpen,
+    required this.onClear,
+  });
+
+  final bool active;
+  final int count;
+  final VoidCallback onOpen;
+  final VoidCallback? onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      decoration: BoxDecoration(
+        color: context.tokens.surface,
+        border: Border(bottom: BorderSide(color: context.tokens.border)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              '$count محامٍ مطابق',
+              style: TextStyle(
+                  fontWeight: FontWeight.w700, color: context.tokens.heading),
+            ),
+          ),
+          if (onClear != null)
+            TextButton(
+              onPressed: onClear,
+              child: const Text('مسح الفلاتر'),
+            ),
+          OutlinedButton.icon(
+            onPressed: onOpen,
+            icon: const Icon(Icons.tune, size: 18),
+            label: Text(active ? 'الفلاتر (مفعّلة)' : 'الفلاتر'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The filter sheet. It holds a working copy of the filters and only returns them
+/// when the customer presses Apply, so a dismissed sheet changes nothing. The city
+/// list is dependent: choosing a country replaces the city options and clears a city
+/// that does not belong to the new country, matching the website.
+class _JourneyFilterSheet extends StatefulWidget {
+  const _JourneyFilterSheet({required this.initial, required this.options});
+
+  final JourneyFilters initial;
+  final JourneyFilterOptions options;
+
+  @override
+  State<_JourneyFilterSheet> createState() => _JourneyFilterSheetState();
+}
+
+class _JourneyFilterSheetState extends State<_JourneyFilterSheet> {
+  late JourneyFilters _draft = widget.initial;
+  late final TextEditingController _minFee =
+      TextEditingController(text: widget.initial.minFee);
+  late final TextEditingController _maxFee =
+      TextEditingController(text: widget.initial.maxFee);
+
+  @override
+  void dispose() {
+    _minFee.dispose();
+    _maxFee.dispose();
+    super.dispose();
+  }
+
+  List<String> get _cities => widget.options.cities[_draft.country] ?? const [];
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 16,
+        right: 16,
+        top: 16,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('تصفية المحامين',
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: context.tokens.heading)),
+            const SizedBox(height: 14),
+            _label('الدولة'),
+            DropdownButtonFormField<String>(
+              initialValue: _draft.country.isEmpty ? null : _draft.country,
+              isExpanded: true,
+              decoration: const InputDecoration(hintText: 'كل الدول'),
+              items: widget.options.countries
+                  .map((c) => DropdownMenuItem(value: c.code, child: Text(c.name)))
+                  .toList(),
+              onChanged: (v) => setState(() {
+                // Changing country drops a city that no longer belongs to it.
+                _draft = _draft.copyWith(country: v ?? '', city: '');
+              }),
+            ),
+            const SizedBox(height: 12),
+            _label('المدينة'),
+            DropdownButtonFormField<String>(
+              // Keyed on the country so a country change rebuilds the field with the
+              // new city list and no stale selection — a FormField keeps its own
+              // value, so without the key the previous city would linger.
+              key: ValueKey('city_${_draft.country}'),
+              initialValue: _draft.city.isEmpty ? null : _draft.city,
+              isExpanded: true,
+              decoration: InputDecoration(
+                hintText: _cities.isEmpty ? 'اختر الدولة أولاً' : 'كل المدن',
+              ),
+              items: _cities
+                  .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                  .toList(),
+              onChanged: _cities.isEmpty
+                  ? null
+                  : (v) => setState(() => _draft = _draft.copyWith(city: v ?? '')),
+            ),
+            const SizedBox(height: 12),
+            _label('سنوات الخبرة'),
+            DropdownButtonFormField<String>(
+              initialValue: _draft.experience.isEmpty ? null : _draft.experience,
+              isExpanded: true,
+              decoration: const InputDecoration(hintText: 'كل مستويات الخبرة'),
+              items: widget.options.experience
+                  .map((b) => DropdownMenuItem(value: b.key, child: Text(b.label)))
+                  .toList(),
+              onChanged: (v) => setState(
+                  () => _draft = _draft.copyWith(experience: v ?? '')),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _label('أقل أجر ساعي'),
+                      TextField(
+                        controller: _minFee,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(hintText: '0'),
+                        onChanged: (v) => _draft = _draft.copyWith(minFee: v.trim()),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _label('أعلى أجر ساعي'),
+                      TextField(
+                        controller: _maxFee,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(hintText: 'أي مبلغ'),
+                        onChanged: (v) => _draft = _draft.copyWith(maxFee: v.trim()),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('المتاحون بمواعيد فقط'),
+              value: _draft.availableOnly,
+              onChanged: (v) =>
+                  setState(() => _draft = _draft.copyWith(availableOnly: v)),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () {
+                      _minFee.clear();
+                      _maxFee.clear();
+                      setState(() => _draft = const JourneyFilters());
+                    },
+                    child: const Text('مسح'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: PrimaryButton(
+                    label: 'تطبيق الفلاتر',
+                    onPressed: () => Navigator.of(context).pop(_draft),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _label(String text) => Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Text(text,
+            style: TextStyle(
+                fontWeight: FontWeight.w700, color: context.tokens.textMuted)),
+      );
+}

@@ -61,10 +61,10 @@ $topbarInitial = $userName !== '' ? mb_substr($userName, 0, 1, 'UTF-8') : '؟';
 <link rel="icon" href="/assets/img/logo.webp">
 <title><?= ui_e($pageTitle !== '' ? $pageTitle . ' · ' . SITE_NAME_AR : SITE_NAME_AR) ?></title>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/css/style.css">
-<link rel="stylesheet" href="/assets/css/app.css">
-<link rel="stylesheet" href="/assets/css/enterprise.css">
-<link rel="stylesheet" href="/assets/css/dashboard.css">
+<link rel="stylesheet" href="<?= asset_url('/assets/css/style.css') ?>">
+<link rel="stylesheet" href="<?= asset_url('/assets/css/app.css') ?>">
+<link rel="stylesheet" href="<?= asset_url('/assets/css/enterprise.css') ?>">
+<link rel="stylesheet" href="<?= asset_url('/assets/css/dashboard.css') ?>">
 </head>
 <body class="app-body">
 <a class="skip-link" href="#main-content"><?= is_rtl() ? 'تخطَّ إلى المحتوى' : 'Skip to content' ?></a>

@@ -230,9 +230,19 @@ void main() {
     await tester.pumpWidget(_wrap(repo, _signedIn(repo), HomeShell(repository: repo)));
     await _settle(tester);
 
-    final text = _allText(tester);
-    expect(text, contains('اختر تخصصك القانوني'));
-    expect(text, contains('إدارة القضايا'));
+    // The home is a scrollable page and the promotional slider occupies the first
+    // screenful, so the services section below it is reached by scrolling — which is
+    // what a customer does. Asserting it without scrolling only proves the top of
+    // the page renders.
+    expect(_allText(tester), contains('اختر تخصصك القانوني'));
+    await tester.scrollUntilVisible(
+      find.text('إدارة القضايا'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await _settle(tester);
+
+    expect(_allText(tester), contains('إدارة القضايا'));
     expect(tester.takeException(), isNull);
   });
 

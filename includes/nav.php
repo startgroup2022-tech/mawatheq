@@ -121,6 +121,7 @@ if (!function_exists('nav_lawyer')) {
                 'title' => $rtl ? 'المالية' : 'Billing',
                 'items' => [
                     'invoices' => ['icon' => 'receipt', 'label' => $rtl ? 'الفواتير والمدفوعات' : 'Invoices & payments', 'href' => '/lawyer/invoices.php'],
+                    'wallet'   => ['icon' => 'wallet', 'label' => $rtl ? 'المحفظة المالية' : 'Wallet', 'href' => '/lawyer/wallet.php'],
                 ],
             ],
         ];
@@ -149,7 +150,8 @@ if (!function_exists('nav_lawyer')) {
         $groups[] = [
             'title' => $rtl ? 'الحساب' : 'Account',
             'items' => [
-                'profile' => ['icon' => 'user', 'label' => $rtl ? 'الملف الشخصي' : 'Profile', 'href' => '/lawyer/profile.php'],
+                'profile'  => ['icon' => 'user', 'label' => $rtl ? 'الملف الشخصي' : 'Profile', 'href' => '/lawyer/profile.php'],
+                'settings' => ['icon' => 'settings', 'label' => $rtl ? 'الإعدادات' : 'Settings', 'href' => '/lawyer/settings.php'],
             ],
         ];
         return ['groups' => $groups, 'active' => $active];

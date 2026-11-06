@@ -5,7 +5,17 @@
       "namespace": "android_app",
       "package_name": "com.mawatheq.app",
       "sha256_cert_fingerprints": [
-        "REPLACE_WITH_RELEASE_SHA256_FINGERPRINT"
+        "57:21:BF:0C:FD:D9:F6:FC:EF:5D:C3:BA:F8:6B:21:C9:EC:26:56:C2:AD:4F:B0:6A:3C:DA:18:9A:35:5E:CD:09"
+      ]
+    }
+  },
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.mawatheq.lawyer",
+      "sha256_cert_fingerprints": [
+        "0D:CE:91:D9:2A:94:7E:48:B6:79:2C:01:E6:FE:D0:ED:AC:9E:23:2A:A3:3C:21:71:F1:6A:49:E5:41:8A:1C:1C"
       ]
     }
   }

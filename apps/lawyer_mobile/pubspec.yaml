@@ -1,0 +1,79 @@
+name: mawatheq_lawyer
+description: "مواثيق للمحامين — تطبيق المحامي المستقل (Flutter) / Mawatheq Lawyer — independent lawyer app"
+publish_to: 'none'
+version: 1.1.0+2
+
+environment:
+  sdk: ^3.9.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # The whole verified platform layer — API client, models, theme, the lawyer
+  # screens and the WebRTC call stack — lives in the client app's package. This
+  # app is a second *shell* over that one library, not a second implementation:
+  # there is exactly one definition of "what a consultation is" and one HTTP
+  # client, so the two apps cannot drift apart in how they talk to the backend.
+  mawatheq_mobile:
+    path: ../mobile
+
+  # Networking.
+  http: ^1.2.2
+  http_parser: ^4.0.2
+
+  # State management.
+  provider: ^6.1.2
+
+  # Secure token storage (Keychain / EncryptedSharedPreferences).
+  flutter_secure_storage: ^9.2.2
+
+  # Non-secret local preferences.
+  shared_preferences: ^2.3.2
+
+  # Arabic/Latin dates and number formatting.
+  intl: ^0.20.2
+
+  # Brand typography (Cairo, IBM Plex Sans Arabic).
+  google_fonts: ^6.2.1
+
+  # Opening external links.
+  url_launcher: ^6.3.0
+  app_links: ^6.4.1
+
+  # Consultation attachments: camera, gallery and document picking.
+  file_picker: ^11.0.3
+  image_picker: ^1.2.4
+
+  # Voice notes for a consultation reply.
+  record: ^7.1.2
+  path_provider: ^2.1.5
+
+  # Runtime permission prompts (microphone, camera, notifications).
+  permission_handler: ^13.0.2
+
+  # Hearing and appointment reminders, scheduled locally on the device.
+  flutter_local_notifications: ^22.3.2
+  timezone: ^0.11.2
+
+  # WebRTC: the audio/video consultation itself.
+  flutter_webrtc: ^1.6.2+hotfix.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    # The shared widgets resolve these by bare path (`assets/images/logo.webp`),
+    # so each app that ships them declares and carries its own copy. The lawyer
+    # app needs the brand mark and the bundled Arabic faces; the client banner
+    # photos are not referenced by any lawyer screen.
+    - assets/images/
+    - assets/fonts/

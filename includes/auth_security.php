@@ -86,9 +86,9 @@ function create_email_verification(PDO $pdo, string $accountType, int $accountId
  */
 function password_reset_account_config(string $accountType): array {
     $map = [
-        'client' => ['table' => 'users',   'login' => '/login.php',        'forgot' => '/forgot-password.php?as=client'],
-        'lawyer' => ['table' => 'lawyers', 'login' => '/lawyer-login.php', 'forgot' => '/forgot-password.php?as=lawyer'],
-        'admin'  => ['table' => 'admins',  'login' => '/admin/login.php',  'forgot' => '/forgot-password.php?as=admin'],
+        'client' => ['table' => 'users',   'login' => '/login.php',        'forgot' => '/forgot-password.php?as=client', 'reset' => '/reset-password.php'],
+        'lawyer' => ['table' => 'lawyers', 'login' => '/lawyer-login.php', 'forgot' => '/forgot-password.php?as=lawyer', 'reset' => '/lawyer-reset-password.php'],
+        'admin'  => ['table' => 'admins',  'login' => '/admin/login.php',  'forgot' => '/forgot-password.php?as=admin',  'reset' => '/reset-password.php'],
     ];
     return $map[$accountType] ?? $map['client'];
 }
@@ -113,7 +113,14 @@ function issue_password_reset(PDO $pdo, string $accountType, int $accountId, str
     $pdo->prepare("UPDATE {$cfg['table']} SET reset_token=?, reset_expires=DATE_ADD(NOW(), INTERVAL 1 HOUR) WHERE id=?")
         ->execute([hash('sha256', $token), $accountId]);
 
-    $resetUrl = rtrim(SITE_URL, '/') . '/reset-password.php?as=' . $accountType . '&token=' . urlencode($token);
+    // The lawyer link uses its own path (`/lawyer-reset-password.php`) so that on a
+    // device with both apps installed Android App Links routes the link to the
+    // *lawyer* app. Sharing one path meant the OS could not tell the two apps apart
+    // and opened the client app — whose reset screen would then try to consume a
+    // lawyer token against the `users` table and fail, or worse, show a customer
+    // form to a lawyer. The path is a routing hint only; the token still decides.
+    $resetUrl = rtrim(SITE_URL, '/') . ($cfg['reset'] ?? '/reset-password.php')
+        . '?as=' . urlencode($accountType) . '&token=' . urlencode($token);
     $arabic = current_lang() === 'ar';
     $body = $arabic
         ? '<p>مرحباً ' . htmlspecialchars($name, ENT_QUOTES, 'UTF-8') . '،</p><p>وصلنا طلب لإعادة تعيين كلمة مرور حسابك في منصة مواثيق. الرابط صالح لمدة ساعة واحدة فقط.</p><p>إن لم تطلب ذلك، تجاهل هذه الرسالة ولن يتغيّر شيء.</p>'

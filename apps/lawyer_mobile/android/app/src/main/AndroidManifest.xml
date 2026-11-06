@@ -1,0 +1,101 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The app is a pure HTTP client of the platform's own /api/v1 endpoints. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+
+    <!-- Voice notes on a consultation reply, and the microphone side of a voice
+         call. Requested at the moment the lawyer records or joins a call
+         (permission_handler), never on launch. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <!-- Required by flutter_webrtc while a call is in progress: the platform holds
+         the audio session and the screen may not sleep mid-consultation. -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+
+    <!-- Camera. Declared with required="false" so the app stays installable on a
+         device without a camera; a video call then simply reports no camera. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false"/>
+
+    <!-- Hearing and appointment reminders. Android 13+ needs this granted at
+         runtime before a notification can be posted; the app asks when the lawyer
+         enables a reminder and degrades to an in-app note when it is refused. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+
+    <application
+        android:label="مواثيق للمحامين"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="false">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+              <!-- App Links: a lawyer password-reset email links to
+                   https://mawatheq.com/lawyer-reset-password.php?token=... which
+                   opens the native lawyer reset screen. autoVerify makes Android
+                   check /.well-known/assetlinks.json before trusting the app for
+                   that host. The only value carried is the single-use token.
+                   NOTE: this app's package (com.mawatheq.lawyer) must be added to
+                   assetlinks.json with the release certificate fingerprint before
+                   these links verify — see apps/lawyer_mobile/README.md. -->
+              <intent-filter android:autoVerify="true">
+                  <action android:name="android.intent.action.VIEW"/>
+                  <category android:name="android.intent.category.DEFAULT"/>
+                  <category android:name="android.intent.category.BROWSABLE"/>
+                  <data
+                      android:scheme="https"
+                      android:host="mawatheq.com"
+                      android:pathPrefix="/lawyer-reset-password"/>
+              </intent-filter>
+              <intent-filter android:autoVerify="true">
+                  <action android:name="android.intent.action.VIEW"/>
+                  <category android:name="android.intent.category.DEFAULT"/>
+                  <category android:name="android.intent.category.BROWSABLE"/>
+                  <data
+                      android:scheme="https"
+                      android:host="www.mawatheq.com"
+                      android:pathPrefix="/lawyer-reset-password"/>
+              </intent-filter>
+        </activity>
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+
+        <receiver
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
+            android:exported="false"/>
+        <receiver
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
+            </intent-filter>
+        </receiver>
+    </application>
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT"/>
+            <data android:mimeType="text/plain"/>
+        </intent>
+    </queries>
+</manifest>

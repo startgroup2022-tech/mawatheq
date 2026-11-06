@@ -30,6 +30,9 @@ $adminNavGroups = [
     ]],
     ['t' => adm('المالية والتحليلات', 'Finance & insights'), 'items' => [
         'invoices' => ['i' => 'receipt', 'ar' => 'الفواتير والإيرادات', 'en' => 'Invoices & revenue', 'href' => '/admin/invoices.php'],
+        'wallets' => ['i' => 'wallet', 'ar' => 'محافظ المحامين', 'en' => 'Lawyer wallets', 'href' => '/admin/wallets.php'],
+        'wallet-withdrawals' => ['i' => 'receipt', 'ar' => 'طلبات سحب المحامين', 'en' => 'Lawyer withdrawals', 'href' => '/admin/wallet-withdrawals.php'],
+        'wallet-settings' => ['i' => 'settings', 'ar' => 'عمولة المنصة', 'en' => 'Platform commission', 'href' => '/admin/wallet-settings.php'],
         'gateways' => ['i' => 'card', 'ar' => 'بوابات الدفع', 'en' => 'Payment gateways', 'href' => '/admin/gateways.php'],
         'gateway-transactions' => ['i' => 'receipt', 'ar' => 'عمليات الدفع', 'en' => 'Gateway transactions', 'href' => '/admin/gateway-transactions.php'],
         'plans' => ['i' => 'card', 'ar' => 'الباقات', 'en' => 'Plans', 'href' => '/admin/plans.php'],
@@ -100,10 +103,10 @@ $langToggleUrl = '?' . http_build_query(array_merge($_GET, ['lang' => $admLang =
 <link rel="icon" href="/assets/img/logo.webp">
 <title><?= h($pageTitle ? $pageTitle . ' · ' : '') ?><?= h(adm('لوحة تحكم مواثيق', 'Mawatheq Admin')) ?></title>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/css/style.css">
-<link rel="stylesheet" href="/assets/css/app.css">
-<link rel="stylesheet" href="/assets/css/enterprise.css">
-<link rel="stylesheet" href="/assets/css/dashboard.css">
+<link rel="stylesheet" href="<?= asset_url('/assets/css/style.css') ?>">
+<link rel="stylesheet" href="<?= asset_url('/assets/css/app.css') ?>">
+<link rel="stylesheet" href="<?= asset_url('/assets/css/enterprise.css') ?>">
+<link rel="stylesheet" href="<?= asset_url('/assets/css/dashboard.css') ?>">
 <link rel="stylesheet" href="/admin/assets/admin-ui.css?v=41">
 </head>
 <body class="adm" data-theme="light">

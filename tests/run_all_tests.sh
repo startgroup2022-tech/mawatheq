@@ -60,6 +60,17 @@ if ! curl -s -o /dev/null -m 5 http://127.0.0.1:8080/index.php; then
     exit 2
 fi
 
+# Seed the business fixtures the HTTP probes log in with. executive08_http_probe
+# authenticates as client-firm<N>@example.com, which only seed_phase6_business.php
+# creates; without it the probe fails at "client 1 (firm A) logs in" and every later
+# check in that file cascades. The seeds are idempotent, so running them is safe on a
+# database that already has the rows.
+for seed in seed_phase6.php seed_phase6_business.php seed_crm_demo.php; do
+    if [ -f "tests/$seed" ]; then
+        php "tests/$seed" >/dev/null 2>&1 || printf 'note: %s reported an error\n' "$seed"
+    fi
+done
+
 pass=0; fail=0; failed_names=()
 printf '\n%-44s %s\n' 'SUITE' 'RESULT'
 printf '%s\n' "------------------------------------------------------------"

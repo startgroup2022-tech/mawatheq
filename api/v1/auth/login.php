@@ -20,9 +20,18 @@ $stmt = $pdo->prepare('SELECT * FROM users WHERE email = ?');
 $stmt->execute([$email]);
 $user = $stmt->fetch();
 
-if (!$user || !password_verify($password, $user['password_hash']) || empty($user['email_verified']) || ($user['status'] ?? '') !== 'active') {
+// A stable machine code rather than prose, so the app can answer in the user's
+// language. Wrong credentials stay generic; the states below are only named once
+// the password has already been verified.
+if (!$user || !password_verify($password, $user['password_hash'])) {
     auth_rate_limit_failure($pdo, 'client', $email);
-    api_error('invalid email or password', 401);
+    api_error('invalid_credentials', 401);
+}
+if (empty($user['email_verified'])) {
+    api_error('email_not_verified', 403);
+}
+if (($user['status'] ?? '') !== 'active') {
+    api_error('account_not_approved', 403);
 }
 auth_rate_limit_clear($pdo, 'client', $email);
 

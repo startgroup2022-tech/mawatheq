@@ -39,6 +39,12 @@ function admin_route_roles(): array {
         'settings.php' => ['super_admin'],
         'plans.php' => ['super_admin'],
         'invoices.php' => ['super_admin'],
+        // Lawyer wallets. Balances and commission are money: reading the list is a
+        // support task, but moving money (approving a payout, changing a rate) is
+        // super_admin only. A route absent from this map defaults to super_admin.
+        'wallets.php' => ['super_admin', 'support'],
+        'wallet-withdrawals.php' => ['super_admin'],
+        'wallet-settings.php' => ['super_admin'],
         'reports.php' => ['super_admin', 'editor'],
         'audit-log.php' => ['super_admin'],
         'two-factor.php' => ['super_admin', 'editor', 'support'],

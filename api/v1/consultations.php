@@ -56,9 +56,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $in = api_input();
+
+    // ---- Lawyer actions on a consultation they own -------------------------
+    //
+    // The web dashboard lets a lawyer confirm, complete or cancel a booking. The
+    // app must do the same through the API, or the two surfaces diverge. The action
+    // is checked against the lawyer's tenant scope, so a guessed id cannot change
+    // another firm's consultation.
+    $action = (string)($in['action'] ?? '');
+    if ($action !== '') {
+        if ($auth['type'] !== 'lawyer') api_error('only lawyers can change a consultation', 403);
+        $consultationId = (int)($in['consultation_id'] ?? 0);
+        $scope = tenant_owner_where_for_lawyer($pdo, (int)$auth['id'], 'consultations');
+        $find = $pdo->prepare('SELECT * FROM consultations WHERE id=? AND ' . $scope['sql']);
+        $find->execute(array_merge([$consultationId], $scope['params']));
+        $consultation = $find->fetch();
+        if (!$consultation) api_error('consultation not found', 404);
+
+        if ($action === 'change-status') {
+            $status = (string)($in['status'] ?? '');
+            $allowed = ['confirmed', 'completed', 'cancelled'];
+            if (!in_array($status, $allowed, true)) api_error('status must be one of confirmed, completed, cancelled');
+            // A completed consultation cannot be reopened, and a cancelled one cannot be
+            // confirmed again — the same guard the web page applies.
+            if ($consultation['status'] === 'completed') api_error('consultation already completed', 409);
+            if ($consultation['status'] === 'cancelled') api_error('consultation already cancelled', 409);
+
+            $upd = $pdo->prepare('UPDATE consultations SET status=? WHERE id=? AND ' . $scope['sql']);
+            $upd->execute(array_merge([$status, $consultationId], $scope['params']));
+
+            require_once __DIR__ . '/../../includes/audit_log.php';
+            log_action($pdo, 'تغيير حالة استشارة إلى ' . $status . ' (API)', 'consultation', $consultationId);
+
+            // Tell the client their booking moved. The message names the new state only.
+            $labels = ['confirmed' => 'تم تأكيد موعد استشارتك', 'completed' => 'تم إتمام استشارتك', 'cancelled' => 'تم إلغاء استشارتك'];
+            notify($pdo, 'client', (int)$consultation['user_id'], $labels[$status], $consultation['topic'] ?: null, '/consultations.php');
+
+            $fresh = $pdo->prepare('SELECT * FROM consultations WHERE id=?');
+            $fresh->execute([$consultationId]);
+            api_json(['ok' => true, 'consultation' => $fresh->fetch()]);
+        }
+
+        api_error('unknown action', 400);
+    }
+
     if ($auth['type'] !== 'client') api_error('only clients can book consultations', 403);
 
-    $in = api_input();
     $lawyerId = (int)($in['lawyer_id'] ?? 0);
     $type = in_array($in['consultation_type'] ?? '', ['text','voice','video'], true) ? $in['consultation_type'] : 'text';
     $date = $in['date'] ?? '';

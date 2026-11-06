@@ -28,14 +28,22 @@ abstract class TokenStore {
 /// plain preference file. The account type and device label are not secrets,
 /// but they are kept beside the token so sign-out clears them together.
 class TokenStorage implements TokenStore {
-  TokenStorage({FlutterSecureStorage? storage})
-      : _storage = storage ?? const FlutterSecureStorage();
-
-  static const _tokenKey = 'mawatheq.token';
-  static const _accountTypeKey = 'mawatheq.account_type';
-  static const _deviceLabelKey = 'mawatheq.device_label';
+  TokenStorage({FlutterSecureStorage? storage, String? namespace})
+      : _storage = storage ?? const FlutterSecureStorage(),
+        _prefix = namespace == null ? 'mawatheq' : 'mawatheq.$namespace';
 
   final FlutterSecureStorage _storage;
+
+  /// Key prefix. The two shipped apps have different application ids, so their
+  /// Android data directories and iOS keychains are already separate stores; the
+  /// prefix makes that isolation explicit in the key itself, so a session written
+  /// by one app can never be read as the other's even if a future change points
+  /// both at the same keychain access group.
+  final String _prefix;
+
+  String get _tokenKey => '$_prefix.token';
+  String get _accountTypeKey => '$_prefix.account_type';
+  String get _deviceLabelKey => '$_prefix.device_label';
 
   @override
   Future<void> saveToken(String value) =>

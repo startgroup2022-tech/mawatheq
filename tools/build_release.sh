@@ -125,12 +125,13 @@ printf '  removed %s root-level .md file(s) from the site package\n' "$removed_d
     || fail "database/upgrade_v56.sql is missing from the migration package"
 [ -f "$STAGE/migrations/database/upgrade_v57.sql" ] \
     || fail "database/upgrade_v57.sql is missing from the migration package"
-# upgrade_v64.sql is the last migration in the chain. It carries the home-banner table
-# (Execution 38); a package that stops earlier deploys the app's slider against a table
-# that does not exist — the same failure the v57 guard above exists to prevent. Assert
-# the current head, not a remembered one.
-[ -f "$STAGE/migrations/database/upgrade_v64.sql" ] \
-    || fail "database/upgrade_v64.sql is missing from the migration package"
+# upgrade_v68.sql is the last migration in the chain. It carries the lawyer
+# country/city columns (Execution 60); a package that stops earlier deploys the
+# booking filters and the admin lawyer form against columns that do not exist.
+# Assert the current head, not a remembered one — this assertion moves with each
+# execution, and a stale expectation fails the next build for the wrong reason.
+[ -f "$STAGE/migrations/database/upgrade_v68.sql" ] \
+    || fail "database/upgrade_v68.sql is missing from the migration package"
 
 # --- modes and timestamps --------------------------------------------------
 step "normalizing file modes and timestamps"
@@ -148,6 +149,11 @@ stamp_tree() {
 }
 normalize() {
     local dir="$1"
+    # Clear setuid/setgid/sticky first. `chmod 755` does NOT clear the setgid bit on a
+    # directory that carries one, so a source tree whose directories are 2755 (the mode
+    # a setgid parent such as the checked-out vendor/ leaves behind) produced 2755 in the
+    # package and the "every packaged file is 644 or 755" guard could never be satisfied.
+    find "$dir" -exec chmod a-s {} + 2>/dev/null
     find "$dir" -type d -exec chmod 755 {} +
     find "$dir" -type f -exec chmod 644 {} +
     # Restore any executable bit that the ref actually tracks, so a script stays a script.

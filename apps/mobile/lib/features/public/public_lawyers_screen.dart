@@ -10,6 +10,8 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../shared/widgets/auth_gate.dart';
 import '../../shared/widgets/brand_widgets.dart';
+import '../assistant/assistant_screen.dart';
+import 'public_info_screen.dart';
 
 /// The public directory of approved lawyers, from `GET /api/v1/lawyers.php`.
 ///
@@ -141,12 +143,10 @@ class _PublicLawyersScreenState extends State<PublicLawyersScreen> {
           ),
           const SizedBox(height: 16),
           if (_all.isEmpty)
-            EmptyState(
-              icon: Icons.gavel_outlined,
-              title: rtl ? 'لا يوجد محامون متاحون' : 'No lawyers available yet',
-              message: rtl
-                  ? 'سيظهر المحامون المعتمدون هنا فور اعتمادهم.'
-                  : 'Approved lawyers appear here once they are listed.',
+            NoLawyerState(
+              onAskAssistant: _openAssistant,
+              onContact: _openContact,
+              message: rtl ? 'لا يوجد محامي متاح' : 'No lawyers available',
             )
           else if (visible.isEmpty)
             EmptyState(
@@ -183,6 +183,22 @@ class _PublicLawyersScreenState extends State<PublicLawyersScreen> {
       message: context.read<LocaleController>().isRtl
           ? 'أنشئ حساباً لحجز استشارة مع ${lawyer.name}.'
           : 'Create an account to book a consultation with ${lawyer.name}.',
+    );
+  }
+
+  /// The two routes out of the empty directory, matching the journey's no-lawyer
+  /// state so a customer sees one consistent offer wherever they hit the state.
+  void _openAssistant() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const AssistantScreen()),
+    );
+  }
+
+  void _openContact() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const PublicInfoScreen(section: InfoSection.contact),
+      ),
     );
   }
 }

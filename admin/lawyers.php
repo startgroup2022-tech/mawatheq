@@ -8,66 +8,115 @@ require_once __DIR__ . '/../includes/profile_completion.php';
 require_once __DIR__ . '/../includes/notifications.php';
 require_once __DIR__ . '/../includes/audit_log.php';
 require_once __DIR__ . '/../includes/jurisdiction.php';
+require_once __DIR__ . '/../includes/cities.php';
+require_once __DIR__ . '/../includes/lawyer_experience.php';
+require_once __DIR__ . '/../includes/lawyer_admin.php';
 
 $createError = null;
-$oldCreate = [
+$editError = null;
+$createNotice = $_SESSION['flash_lawyers_create'] ?? null;
+$editNotice = $_SESSION['flash_lawyers_edit'] ?? null;
+unset($_SESSION['flash_lawyers_create'], $_SESSION['flash_lawyers_edit']);
+
+$blankLawyer = [
     'full_name' => '',
     'email' => '',
     'phone_dial' => '+966',
     'phone_local' => '',
     'specialization' => '',
     'years_experience' => '0',
-    'hourly_rate' => '0',
-    'jurisdiction' => 'السعودية'
+    'hourly_rate' => '',
+    'jurisdiction' => 'السعودية',
+    'country_code' => COUNTRY_DEFAULT,
+    'city' => '',
+    'status' => 'approved',
 ];
+$oldCreate = $blankLawyer;
 
-// إضافة محامٍ جديد
+// ---------------------------------------------------------------- إضافة محامٍ جديد
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'create') {
-    $oldCreate = [
-        'full_name' => trim($_POST['full_name'] ?? ''),
-        'email' => trim($_POST['email'] ?? ''),
-        'phone_dial' => $_POST['phone_dial'] ?? '+966',
-        'phone_local' => $_POST['phone_local'] ?? '',
-        'specialization' => $_POST['specialization'] ?? '',
-        'years_experience' => $_POST['years_experience'] ?? '0',
-        'hourly_rate' => $_POST['hourly_rate'] ?? '0',
-        'jurisdiction' => $_POST['jurisdiction'] ?? 'السعودية',
-    ];
+    $result = lawyer_admin_validate($pdo, $_POST, null, true);
+    $oldCreate = $result['old'] + $blankLawyer;
 
-    $phoneResult = validate_phone($oldCreate['phone_dial'], $oldCreate['phone_local']);
-
-    if (
-        !$oldCreate['full_name'] ||
-        !filter_var($oldCreate['email'], FILTER_VALIDATE_EMAIL) ||
-        strlen($_POST['password'] ?? '') < 8
-    ) {
-        $createError = 'يرجى تعبئة الاسم والبريد بصيغة صحيحة، وكلمة مرور 8 أحرف على الأقل.';
-    } elseif (!$phoneResult['ok']) {
-        $createError = $phoneResult['error'];
+    if (!$result['ok']) {
+        $createError = $result['error'];
     } else {
-        $hash = password_hash($_POST['password'], PASSWORD_BCRYPT);
+        $d = $result['data'];
+        try {
+            $stmt = $pdo->prepare(
+                'INSERT INTO lawyers
+                (full_name,email,phone,password_hash,specialization,years_experience,hourly_rate,
+                 jurisdiction,country_code,city,status,email_verified)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,1)'
+            );
+            $stmt->execute([
+                $d['full_name'], $d['email'], $d['phone'],
+                password_hash($d['password'], PASSWORD_BCRYPT),
+                $d['specialization'], $d['years_experience'], $d['hourly_rate'],
+                $d['jurisdiction'], $d['country_code'], $d['city'], $d['status'],
+            ]);
+            $newId = (int)$pdo->lastInsertId();
+            log_action($pdo, "إضافة محامٍ جديد: '" . $d['full_name'] . "'", 'lawyer', $newId);
+            $_SESSION['flash_lawyers_create'] = 'تمت إضافة المحامي «' . $d['full_name'] . '» بنجاح.';
+            header('Location: /admin/lawyers.php');
+            exit;
+        } catch (PDOException $e) {
+            // A duplicate email is the one race the pre-check cannot close; report it as
+            // the same message rather than as a raw SQL error.
+            $createError = ($e->getCode() === '23000')
+                ? 'هذا البريد الإلكتروني مسجّل مسبقاً لحساب آخر.'
+                : 'تعذّر حفظ المحامي. حاول مرة أخرى.';
+            error_log('admin/lawyers create: ' . $e->getMessage());
+        }
+    }
+}
 
-        $stmt = $pdo->prepare(
-            'INSERT INTO lawyers
-            (full_name,email,phone,password_hash,specialization,years_experience,hourly_rate,jurisdiction,status)
-            VALUES (?,?,?,?,?,?,?,?,?)'
-        );
+// ---------------------------------------------------------------- تعديل محامٍ
+$editTarget = null;
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit') {
+    $editId = (int)($_POST['lawyer_id'] ?? 0);
+    $existingStmt = $pdo->prepare('SELECT * FROM lawyers WHERE id = ?');
+    $existingStmt->execute([$editId]);
+    $existing = $existingStmt->fetch();
 
-        $stmt->execute([
-            $oldCreate['full_name'],
-            $oldCreate['email'],
-            $phoneResult['value'],
-            $hash,
-            trim($oldCreate['specialization']),
-            (int)$oldCreate['years_experience'],
-            (float)$oldCreate['hourly_rate'],
-            $oldCreate['jurisdiction'],
-            'approved'
-        ]);
-        log_action($pdo, "إضافة محامٍ جديد: '" . $oldCreate['full_name'] . "'", 'lawyer', (int)$pdo->lastInsertId());
-
-        header('Location: /admin/lawyers.php');
-        exit;
+    if (!$existing) {
+        $editError = 'لم يتم العثور على المحامي المطلوب.';
+    } else {
+        $result = lawyer_admin_validate($pdo, $_POST, $editId, false);
+        $oldEdit = $result['old'] + $blankLawyer;
+        if (!$result['ok']) {
+            $editError = $result['error'];
+            $editTarget = $oldEdit + ['id' => $editId];
+        } else {
+            $d = $result['data'];
+            try {
+                $sql = 'UPDATE lawyers SET full_name=?, email=?, phone=?, specialization=?,
+                        years_experience=?, hourly_rate=?, jurisdiction=?, country_code=?, city=?,
+                        status=?';
+                $params = [
+                    $d['full_name'], $d['email'], $d['phone'], $d['specialization'],
+                    $d['years_experience'], $d['hourly_rate'], $d['jurisdiction'],
+                    $d['country_code'], $d['city'], $d['status'],
+                ];
+                if ($d['password'] !== '') {
+                    $sql .= ', password_hash=?';
+                    $params[] = password_hash($d['password'], PASSWORD_BCRYPT);
+                }
+                $sql .= ' WHERE id=?';
+                $params[] = $editId;
+                $pdo->prepare($sql)->execute($params);
+                log_action($pdo, "تعديل بيانات المحامي '" . $d['full_name'] . "'", 'lawyer', $editId);
+                $_SESSION['flash_lawyers_edit'] = 'تم حفظ تعديلات المحامي «' . $d['full_name'] . '».';
+                header('Location: /admin/lawyers.php');
+                exit;
+            } catch (PDOException $e) {
+                $editError = ($e->getCode() === '23000')
+                    ? 'هذا البريد الإلكتروني مسجّل مسبقاً لحساب آخر.'
+                    : 'تعذّر حفظ التعديلات. حاول مرة أخرى.';
+                error_log('admin/lawyers edit: ' . $e->getMessage());
+                $editTarget = $oldEdit + ['id' => $editId];
+            }
+        }
     }
 }
 
@@ -552,7 +601,12 @@ foreach ($lawyers as $lawyer) {
     display: none;
     align-items: center;
     justify-content: center;
-    padding: 24px;
+    /* 16px, matching the card's own `calc(100dvh - 32px)`. A 24px padding made the
+       available height (100dvh - 48px) smaller than the card's max-height, so on a
+       short viewport the card overflowed the centred flex line by 16px and clipped the
+       footer — the "Add Lawyer button is cut off" defect in the screenshot. */
+    padding: 16px;
+    overflow-y: auto;
     background: rgba(15, 23, 42, .58);
     backdrop-filter: blur(5px);
 }
@@ -564,7 +618,15 @@ foreach ($lawyers as $lawyer) {
 
 .lawyers-modal .modal-card {
     width: min(720px, 100%);
-    max-height: calc(100vh - 48px);
+    max-height: calc(100vh - 32px);
+    max-height: calc(100dvh - 32px);
+    /* A flex column with a fixed max-height is what keeps the footer on screen: the
+       header and footer are flex-shrink:0 and the body scrolls between them. The old
+       layout gave the body its own `max-height: calc(100vh - 180px)`, a guess at the
+       header+footer height that was wrong on a short viewport — the footer was pushed
+       past the bottom edge and the Add button became unreachable. */
+    display: flex;
+    flex-direction: column;
     overflow: hidden;
     border: 1px solid rgba(255,255,255,.35);
     border-radius: 20px;
@@ -578,6 +640,7 @@ foreach ($lawyers as $lawyer) {
     align-items: center;
     justify-content: space-between;
     gap: 14px;
+    flex: 0 0 auto;
     padding: 18px 21px;
     border-bottom: 1px solid var(--lawyers-border);
 }
@@ -633,8 +696,12 @@ foreach ($lawyers as $lawyer) {
 }
 
 .lawyers-modal .modal-body {
-    max-height: calc(100vh - 180px);
+    /* flex:1 + min-height:0 is what lets the body scroll inside the flex column
+       instead of stretching the card. */
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     padding: 20px 21px 8px;
 }
 
@@ -682,7 +749,7 @@ foreach ($lawyers as $lawyer) {
     display: block;
     margin: 0 0 6px;
     color: #344054;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 800;
 }
 
@@ -690,15 +757,15 @@ foreach ($lawyers as $lawyer) {
 .lawyers-modal .field select,
 .lawyers-modal .field textarea {
     width: 100%;
-    min-height: 42px;
+    min-height: 44px;
     border: 1px solid #dfe3ea;
     border-radius: 10px;
     background: #fff;
     color: #172033;
-    padding: 9px 11px;
+    padding: 10px 13px;
     outline: none;
     font-family: inherit;
-    font-size: 12px;
+    font-size: 14px;
     transition: .15s ease;
 }
 
@@ -734,6 +801,7 @@ foreach ($lawyers as $lawyer) {
     align-items: center;
     justify-content: flex-end;
     gap: 9px;
+    flex: 0 0 auto;
     padding: 15px 21px;
     border-top: 1px solid var(--lawyers-border);
     background: #fafbfc;
@@ -765,6 +833,95 @@ foreach ($lawyers as $lawyer) {
 
 .lawyers-modal .submit-btn:hover {
     background: var(--lawyers-primary-dark);
+}
+
+.lawyers-modal .submit-btn:disabled {
+    opacity: .72;
+    cursor: progress;
+}
+
+/* The busy label carries a spinner so "loading" is visible, not just a dimmed button. */
+.lawyers-modal .submit-btn .btn-spinner,
+.flash-alert .btn-spinner {
+    display: inline-block;
+    width: 13px;
+    height: 13px;
+    margin-inline-end: 7px;
+    vertical-align: -1px;
+    border: 2px solid rgba(255,255,255,.55);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: lawyersSpin .7s linear infinite;
+}
+
+@keyframes lawyersSpin {
+    to { transform: rotate(360deg); }
+}
+
+.lawyers-modal .alert[hidden] { display: none; }
+
+/* The alert is a real alert region; keep it readable at every width. */
+.lawyers-modal .alert span { min-width: 0; overflow-wrap: anywhere; }
+
+.lawyers-modal .field input,
+.lawyers-modal .field select {
+    /* min-width:0 is required for a grid child to shrink below its content width —
+       without it a long Arabic name or a wide select forces the modal wider than the
+       viewport and clips the field. */
+    min-width: 0;
+}
+
+.lawyers-modal .field input[dir="ltr"] {
+    text-align: left;
+}
+
+/* Specialization combobox: a search box above a native select. */
+.lawyers-modal .spec-combo { display: flex; flex-direction: column; gap: 8px; }
+.lawyers-modal .spec-combo-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    position: relative;
+}
+.lawyers-modal .spec-combo-icon {
+    position: absolute;
+    inset-inline-start: 12px;
+    font-size: 12px;
+    pointer-events: none;
+    opacity: .6;
+}
+.lawyers-modal .spec-combo-input { padding-inline-start: 34px; }
+.lawyers-modal .spec-combo-toggle {
+    flex: 0 0 42px;
+    min-height: 42px;
+    border: 1px solid #dfe3ea;
+    border-radius: 10px;
+    background: #fff;
+    color: #475467;
+    cursor: pointer;
+    font-size: 14px;
+}
+.lawyers-modal .spec-combo-toggle:hover { border-color: #93c5fd; }
+.lawyers-modal .spec-combo-empty {
+    margin: 0;
+    color: #b42318;
+    font-size: 12px;
+}
+.lawyers-modal .spec-combo .pro-select[multiple] { min-height: 120px; }
+
+/* A flash confirmation after a successful create/edit. */
+.lawyers-page .flash-alert {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 0 0 18px;
+    padding: 12px 15px;
+    border: 1px solid #bbf7d0;
+    border-radius: 12px;
+    background: #f0fdf4;
+    color: #15803d;
+    font-size: 13px;
+    font-weight: 700;
 }
 
 body.lawyers-modal-open {
@@ -801,11 +958,8 @@ body.lawyers-modal-open {
 
     .lawyers-modal .modal-card {
         max-height: calc(100vh - 24px);
+        max-height: calc(100dvh - 24px);
         border-radius: 16px;
-    }
-
-    .lawyers-modal .modal-body {
-        max-height: calc(100vh - 170px);
     }
 }
 
@@ -852,13 +1006,20 @@ body.lawyers-modal-open {
         <button
             type="button"
             class="primary-action"
-            onclick="openLawyerModal()"
+            data-open-lawyer-modal
             aria-controls="addLawyerModal"
         >
             <span class="plus">+</span>
             <span>إضافة محامٍ</span>
         </button>
     </div>
+
+    <?php if ($createNotice || $editNotice): ?>
+        <div class="flash-alert success" role="status">
+            <span aria-hidden="true">✓</span>
+            <span><?= htmlspecialchars($createNotice ?: $editNotice) ?></span>
+        </div>
+    <?php endif; ?>
 
     <div class="stats-grid">
         <div class="stat-card">
@@ -893,7 +1054,7 @@ body.lawyers-modal-open {
                 <p class="list-card-caption">جميع المحامين المسجلين في النظام</p>
             </div>
 
-            <button type="button" class="primary-action" onclick="openLawyerModal()">
+            <button type="button" class="primary-action" data-open-lawyer-modal>
                 <span class="plus">+</span>
                 <span>إضافة محامٍ</span>
             </button>
@@ -907,7 +1068,9 @@ body.lawyers-modal-open {
                         <th>البريد الإلكتروني</th>
                         <th>الجوال</th>
                         <th>التخصص</th>
+                        <th>الدولة والمدينة</th>
                         <th>الخبرة</th>
+                        <th>الأجر/ساعة</th>
                         <th>التقييم</th>
                         <th>اكتمال الملف</th>
                         <th>المصدر</th>
@@ -954,7 +1117,20 @@ body.lawyers-modal-open {
                             </div>
                         </td>
 
+                        <td>
+                            <?php $loc = lawyer_location_label(lawyer_country_code($lw), $lw['city'] ?? null); ?>
+                            <div class="specialization-cell"><?= $loc !== '' ? htmlspecialchars($loc) : '—' ?></div>
+                        </td>
+
                         <td><?= (int)$lw['years_experience'] ?> سنة</td>
+
+                        <td>
+                            <span class="rating" dir="ltr" style="unicode-bidi:isolate">
+                                <?= $lw['hourly_rate'] !== null && (float)$lw['hourly_rate'] > 0
+                                    ? htmlspecialchars(currency_number($lw['hourly_rate']) . ' ' . currency_symbol())
+                                    : '—' ?>
+                            </span>
+                        </td>
 
                         <td>
                             <span class="rating">
@@ -995,6 +1171,23 @@ body.lawyers-modal-open {
 
                         <td>
                             <div class="actions">
+                                <button
+                                    type="button"
+                                    class="action-btn"
+                                    data-edit-lawyer
+                                    data-lawyer="<?= htmlspecialchars(json_encode([
+                                        'id' => (int)$lw['id'],
+                                        'full_name' => (string)($lw['full_name'] ?? ''),
+                                        'email' => (string)($lw['email'] ?? ''),
+                                        'specialization' => specialization_normalize_stored((string)($lw['specialization'] ?? '')),
+                                        'years_experience' => (string)(int)($lw['years_experience'] ?? 0),
+                                        'hourly_rate' => $lw['hourly_rate'] !== null ? (string)currency_number($lw['hourly_rate']) : '',
+                                        'country_code' => lawyer_country_code($lw) ?? COUNTRY_DEFAULT,
+                                        'city' => (string)($lw['city'] ?? ''),
+                                        'status' => (string)($lw['status'] ?? 'approved'),
+                                        'phone' => (string)($lw['phone'] ?? ''),
+                                    ], JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8') ?>"
+                                >تعديل</button>
                                 <form method="post" style="display:inline"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="toggle_status"><input type="hidden" name="lawyer_id" value="<?= (int)$lw['id'] ?>"><button class="action-btn" type="submit" title="<?= $status === 'approved' ? 'إيقاف الحساب' : 'تفعيل الحساب' ?>"><?= $status === 'approved' ? 'إيقاف' : 'تفعيل' ?></button></form>
                                 <form method="post" style="display:inline" onsubmit="return confirm('هل أنت متأكد من حذف هذا المحامي؟ لا يمكن التراجع عن هذه العملية.')"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="delete_lawyer"><input type="hidden" name="lawyer_id" value="<?= (int)$lw['id'] ?>"><button class="action-btn danger" type="submit">حذف</button></form>
                             </div>
@@ -1004,7 +1197,7 @@ body.lawyers-modal-open {
 
                 <?php if (empty($lawyers)): ?>
                     <tr>
-                        <td colspan="11">
+                        <td colspan="13">
                             <div class="empty-state">
                                 <div class="empty-icon">⚖</div>
                                 <h3 class="empty-title">لا يوجد محامون بعد</h3>
@@ -1019,42 +1212,52 @@ body.lawyers-modal-open {
     </div>
 </div>
 
-<!-- Modal إضافة محامٍ -->
+<?php
+// The create and edit forms are one form, switched between modes by the shared script.
+// Two near-identical blocks would drift the moment a field is added to one of them.
+$modalIsEdit = $editTarget !== null;
+$modalOld = $modalIsEdit ? $editTarget : $oldCreate;
+$modalError = $modalIsEdit ? $editError : $createError;
+$modalPhone = split_phone((string)($modalOld['phone'] ?? ($modalOld['phone_dial'] ?? '+966')));
+if (empty($modalOld['phone_local']) && !empty($modalPhone['local'])) {
+    $modalOld['phone_dial'] = $modalPhone['dial'];
+    $modalOld['phone_local'] = $modalPhone['local'];
+}
+$cityData = [];
+foreach (city_options() as $code => $list) $cityData[$code] = array_values($list);
+?>
+<script type="application/json" id="mawatheq-city-data"><?= json_encode($cityData, JSON_UNESCAPED_UNICODE) ?></script>
+
+<!-- Modal إضافة/تعديل محامٍ -->
 <div
-    class="lawyers-modal<?= $createError ? ' is-open' : '' ?>"
-    id="addLawyerModal"
+    class="lawyers-modal<?= $modalError ? ' is-open' : '' ?>"
+    id="lawyerModal"
     role="dialog"
     aria-modal="true"
-    aria-labelledby="addLawyerTitle"
-    onclick="handleLawyerModalBackdrop(event)"
+    aria-labelledby="lawyerModalTitle"
 >
-    <form class="modal-card" method="post" autocomplete="off"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
+    <form class="modal-card" method="post" autocomplete="off" id="lawyerForm" data-lawyer-form data-submit-state="off">
+        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
+        <input type="hidden" name="action" id="lawyerFormAction" value="<?= $modalIsEdit ? 'edit' : 'create' ?>">
+        <input type="hidden" name="lawyer_id" id="lawyerFormId" value="<?= (int)($modalOld['id'] ?? 0) ?>">
+
         <div class="modal-head">
             <div class="modal-heading">
                 <div class="modal-icon">⚖</div>
                 <div>
-                    <h2 class="modal-title" id="addLawyerTitle">إضافة محامٍ جديد</h2>
-                    <p class="modal-subtitle">أدخل البيانات الأساسية للمحامي لإنشاء حسابه.</p>
+                    <h2 class="modal-title" id="lawyerModalTitle"><?= $modalIsEdit ? 'تعديل بيانات المحامي' : 'إضافة محامٍ جديد' ?></h2>
+                    <p class="modal-subtitle" id="lawyerModalSubtitle"><?= $modalIsEdit ? 'حدّث بيانات المحامي ثم احفظ التعديلات.' : 'أدخل البيانات الأساسية للمحامي لإنشاء حسابه.' ?></p>
                 </div>
             </div>
 
-            <button
-                type="button"
-                class="modal-close"
-                onclick="closeLawyerModal()"
-                aria-label="إغلاق"
-            >✕</button>
+            <button type="button" class="modal-close" data-close-lawyer-modal aria-label="إغلاق">✕</button>
         </div>
 
         <div class="modal-body">
-            <input type="hidden" name="action" value="create">
-
-            <?php if ($createError): ?>
-                <div class="alert">
-                    <span>⚠</span>
-                    <span><?= htmlspecialchars($createError) ?></span>
-                </div>
-            <?php endif; ?>
+            <div class="alert" id="lawyerFormError"<?= $modalError ? '' : ' hidden' ?> role="alert">
+                <span aria-hidden="true">⚠</span>
+                <span id="lawyerFormErrorText"><?= htmlspecialchars((string)$modalError) ?></span>
+            </div>
 
             <div class="form-section">
                 <h3 class="section-title">البيانات الأساسية</h3>
@@ -1066,8 +1269,10 @@ body.lawyers-modal-open {
                             id="lawyer_full_name"
                             type="text"
                             name="full_name"
-                            value="<?= htmlspecialchars($oldCreate['full_name']) ?>"
-                            placeholder="مثال: محمد أحمد"
+                            value="<?= htmlspecialchars((string)($modalOld['full_name'] ?? '')) ?>"
+                            placeholder="مثال: محمد أحمد العبدالله"
+                            maxlength="150"
+                            autocomplete="off"
                             required
                         >
                     </div>
@@ -1078,58 +1283,78 @@ body.lawyers-modal-open {
                             id="lawyer_email"
                             type="email"
                             name="email"
-                            value="<?= htmlspecialchars($oldCreate['email']) ?>"
+                            value="<?= htmlspecialchars((string)($modalOld['email'] ?? '')) ?>"
                             placeholder="name@example.com"
                             dir="ltr"
+                            maxlength="150"
+                            autocomplete="off"
                             required
                         >
-                    </div>
-
-                    <div class="field">
-                        <label>رقم الجوال</label>
-                        <?php render_phone_field('phone', $oldCreate['phone_dial'], $oldCreate['phone_local']); ?>
                     </div>
 
                     <div class="field">
                         <label for="lawyer_password">كلمة مرور مؤقتة</label>
                         <input
                             id="lawyer_password"
-                            type="text"
+                            type="password"
                             name="password"
                             minlength="8"
-                            placeholder="8 أحرف على الأقل"
-                            required
+                            maxlength="72"
+                            placeholder="<?= $modalIsEdit ? 'اتركها فارغة للإبقاء على الحالية' : '8 أحرف على الأقل' ?>"
+                            autocomplete="new-password"
+                            <?= $modalIsEdit ? '' : 'required' ?>
                         >
-                        <div class="form-hint">يمكن للمحامي تغييرها لاحقًا من حسابه.</div>
+                        <div class="form-hint">تُخزَّن مشفّرة ولا يمكن عرضها مرة أخرى. يمكن للمحامي تغييرها لاحقاً من حسابه.</div>
+                    </div>
+
+                    <div class="field">
+                        <label>رقم الجوال</label>
+                        <?php render_phone_field('phone', (string)($modalOld['phone_dial'] ?? '+966'), (string)($modalOld['phone_local'] ?? '')); ?>
                     </div>
                 </div>
             </div>
 
             <div class="form-section">
-                <h3 class="section-title">التخصص والخبرة</h3>
+                <h3 class="section-title">التخصص والدولة</h3>
 
                 <div class="form-grid">
                     <div class="field full">
-                        <label>التخصص</label>
-                        <?php render_specialization_field('specialization', $oldCreate['specialization']); ?>
-                        <div class="form-hint">يمكن اختيار أكثر من تخصص إذا كانت الأداة الحالية تدعم ذلك.</div>
+                        <label for="lawyer_specialization">التخصص القانوني</label>
+                        <?php render_specialization_combobox('specialization', (string)($modalOld['specialization'] ?? ''), 'lawyer_specialization'); ?>
+                        <div class="form-hint">اكتب للبحث ثم اختر تخصصاً واحداً من القائمة.</div>
                     </div>
 
                     <div class="field">
-                        <label>الدولة / الاختصاص القضائي</label>
-                        <?php render_jurisdiction_select('jurisdiction', $oldCreate['jurisdiction'] ?? 'السعودية'); ?>
+                        <label for="lawyer_country">الدولة</label>
+                        <?php render_lawyer_country_select('country_code', lawyer_country_code($modalOld), true, 'lawyer_country'); ?>
                     </div>
 
+                    <div class="field">
+                        <label for="lawyer_city">المدينة</label>
+                        <?php render_city_select('city', lawyer_country_code($modalOld), (string)($modalOld['city'] ?? ''), true, 'lawyer_city'); ?>
+                        <div class="form-hint">تظهر المدن المتاحة حسب الدولة المختارة.</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h3 class="section-title">الخبرة والأجر</h3>
+
+                <div class="form-grid">
                     <div class="field">
                         <label for="lawyer_experience">سنوات الخبرة</label>
                         <input
                             id="lawyer_experience"
                             type="number"
                             min="0"
+                            max="<?= (int)LAWYER_EXPERIENCE_MAX ?>"
+                            step="1"
+                            inputmode="numeric"
                             name="years_experience"
-                            value="<?= htmlspecialchars($oldCreate['years_experience']) ?>"
-                            placeholder="0"
+                            value="<?= htmlspecialchars((string)($modalOld['years_experience'] ?? '0')) ?>"
+                            placeholder="مثال: 12"
                         >
+                        <div class="form-hint">رقم صحيح غير سالب. تُقبل قيمة مثل «20+» وتُخزَّن 20.</div>
                     </div>
 
                     <div class="field">
@@ -1139,59 +1364,38 @@ body.lawyers-modal-open {
                             type="number"
                             step="<?= currency_step() ?>"
                             min="0"
+                            inputmode="decimal"
+                            dir="ltr"
                             name="hourly_rate"
-                            value="<?= htmlspecialchars($oldCreate['hourly_rate']) ?>"
+                            value="<?= htmlspecialchars((string)($modalOld['hourly_rate'] ?? '')) ?>"
                             placeholder="0.00"
                         >
+                        <div class="form-hint">اتركه فارغاً إذا كان الأجر حسب الاتفاق.</div>
+                    </div>
+
+                    <div class="field">
+                        <label for="lawyer_status">حالة الحساب</label>
+                        <div class="select-wrap">
+                            <select id="lawyer_status" name="status" class="pro-select">
+                                <?php foreach (['approved' => 'مفعّل', 'pending' => 'قيد المراجعة', 'suspended' => 'موقوف'] as $val => $lbl): ?>
+                                    <option value="<?= $val ?>" <?= (($modalOld['status'] ?? 'approved') === $val) ? 'selected' : '' ?>><?= $lbl ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
 
         <div class="modal-footer">
-            <button type="button" class="secondary-btn" onclick="closeLawyerModal()">إلغاء</button>
-            <button type="submit" class="submit-btn">إضافة المحامي</button>
+            <button type="button" class="secondary-btn" data-close-lawyer-modal>إلغاء</button>
+            <button type="submit" class="submit-btn" id="lawyerSubmitBtn" data-busy-label="<?= $modalIsEdit ? 'جارٍ الحفظ...' : 'جارٍ الإضافة...' ?>"><?= $modalIsEdit ? 'حفظ التعديلات' : 'إضافة المحامي' ?></button>
         </div>
     </form>
 </div>
 
-<script>
-(function () {
-    const modal = document.getElementById('addLawyerModal');
-
-    window.openLawyerModal = function () {
-        if (!modal) return;
-        modal.classList.add('is-open');
-        document.body.classList.add('lawyers-modal-open');
-
-        setTimeout(function () {
-            const firstInput = document.getElementById('lawyer_full_name');
-            if (firstInput) firstInput.focus();
-        }, 80);
-    };
-
-    window.closeLawyerModal = function () {
-        if (!modal) return;
-        modal.classList.remove('is-open');
-        document.body.classList.remove('lawyers-modal-open');
-    };
-
-    window.handleLawyerModalBackdrop = function (event) {
-        if (event.target === modal) {
-            closeLawyerModal();
-        }
-    };
-
-    document.addEventListener('keydown', function (event) {
-        if (event.key === 'Escape' && modal && modal.classList.contains('is-open')) {
-            closeLawyerModal();
-        }
-    });
-
-    <?php if ($createError): ?>
-    document.body.classList.add('lawyers-modal-open');
-    <?php endif; ?>
-})();
-</script>
+<script src="<?= asset_url('/assets/js/specialization-combo.js') ?>"></script>
+<script src="<?= asset_url('/assets/js/lawyer-form.js') ?>"></script>
+<script src="<?= asset_url('/assets/js/lawyer-modal.js') ?>"></script>
 
 <?php require_once __DIR__ . '/includes/admin_footer.php'; ?>
