@@ -641,7 +641,7 @@ $callTurnCredentialConfigured = $callsModuleAvailable && ($callSettings['call_tu
       </div>
       <div class="field">
         <label>Realm Name</label>
-        <input type="text" name="ngenius_realm_name" value="<?= htmlspecialchars($settings['ngenius_realm_name'] ?? '') ?>" placeholder="اتركه فارغاً">
+        <input type="text" name="ngenius_realm_name" value="<?= htmlspecialchars(($settings['ngenius_realm_name'] ?? '') === 'ni' ? '' : ($settings['ngenius_realm_name'] ?? '')) ?>" placeholder="اتركه فارغاً">
         <p class="field-hint">اتركه فارغاً في الحالة العادية. مفتاح حساب الخدمة يحتوي على Realm داخله، وإرسال قيمة هنا قد يرفضه بوابة N-Genius. القيمة القديمة "ni" تُعامل كغير مُعدّة ولا تُرسل.</p>
       </div>
       <div class="field">
