@@ -201,11 +201,27 @@ function wallet_ledger_add(PDO $pdo, int $walletId, array $entry): array {
     }
 
     try {
-        $stmt = $pdo->prepare('INSERT INTO wallet_transactions
+        // `consultation_id` arrives with upgrade_v69.sql. On a database that has not run it
+        // the column is absent, and an INSERT naming it would fail — which would break the
+        // invoice credit path too, since both share this function. Probe once per request
+        // and fall back to the older column list rather than fataling the money path.
+        static $hasConsultationColumn = null;
+        if ($hasConsultationColumn === null) {
+            try {
+                $hasConsultationColumn = (bool)$pdo->query("SELECT 1 FROM information_schema.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'wallet_transactions'
+                      AND COLUMN_NAME = 'consultation_id' LIMIT 1")->fetchColumn();
+            } catch (Throwable $e) {
+                $hasConsultationColumn = false;
+            }
+        }
+        $consultationCol = $hasConsultationColumn ? ',consultation_id' : '';
+        $consultationMark = $hasConsultationColumn ? ',?' : '';
+        $stmt = $pdo->prepare("INSERT INTO wallet_transactions
             (wallet_id,lawyer_id,firm_id,currency,amount_minor,gross_minor,commission_minor,net_minor,kind,state,
-             source_type,source_id,invoice_id,payment_id,withdrawal_id,description,idempotency_key,actor_type,actor_id)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
-        $stmt->execute([
+             source_type,source_id,invoice_id,payment_id,withdrawal_id,description,idempotency_key,actor_type,actor_id{$consultationCol})
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?{$consultationMark})");
+        $params = [
             $walletId,
             $lawyerId,
             $entry['firm_id'] ?? null,
@@ -225,7 +241,11 @@ function wallet_ledger_add(PDO $pdo, int $walletId, array $entry): array {
             $idempotencyKey,
             in_array($entry['actor_type'] ?? 'system', ['system','admin','lawyer','client'], true) ? $entry['actor_type'] : 'system',
             isset($entry['actor_id']) ? (int)$entry['actor_id'] : null,
-        ]);
+        ];
+        if ($hasConsultationColumn) {
+            $params[] = isset($entry['consultation_id']) ? (int)$entry['consultation_id'] : null;
+        }
+        $stmt->execute($params);
         return ['ok' => true, 'id' => (int)$pdo->lastInsertId()];
     } catch (PDOException $e) {
         // 1062 = a concurrent identical event already landed. Treat as success: the
@@ -376,8 +396,147 @@ function wallet_credit_invoice_payment(PDO $pdo, int $invoiceId, int $paymentId)
     }
 }
 
-/* ---------------------------------------------------------- withdrawals ---- */
+/**
+ * Credit a lawyer's wallet for a client payment on their consultation.
+ *
+ * The mirror of wallet_credit_invoice_payment(): a consultation is not an invoice, so it
+ * needs its own credit path, but the money rules are identical — gross credit, commission
+ * debit as its own row, idempotent on the source so a retried callback credits once.
+ * A pending or merely authorized payment is never credited: the caller only reaches this
+ * function after the gateway independently confirms the capture.
+ *
+ * @return array{ok:bool,credited?:bool,duplicate?:bool,error?:string}
+ */
+function wallet_credit_consultation_payment(PDO $pdo, int $consultationId): array {
+    $stmt = $pdo->prepare('SELECT id, lawyer_id, firm_id, payment_amount, payment_currency
+        FROM consultations WHERE id = ?');
+    $stmt->execute([$consultationId]);
+    $row = $stmt->fetch();
+    if (!$row) return ['ok' => false, 'error' => 'consultation_not_found'];
 
+    $lawyerId = (int)$row['lawyer_id'];
+    if ($lawyerId <= 0) return ['ok' => false, 'error' => 'no_lawyer'];
+
+    $wallet = wallet_ensure($pdo, $lawyerId);
+
+    $paymentCurrency = (string)($row['payment_currency'] ?: currency_code());
+    if ($paymentCurrency !== (string)$wallet['currency']) {
+        error_log("wallet: consultation $consultationId currency $paymentCurrency does not match wallet currency {$wallet['currency']}");
+        return ['ok' => false, 'error' => 'currency_mismatch'];
+    }
+
+    $grossMinor = wallet_to_minor((float)$row['payment_amount'], $paymentCurrency);
+    if ($grossMinor <= 0) return ['ok' => false, 'error' => 'zero_amount'];
+
+    $rate = wallet_commission_rate($pdo, $wallet['firm_id'] !== null ? (int)$wallet['firm_id'] : null, 'consultation');
+    $commissionMinor = wallet_apply_percent($grossMinor, $rate);
+    $netMinor = max(0, $grossMinor - $commissionMinor);
+
+    $owns = !$pdo->inTransaction();
+    if ($owns) $pdo->beginTransaction();
+    try {
+        $credit = wallet_ledger_add($pdo, (int)$wallet['id'], [
+            'lawyer_id'        => $lawyerId,
+            'firm_id'          => $wallet['firm_id'],
+            'currency'         => $paymentCurrency,
+            'amount_minor'     => $grossMinor,
+            'gross_minor'      => $grossMinor,
+            'commission_minor' => $commissionMinor,
+            'net_minor'        => $netMinor,
+            'kind'             => 'payment',
+            'state'            => 'available',
+            'source_type'      => 'consultation',
+            'source_id'        => $consultationId,
+            'consultation_id'  => $consultationId,
+            'description'      => 'دفعة استشارة',
+            'idempotency_key'  => 'wallet_cons_' . $consultationId,
+            'actor_type'       => 'system',
+        ]);
+        if (!$credit['ok']) {
+            if ($owns && $pdo->inTransaction()) $pdo->rollBack();
+            return $credit;
+        }
+        // Keyed on its own idempotency key so a retry after a crash between the two
+        // writes still records the missing commission.
+        if ($commissionMinor > 0) {
+            wallet_ledger_add($pdo, (int)$wallet['id'], [
+                'lawyer_id'        => $lawyerId,
+                'firm_id'          => $wallet['firm_id'],
+                'currency'         => $paymentCurrency,
+                'amount_minor'     => -$commissionMinor,
+                'commission_minor' => $commissionMinor,
+                'kind'             => 'commission',
+                'state'            => 'available',
+                'source_type'      => 'consultation',
+                'source_id'        => $consultationId,
+                'consultation_id'  => $consultationId,
+                'description'      => 'عمولة المنصة',
+                'idempotency_key'  => 'wallet_conscomm_' . $consultationId,
+                'actor_type'       => 'system',
+            ]);
+        }
+        if ($owns) $pdo->commit();
+        return ['ok' => true, 'credited' => true, 'duplicate' => !empty($credit['duplicate']), 'net_minor' => $netMinor];
+    } catch (Throwable $e) {
+        if ($owns && $pdo->inTransaction()) $pdo->rollBack();
+        error_log('wallet_credit_consultation_payment failed: ' . $e->getMessage());
+        return ['ok' => false, 'error' => 'credit_failed'];
+    }
+}
+
+/**
+ * Reverse a consultation credit on refund. Writes a 'refund' debit for the gross and a
+ * matching 'refund' credit for the commission the platform had taken, so the lawyer's net
+ * returns to its pre-payment value without touching unrelated ledger rows.
+ */
+function wallet_reverse_consultation_payment(PDO $pdo, int $consultationId, ?float $refundAmount = null): array {
+    $stmt = $pdo->prepare('SELECT id, lawyer_id, firm_id, payment_amount, payment_currency FROM consultations WHERE id = ?');
+    $stmt->execute([$consultationId]);
+    $row = $stmt->fetch();
+    if (!$row) return ['ok' => false, 'error' => 'consultation_not_found'];
+    $wallet = wallet_find($pdo, (int)$row['lawyer_id']);
+    if (!$wallet) return ['ok' => false, 'error' => 'wallet_not_found'];
+
+    $currency = (string)($row['payment_currency'] ?: $wallet['currency']);
+    $gross = $refundAmount !== null ? (float)$refundAmount : (float)$row['payment_amount'];
+    $grossMinor = wallet_to_minor($gross, $currency);
+    if ($grossMinor <= 0) return ['ok' => false, 'error' => 'zero_amount'];
+
+    $rate = wallet_commission_rate($pdo, $wallet['firm_id'] !== null ? (int)$wallet['firm_id'] : null, 'consultation');
+    $commissionMinor = wallet_apply_percent($grossMinor, $rate);
+
+    $owns = !$pdo->inTransaction();
+    if ($owns) $pdo->beginTransaction();
+    try {
+        wallet_ledger_add($pdo, (int)$wallet['id'], [
+            'lawyer_id' => (int)$row['lawyer_id'], 'firm_id' => $wallet['firm_id'], 'currency' => $currency,
+            'amount_minor' => -$grossMinor, 'gross_minor' => $grossMinor, 'commission_minor' => $commissionMinor,
+            'net_minor' => -max(0, $grossMinor - $commissionMinor),
+            'kind' => 'refund', 'state' => 'available', 'source_type' => 'consultation',
+            'source_id' => $consultationId, 'consultation_id' => $consultationId,
+            'description' => 'استرداد دفعة استشارة',
+            'idempotency_key' => 'wallet_consrefund_' . $consultationId, 'actor_type' => 'system',
+        ]);
+        if ($commissionMinor > 0) {
+            wallet_ledger_add($pdo, (int)$wallet['id'], [
+                'lawyer_id' => (int)$row['lawyer_id'], 'firm_id' => $wallet['firm_id'], 'currency' => $currency,
+                'amount_minor' => $commissionMinor, 'commission_minor' => $commissionMinor,
+                'kind' => 'refund', 'state' => 'available', 'source_type' => 'consultation',
+                'source_id' => $consultationId, 'consultation_id' => $consultationId,
+                'description' => 'استرداد عمولة المنصة',
+                'idempotency_key' => 'wallet_consrefundcomm_' . $consultationId, 'actor_type' => 'system',
+            ]);
+        }
+        if ($owns) $pdo->commit();
+        return ['ok' => true];
+    } catch (Throwable $e) {
+        if ($owns && $pdo->inTransaction()) $pdo->rollBack();
+        error_log('wallet_reverse_consultation_payment failed: ' . $e->getMessage());
+        return ['ok' => false, 'error' => 'reversal_failed'];
+    }
+}
+
+/* ---------------------------------------------------------- withdrawals ---- */
 function wallet_withdrawal_statuses(): array {
     return ['pending','approved','rejected','paid','failed'];
 }

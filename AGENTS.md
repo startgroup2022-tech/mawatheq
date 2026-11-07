@@ -3582,3 +3582,70 @@ around a lost key without an explicit owner decision.
 `…_PENDING-UPLOAD-KEY.aab`. A debug-signed client APK cannot be installed over the
 Play build — the operator must uninstall first. The filename is the only place that
 warning survives a download.
+
+## Execution 62 — N-Genius consultation payments, and the realmName trap
+
+### The N-Genius realm is derived from the API key; sending `realmName` disables payments
+
+`ngenius_create_order()` and `ngenius_get_access_token()` must send **no** `realmName`
+field. The service-account API key is `Base64(<realm-uuid>:<other-uuid>)` and the KSA
+gateway derives the realm from the key itself. Sending a `realmName` — including the
+historical seeded default `'ni'` — makes the gateway answer HTTP 404
+`realmNameNotAvailable`, which `ngenius_get_access_token()` reports as a generic token
+failure, so **every** payment silently stops working while the admin page still says the
+gateway is configured. The code now treats `'ni'` (and empty) as "unset" and omits the
+field. `admin/settings.php`'s Realm Name hint was rewritten to say "leave blank"; do not
+reintroduce a default value there.
+
+### A payment return page and a webhook both re-verify; the URL is never proof
+
+`consultation-payment-return.php` and `ngenius-webhook.php` both call
+`consultation_payment_verify_and_confirm()`, which re-queries the gateway and confirms
+only on a real capture. The confirmation `UPDATE` is guarded (`WHERE ... AND
+payment_status <> 'paid'`) and the wallet credit is inside that guard, so a replayed
+callback confirms once and credits once. The return URL carries only a `consultation_id`
+that is re-scoped to `$_SESSION['user_id']` — a guessed id must not reveal or confirm
+another customer's booking.
+
+### `payment_status` is an enum; map the raw gateway state onto it
+
+The column is `ENUM('unpaid','pending','paid','refunded','failed')`. A cancelled or
+expired order maps to `'failed'` (money never moved) — writing the raw gateway state
+(`'expired'`) is silently truncated under strict mode. The `payment_reference` column
+carries a `UNIQUE` key so one order can never confirm two consultations.
+
+### `consultation_payment_schema_ready()` gates every entry point
+
+Without `upgrade_v69.sql` the columns are absent, so every payment path checks
+`schema_ready()` first and a priced booking simply completes without a gateway instead of
+returning HTTP 500. This is the same optional-module shape as `includes/smtp.php`: a
+missing migration must degrade, not fatal.
+
+### The mobile app opens the gateway's hosted page in a WebView, and the return URL is the signal
+
+`PaymentWebViewScreen` stops navigation at `consultation-payment-return.php` for its own
+consultation id and pops `true`. The app never asserts "paid" — the server re-verifies,
+and the consultations list refreshes from the server. The app receives `payment_url` and
+`payment_required` from `POST /api/v1/consultations.php`; a lawyer with no rate returns
+no URL and keeps the request-and-confirm flow.
+
+### `cron/ngenius-reconcile.php` finishes what a missed webhook did not
+
+A webhook can be missed; a paid booking would sit `pending` forever and hold its slot.
+The cron re-queries the gateway for every still-pending order through the same
+`consultation_payment_verify_and_confirm()` — it never marks anything paid on its own.
+
+### A dirty test database produces failures that look like code regressions
+
+After earlier crashed runs, `mawatheq_test` had drifted (firms at ids 3–4, lawyers at
+14+), so `exec57_lawyer_platform_probe` could not find `client-firm1@example.com` and
+`execution30_consultation_attachments_probe` could not find `lawyer_id=1` — both failed
+on missing seed rows, not on the code. Rebuilding the database fresh (`schema.sql` = 107
+tables, then all upgrades in numeric order = 151) made **all 47 suites pass**. When a
+probe fails on a fixture row, rebuild the test database before touching the probe.
+
+### Execution 62 changed the client app, so a new client bundle is required
+
+`journey_screen.dart`, `api_repository.dart`, `models.dart` and the new
+`payment_webview_screen.dart` are client-app changes; the shipped client bundle predates
+them. The lawyer app is untouched, so no new lawyer bundle is needed.

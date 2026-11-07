@@ -1,11 +1,20 @@
 <?php
 $activePage = 'consultations';
-require_once __DIR__ . '/includes/app_header.php';
+require_once __DIR__ . '/config/config.php';
+require_once __DIR__ . '/lang/strings.php';
+require_once __DIR__ . '/includes/auth_guard.php';
 require_once __DIR__ . '/includes/availability.php';
 require_once __DIR__ . '/includes/notifications.php';
 require_once __DIR__ . '/includes/consultation_attachments.php';
 require_once __DIR__ . '/includes/tenant.php';
 require_once __DIR__ . '/includes/legal_journey.php';
+require_once __DIR__ . '/includes/consultation_payment.php';
+
+// A paid booking redirects to the gateway, and a redirect must happen before the shell
+// prints anything (there is no output buffering, so a later header() is dropped — see the
+// POST-redirect note in AGENTS.md). The payment start therefore runs here, above the
+// app_header include, and the page continues only when there is something to render.
+$paymentRedirect = null;
 
 $lawyerId = (int)($_GET['lawyer_id'] ?? 0);
 
@@ -132,8 +141,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'attachments' => $claimed,
         ]);
         $success = true;
+
+        // A consultation with a price must be paid before it is confirmed. The booking is
+        // created 'pending' either way, so the slot is reserved; when payment is required we
+        // send the customer to the gateway and only confirm on an independently verified
+        // capture (consultation-payment-return.php). A lawyer with no rate keeps the free
+        // request-and-confirm flow exactly as before.
+        $consultationRow = ['id' => $consultationId, 'price' => $lawyer['hourly_rate'], 'lawyer_id' => $lawyerId];
+        if (consultation_payment_schema_ready($pdo) && consultation_payment_required($consultationRow)) {
+            $custStmt = $pdo->prepare('SELECT full_name, email FROM users WHERE id=?');
+            $custStmt->execute([$_SESSION['user_id']]);
+            $customer = $custStmt->fetch() ?: [];
+            $started = consultation_payment_start($pdo, $consultationRow, [
+                'customer_name' => (string)($customer['full_name'] ?? ''),
+                'customer_email' => (string)($customer['email'] ?? ''),
+                'language' => current_lang(),
+            ]);
+            if (!empty($started['ok']) && !empty($started['redirect_url'])) {
+                $paymentRedirect = $started['redirect_url'];
+            } else {
+                // The booking exists and the lawyer was notified; only the online payment
+                // could not start. Say so plainly and leave the booking request standing
+                // rather than silently dropping it.
+                $error = is_rtl()
+                    ? 'تم إنشاء طلب الحجز، لكن تعذّر بدء الدفع الإلكتروني. يمكنك المحاولة من صفحة الاستشارات أو التواصل مع المحامي.'
+                    : 'Your booking request was created, but online payment could not start. You can retry from your consultations page or contact the lawyer.';
+            }
+        }
     }
 }
+
+// Redirect to the hosted payment page before the shell prints anything.
+if ($paymentRedirect !== null) {
+    header('Location: ' . $paymentRedirect);
+    exit;
+}
+
+require_once __DIR__ . '/includes/app_header.php';
 
 $minDate = date('Y-m-d');
 $maxDate = date('Y-m-d', strtotime('+30 days'));

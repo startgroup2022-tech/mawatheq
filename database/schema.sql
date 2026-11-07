@@ -272,7 +272,15 @@ CREATE TABLE IF NOT EXISTS consultations (
     price DECIMAL(12,3) DEFAULT NULL,
     notes TEXT DEFAULT NULL,
     room_code VARCHAR(64) DEFAULT NULL,
+    -- Consultation payment (Execution 62). A consultation is only confirmed after the
+    -- gateway independently confirms the capture; 'unpaid' keeps free bookings unchanged.
+    payment_status ENUM('unpaid','pending','paid','refunded','failed') NOT NULL DEFAULT 'unpaid',
+    payment_reference VARCHAR(100) DEFAULT NULL,
+    payment_amount DECIMAL(12,3) DEFAULT NULL,
+    payment_currency VARCHAR(3) DEFAULT NULL,
+    payment_gateway VARCHAR(30) DEFAULT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_consultation_payment_ref (payment_reference),
     INDEX idx_consultations_firm (firm_id),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (lawyer_id) REFERENCES lawyers(id) ON DELETE CASCADE,
@@ -732,6 +740,7 @@ PREPARE stmt FROM @s; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 CREATE TABLE IF NOT EXISTS payment_transactions (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     invoice_id INT UNSIGNED DEFAULT NULL,
+    consultation_id INT UNSIGNED DEFAULT NULL,
     gateway VARCHAR(30) NOT NULL DEFAULT 'ngenius',
     gateway_order_ref VARCHAR(100) DEFAULT NULL,
     gateway_transaction_id VARCHAR(120) DEFAULT NULL,
@@ -748,6 +757,7 @@ CREATE TABLE IF NOT EXISTS payment_transactions (
     metadata TEXT DEFAULT NULL,
     raw_payload TEXT DEFAULT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_payment_tx_consultation (consultation_id),
     FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

@@ -259,7 +259,7 @@ class ApiRepository {
   /// `draftToken` is the token the customer's staged recordings/documents were
   /// uploaded against. Passing it binds those files to the consultation the server
   /// creates here; omitting it books exactly as before.
-  Future<int> bookConsultation({
+  Future<BookingResult> bookConsultation({
     required int lawyerId,
     required String consultationType,
     required String date,
@@ -284,7 +284,7 @@ class ApiRepository {
           'draft_token': draftToken,
       },
     );
-    return Json(json).intg('consultation_id');
+    return BookingResult.fromJson(json);
   }
 
   /// Stages one recording/document against a draft token, before the consultation

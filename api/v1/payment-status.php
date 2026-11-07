@@ -28,7 +28,7 @@ if (!$invoice['gateway_order_ref']) {
 }
 
 $settings = ngenius_settings($pdo);
-$tokenResult = ngenius_get_access_token($settings['ngenius_environment'], $settings['ngenius_api_key'], $settings['ngenius_realm_name'] ?: 'ni');
+$tokenResult = ngenius_get_access_token($settings['ngenius_environment'], $settings['ngenius_api_key'], $settings['ngenius_realm_name'] ?: '');
 if (!$tokenResult['ok']) api_error($tokenResult['error'], 502);
 
 $statusResult = ngenius_get_order_status($settings['ngenius_environment'], $settings['ngenius_outlet_ref'], $tokenResult['token'], $invoice['gateway_order_ref']);

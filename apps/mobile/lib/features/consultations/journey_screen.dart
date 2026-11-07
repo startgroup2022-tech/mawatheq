@@ -16,6 +16,7 @@ import '../../shared/widgets/brand_widgets.dart';
 import '../../shared/widgets/capture_sheet.dart';
 import '../assistant/assistant_screen.dart';
 import '../public/public_info_screen.dart';
+import 'payment_webview_screen.dart';
 
 /// رحلة الاستشارة على الجوال — the same journey the website runs.
 ///
@@ -654,7 +655,7 @@ class _JourneyBookingScreenState extends State<_JourneyBookingScreen> {
       _error = null;
     });
     try {
-      final consultationId = await widget.repository.bookConsultation(
+      final booking = await widget.repository.bookConsultation(
         lawyerId: widget.lawyer.id,
         consultationType: 'text',
         date: _dateParam,
@@ -668,6 +669,32 @@ class _JourneyBookingScreenState extends State<_JourneyBookingScreen> {
         draftToken: _draftToken,
       );
       if (!mounted) return;
+      final consultationId = booking.consultationId;
+
+      // A priced consultation is confirmed only after payment. Open the gateway's hosted
+      // page in a web view; whatever the customer does there, the server re-verifies the
+      // capture independently, so the app never asserts "paid" on the web view's word.
+      if (booking.paymentRequired && booking.paymentUrl != null) {
+        final settled = await Navigator.of(context).push<bool>(
+          MaterialPageRoute(
+            builder: (_) => PaymentWebViewScreen(
+              paymentUrl: booking.paymentUrl!,
+              consultationId: consultationId,
+            ),
+          ),
+        );
+        if (!mounted) return;
+        if (settled != true) {
+          // The customer closed the web view before finishing. The booking exists and its
+          // slot is reserved; tell them plainly and let the consultations list show the
+          // real state rather than implying success.
+          setState(() {
+            _submitting = false;
+            _error = 'لم يكتمل الدفع. يمكنك إتمامه من صفحة الاستشارات.';
+          });
+          return;
+        }
+      }
 
       // The booking is already made, so a reminder failure must not be reported as a
       // booking failure. The outcome is recorded and shown on the confirmation.

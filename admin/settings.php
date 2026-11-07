@@ -118,7 +118,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'ngeni
         if($gatewayKey!=='' && !secret_store_setting($pdo,'ngenius_api_key',$gatewayKey))$secretError='تعذر تشفير بيانات الدفع؛ اضبط مفتاح التشفير أولاً.';
         if($webhookSecret!=='' && !secret_store_setting($pdo,'ngenius_webhook_secret',$webhookSecret))$secretError='تعذر تشفير بيانات الدفع؛ اضبط مفتاح التشفير أولاً.';
     }
-    save_setting($pdo, 'ngenius_realm_name', trim($_POST['ngenius_realm_name'] ?? 'ni'));
+    save_setting($pdo, 'ngenius_realm_name', trim($_POST['ngenius_realm_name'] ?? ''));
     $gatewayCurrency = currency_normalize($_POST['ngenius_currency'] ?? NGENIUS_DEFAULT_CURRENCY);
     save_setting($pdo, 'ngenius_currency', $gatewayCurrency);
     save_setting($pdo, 'ngenius_enabled', isset($_POST['ngenius_enabled']) ? '1' : '0');
@@ -641,8 +641,8 @@ $callTurnCredentialConfigured = $callsModuleAvailable && ($callSettings['call_tu
       </div>
       <div class="field">
         <label>Realm Name</label>
-        <input type="text" name="ngenius_realm_name" value="<?= htmlspecialchars($settings['ngenius_realm_name'] ?? 'ni') ?>" placeholder="ni">
-        <p class="field-hint">القيمة الافتراضية "ni" — إن لم تعمل، تأكد من القيمة الصحيحة مع دعم N-Genius.</p>
+        <input type="text" name="ngenius_realm_name" value="<?= htmlspecialchars($settings['ngenius_realm_name'] ?? '') ?>" placeholder="اتركه فارغاً">
+        <p class="field-hint">اتركه فارغاً في الحالة العادية. مفتاح حساب الخدمة يحتوي على Realm داخله، وإرسال قيمة هنا قد يرفضه بوابة N-Genius. القيمة القديمة "ni" تُعامل كغير مُعدّة ولا تُرسل.</p>
       </div>
       <div class="field">
         <label>عملة التسوية لدى البوابة</label>

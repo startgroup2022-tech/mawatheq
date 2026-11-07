@@ -15,7 +15,7 @@ if (empty($settings['ngenius_outlet_ref']) || empty($settings['ngenius_api_key']
 $result = ngenius_get_access_token(
     $settings['ngenius_environment'] ?? 'sandbox',
     $settings['ngenius_api_key'],
-    $settings['ngenius_realm_name'] ?: 'ni'
+    $settings['ngenius_realm_name'] ?: ''
 );
 
 echo json_encode($result['ok']

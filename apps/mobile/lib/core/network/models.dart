@@ -257,6 +257,32 @@ class DocumentSummary {
   }
 }
 
+/// The outcome of `POST /api/v1/consultations.php`.
+///
+/// A priced consultation must be paid before it is confirmed, so the booking response
+/// carries the hosted payment URL the app opens in a web view. When the lawyer has no rate
+/// `paymentRequired` is false and the flow is exactly the old request-and-confirm one.
+class BookingResult {
+  const BookingResult({
+    required this.consultationId,
+    this.paymentRequired = false,
+    this.paymentUrl,
+  });
+
+  final int consultationId;
+  final bool paymentRequired;
+  final String? paymentUrl;
+
+  factory BookingResult.fromJson(Map<String, dynamic> json) {
+    final rawUrl = json['payment_url'];
+    return BookingResult(
+      consultationId: Json(json).intg('consultation_id'),
+      paymentRequired: json['payment_required'] == true,
+      paymentUrl: (rawUrl is String && rawUrl.isNotEmpty) ? rawUrl : null,
+    );
+  }
+}
+
 /// A consultation from `GET /api/v1/consultations.php`.
 class Consultation {
   const Consultation({

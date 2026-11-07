@@ -8,6 +8,7 @@ require_once __DIR__ . '/config/config.php';
 require_once __DIR__ . '/includes/ngenius.php';
 require_once __DIR__ . '/includes/notifications.php';
 require_once __DIR__ . '/includes/finance.php';
+require_once __DIR__ . '/includes/consultation_payment.php';
 header('Content-Type: application/json');
 
 $settings = ngenius_settings($pdo);
@@ -51,15 +52,21 @@ $stmt = $pdo->prepare('SELECT * FROM invoices WHERE gateway_order_ref = ? AND is
 $stmt->execute([$orderRef]);
 $invoice = $stmt->fetch();
 
+// A consultation order carries the same shared secret but a consultation reference. The
+// consultation is confirmed only after an independent server-side verification below —
+// the webhook body is a hint, never the proof.
+$consultation = $invoice ? null : consultation_payment_find_by_reference($pdo, $orderRef);
+
 // The gateway returns the amount in minor units (halalas for SAR, fils for 3-decimal
 // currencies), so divide by the configured currency's minor-unit factor.
 $minorUnits = ngenius_minor_units(ngenius_currency($settings));
 $amountValue = isset($payload['order']['amount']['value']) ? $payload['order']['amount']['value'] / $minorUnits : null;
 
 try {
-    $pdo->prepare('INSERT INTO payment_transactions (invoice_id, firm_id, gateway, gateway_order_ref, event_type, event_hash, amount, raw_payload) VALUES (?,?,?,?,?,?,?,?)')
+    $pdo->prepare('INSERT INTO payment_transactions (invoice_id, consultation_id, firm_id, gateway, gateway_order_ref, event_type, event_hash, amount, raw_payload) VALUES (?,?,?,?,?,?,?,?,?)')
         ->execute([
             $invoice ? $invoice['id'] : null,
+            $consultation ? $consultation['id'] : null,
             $invoice ? $invoice['firm_id'] : null,
             'ngenius', $orderRef, $event, $eventHash, $amountValue, $raw,
         ]);
@@ -100,6 +107,21 @@ if ($invoice) {
         }
     } elseif (in_array($event, ['DECLINED','PURCHASE_DECLINED','PURCHASE_FAILED','AUTHORISATION_FAILED'], true) && $invoice['status'] === 'unpaid') {
         // keep unpaid; decision stays with the lawyer/admin
+    }
+}
+
+// Consultation order: re-verify against the gateway and confirm only on a real capture.
+// The webhook event name is not trusted as proof — consultation_payment_verify_and_confirm
+// re-queries the gateway, and its guarded UPDATE means a replayed event confirms once.
+if ($consultation) {
+    if (ngenius_is_paid_state($event)) {
+        $confirmResult = consultation_payment_verify_and_confirm($pdo, (int)$consultation['id'], $orderRef);
+        if (empty($confirmResult['ok'])) {
+            error_log('N-Genius webhook consultation verification failed for ' . $orderRef . ': ' . ($confirmResult['error'] ?? 'unknown'));
+        }
+    } elseif (in_array($event, ['DECLINED','PURCHASE_DECLINED','PURCHASE_FAILED','AUTHORISATION_FAILED','EXPIRED','CANCELLED'], true)) {
+        // A definitive non-payment releases the reserved slot so the time becomes bookable.
+        consultation_payment_release($pdo, (int)$consultation['id'], $event);
     }
 }
 

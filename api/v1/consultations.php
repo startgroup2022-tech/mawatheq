@@ -22,6 +22,7 @@ require_once __DIR__ . '/../../includes/notifications.php';
 require_once __DIR__ . '/../../includes/tenant.php';
 require_once __DIR__ . '/../../includes/consultation_attachments.php';
 require_once __DIR__ . '/../../includes/legal_journey.php';
+require_once __DIR__ . '/../../includes/consultation_payment.php';
 
 $auth = api_authenticate($pdo);
 
@@ -225,11 +226,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     notify($pdo, 'lawyer', $lawyerId, 'طلب حجز استشارة جديد', ($topic ?: '') . ' — ' . $scheduledAt, '/lawyer/consultations.php');
 
+    // A priced consultation must be paid before it is confirmed, exactly as on the website.
+    // The app cannot render a hosted payment page itself, so it receives the gateway URL and
+    // opens it; confirmation still happens only on an independently verified capture. A
+    // lawyer with no rate returns no payment_url and keeps the request-and-confirm flow.
+    $paymentUrl = null;
+    $consultationRow = ['id' => $consultationId, 'price' => $lawyer['hourly_rate'], 'lawyer_id' => $lawyerId];
+    if (consultation_payment_schema_ready($pdo) && consultation_payment_required($consultationRow)) {
+        $started = consultation_payment_start($pdo, $consultationRow, [
+            'customer_name' => (string)($auth['full_name'] ?? ''),
+            'customer_email' => (string)($auth['email'] ?? ''),
+            'language' => current_lang(),
+        ]);
+        if (!empty($started['ok'])) $paymentUrl = $started['redirect_url'];
+    }
+
     api_json([
         'ok' => true,
         'consultation_id' => $consultationId,
         'reused' => false,
         'attachments' => $claimed,
+        'payment_required' => $paymentUrl !== null,
+        'payment_url' => $paymentUrl,
     ], 201);
 }
 

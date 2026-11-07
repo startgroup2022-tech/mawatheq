@@ -214,7 +214,7 @@ void main() {
           tokens: _MemoryTokenStore()..saveToken('t'),
         ),
       );
-      final id = await repo.bookConsultation(
+      final booking = await repo.bookConsultation(
         lawyerId: 1,
         consultationType: 'text',
         date: '2026-11-01',
@@ -222,7 +222,7 @@ void main() {
         specialtyCategoryId: 1,
         issueTypeId: 5,
       );
-      expect(id, 20);
+      expect(booking.consultationId, 20);
       final sent = recording.lastBody;
       expect(sent.contains('specialty_category_id'), isTrue);
       expect(sent.contains('issue_type_id'), isTrue);
