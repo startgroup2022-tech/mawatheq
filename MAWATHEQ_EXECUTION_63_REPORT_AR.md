@@ -4,7 +4,8 @@
 
 **Release:** `v2026.11.05-exec63`
 **Date:** 2026-11-05
-**Branch:** `exec63-fix-paid-booking-packages`
+**Branch:** `exec56-lawyer-platform` (PR #10 — stacked on the Execution 56→62 line)
+**Commit:** `7f605e6`
 
 ---
 
@@ -97,7 +98,10 @@
   `www-data` (مشكلة بيئة موثّقة في AGENTS.md)؛ عند تشغيله بـ `sg www-data -c` ينجح **131/131**.
 
 ### 3.5 اختبارات المتصفّح (Playwright)
-`npx playwright test` — 756 اختباراً على ستة مقاسات، RTL وLTR.
+`npx playwright test` — 756 اختباراً على ستة مقاسات، RTL وLTR → **750 ناجح، 6 متجاوز، 0 فشل**.
+إضافةً إلى `tests/e2e/exec63-journeys.spec.js` المخصّص لهذا التنفيذ: **36/36 ناجح** (6 مقاسات):
+توجيه أزرار الباقات، عرض الكتالوج لعميل مسجّل، بقاء الرابط العميق بعد الدخول، رفض الهدف
+خارج الموقع، ظهور إجراء الدفع للعميل، ومنع المحامي من تأكيد استشارة غير مدفوعة.
 
 ---
 
@@ -113,3 +117,27 @@
    بدونه تظهر رسالة «تعذّر بدء الدفع» بدل صفحة الدفع.
 2. **تطبيق `upgrade_v70.sql` على الإنتاج** — بدونه لا يمكن شراء أي باقة.
 3. **مفاتيح الإنتاج ليست في هذا المستودع** ولا يمكن تخمينها.
+
+---
+
+## 6. مخرجات التسليم (Release artifacts)
+
+البناء من الوسم `v2026.11.05-exec63` (مُعاد إنتاجه بالبايت: بناءان متطابقان).
+
+| الملف | المحتوى |
+|---|---|
+| `MAWATHEQ_WEBSITE_FINAL.zip` | موقع cPanel الكامل (بلا أسرار/اختبارات) |
+| `MAWATHEQ_DATABASE_MIGRATIONS.zip` | `schema.sql` + كل `upgrade_v*.sql` حتى **v70** + أدوات الإصلاح + دليل النشر |
+| `MAWATHEQ_DEPLOYMENT_GUIDE_AR.md` | دليل النشر المحدّث (يتضمّن خطوة v70) |
+| `MAWATHEQ_EXECUTION_63_REPORT_AR.md` | هذا التقرير |
+| `MAWATHEQ_EXEC63_SCREENSHOTS.zip` | لقطات قبل/بعد لرحلتي الشراء والدفع |
+| `MAWATHEQ_CLIENT_v1.8.1+19_DEBUG-SIGNED.apk` | تطبيق العميل (أُعيد بناؤه — كود التطبيق تغيّر) |
+| `MAWATHEQ_CLIENT_v1.8.1+19_debug-signed_PENDING-UPLOAD-KEY.aab` | نفس التطبيق لحزمة Play |
+| `SHA256SUMS.txt` | بصمات التحقق |
+
+**تطبيق العميل:** `com.mawatheq.app` · versionCode **19** · versionName **1.8.1** · minSdk 24 ·
+targetSdk 36 · موقّع بمفتاح التصحيح (`CN=Android Debug`) — لا يصلح للنشر على Play حتى يضع
+المالك مفتاح الرفع (`android/key.properties`). لم يُعَد بناء تطبيق المحامي (لم يتغيّر).
+
+**خطوات النشر:** راجع القسم «نشر تحديث» في `MAWATHEQ_DEPLOYMENT_GUIDE_AR.md` — الخطوة
+الإلزامية الجديدة هي تطبيق `database/upgrade_v70.sql`.
