@@ -185,7 +185,7 @@ $statusLabels = [
           </span>
 
           <?php if (!$isCurrent): ?>
-            <a class="btn btn-primary btn-sm btn-block" href="/contact.php?topic=plan&plan=<?= (int)$p['id'] ?>">
+            <a class="btn btn-primary btn-sm btn-block" href="/packages.php?plan=<?= (int)$p['id'] ?>#plan-<?= (int)$p['id'] ?>">
               <?= $rtl ? 'اطلب تفعيل هذه الباقة' : 'Request this plan' ?>
             </a>
           <?php endif; ?>

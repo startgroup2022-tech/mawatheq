@@ -83,6 +83,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // confirmed again — the same guard the web page applies.
             if ($consultation['status'] === 'completed') api_error('consultation already completed', 409);
             if ($consultation['status'] === 'cancelled') api_error('consultation already cancelled', 409);
+            // A priced consultation is confirmed only after the gateway verifies payment —
+            // the same rule the website enforces. Without this an app client could confirm
+            // an unpaid booking by calling the API directly.
+            if ($status === 'confirmed' && consultation_payment_blocks_confirmation($consultation)) {
+                api_error('this consultation must be paid before it can be confirmed', 409);
+            }
 
             $upd = $pdo->prepare('UPDATE consultations SET status=? WHERE id=? AND ' . $scope['sql']);
             $upd->execute(array_merge([$status, $consultationId], $scope['params']));
@@ -231,14 +237,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // opens it; confirmation still happens only on an independently verified capture. A
     // lawyer with no rate returns no payment_url and keeps the request-and-confirm flow.
     $paymentUrl = null;
+    $paymentRequired = false;
+    $paymentError = null;
     $consultationRow = ['id' => $consultationId, 'price' => $lawyer['hourly_rate'], 'lawyer_id' => $lawyerId];
     if (consultation_payment_schema_ready($pdo) && consultation_payment_required($consultationRow)) {
+        $paymentRequired = true;
         $started = consultation_payment_start($pdo, $consultationRow, [
             'customer_name' => (string)($auth['full_name'] ?? ''),
             'customer_email' => (string)($auth['email'] ?? ''),
             'language' => current_lang(),
         ]);
-        if (!empty($started['ok'])) $paymentUrl = $started['redirect_url'];
+        if (!empty($started['ok'])) {
+            $paymentUrl = $started['redirect_url'];
+        } else {
+            // The booking exists but payment did not start, so it is NOT confirmed. Report
+            // that honestly instead of letting the app show a success screen for a booking
+            // nobody will be able to pay for.
+            $paymentError = (string)($started['error'] ?? 'gateway_error');
+        }
     }
 
     api_json([
@@ -246,8 +262,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'consultation_id' => $consultationId,
         'reused' => false,
         'attachments' => $claimed,
-        'payment_required' => $paymentUrl !== null,
+        'payment_required' => $paymentRequired,
         'payment_url' => $paymentUrl,
+        'payment_error' => $paymentError,
+        'unconfirmed' => $paymentRequired && $paymentUrl === null,
     ], 201);
 }
 

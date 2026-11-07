@@ -41,6 +41,20 @@ function consultation_payment_required(array $consultation): bool {
     return isset($consultation['price']) && (float)$consultation['price'] > 0;
 }
 
+/**
+ * A priced consultation may not be confirmed until the gateway has verified its payment.
+ *
+ * This is the server-side half of "payment is required before a paid consultation is
+ * confirmed". The booking page already routes a priced booking through the gateway, but a
+ * lawyer could otherwise press "Confirm" on the still-unpaid request (or call the API's
+ * change-status action) and turn it into a confirmed appointment without money moving.
+ * The customer's payment_status is the only authority here; a free booking is unaffected.
+ */
+function consultation_payment_blocks_confirmation(array $consultation): bool {
+    if (!consultation_payment_required($consultation)) return false;
+    return (string)($consultation['payment_status'] ?? 'unpaid') !== 'paid';
+}
+
 /** Stable gateway reference for a consultation payment attempt (unique per attempt). */
 function consultation_payment_reference(int $consultationId): string {
     return 'CONS-' . $consultationId . '-' . strtoupper(bin2hex(random_bytes(5)));

@@ -100,7 +100,7 @@ $topbarInitial = $userName !== '' ? mb_substr($userName, 0, 1, 'UTF-8') : '؟';
             <?= ui_icon('card') ?><span><?= ui_e($topbarPlanName) ?></span>
           </a>
         <?php else: ?>
-          <a class="topbar-plan is-warn" href="/contact.php?topic=plan" title="<?= ui_e(is_rtl() ? 'لا توجد باقة مفعّلة' : 'No active plan') ?>">
+          <a class="topbar-plan is-warn" href="/packages.php" title="<?= ui_e(is_rtl() ? 'لا توجد باقة مفعّلة' : 'No active plan') ?>">
             <?= ui_icon('alert') ?><span><?= is_rtl() ? 'بدون باقة' : 'No plan' ?></span>
           </a>
         <?php endif; ?>

@@ -62,13 +62,19 @@ function auth_rate_limit_clear(PDO $pdo, string $accountType, string $email): vo
     auth_rate_limit_clear_key($pdo, $keys[1]);
 }
 
-function create_email_verification(PDO $pdo, string $accountType, int $accountId, string $email, string $name): bool {
+function create_email_verification(PDO $pdo, string $accountType, int $accountId, string $email, string $name, ?string $next = null): bool {
     require_once __DIR__ . '/mailer.php';
     $token = bin2hex(random_bytes(32));
     $table = $accountType === 'lawyer' ? 'lawyers' : 'users';
     $pdo->prepare("UPDATE {$table} SET email_verified=0, email_verify_token_hash=?, email_verify_expires=DATE_ADD(NOW(), INTERVAL 24 HOUR) WHERE id=?")
         ->execute([hash('sha256', $token), $accountId]);
     $url = rtrim(SITE_URL, '/') . '/verify-email.php?token=' . urlencode($token);
+    // Carry a local deep link (e.g. the package checkout the visitor started) through the
+    // email round trip, so verifying does not lose where they were going. The value is
+    // validated again in verify-email.php before it is used.
+    if (is_string($next) && $next !== '' && $next[0] === '/' && strpos($next, '//') !== 0) {
+        $url .= '&next=' . rawurlencode($next);
+    }
     $arabic = current_lang() === 'ar';
     $body = $arabic
         ? '<p>مرحباً ' . htmlspecialchars($name, ENT_QUOTES, 'UTF-8') . '،</p><p>أكد بريدك الإلكتروني لتفعيل تسجيل الدخول إلى مواثيق. الرابط صالح لمدة 24 ساعة.</p>'

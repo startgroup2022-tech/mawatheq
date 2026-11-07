@@ -1,8 +1,12 @@
 <?php
 require_once __DIR__ . '/config/config.php';
 require_once __DIR__ . '/lang/strings.php';
+require_once __DIR__ . '/includes/redirect.php';
 $verified = false;
 $token = trim($_GET['token'] ?? '');
+// A local deep link the visitor was heading to before registering (the package checkout,
+// for example). Validated here so the verification page cannot become an open redirect.
+$next = safe_local_path($_GET['next'] ?? '');
 if ($token !== '' && preg_match('/^[a-f0-9]{64}$/', $token)) {
     $hash = hash('sha256', $token);
     foreach (['users', 'lawyers'] as $table) {
@@ -24,6 +28,10 @@ if ($token !== '' && preg_match('/^[a-f0-9]{64}$/', $token)) {
 <div class="auth-wrap"><div class="auth-card"><a href="/" class="brand"><img src="/assets/img/logo.webp" alt="<?= htmlspecialchars(is_rtl() ? SITE_NAME_AR : SITE_NAME_EN) ?>" style="height:38px"></a>
 <h1><?= is_rtl() ? 'تأكيد البريد الإلكتروني' : 'Email verification' ?></h1>
 <?php if ($verified): ?><div class="form-alert success"><?= is_rtl() ? 'تم تأكيد بريدك الإلكتروني. يمكنك الآن تسجيل الدخول.' : 'Your email is verified. You can now sign in.' ?></div>
-<a class="btn btn-primary btn-block" href="/login.php"><?= is_rtl() ? 'دخول العملاء' : 'Client sign in' ?></a><a class="btn btn-outline btn-block" href="/lawyer-login.php"><?= is_rtl() ? 'دخول المحامين' : 'Lawyer sign in' ?></a>
+<?php if ($next !== ''): ?>
+  <a class="btn btn-primary btn-block" href="/login.php?next=<?= rawurlencode($next) ?>"><?= is_rtl() ? 'متابعة وتسجيل الدخول' : 'Continue and sign in' ?></a>
+<?php else: ?>
+  <a class="btn btn-primary btn-block" href="/login.php"><?= is_rtl() ? 'دخول العملاء' : 'Client sign in' ?></a><a class="btn btn-outline btn-block" href="/lawyer-login.php"><?= is_rtl() ? 'دخول المحامين' : 'Lawyer sign in' ?></a>
+<?php endif; ?>
 <?php else: ?><div class="form-alert error"><?= is_rtl() ? 'رابط التفعيل غير صالح أو انتهت صلاحيته.' : 'This verification link is invalid or has expired.' ?></div><a class="btn btn-primary btn-block" href="/resend-verification.php"><?= is_rtl() ? 'إرسال رابط جديد' : 'Send a new link' ?></a><?php endif; ?>
 </div></div></body></html>

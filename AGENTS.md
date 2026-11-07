@@ -3663,3 +3663,63 @@ tag must be moved after it or the release tag points at sources that do not matc
 makes the KSA gateway return `realmNameNotAvailable`). The settings field now renders blank
 when the stored value is `'ni'`, so the operator sees the correct "leave blank" state rather
 than a value that looks configured and is not. The stored row is not rewritten.
+
+## Execution 63 — two broken customer journeys (paid booking, package purchasing)
+
+### A paid consultation was confirmable without payment
+
+The booking page routed a priced consultation through the gateway, but nothing *enforced*
+payment: a lawyer could press Confirm (or call `api/v1/consultations.php`'s change-status)
+on the still-unpaid request and turn it into a confirmed appointment with no money moving,
+and the booking page showed a **false success card** when the payment could not start.
+`includes/consultation_payment.php` now owns `consultation_payment_required()` (a positive
+`price` means it must be paid) and `consultation_payment_blocks_confirmation()` (a priced row
+whose `payment_status` is not `paid` blocks confirmation). Both the lawyer page and the API
+call the same helper, so the two surfaces cannot disagree. A free consultation and a lawyer
+with no rate keep the old request-and-confirm flow — never gate on "has a price column",
+gate on a positive price.
+
+### Package purchasing had no path at all
+
+Every "choose plan" button pointed at `/register.php?plan=…` (which ignores the plan) or a
+contact form. A package now follows the same order → hosted payment → independent
+verification → activation model as an invoice and a consultation, in
+`includes/package_payment.php` + `checkout.php` + `package-payment-return.php`, backed by
+`upgrade_v70.sql` (`package_orders`, `plans.classification/billing_cycle/consultation_price`,
+`payment_transactions.package_order_id`). The plan is activated only when the gateway itself
+confirms the capture; `package_orders.payment_reference` is UNIQUE and the activation UPDATE
+is guarded on the current status, so the return page and the webhook cannot both activate the
+same order. A plan with a zero price is activated directly, with no gateway round trip.
+
+`plans.classification` is derived from the shipped `price_monthly`/`is_corporate` so no
+published plan changes meaning, and the backfill only touches rows still on the column
+default — an operator's hand-set classification is never overwritten.
+
+### Deep links survive the sign-in and verification round trips
+
+`includes/redirect.php`'s `safe_local_path()` is the single validator for a `next` target:
+only a single-slash local path is accepted, so `//evil.example`, `https://evil.example` and
+backslash values are refused and the caller falls back to its own default. `login.php`,
+`register.php`, `verify-email.php`, `checkout.php` and `includes/auth_guard.php` all funnel
+through it. `create_email_verification()` gained an optional `?string $next` so a
+registration that starts at a checkout returns there after verification. The regex must not
+use `#` as its delimiter — a `#` in the allowed character class collides with the delimiter
+and the whole pattern silently fails to compile.
+
+### Test-fixture identity, again
+
+`exec57_lawyer_platform_probe` resolved its fixture consultation as "the newest row for
+owner-a". Once another suite seeded a consultation for owner-a under a *different* client,
+the probe logged in as `client-firm1` and asserted on a row that client is not a party to —
+29 failures that read like a Jitsi regression and were not. It now resolves by **both**
+parties (`lawyer_id = owner-a AND user_id = client-firm1`), which is the identity it actually
+drives. Same lesson as the firm-site probe: a fixture is an identity, not "the newest row".
+
+### Execution 63 touched no schema the client bundle reads, so no APK rebuild is required
+
+The mobile change is a one-line honesty fix: `BookingResult` now carries `unconfirmed` and
+`journey_screen.dart` shows a truthful message instead of a success screen when a priced
+booking was saved but the payment did not start. That is a client-app change, so a rebuilt
+bundle *would* include it — but the shipped `v2026.11.05-exec62` bundle (1.8.0+18) predates
+only this message. The owner decides whether to rebuild; the delivery notes say which.
+

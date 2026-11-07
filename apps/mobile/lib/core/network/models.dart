@@ -267,11 +267,16 @@ class BookingResult {
     required this.consultationId,
     this.paymentRequired = false,
     this.paymentUrl,
+    this.unconfirmed = false,
   });
 
   final int consultationId;
   final bool paymentRequired;
   final String? paymentUrl;
+
+  /// True when the booking needs payment but the gateway could not be reached, so the
+  /// booking exists yet is not confirmed. The UI must say so rather than show success.
+  final bool unconfirmed;
 
   factory BookingResult.fromJson(Map<String, dynamic> json) {
     final rawUrl = json['payment_url'];
@@ -279,6 +284,7 @@ class BookingResult {
       consultationId: Json(json).intg('consultation_id'),
       paymentRequired: json['payment_required'] == true,
       paymentUrl: (rawUrl is String && rawUrl.isNotEmpty) ? rawUrl : null,
+      unconfirmed: json['unconfirmed'] == true,
     );
   }
 }

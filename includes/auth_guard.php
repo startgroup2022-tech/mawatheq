@@ -1,7 +1,16 @@
 <?php
 // يستخدم في كل صفحات لوحة العميل — يتأكد أنه مسجّل دخول
+//
+// A signed-out customer who opens a deep link (a package checkout, a booking) should be
+// sent back to that page after signing in, not to the dashboard. The path is passed as a
+// local `next` parameter and validated by login.php before it is used.
 if (empty($_SESSION['user_id'])) {
-    header('Location: /login.php');
+    require_once __DIR__ . '/redirect.php';
+    // The full request path (including its query string) so the checkout or booking the
+    // customer opened is restored after sign-in. safe_local_path() refuses anything that
+    // is not a single-slash local path, so this cannot become an open redirect.
+    $next = safe_local_path($_SERVER['REQUEST_URI'] ?? '');
+    header('Location: /login.php' . ($next !== '' ? '?next=' . rawurlencode($next) : ''));
     exit;
 }
 $accountCheck=$pdo->prepare('SELECT status,email_verified FROM users WHERE id=?');

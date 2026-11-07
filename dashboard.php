@@ -116,7 +116,7 @@ foreach ($aiCards as $c) {
     if ($c['state'] === 'limit_reached') {
         $attention[] = ['sev' => 'warning', 'icon' => 'spark', 'title' => $rtl ? 'استهلكت حد ' . $c['title'] : 'Limit reached for ' . $c['title'],
                         'meta' => $rtl ? 'تواصل معنا لترقية الباقة لمتابعة الاستخدام' : 'Contact us to upgrade and continue',
-                        'href' => '/contact.php?topic=plan', 'cta' => $rtl ? 'ترقية الباقة' : 'Upgrade plan'];
+                        'href' => '/packages.php', 'cta' => $rtl ? 'ترقية الباقة' : 'Upgrade plan'];
     }
 }
 
@@ -135,7 +135,7 @@ $hasAnything = $upcomingCount || $totalCases || $pendingTasks || $draftsToReview
         <?php if ($planName): ?>
           <a class="ws-chip is-ok" href="/subscription.php"><?= ui_icon('card') ?> <?= $rtl ? 'باقتك: ' : 'Plan: ' ?><?= ui_e($planName) ?></a>
         <?php else: ?>
-          <a class="ws-chip is-warn" href="/contact.php?topic=plan"><?= ui_icon('alert') ?> <?= $rtl ? 'لا توجد باقة مفعّلة' : 'No active plan' ?></a>
+          <a class="ws-chip is-warn" href="/packages.php"><?= ui_icon('alert') ?> <?= $rtl ? 'لا توجد باقة مفعّلة' : 'No active plan' ?></a>
         <?php endif; ?>
         <?php if ($attention): ?>
           <span class="ws-chip is-warn"><?= ui_icon('bell') ?> <?= count($attention) ?> <?= $rtl ? 'بحاجة انتباهك' : 'need attention' ?></span>
@@ -240,7 +240,7 @@ $hasAnything = $upcomingCount || $totalCases || $pendingTasks || $draftsToReview
             <?= $rtl ? 'لا توجد باقة مرتبطة بحسابك. الخدمات الأساسية متاحة، ويمكنك طلب تفعيل باقة للاستفادة من حدود أعلى وخدمات إضافية.' : 'No plan is linked to your account. Core services are available; request a plan to unlock higher limits and extra services.' ?>
           </p>
           <div class="ws-head-actions">
-            <a class="btn btn-primary btn-sm" href="/contact.php?topic=plan"><?= $rtl ? 'اطلب تفعيل باقة' : 'Request a plan' ?></a>
+            <a class="btn btn-primary btn-sm" href="/packages.php"><?= $rtl ? 'اطلب تفعيل باقة' : 'Request a plan' ?></a>
             <a class="btn btn-outline btn-sm" href="/pricing.php"><?= $rtl ? 'مقارنة الباقات' : 'Compare plans' ?></a>
           </div>
         <?php endif; ?>
@@ -305,7 +305,7 @@ $hasAnything = $upcomingCount || $totalCases || $pendingTasks || $draftsToReview
           <?= $rtl
               ? 'بعض الخدمات غير متاحة في باقتك الحالية. يمكنك طلب ترقية وسنفعّلها على حسابك.'
               : 'Some services are not available on your current plan. You can request an upgrade and we will activate it on your account.' ?>
-          <a href="/contact.php?topic=plan"><?= $rtl ? 'تواصل لترقية الباقة' : 'Contact to upgrade' ?></a>
+          <a href="/packages.php"><?= $rtl ? 'تواصل لترقية الباقة' : 'Contact to upgrade' ?></a>
         </div>
       </div>
     <?php endif; ?>
@@ -463,7 +463,7 @@ $hasAnything = $upcomingCount || $totalCases || $pendingTasks || $draftsToReview
         $aiGate = $planUsage['ai_queries'];
         $aiQuickAllowed = $aiGate['limit'] === null || $aiGate['used'] < $aiGate['limit'];
       ?>
-      <a class="quick-action<?= $aiQuickAllowed ? '' : ' is-locked' ?>" href="<?= $aiQuickAllowed ? '/ai-assistant.php' : '/contact.php?topic=plan' ?>">
+      <a class="quick-action<?= $aiQuickAllowed ? '' : ' is-locked' ?>" href="<?= $aiQuickAllowed ? '/ai-assistant.php' : '/packages.php' ?>">
         <span class="qa-ico"><?= ui_icon($aiQuickAllowed ? 'spark' : 'lock') ?></span>
         <span><?= $aiQuickAllowed ? ($rtl ? 'اسأل المساعد' : 'Ask the assistant') : ($rtl ? 'ترقية لاستخدام المساعد' : 'Upgrade for assistant') ?></span>
       </a>

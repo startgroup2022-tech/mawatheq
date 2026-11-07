@@ -694,6 +694,15 @@ class _JourneyBookingScreenState extends State<_JourneyBookingScreen> {
           });
           return;
         }
+      } else if (booking.paymentRequired && booking.unconfirmed) {
+        // The booking was saved but the gateway could not be reached, so it is NOT confirmed.
+        // Saying "booked" here is exactly the defect this execution fixes.
+        setState(() {
+          _submitting = false;
+          _error = 'تم حفظ الطلب لكن تعذّر بدء الدفع، لذلك لم يُؤكَّد الموعد بعد. '
+              'يمكنك إكمال الدفع من صفحة الاستشارات.';
+        });
+        return;
       }
 
       // The booking is already made, so a reminder failure must not be reported as a

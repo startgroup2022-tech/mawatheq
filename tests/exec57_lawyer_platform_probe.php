@@ -77,7 +77,7 @@ $ownerAId = (int)$pdo->query("SELECT id FROM lawyers WHERE email='owner-a@exampl
 $ownerBId = (int)$pdo->query("SELECT id FROM lawyers WHERE email='owner-b@example.com'")->fetchColumn();
 $clientFirm1Id = (int)$pdo->query("SELECT id FROM users WHERE email='client-firm1@example.com'")->fetchColumn();
 $fixtureConsultationId = (int)$pdo->query(
-    "SELECT id FROM consultations WHERE lawyer_id = $ownerAId ORDER BY id DESC LIMIT 1"
+    "SELECT id FROM consultations WHERE lawyer_id = $ownerAId AND user_id = $clientFirm1Id ORDER BY id DESC LIMIT 1"
 )->fetchColumn();
 if ($ownerAId === 0 || $fixtureConsultationId === 0) {
     fwrite(STDERR, "fixture missing: run tests/seed_phase6.php and tests/seed_phase6_business.php first\n");

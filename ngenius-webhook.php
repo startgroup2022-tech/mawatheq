@@ -9,6 +9,7 @@ require_once __DIR__ . '/includes/ngenius.php';
 require_once __DIR__ . '/includes/notifications.php';
 require_once __DIR__ . '/includes/finance.php';
 require_once __DIR__ . '/includes/consultation_payment.php';
+require_once __DIR__ . '/includes/package_payment.php';
 header('Content-Type: application/json');
 
 $settings = ngenius_settings($pdo);
@@ -57,16 +58,21 @@ $invoice = $stmt->fetch();
 // the webhook body is a hint, never the proof.
 $consultation = $invoice ? null : consultation_payment_find_by_reference($pdo, $orderRef);
 
+// A package order carries the same secret and a PKG- reference. Activation happens only
+// after the same independent verification.
+$packageOrder = ($invoice || $consultation) ? null : package_payment_find_by_reference($pdo, $orderRef);
+
 // The gateway returns the amount in minor units (halalas for SAR, fils for 3-decimal
 // currencies), so divide by the configured currency's minor-unit factor.
 $minorUnits = ngenius_minor_units(ngenius_currency($settings));
 $amountValue = isset($payload['order']['amount']['value']) ? $payload['order']['amount']['value'] / $minorUnits : null;
 
 try {
-    $pdo->prepare('INSERT INTO payment_transactions (invoice_id, consultation_id, firm_id, gateway, gateway_order_ref, event_type, event_hash, amount, raw_payload) VALUES (?,?,?,?,?,?,?,?,?)')
+    $pdo->prepare('INSERT INTO payment_transactions (invoice_id, consultation_id, package_order_id, firm_id, gateway, gateway_order_ref, event_type, event_hash, amount, raw_payload) VALUES (?,?,?,?,?,?,?,?,?,?)')
         ->execute([
             $invoice ? $invoice['id'] : null,
             $consultation ? $consultation['id'] : null,
+            $packageOrder ? $packageOrder['id'] : null,
             $invoice ? $invoice['firm_id'] : null,
             'ngenius', $orderRef, $event, $eventHash, $amountValue, $raw,
         ]);
@@ -122,6 +128,21 @@ if ($consultation) {
     } elseif (in_array($event, ['DECLINED','PURCHASE_DECLINED','PURCHASE_FAILED','AUTHORISATION_FAILED','EXPIRED','CANCELLED'], true)) {
         // A definitive non-payment releases the reserved slot so the time becomes bookable.
         consultation_payment_release($pdo, (int)$consultation['id'], $event);
+    }
+}
+
+// Package order: re-verify against the gateway and activate only on a real capture. The
+// webhook event name is not trusted as proof — package_payment_verify_and_confirm re-queries
+// the gateway, and its guarded UPDATE means a replayed event activates once.
+if ($packageOrder) {
+    if (ngenius_is_paid_state($event)) {
+        $pkgResult = package_payment_verify_and_confirm($pdo, (int)$packageOrder['id'], $orderRef);
+        if (empty($pkgResult['ok'])) {
+            error_log('N-Genius webhook package verification failed for ' . $orderRef . ': ' . ($pkgResult['error'] ?? 'unknown'));
+        }
+    } elseif (in_array($event, ['DECLINED','PURCHASE_DECLINED','PURCHASE_FAILED','AUTHORISATION_FAILED','EXPIRED','CANCELLED'], true)) {
+        $pdo->prepare("UPDATE package_orders SET status='failed' WHERE id=? AND status='pending'")
+            ->execute([(int)$packageOrder['id']]);
     }
 }
 

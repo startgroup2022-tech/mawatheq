@@ -37,6 +37,27 @@ void main() {
       });
       expect(r.paymentUrl, isNull);
     });
+
+    test('a priced booking with no URL is flagged unconfirmed, not successful', () {
+      // The gateway could not be reached, so the booking exists but is not confirmed.
+      // The app must not treat this as a completed booking (Execution 63).
+      final r = BookingResult.fromJson({
+        'ok': true,
+        'consultation_id': 9,
+        'payment_required': true,
+        'payment_url': null,
+        'payment_error': 'gateway_disabled',
+        'unconfirmed': true,
+      });
+      expect(r.paymentRequired, isTrue);
+      expect(r.paymentUrl, isNull);
+      expect(r.unconfirmed, isTrue);
+    });
+
+    test('a free booking is never flagged unconfirmed', () {
+      final r = BookingResult.fromJson({'ok': true, 'consultation_id': 4});
+      expect(r.unconfirmed, isFalse);
+    });
   });
 
   group('PaymentWebViewScreen.isReturnUrl', () {

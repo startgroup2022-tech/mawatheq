@@ -401,7 +401,7 @@ $mobPoints = [t('l2_mob_b1'), t('l2_mob_b2'), t('l2_mob_b3'), t('l2_mob_b4')];
             <li><?= htmlspecialchars($rtl ? $f['feature_ar'] : $f['feature_en']) ?></li>
           <?php endforeach; ?>
         </ul>
-        <a href="/register.php?plan=<?= (int)$plan['id'] ?>" class="btn <?= $plan['is_featured'] ? 'btn-primary' : 'btn-outline' ?> btn-block"><?= t('pricing_choose') ?></a>
+        <a href="/packages.php?plan=<?= (int)$plan['id'] ?>#plan-<?= (int)$plan['id'] ?>" class="btn <?= $plan['is_featured'] ? 'btn-primary' : 'btn-outline' ?> btn-block"><?= t('pricing_choose') ?></a>
       </div>
       <?php endforeach; ?>
     </div>

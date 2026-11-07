@@ -18,6 +18,22 @@ $paymentRedirect = null;
 
 $lawyerId = (int)($_GET['lawyer_id'] ?? 0);
 
+// A firm's public website links here as /booking.php?firm=<slug>. Resolve the slug to the
+// firm's approved lawyers: one lawyer goes straight to their booking form, several show a
+// picker. Without this the firm CTA landed on "Lawyer not found", so a firm could never be
+// booked from its own site.
+$firmSlug = trim((string)($_GET['firm'] ?? ''));
+$firmInfo = null;
+$firmLawyers = [];
+if ($lawyerId <= 0 && $firmSlug !== '') {
+    require_once __DIR__ . '/includes/firm_site.php';
+    $firmInfo = firm_site_public_firm($pdo, $firmSlug);
+    if ($firmInfo) {
+        $firmLawyers = firm_site_team($pdo, (int)$firmInfo['id']);
+        if (count($firmLawyers) === 1) $lawyerId = (int)$firmLawyers[0]['id'];
+    }
+}
+
 // The journey (consultation-journey.php) hands the chosen specialty and issue type to
 // this form through the query string, so the booking keeps the routing the customer
 // chose. Both are re-validated server-side below; a value that does not exist is
@@ -39,6 +55,44 @@ $journeyIssueTypeName = legal_journey_issue_type_name($pdo, (int)$journeyChoice[
 $stmt = $pdo->prepare("SELECT * FROM lawyers WHERE id=? AND status='approved'");
 $stmt->execute([$lawyerId]);
 $lawyer = $stmt->fetch();
+
+// A firm with several approved lawyers, or a firm slug that resolved to no lawyer, needs a
+// picker or an honest "not available" page rather than the bare "Lawyer not found" line the
+// firm CTA used to hit.
+if (!$lawyer && ($firmInfo || $firmSlug !== '')) {
+    require_once __DIR__ . '/includes/app_header.php';
+    ?>
+    <div class="app-content">
+      <?php if ($firmInfo && $firmLawyers): ?>
+        <div class="toolbar"><div>
+          <h2><?= is_rtl() ? 'احجز استشارة' : 'Book a consultation' ?></h2>
+          <p><?= ui_e(is_rtl() ? ($firmInfo['display_name'] ?: $firmInfo['name']) : ($firmInfo['display_name'] ?: $firmInfo['name'])) ?></p>
+        </div></div>
+        <div class="grid-2">
+          <?php foreach ($firmLawyers as $fl): ?>
+            <div class="dash-card" style="display:flex;align-items:center;gap:14px">
+              <img src="<?= !empty($fl['photo_path']) ? '/' . htmlspecialchars($fl['photo_path']) : '/assets/img/avatar-placeholder.svg' ?>" alt="<?= htmlspecialchars($fl['full_name']) ?>" style="width:56px;height:56px;border-radius:50%;object-fit:cover;background:#EAEFF3" onerror="this.src='/assets/img/avatar-placeholder.svg'">
+              <div style="flex:1">
+                <strong style="color:var(--navy-dark)"><?= htmlspecialchars($fl['full_name']) ?></strong>
+                <div class="muted-sm"><?= htmlspecialchars($fl['specialization'] ?? '') ?></div>
+              </div>
+              <a href="/booking.php?lawyer_id=<?= (int)$fl['id'] ?>" class="btn btn-primary btn-sm"><?= is_rtl() ? 'احجز' : 'Book' ?></a>
+            </div>
+          <?php endforeach; ?>
+        </div>
+      <?php else: ?>
+        <div class="dash-card" style="text-align:center;padding:40px 24px">
+          <div style="font-size:2.2rem;margin-bottom:8px">🔎</div>
+          <h3 style="margin:0 0 6px"><?= is_rtl() ? 'المحامي غير متاح للحجز حالياً' : 'This lawyer is not available for booking' ?></h3>
+          <p><?= is_rtl() ? 'يمكنك اختيار محامٍ آخر من قائمة المحامين المعتمدين.' : 'You can choose another approved lawyer from the list.' ?></p>
+          <a href="/consultations.php" class="btn btn-primary" style="margin-top:14px"><?= is_rtl() ? 'عرض المحامين' : 'View lawyers' ?></a>
+        </div>
+      <?php endif; ?>
+    </div>
+    <?php
+    require __DIR__ . '/includes/app_footer.php';
+    exit;
+}
 if (!$lawyer) { echo '<div class="app-content"><p>' . (is_rtl() ? 'المحامي غير موجود.' : 'Lawyer not found.') . '</p></div>'; require __DIR__.'/includes/app_footer.php'; exit; }
 
 $availCount = $pdo->prepare('SELECT COUNT(*) c FROM lawyer_availability WHERE lawyer_id=?');
@@ -56,6 +110,8 @@ $draftToken = $_SESSION['booking_draft_tokens'][$lawyerId];
 
 $error = null;
 $success = false;
+$paymentRequired = false;
+$paymentStarted = false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $type = $_POST['consultation_type'] ?? 'text';
@@ -149,6 +205,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // request-and-confirm flow exactly as before.
         $consultationRow = ['id' => $consultationId, 'price' => $lawyer['hourly_rate'], 'lawyer_id' => $lawyerId];
         if (consultation_payment_schema_ready($pdo) && consultation_payment_required($consultationRow)) {
+            $paymentRequired = true;
             $custStmt = $pdo->prepare('SELECT full_name, email FROM users WHERE id=?');
             $custStmt->execute([$_SESSION['user_id']]);
             $customer = $custStmt->fetch() ?: [];
@@ -161,11 +218,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $paymentRedirect = $started['redirect_url'];
             } else {
                 // The booking exists and the lawyer was notified; only the online payment
-                // could not start. Say so plainly and leave the booking request standing
-                // rather than silently dropping it.
+                // could not start. This is NOT a confirmed booking — the customer must be
+                // told the appointment is unconfirmed and given a way to pay, or they will
+                // believe the consultation is booked (the defect this execution fixes).
                 $error = is_rtl()
-                    ? 'تم إنشاء طلب الحجز، لكن تعذّر بدء الدفع الإلكتروني. يمكنك المحاولة من صفحة الاستشارات أو التواصل مع المحامي.'
-                    : 'Your booking request was created, but online payment could not start. You can retry from your consultations page or contact the lawyer.';
+                    ? 'تم حفظ طلب الحجز، لكن تعذّر بدء الدفع الإلكتروني، لذلك لم يتم تأكيد الموعد بعد. يمكنك إكمال الدفع من صفحة الاستشارات.'
+                    : 'Your booking request was saved, but online payment could not start, so the appointment is not confirmed yet. You can complete payment from your consultations page.';
             }
         }
     }
@@ -188,7 +246,17 @@ $extraPageAssets = [
 ];
 ?>
 <div class="app-content">
-  <?php if ($success): ?>
+  <?php if ($success && $paymentRequired && $error): ?>
+    <?php /* Booking saved but payment did not start: it is NOT confirmed. Say so plainly
+             and give the customer a way to pay — never the "booking sent" success card. */ ?>
+    <div class="dash-card" style="text-align:center;padding:48px 24px">
+      <div style="font-size:2.4rem;margin-bottom:10px">💳</div>
+      <h3><?= is_rtl() ? 'لم يكتمل الدفع بعد' : 'Payment not completed yet' ?></h3>
+      <p><?= htmlspecialchars($error) ?></p>
+      <a href="/consultations.php" class="btn btn-primary" style="margin-top:14px"><?= is_rtl() ? 'إكمال الدفع' : 'Complete payment' ?></a>
+      <a href="/consultations.php" class="btn btn-outline" style="margin-top:8px"><?= is_rtl() ? 'العودة للاستشارات' : 'Back to consultations' ?></a>
+    </div>
+  <?php elseif ($success): ?>
     <div class="dash-card" style="text-align:center;padding:48px 24px">
       <div style="font-size:2.4rem;margin-bottom:10px">✅</div>
       <h3><?= is_rtl() ? 'تم إرسال طلب الحجز' : 'Booking request sent' ?></h3>
@@ -206,6 +274,13 @@ $extraPageAssets = [
     </div>
 
     <?php if ($error): ?><div class="form-alert error"><?= htmlspecialchars($error) ?></div><?php endif; ?>
+    <?php if (consultation_payment_required(['price' => $lawyer['hourly_rate']])): ?>
+      <div class="form-alert" style="background:#E8F1FA;color:#1C4E80">
+        <?= is_rtl()
+          ? 'هذه استشارة مدفوعة (' . money((float)$lawyer['hourly_rate']) . '). بعد إرسال الطلب ستُنقل إلى صفحة دفع آمنة، ولا يُؤكَّد الموعد إلا بعد نجاح الدفع.'
+          : 'This is a paid consultation (' . money((float)$lawyer['hourly_rate']) . '). After submitting you will be taken to a secure payment page, and the appointment is confirmed only after payment succeeds.' ?>
+      </div>
+    <?php endif; ?>
     <?php if (!$hasAvailability): ?>
       <div class="form-alert" style="background:#FFF8E6;color:#8A6D1D"><?= is_rtl() ? 'هذا المحامي لم يحدد أوقات دوام بعد — اختر تاريخاً ووقتاً مبدئياً وسيتواصل معك لتأكيد الموعد.' : "This lawyer hasn't set booking hours yet — pick a tentative date/time and they'll confirm with you." ?></div>
     <?php endif; ?>
@@ -277,7 +352,7 @@ $extraPageAssets = [
       $actor = ['type' => 'client', 'id' => (int)$_SESSION['user_id']];
       require __DIR__ . '/includes/consultation_attachments_panel.php';
       ?>
-      <button class="btn btn-primary btn-block btn-lg" type="submit"><?= t('hero_cta_book') ?></button>
+      <button class="btn btn-primary btn-block btn-lg" type="submit"><?= consultation_payment_required(['price' => $lawyer['hourly_rate']]) ? (is_rtl() ? 'احجز وادفع' : 'Book & pay') : t('hero_cta_book') ?></button>
     </form>
   <?php endif; ?>
 </div>

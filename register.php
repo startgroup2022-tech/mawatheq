@@ -9,10 +9,14 @@ require_once __DIR__ . '/includes/specialization_field.php';
 require_once __DIR__ . '/includes/plan_limits.php';
 require_once __DIR__ . '/includes/auth_security.php';
 require_once __DIR__ . '/includes/mailer.php';
+require_once __DIR__ . '/includes/redirect.php';
 
 $error = null;
 $lawyerSuccess = false;
 $accountCreated = false;
+// A deep link (the package checkout the visitor started) that must survive registration
+// and email verification. Validated as a local path; anything else is dropped.
+$next = safe_local_path($_POST['next'] ?? ($_GET['next'] ?? ''));
 $postedWho = $_POST['who'] ?? null;
 $queryWho = $_GET['as'] ?? null;
 $who = is_string($postedWho) ? $postedWho : (is_string($queryWho) ? $queryWho : 'client');
@@ -79,7 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $src['utm_source'], $src['utm_medium'], $src['utm_campaign'], $src['source_page'],
             ]);
             $accountCreated = true;
-            $emailSent = create_email_verification($pdo, 'client', (int)$pdo->lastInsertId(), $email, $name);
+            $emailSent = create_email_verification($pdo, 'client', (int)$pdo->lastInsertId(), $email, $name, $next);
             auth_rate_limit_failure($pdo, 'register-' . $who, $email);
             $lawyerSuccess = $emailSent;
             if (!$emailSent) $error = is_rtl() ? 'تم إنشاء الحساب لكن تعذّر إرسال رسالة التفعيل. استخدم صفحة إعادة إرسال رسالة التفعيل.' : 'Account created, but the verification email could not be sent. Use the resend verification page.';
@@ -139,6 +143,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <?php else: ?>
 
     <form method="post" id="registerForm"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
+      <?php if ($next !== ''): ?><input type="hidden" name="next" value="<?= htmlspecialchars($next) ?>"><?php endif; ?>
       <input type="hidden" name="who" value="<?= $who ?>">
       <?php if ($who === 'client'): ?>
         <div class="field">

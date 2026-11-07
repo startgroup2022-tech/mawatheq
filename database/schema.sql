@@ -149,7 +149,34 @@ CREATE TABLE IF NOT EXISTS plans (
     is_featured TINYINT(1) NOT NULL DEFAULT 0,
     sort_order SMALLINT DEFAULT 0,
     status ENUM('active','hidden') NOT NULL DEFAULT 'active',
+    classification ENUM('free','paid','corporate') NOT NULL DEFAULT 'paid',
+    consultation_price DECIMAL(12,3) DEFAULT NULL,
+    billing_cycle ENUM('monthly','yearly','both') NOT NULL DEFAULT 'both',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ------------------------------------------------------------
+-- طلبات شراء الباقات (Execution 63)
+-- An order exists while the customer is on the payment page; the subscription
+-- it produces is created only after the gateway confirms the capture.
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS package_orders (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id INT UNSIGNED NOT NULL,
+    plan_id INT UNSIGNED NOT NULL,
+    billing_cycle ENUM('monthly','yearly') NOT NULL DEFAULT 'monthly',
+    amount DECIMAL(12,3) NOT NULL DEFAULT 0,
+    currency VARCHAR(3) NOT NULL DEFAULT 'SAR',
+    status ENUM('pending','paid','failed','cancelled','refunded') NOT NULL DEFAULT 'pending',
+    payment_reference VARCHAR(100) DEFAULT NULL,
+    payment_gateway VARCHAR(30) DEFAULT NULL,
+    paid_at DATETIME DEFAULT NULL,
+    subscription_id INT UNSIGNED DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_package_order_ref (payment_reference),
+    KEY idx_package_orders_user (user_id, status),
+    KEY idx_package_orders_plan (plan_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ------------------------------------------------------------
@@ -176,6 +203,7 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     ends_at DATE NOT NULL,
     status ENUM('active','expired','cancelled') NOT NULL DEFAULT 'active',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_subscriptions_user_status (user_id, status, ends_at),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (plan_id) REFERENCES plans(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -741,6 +769,7 @@ CREATE TABLE IF NOT EXISTS payment_transactions (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     invoice_id INT UNSIGNED DEFAULT NULL,
     consultation_id INT UNSIGNED DEFAULT NULL,
+    package_order_id INT UNSIGNED DEFAULT NULL,
     gateway VARCHAR(30) NOT NULL DEFAULT 'ngenius',
     gateway_order_ref VARCHAR(100) DEFAULT NULL,
     gateway_transaction_id VARCHAR(120) DEFAULT NULL,
@@ -758,6 +787,7 @@ CREATE TABLE IF NOT EXISTS payment_transactions (
     raw_payload TEXT DEFAULT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_payment_tx_consultation (consultation_id),
+    INDEX idx_payment_tx_package (package_order_id),
     FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

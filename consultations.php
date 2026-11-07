@@ -2,6 +2,7 @@
 $activePage = 'consultations';
 require_once __DIR__ . '/includes/app_header.php';
 require_once __DIR__ . '/includes/jurisdiction.php';
+require_once __DIR__ . '/includes/consultation_payment.php';
 
 $filterJurisdiction = $_GET['jurisdiction'] ?? '';
 $filterSpecialization = $_GET['specialization'] ?? '';
@@ -25,17 +26,35 @@ $myBookings = $myBookings->fetchAll();
   <h2><?= t('feat4_title') ?></h2>
   <p style="margin-bottom:20px"><?= t('feat4_body') ?></p>
 
+  <?php if (isset($_GET['payment_error'])): ?>
+    <div class="form-alert error"><?= is_rtl() ? 'تعذّر بدء الدفع الإلكتروني حالياً. لم يتم خصم أي مبلغ. حاول مجدداً لاحقاً.' : 'Online payment could not be started. No amount was charged. Please try again later.' ?></div>
+  <?php endif; ?>
   <?php if ($myBookings): ?>
   <h3 style="margin-bottom:12px"><?= is_rtl() ? 'حجوزاتي' : 'My bookings' ?></h3>
   <?php foreach ($myBookings as $b): ?>
+    <?php $needsPayment = consultation_payment_required($b) && ($b['payment_status'] ?? 'unpaid') !== 'paid'; ?>
     <div class="dash-card" style="display:flex;justify-content:space-between;align-items:center">
       <div>
         <strong><?= htmlspecialchars($b['lawyer_name']) ?></strong>
         <div style="font-size:.82rem;color:var(--text-muted)"><?= date('Y-m-d H:i', strtotime($b['scheduled_at'])) ?> — <?= htmlspecialchars($b['consultation_type']) ?></div>
+        <?php if (consultation_payment_required($b)): ?>
+          <div style="font-size:.82rem;margin-top:4px">
+            <span class="badge <?= ($b['payment_status'] ?? 'unpaid') === 'paid' ? 'badge-success' : 'badge-neutral' ?>">
+              <?= ($b['payment_status'] ?? 'unpaid') === 'paid' ? (is_rtl() ? 'مدفوعة' : 'Paid') : (is_rtl() ? 'بانتظار الدفع' : 'Payment due') ?>
+            </span>
+            <span style="color:var(--text-muted)"><?= money((float)$b['price']) ?></span>
+          </div>
+        <?php endif; ?>
       </div>
       <div style="display:flex;align-items:center;gap:10px">
         <span class="status-pill status-<?= $b['status'] ?>"><?= htmlspecialchars($b['status']) ?></span>
-        <?php if (in_array($b['status'], ['pending','confirmed'])): ?>
+        <?php if ($needsPayment): ?>
+          <form method="post" action="/consultation-pay.php" style="display:inline">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
+            <input type="hidden" name="consultation_id" value="<?= (int)$b['id'] ?>">
+            <button class="btn btn-primary btn-sm" type="submit"><?= is_rtl() ? 'ادفع الآن' : 'Pay now' ?></button>
+          </form>
+        <?php elseif (in_array($b['status'], ['pending','confirmed'])): ?>
           <a href="/consultation-room.php?id=<?= $b['id'] ?>" class="btn btn-primary btn-sm"><?= is_rtl() ? 'الدخول للاستشارة' : 'Join' ?></a>
         <?php endif; ?>
       </div>

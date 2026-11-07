@@ -125,13 +125,15 @@ printf '  removed %s root-level .md file(s) from the site package\n' "$removed_d
     || fail "database/upgrade_v56.sql is missing from the migration package"
 [ -f "$STAGE/migrations/database/upgrade_v57.sql" ] \
     || fail "database/upgrade_v57.sql is missing from the migration package"
-# upgrade_v69.sql is the last migration in the chain. It carries the consultation
-# payment columns (Execution 62, N-Genius); a package that stops earlier deploys the
-# payment return page and the booking payment step against columns that do not exist.
+# upgrade_v70.sql is the last migration in the chain. It carries the package
+# purchasing model (Execution 63): plans.classification, package_orders and
+# payment_transactions.package_order_id. A package that stops earlier deploys the
+# package checkout and webhook activation against tables and columns that do not
+# exist, so buying a package fails with a 500 on the payment return.
 # Assert the current head, not a remembered one — this assertion moves with each
 # execution, and a stale expectation fails the next build for the wrong reason.
-[ -f "$STAGE/migrations/database/upgrade_v69.sql" ] \
-    || fail "database/upgrade_v69.sql is missing from the migration package"
+[ -f "$STAGE/migrations/database/upgrade_v70.sql" ] \
+    || fail "database/upgrade_v70.sql is missing from the migration package"
 
 # --- modes and timestamps --------------------------------------------------
 step "normalizing file modes and timestamps"
