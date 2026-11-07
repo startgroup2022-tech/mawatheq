@@ -3649,3 +3649,17 @@ probe fails on a fixture row, rebuild the test database before touching the prob
 `journey_screen.dart`, `api_repository.dart`, `models.dart` and the new
 `payment_webview_screen.dart` are client-app changes; the shipped client bundle predates
 them. The lawyer app is untouched, so no new lawyer bundle is needed.
+
+The bundle was built and attached to `v2026.11.05-exec62`: `versionName 1.8.0` /
+`versionCode 18` (bumped from `1.7.0+17` — Play rejects a reused `versionCode`), package
+`com.mawatheq.app`, minSdk 24 / targetSdk 36, still **debug-signed** (`CN=Android Debug`)
+because `android/key.properties` is absent. Identity was read off the built artifact with
+`aapt2 dump badging` and `keytool`, never from source. A version bump is a commit, so the
+tag must be moved after it or the release tag points at sources that do not match the APK.
+
+### The Realm Name display normalises the legacy `'ni'`
+
+`ngenius_realm_name` was seeded `'ni'`, which the wire code treats as unset (sending it
+makes the KSA gateway return `realmNameNotAvailable`). The settings field now renders blank
+when the stored value is `'ni'`, so the operator sees the correct "leave blank" state rather
+than a value that looks configured and is not. The stored row is not rewritten.
