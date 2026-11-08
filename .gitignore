@@ -43,3 +43,11 @@ MAWATHEQ_EXECUTION_12_COMPLETE.zip
 MAWATHEQ_EXECUTION_12_COMPLETE.sha256
 MAWATHEQ_EXECUTION_12_COMPLETE_FILES.sha256
 MAWATHEQ_EXECUTION_12_COMPLETE_MANIFEST.txt
+
+# Flutter golden-test diff output (regenerated on every failing comparison)
+apps/mobile/tool/design_exec66/failures/
+apps/mobile/tool/screenshots/failures/
+
+# Execution 66 design-review artifacts
+MAWATHEQ_EXEC66_DESIGN_REVIEW.zip
+MAWATHEQ_EXEC66_DESIGN_REVIEW.sha256

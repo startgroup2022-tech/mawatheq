@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>مواثيق — تصميم رحلة الحجز (أ): اختيار المحامي أولاً</title>
+<link rel="stylesheet" href="assets/design.css">
+<style>
+  /* Stage visibility is driven by ?stage=N so every screenshot is deterministic. */
+  .stage{ display:none; }
+  .stage.on{ display:block; }
+</style>
+</head>
+<body>
+<div class="mk-stage">
+
+  <div class="mk-title">
+    <span class="mk-kicker">تصميم مقترح · Execution 66 · الرحلة (أ)</span>
+    <h1>رحلة الحجز (أ) — اختيار المحامي أولاً</h1>
+    <p>مُعاينة تصميم فقط — لم تُطبَّق بعد. الألوان والخطوط مأخوذة من نظام تصميم مواثيق الحالي، والأسعار وأوقات العمل معروضة من بيانات حقيقية (لا أوقات وهمية).</p>
+  </div>
+
+  <div class="mk-frame">
+    <div class="mk-frame-head">
+      <span class="mk-dots"><i></i><i></i><i></i></span>
+      <span class="mk-url ltr">mawatheq.com/book?journey=a&amp;stage=<span id="urlStage">1</span></span>
+    </div>
+    <div class="mk-frame-body">
+
+      <div class="mk-topbar">
+        <span class="mk-logo"><span class="mk-mark">م</span> مواثيق</span>
+        <nav class="mk-topnav">
+          <span>الرئيسية</span><span class="on">الاستشارات</span><span>المحامون</span><span>خدماتي</span>
+          <span class="mk-cart">🔔 <span class="num">2</span></span>
+        </nav>
+      </div>
+
+      <!-- progress indicator, shared by both journeys -->
+      <div class="mk-progress">
+        <div class="mk-step done"><span class="dot">✓</span><span class="lbl">اختيار المحامي</span></div>
+        <div class="mk-step done" data-min="2"><span class="dot">✓</span><span class="lbl">نوع الاستشارة</span></div>
+        <div class="mk-step now" data-min="3"><span class="dot num">3</span><span class="lbl">الموعد</span></div>
+        <div class="mk-step" data-min="4"><span class="dot num">4</span><span class="lbl">المراجعة</span></div>
+        <div class="mk-step" data-min="5"><span class="dot num">5</span><span class="lbl">الدفع</span></div>
+        <div class="mk-step" data-min="6"><span class="dot num">6</span><span class="lbl">التأكيد</span></div>
+      </div>
+
+      <!-- ===================== STAGE 1 — browse & select lawyer ===================== -->
+      <section class="stage" data-stage="1">
+        <div class="mk-app">
+          <div class="mk-main">
+
+            <div class="mk-card">
+              <div class="mk-h"><span class="n">1</span> اختر المحامي</div>
+              <div class="mk-sub">ابحث بالاسم أو التخصص، ورشّح النتائج حسب الدولة والمدينة والخبرة والسعر والتوفر الفعلي.</div>
+              <div style="height:16px"></div>
+              <div class="mk-search">
+                <span class="mk-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+                  <input class="mk-input" placeholder="ابحث باسم المحامي أو التخصص…" value="استشارات قانونية">
+                </span>
+                <button class="btn btn-primary">بحث</button>
+              </div>
+            </div>
+
+            <div class="mk-card">
+              <div class="mk-h" style="font-size:var(--fs-md)">تصفية النتائج</div>
+              <div style="height:14px"></div>
+              <div class="mk-3col">
+                <div class="mk-field" style="margin:0"><label>التخصص القانوني</label>
+                  <select class="mk-select"><option>كل التخصصات</option><option selected>الأحوال الشخصية</option><option>الدعاوى التجارية</option><option>الدعاوى العمالية</option></select></div>
+                <div class="mk-field" style="margin:0"><label>الدولة</label>
+                  <select class="mk-select"><option selected>السعودية</option><option>الإمارات</option><option>البحرين</option></select></div>
+                <div class="mk-field" style="margin:0"><label>المدينة</label>
+                  <select class="mk-select"><option selected>الرياض</option><option>جدة</option><option>مكة المكرمة</option></select>
+                  <div class="hint">تُعرض المدن حسب الدولة المختارة.</div></div>
+              </div>
+              <div style="height:6px"></div>
+              <div class="mk-3col">
+                <div class="mk-field" style="margin:0"><label>سنوات الخبرة</label>
+                  <select class="mk-select"><option>كل المستويات</option><option>أقل من 5 سنوات</option><option>5 – 10 سنوات</option><option selected>11 – 15 سنة</option><option>16 – 20 سنة</option><option>أكثر من 20 سنة</option></select></div>
+                <div class="mk-field" style="margin:0"><label>أقل سعر</label>
+                  <input class="mk-input ltr" inputmode="decimal" value="300" placeholder="0"></div>
+                <div class="mk-field" style="margin:0"><label>أعلى سعر</label>
+                  <input class="mk-input ltr" inputmode="decimal" value="900" placeholder="بلا حد"></div>
+              </div>
+              <div style="height:6px"></div>
+              <div class="mk-between">
+                <div class="mk-chips">
+                  <span class="mk-chip on">متاح خلال 7 أيام <span class="x">✕</span></span>
+                  <span class="mk-chip">فيديو</span>
+                  <span class="mk-chip">صوتية</span>
+                  <span class="mk-chip">نصية</span>
+                </div>
+                <button class="btn btn-ghost">مسح كل الفلاتر</button>
+              </div>
+            </div>
+
+            <div class="mk-results-head">
+              <div class="mk-count"><b>2</b> محامٍ مطابق</div>
+              <div class="mk-sort">ترتيب حسب: <b>الأعلى تقييماً</b></div>
+            </div>
+
+            <div class="mk-lgrid">
+
+              <article class="mk-lcard sel">
+                <div class="mk-lcard-top">
+                  <div class="mk-avatar">ع</div>
+                  <div class="who">
+                    <div class="nm">مكتب المحامي عبدالله الشهري</div>
+                    <div class="spec">الأحوال الشخصية · الدعاوى التجارية</div>
+                    <div class="loc">📍 الرياض، السعودية</div>
+                    <div class="mk-badges">
+                      <span class="mk-badge gold">★ 4.8 · <span class="num">128</span> تقييماً موثقاً</span>
+                      <span class="mk-badge teal">خبرة <span class="num">12</span> سنة</span>
+                      <span class="mk-badge ok">متاح الأسبوع القادم</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="mk-lcard-stats">
+                  <div class="mk-stat"><div class="k">قيمة الاستشارة</div><div class="v price"><span class="num">750</span> ر.س</div></div>
+                  <div class="mk-stat"><div class="k">المدة</div><div class="v"><span class="num">30</span> دقيقة</div></div>
+                  <div class="mk-stat"><div class="k">الخبرة</div><div class="v"><span class="num">12</span> سنة</div></div>
+                </div>
+                <div class="mk-lcard-slots">
+                  <div class="mk-sm mk-muted">أقرب المواعيد المتاحة فعلياً</div>
+                  <div class="mk-slotrow">
+                    <span class="mk-slotpill">الأحد ٠٩:٠٠</span>
+                    <span class="mk-slotpill">الأحد ١١:٣٠</span>
+                    <span class="mk-slotpill">الثلاثاء ١٤:٠٠</span>
+                    <span class="mk-slotpill pick">+<span class="num">6</span> مواعيد</span>
+                  </div>
+                </div>
+                <div class="mk-lcard-actions">
+                  <button class="btn btn-outline">عرض الملف</button>
+                  <button class="btn btn-primary">اختيار هذا المحامي ✓</button>
+                </div>
+              </article>
+
+              <article class="mk-lcard">
+                <div class="mk-lcard-top">
+                  <div class="mk-avatar">ن</div>
+                  <div class="who">
+                    <div class="nm">نورة بنت سعد القحطاني</div>
+                    <div class="spec">الأحوال الشخصية · الدعاوى العمالية</div>
+                    <div class="loc">📍 الرياض، السعودية</div>
+                    <div class="mk-badges">
+                      <span class="mk-badge gold">★ 4.6 · <span class="num">74</span> تقييماً موثقاً</span>
+                      <span class="mk-badge teal">خبرة <span class="num">7</span> سنوات</span>
+                      <span class="mk-badge ok">متاح الأسبوع القادم</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="mk-lcard-stats">
+                  <div class="mk-stat"><div class="k">قيمة الاستشارة</div><div class="v price"><span class="num">500</span> ر.س</div></div>
+                  <div class="mk-stat"><div class="k">المدة</div><div class="v"><span class="num">30</span> دقيقة</div></div>
+                  <div class="mk-stat"><div class="k">الخبرة</div><div class="v"><span class="num">7</span> سنوات</div></div>
+                </div>
+                <div class="mk-lcard-slots">
+                  <div class="mk-sm mk-muted">أقرب المواعيد المتاحة فعلياً</div>
+                  <div class="mk-slotrow">
+                    <span class="mk-slotpill">الإثنين ١٠:٠٠</span>
+                    <span class="mk-slotpill">الإثنين ١٥:٣٠</span>
+                    <span class="mk-slotpill">الأربعاء ٠٩:٣٠</span>
+                  </div>
+                </div>
+                <div class="mk-lcard-actions">
+                  <button class="btn btn-outline">عرض الملف</button>
+                  <button class="btn btn-primary">اختيار هذا المحامي</button>
+                </div>
+              </article>
+
+            </div>
+          </div>
+
+          <aside class="mk-side">
+            <div class="mk-sum">
+              <div class="mk-sum-head">
+                <h3>ملخص الحجز</h3>
+                <p>يتحدّث تلقائياً مع كل خطوة</p>
+              </div>
+              <div class="mk-sum-body">
+                <div class="mk-row"><span class="k">المحامي</span><span class="v">عبدالله الشهري</span></div>
+                <div class="mk-row"><span class="k">التخصص</span><span class="v">الأحوال الشخصية</span></div>
+                <div class="mk-row"><span class="k">نوع الاستشارة</span><span class="v">لم يُحدَّد بعد</span></div>
+                <div class="mk-row"><span class="k">الموعد</span><span class="v">لم يُحدَّد بعد</span></div>
+                <div class="mk-div"></div>
+                <div class="mk-row"><span class="k">قيمة الاستشارة</span><span class="v num">750.00 ر.س</span></div>
+                <div class="mk-row"><span class="k">الضريبة</span><span class="v num">0.00 ر.س</span></div>
+              </div>
+              <div class="mk-total"><span class="k">الإجمالي</span><span class="v num">750.00 ر.س</span></div>
+            </div>
+            <div class="mk-note info">
+              <span>ℹ️</span>
+              <span>لا يوجد دفع في هذه الخطوة. لن يُحجز الموعد ولن يُخصم أي مبلغ قبل تأكيد الدفع في الخطوة 5.</span>
+            </div>
+            <button class="btn btn-primary btn-lg btn-block is-disabled">متابعة — اختر نوع الاستشارة</button>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ===================== STAGE 2 — consultation type ===================== -->
+      <section class="stage" data-stage="2">
+        <div class="mk-app">
+          <div class="mk-main">
+            <div class="mk-card pad-lg">
+              <div class="mk-h"><span class="n">2</span> اختر نوع الاستشارة</div>
+              <div class="mk-sub">تُعرض الأنواع التي يقدّمها هذا المحامي فعلاً. المدة والسعر من إعدادات المحامي.</div>
+              <div style="height:18px"></div>
+              <div class="mk-types">
+                <div class="mk-type on">
+                  <span class="ico">🎥</span>
+                  <span class="t">استشارة فيديو</span>
+                  <span class="d">مكالمة مرئية عبر مواثيق مع المحامي في الموعد المحدد.</span>
+                  <span class="p"><span class="num">750</span> ر.س · <span class="num">30</span> دقيقة</span>
+                </div>
+                <div class="mk-type">
+                  <span class="ico">🎧</span>
+                  <span class="t">استشارة صوتية</span>
+                  <span class="d">مكالمة صوتية عبر مواثيق، بدون مشاركة الفيديو.</span>
+                  <span class="p"><span class="num">750</span> ر.س · <span class="num">30</span> دقيقة</span>
+                </div>
+                <div class="mk-type">
+                  <span class="ico">✍️</span>
+                  <span class="t">استشارة نصية</span>
+                  <span class="d">سؤال مكتوب وجواب مكتوب مع إمكانية إرفاق المستندات.</span>
+                  <span class="p"><span class="num">750</span> ر.س · <span class="num">30</span> دقيقة</span>
+                </div>
+              </div>
+              <div style="height:18px"></div>
+              <div class="mk-note ok"><span>✓</span><span>هذا المحامي يقبل الاستشارات عبر الفيديو والصوت والنص. الأنواع غير المتاحة تظهر معطّلة مع سبب واضح، ولا تُخفى.</span></div>
+            </div>
+          </div>
+          <aside class="mk-side">
+            <div class="mk-sum">
+              <div class="mk-sum-head"><h3>ملخص الحجز</h3><p>الخطوة 2 من 6</p></div>
+              <div class="mk-sum-body">
+                <div class="mk-row"><span class="k">المحامي</span><span class="v">عبدالله الشهري</span></div>
+                <div class="mk-row"><span class="k">التخصص</span><span class="v">الأحوال الشخصية</span></div>
+                <div class="mk-row"><span class="k">نوع الاستشارة</span><span class="v">فيديو</span></div>
+                <div class="mk-row"><span class="k">المدة</span><span class="v num">30 دقيقة</span></div>
+                <div class="mk-div"></div>
+                <div class="mk-row"><span class="k">قيمة الاستشارة</span><span class="v num">750.00 ر.س</span></div>
+              </div>
+              <div class="mk-total"><span class="k">الإجمالي</span><span class="v num">750.00 ر.س</span></div>
+            </div>
+            <div class="mk-inline" style="gap:10px">
+              <button class="btn btn-outline" style="flex:1">رجوع</button>
+              <button class="btn btn-primary" style="flex:1.4">متابعة — اختر الموعد</button>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ===================== STAGE 3 — calendar + slots ===================== -->
+      <section class="stage" data-stage="3">
+        <div class="mk-app">
+          <div class="mk-main">
+            <div class="mk-card pad-lg">
+              <div class="mk-h"><span class="n">3</span> اختر التاريخ والوقت</div>
+              <div class="mk-sub">الأوقات المعروضة هي أوقات دوام المحامي الفعلية، بعد استثناء المواعيد المحجوزة والإجازات. المنطقة الزمنية: الرياض (GMT+3).</div>
+              <div style="height:18px"></div>
+              <div class="mk-2col" style="align-items:start">
+                <div class="mk-cal">
+                  <div class="mk-cal-head">
+                    <div class="mk-cal-nav"><button>›</button><button>‹</button></div>
+                    <div class="m">نوفمبر ٢٠٢٦</div>
+                  </div>
+                  <div class="mk-cal-grid">
+                    <div class="dow">أحد</div><div class="dow">إثنين</div><div class="dow">ثلاثاء</div><div class="dow">أربعاء</div><div class="dow">خميس</div><div class="dow">جمعة</div><div class="dow">سبت</div>
+                    <div class="d empty"></div><div class="d empty"></div><div class="d empty"></div><div class="d empty"></div><div class="d empty"></div><div class="d empty"></div><div class="d avail">1</div>
+                    <div class="d avail">2</div><div class="d avail">3</div><div class="d avail">4</div><div class="d avail">5</div><div class="d off">6</div><div class="d off">7</div><div class="d avail">8</div>
+                    <div class="d avail">9</div><div class="d avail">10</div><div class="d sel">11</div><div class="d avail">12</div><div class="d off">13</div><div class="d off">14</div><div class="d avail">15</div>
+                    <div class="d avail">16</div><div class="d avail">17</div><div class="d avail">18</div><div class="d avail">19</div><div class="d off">20</div><div class="d off">21</div><div class="d avail">22</div>
+                    <div class="d avail">23</div><div class="d avail">24</div><div class="d avail">25</div><div class="d avail">26</div><div class="d off">27</div><div class="d off">28</div><div class="d avail">29</div>
+                    <div class="d avail">30</div>
+                  </div>
+                  <div style="height:12px"></div>
+                  <div class="mk-sm mk-muted mk-inline" style="gap:14px;flex-wrap:wrap">
+                    <span class="mk-inline" style="gap:6px"><i style="width:12px;height:12px;border-radius:4px;background:var(--info-bg);display:block"></i> متاح</span>
+                    <span class="mk-inline" style="gap:6px"><i style="width:12px;height:12px;border-radius:4px;background:var(--navy);display:block"></i> المختار</span>
+                    <span class="mk-inline" style="gap:6px"><i style="width:12px;height:12px;border-radius:4px;background:var(--surface-3);display:block"></i> غير متاح / إجازة</span>
+                  </div>
+                </div>
+                <div>
+                  <div class="mk-h" style="font-size:var(--fs-md)">الأوقات المتاحة — الأربعاء ١١ نوفمبر</div>
+                  <div class="mk-sub">مدة كل موعد <span class="num">30</span> دقيقة · التوقيت المحلي للرياض</div>
+                  <div style="height:14px"></div>
+                  <div class="mk-slotgrid">
+                    <button class="mk-slot">٠٩:٠٠</button>
+                    <button class="mk-slot">٠٩:٣٠</button>
+                    <button class="mk-slot off">١٠:٠٠</button>
+                    <button class="mk-slot">١٠:٣٠</button>
+                    <button class="mk-slot sel">١١:٠٠</button>
+                    <button class="mk-slot">١١:٣٠</button>
+                    <button class="mk-slot off">١٢:٠٠</button>
+                    <button class="mk-slot">١٣:٠٠</button>
+                    <button class="mk-slot">١٣:٣٠</button>
+                    <button class="mk-slot">١٤:٠٠</button>
+                    <button class="mk-slot">١٤:٣٠</button>
+                    <button class="mk-slot">١٥:٠٠</button>
+                  </div>
+                  <div style="height:12px"></div>
+                  <div class="mk-note warn"><span>⚠️</span><span>المواعيد المشطوبة محجوزة مسبقاً أو خارج ساعات الدوام. لا يمكن اختيارها.</span></div>
+                  <div style="height:14px"></div>
+                  <div class="mk-note info"><span>⏳</span><span>عند المتابعة يُحجز هذا الموعد مؤقتاً لمدة <span class="num">15</span> دقيقة لإكمال الدفع. إذا لم يكتمل الدفع، يُحرَّر الموعد تلقائياً.</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <aside class="mk-side">
+            <div class="mk-sum">
+              <div class="mk-sum-head"><h3>ملخص الحجز</h3><p>الخطوة 3 من 6</p></div>
+              <div class="mk-sum-body">
+                <div class="mk-row"><span class="k">المحامي</span><span class="v">عبدالله الشهري</span></div>
+                <div class="mk-row"><span class="k">نوع الاستشارة</span><span class="v">فيديو · 30 دقيقة</span></div>
+                <div class="mk-row"><span class="k">التاريخ</span><span class="v num">2026-11-11</span></div>
+                <div class="mk-row"><span class="k">الوقت</span><span class="v num">11:00 (GMT+3)</span></div>
+                <div class="mk-div"></div>
+                <div class="mk-row"><span class="k">قيمة الاستشارة</span><span class="v num">750.00 ر.س</span></div>
+              </div>
+              <div class="mk-total"><span class="k">الإجمالي</span><span class="v num">750.00 ر.س</span></div>
+            </div>
+            <div class="mk-inline" style="gap:10px">
+              <button class="btn btn-outline" style="flex:1">رجوع</button>
+              <button class="btn btn-primary" style="flex:1.4">متابعة — المراجعة</button>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ===================== STAGE 4 — review ===================== -->
+      <section class="stage" data-stage="4">
+        <div class="mk-app narrow">
+          <div class="mk-main">
+            <div class="mk-card pad-lg">
+              <div class="mk-h"><span class="n">4</span> راجع تفاصيل الحجز</div>
+              <div class="mk-sub">تحقّق من كل التفاصيل قبل الدفع. يمكنك الرجوع لتعديل أي خطوة.</div>
+              <div style="height:18px"></div>
+
+              <div class="mk-2col">
+                <div class="mk-field" style="margin:0"><label>موضوع الاستشارة</label>
+                  <textarea class="mk-input" rows="4" placeholder="صف موضوع الاستشارة باختصار…">مراجعة عقد إيجار تجاري والالتزامات المالية على الطرفين.</textarea>
+                  <div class="hint">يساعد المحامي على التحضير للموعد. لا تشارك بيانات حساسة هنا.</div></div>
+                <div class="mk-field" style="margin:0"><label>إرفاق مستندات (اختياري)</label>
+                  <div class="mk-card" style="text-align:center;padding:22px 16px;border-style:dashed">
+                    <div style="font-size:26px">📎</div>
+                    <div class="mk-sm" style="margin-top:6px"><b>اسحب الملفات هنا</b> أو اضغط للاختيار</div>
+                    <div class="mk-xs mk-muted" style="margin-top:4px">PDF · DOCX · JPG · PNG — حتى 10 م.ب للملف</div>
+                  </div></div>
+              </div>
+
+              <div style="height:8px"></div>
+              <div class="mk-field"><label>طريقة التذكير</label>
+                <div class="mk-chips">
+                  <span class="mk-chip on">🔔 إشعار في التطبيق</span>
+                  <span class="mk-chip on">✉️ البريد الإلكتروني</span>
+                  <span class="mk-chip">📱 رسالة نصية</span>
+                </div></div>
+
+              <div class="mk-note info"><span>ℹ️</span><span>بالمتابعة أنت توافق على سياسة الإلغاء وإعادة الجدولة: يمكن الإلغاء مجاناً حتى <span class="num">24</span> ساعة قبل الموعد.</span></div>
+            </div>
+          </div>
+          <aside class="mk-side">
+            <div class="mk-sum">
+              <div class="mk-sum-head"><h3>ملخص الحجز</h3><p>الخطوة 4 من 6 — المراجعة النهائية</p></div>
+              <div class="mk-sum-body">
+                <div class="mk-row"><span class="k">المحامي</span><span class="v">عبدالله الشهري</span></div>
+                <div class="mk-row"><span class="k">التخصص</span><span class="v">الأحوال الشخصية</span></div>
+                <div class="mk-row"><span class="k">نوع الاستشارة</span><span class="v">فيديو · 30 دقيقة</span></div>
+                <div class="mk-row"><span class="k">التاريخ والوقت</span><span class="v num">2026-11-11 · 11:00</span></div>
+                <div class="mk-row"><span class="k">المنطقة الزمنية</span><span class="v">الرياض (GMT+3)</span></div>
+                <div class="mk-div"></div>
+                <div class="mk-row"><span class="k">قيمة الاستشارة</span><span class="v num">750.00 ر.س</span></div>
+                <div class="mk-row"><span class="k">ضريبة القيمة المضافة</span><span class="v num">0.00 ر.س</span></div>
+                <div class="mk-row"><span class="k">رسوم الخدمة</span><span class="v num">0.00 ر.س</span></div>
+              </div>
+              <div class="mk-total"><span class="k">الإجمالي المستحق</span><span class="v num">750.00 ر.س</span></div>
+            </div>
+            <div class="mk-inline" style="gap:10px">
+              <button class="btn btn-outline" style="flex:1">رجوع</button>
+              <button class="btn btn-primary" style="flex:1.4">متابعة إلى الدفع</button>
+            </div>
+            <div class="mk-note ok"><span>🔒</span><span>الدفع يتم عبر بوابة ن-جينيوس الآمنة. مواثيق لا تحتفظ ببيانات البطاقة.</span></div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ===================== STAGE 5 — payment ===================== -->
+      <section class="stage" data-stage="5">
+        <div class="mk-app narrow">
+          <div class="mk-main">
+            <div class="mk-card pad-lg">
+              <div class="mk-h"><span class="n">5</span> إتمام الدفع الآمن</div>
+              <div class="mk-sub">ستُحوَّل إلى صفحة بوابة ن-جينيوس لإدخال بيانات البطاقة، ثم تعود تلقائياً إلى مواثيق.</div>
+              <div style="height:18px"></div>
+              <div class="mk-3col">
+                <div class="mk-card" style="text-align:center"><div style="font-size:22px">🔒</div><div class="mk-sm" style="font-weight:700;margin-top:6px">اتصال مشفّر</div><div class="mk-xs mk-muted">TLS 1.3</div></div>
+                <div class="mk-card" style="text-align:center"><div style="font-size:22px">🏦</div><div class="mk-sm" style="font-weight:700;margin-top:6px">بوابة معتمدة</div><div class="mk-xs mk-muted">N-Genius</div></div>
+                <div class="mk-card" style="text-align:center"><div style="font-size:22px">🧾</div><div class="mk-sm" style="font-weight:700;margin-top:6px">فاتورة فورية</div><div class="mk-xs mk-muted">بعد التأكيد</div></div>
+              </div>
+              <div style="height:18px"></div>
+              <div class="mk-note info"><span>⏳</span><span>موعدك محجوز مؤقتاً لمدة <b><span class="num">14</span> دقيقة و<span class="num">32</span> ثانية</b>. لن يُحرَّر ما دمت في صفحة الدفع.</span></div>
+              <div style="height:14px"></div>
+              <button class="btn btn-teal btn-lg btn-block">الانتقال إلى الدفع الآمن — <span class="num">750.00</span> ر.س</button>
+              <div style="height:10px"></div>
+              <button class="btn btn-ghost btn-block">إلغاء الحجز المؤقت</button>
+            </div>
+          </div>
+          <aside class="mk-side">
+            <div class="mk-sum">
+              <div class="mk-sum-head"><h3>ملخص الحجز</h3><p>الخطوة 5 من 6 — الدفع</p></div>
+              <div class="mk-sum-body">
+                <div class="mk-row"><span class="k">المحامي</span><span class="v">عبدالله الشهري</span></div>
+                <div class="mk-row"><span class="k">نوع الاستشارة</span><span class="v">فيديو · 30 دقيقة</span></div>
+                <div class="mk-row"><span class="k">التاريخ والوقت</span><span class="v num">2026-11-11 · 11:00</span></div>
+                <div class="mk-div"></div>
+                <div class="mk-row"><span class="k">قيمة الاستشارة</span><span class="v num">750.00 ر.س</span></div>
+              </div>
+              <div class="mk-total"><span class="k">الإجمالي</span><span class="v num">750.00 ر.س</span></div>
+            </div>
+            <div class="mk-note warn"><span>⚠️</span><span>لا يُعتبر الحجز مؤكداً إلا بعد أن تتحقق مواثيق من نجاح الدفع على الخادم. إغلاق الصفحة قبل ذلك يُلغي الحجز المؤقت.</span></div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ===================== STAGE 6 — confirmation ===================== -->
+      <section class="stage" data-stage="6">
+        <div class="mk-app narrow">
+          <div class="mk-confirm">
+            <div class="mk-tick">✓</div>
+            <div>
+              <h2 style="font-size:var(--fs-h2)">تم تأكيد حجزك</h2>
+              <p class="mk-muted" style="margin-top:6px">تم التحقق من الدفع بنجاح. وصلتك الفاتورة على بريدك الإلكتروني.</p>
+            </div>
+            <div class="mk-ticket">
+              <div class="mk-ticket-head">
+                <div>
+                  <div class="mk-xs mk-muted">رقم الحجز</div>
+                  <div style="font-weight:800;font-family:'Cairo',sans-serif" class="num">MWQ-C-2026-004821</div>
+                </div>
+                <span class="mk-badge ok">مؤكد · مدفوع</span>
+              </div>
+              <div class="mk-ticket-body">
+                <div class="mk-row"><span class="k">المحامي</span><span class="v">مكتب المحامي عبدالله الشهري</span></div>
+                <div class="mk-row"><span class="k">نوع الاستشارة</span><span class="v">فيديو · 30 دقيقة</span></div>
+                <div class="mk-row"><span class="k">التاريخ والوقت</span><span class="v num">الأربعاء 2026-11-11 · 11:00 (GMT+3)</span></div>
+                <div class="mk-row"><span class="k">الطريقة</span><span class="v">مكالمة داخل مواثيق</span></div>
+                <div class="mk-div"></div>
+                <div class="mk-row"><span class="k">المبلغ المدفوع</span><span class="v num">750.00 ر.س</span></div>
+                <div class="mk-row"><span class="k">رقم الفاتورة</span><span class="v num">INV-2026-011933</span></div>
+                <div class="mk-row"><span class="k">رقم العملية</span><span class="v num">NGN-8891-4471-0023</span></div>
+              </div>
+            </div>
+            <div class="mk-3col" style="width:100%">
+              <button class="btn btn-primary">دخول غرفة الاستشارة</button>
+              <button class="btn btn-outline">تنزيل الفاتورة</button>
+              <button class="btn btn-ghost">إضافة إلى التقويم</button>
+            </div>
+            <div class="mk-note info" style="width:100%;text-align:start"><span>🔔</span><span>سيصلك تذكير قبل الموعد بـ <span class="num">24</span> ساعة و<span class="num">1</span> ساعة. يمكنك الإلغاء أو إعادة الجدولة من «استشاراتي».</span></div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <!-- ============ design notes: what changed and why ============ -->
+  <div class="mk-anno">
+    <h2 style="font-size:var(--fs-h3);margin-bottom:12px">ما الذي يختلف عن الشاشة الحالية</h2>
+    <table>
+      <thead><tr><th style="width:34%">المشكلة المقيسة حالياً</th><th style="width:33%">الوضع الحالي</th><th style="width:33%">التصميم المقترح</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>زر الحجز خارج الشاشة الأولى</td>
+          <td><span class="tag-before">y=1146px</span> داخل شاشة ارتفاعها 1080px — الزر لا يُرى إلا بعد التمرير</td>
+          <td><span class="tag-after">ملخّص ثابت + زر دائم</span> في العمود الجانبي، لا يحتاج تمريراً</td>
+        </tr>
+        <tr>
+          <td>لا يوجد مؤشّر تقدّم</td>
+          <td><span class="tag-before">0 عناصر تقدّم</span> في نموذج الحجز؛ المستخدم لا يعرف كم بقي</td>
+          <td><span class="tag-after">6 خطوات ظاهرة</span> مع حالة مكتمل/حالي لكل خطوة</td>
+        </tr>
+        <tr>
+          <td>الحقول بعرض كامل على سطح المكتب</td>
+          <td><span class="tag-before">كل حقل 1190px</span> — سطر واحد طويل بلا تنظيم</td>
+          <td><span class="tag-after">شبكة عمودين</span> للملخّص، وعمود واحد للقراءة المريحة</td>
+        </tr>
+        <tr>
+          <td>التقويم مجرّد حقل تاريخ</td>
+          <td><span class="tag-before">input[type=date]</span> — لا يُظهر الأيام المتاحة</td>
+          <td><span class="tag-after">تقويم تفاعلي</span> يميّز المتاح من المحجوز والإجازة</td>
+        </tr>
+        <tr>
+          <td>بطاقة المحامي بلا سياق</td>
+          <td><span class="tag-before">اسم + تخصص + سعر بالساعة</span> فقط</td>
+          <td><span class="tag-after">صورة، خبرة، تقييم موثق، موقع، وأقرب مواعيد فعلية</span></td>
+        </tr>
+        <tr>
+          <td>الدفع بلا حالة</td>
+          <td><span class="tag-before">تنبيه نصّي</span> فقط عند الفشل، بلا إعادة محاولة</td>
+          <td><span class="tag-after">شاشة دفع + حجز مؤقت بتوقيت تنازلي + شاشة فشل وإعادة محاولة</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+  // Deterministic stage selection for screenshots and review.
+  var p = new URLSearchParams(location.search);
+  var dir = p.get('dir');
+  if (dir === 'ltr') { document.documentElement.setAttribute('dir','ltr'); document.documentElement.setAttribute('lang','en'); }
+
+  var s = parseInt(p.get('stage') || '1', 10);
+  document.querySelectorAll('.stage').forEach(function(el){
+    el.classList.toggle('on', parseInt(el.dataset.stage,10) === s);
+  });
+  var urlStage = document.getElementById('urlStage');
+  if (urlStage) urlStage.textContent = s;
+  // Progress indicator reflects the active stage.
+  document.querySelectorAll('.mk-step').forEach(function(el){
+    var m = parseInt(el.dataset.min || '0', 10);
+    if (!m) return;
+    el.classList.toggle('done', m < s);
+    el.classList.toggle('now', m === s);
+    var dot = el.querySelector('.dot');
+    if (dot) dot.textContent = (m < s) ? '✓' : String(m);
+  });
+</script>
+</body>
+</html>

@@ -3861,3 +3861,61 @@ is also lost in a reset; without it `execution12_ai_connectivity_test` reports t
 `tests/seed_phase6.php` sets it (and clears `totp_enabled`), so the admin console can be
 driven with a plain password login. The Execution-59 `Test-Admin-2026` value is not what
 the seeded row holds.
+
+## Execution 66 — booking redesign, phase A (design review, no production code)
+
+**Phase A is a design deliverable, not an implementation.** `design/exec66/` holds HTML
+mockups and a Flutter design harness (`apps/mobile/tool/design_exec66/capture_design.dart`);
+nothing there is loaded by the application and no production screen was modified. The owner
+approves before any code changes — do not "finish the job" by implementing the designs.
+
+### The measured defects worth remembering
+
+Measured with Chromium/Playwright against the locally migrated database, not by eye:
+
+- `booking.php`'s submit button sits at **y=1146px inside a 1080px viewport**. The primary
+  action is below the fold on a desktop screen. Any future layout work must keep the CTA in
+  view — a sticky summary rail (desktop) / fixed bottom bar (mobile).
+- `booking.php` has **zero** progress elements while `consultation-journey.php` renders five
+  steps. The guidance breaks exactly where the user commits.
+- Date selection is a bare `input[type=date]`; the server already knows availability via
+  `get_available_slots()` but the UI shows none of it.
+- Every form field is **1190px** wide at 1920px, and `consultation-journey-lawyers.php` uses
+  a fixed `342px 342px 342px` grid that leaves 47% of a 1920px screen empty.
+
+### `lawyers` columns that already exist — reuse, do not add
+
+`country_code`, `city`, `years_experience`, `specialization`, `hourly_rate`, `rating`,
+`photo_path`, `status`, `email_verified`. The country/city and experience work needs **no new
+column**: the v61 migration already moved the default to `SA`/`SAR`. Note the column is
+`years_experience`, **not** `experience` — a query against `experience` is a 500.
+
+### A pricing contradiction to resolve with the owner, not in code
+
+`booking.php` writes `price = $lawyer['hourly_rate']` for a 30-minute consultation, while the
+UI labels the figure "per hour". The stored value and the label disagree. The design assumes a
+flat per-consultation price; **do not silently change the insert** — it changes what customers
+are charged. Same for the temporary-hold window, multi-duration slots, and the "verified
+rating" claim: all four are business decisions listed in `DESIGN-REVIEW-AR.md`, not defects.
+
+### The design mockups use logical CSS properties on purpose
+
+`assets/design.css` uses `inset-inline-start` / `margin-inline-start` / `border-inline-end`, so
+a single `dir=ltr` switch mirrors the whole layout. That is how one source produces both the
+Arabic RTL and the English LTR evidence (`?stage=1&dir=ltr`). If a future mockup hardcodes
+`left`/`right`, the LTR capture silently breaks.
+
+### Flutter design harness conventions
+
+- It reuses the production tokens (`AppColors`, `AppRadius`, `AppShadow`) and the bundled
+  Arabic fonts, with `GoogleFonts.config.allowRuntimeFetching = false` — same rule as
+  `app.dart`, so a capture cannot pass with a font the shipped app would not have.
+- `GridView.count` is **not** a `const` constructor. Wrapping it in `const` fails at compile
+  time with "Cannot invoke a non-'const' constructor"; make the `children` list const instead.
+- Screenshots are asserted **before** `matchesGoldenFile`, so a blank screen fails the test
+  rather than producing a green run and a useless image.
+- **Never run pngquant on `tool/design_exec66/goldens/`.** `matchesGoldenFile` compares pixels
+  exactly, so re-encoding a golden makes every test fail with a diff. Compress the *delivery
+  copy* instead (`design/exec66/screenshots/app/`); the harness keeps the pristine bytes.
+  The website screenshots (`design/exec66/screenshots/website*`) are evidence only and are
+  compressed in place — 38 MB → 12 MB.

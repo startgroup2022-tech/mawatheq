@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>مواثيق — التصميم المتجاوب للجوال (الموقع)</title>
+<link rel="stylesheet" href="assets/design.css">
+<style>
+  .stage{display:none}.stage.on{display:block}
+  /* This page shows the website's OWN mobile layout inside a phone-width frame,
+     so the responsive design can be reviewed next to the desktop screens. */
+  .mk-mobwrap{ display:flex; gap:28px; justify-content:center; flex-wrap:wrap; }
+  .mk-mobframe{ width:390px; background:var(--surface); border:1px solid var(--border);
+    border-radius:22px; box-shadow:var(--sh-lg); overflow:hidden; }
+  .mk-mobframe .cap{ background:var(--navy-dark); color:#fff; padding:9px 14px; font-size:12px; font-weight:700; text-align:center; }
+  .mk-mobinner{ width:100%; }
+  /* inside the frame the design switches to the narrow layout */
+  .mk-mobinner .mk-app{ grid-template-columns:1fr; padding:16px 14px 28px; gap:14px; }
+  .mk-mobinner .mk-progress{ padding:16px 10px 12px; }
+  .mk-mobinner .mk-step .lbl{ display:none; }
+  .mk-mobinner .mk-step.now .lbl{ display:block; font-size:10px; }
+  .mk-mobinner .mk-3col, .mk-mobinner .mk-2col{ grid-template-columns:1fr; }
+  .mk-mobinner .mk-lgrid{ grid-template-columns:1fr; }
+  .mk-mobinner .mk-lcard-actions{ grid-template-columns:1fr; }
+  .mk-mobinner .mk-topnav{ display:none; }
+  .mk-mobinner .mk-specgrid{ grid-template-columns:1fr 1fr; }
+  .mk-mobinner .mk-types{ grid-template-columns:1fr; }
+  .mk-mobinner .mk-side{ position:static; }
+  /* sticky bottom action bar — the mobile equivalent of the desktop summary rail */
+  .mk-mobbar{ position:sticky; bottom:0; background:var(--surface); border-top:1px solid var(--border);
+    padding:12px 14px; display:flex; align-items:center; gap:12px; box-shadow:0 -6px 20px rgba(15,31,51,.06); }
+  .mk-mobbar .tot{ font-size:11px; color:var(--text-muted); }
+  .mk-mobbar .amt{ font-family:'Cairo',sans-serif; font-weight:800; color:var(--navy-dark); font-size:17px; }
+</style>
+</head>
+<body>
+<div class="mk-stage">
+
+  <div class="mk-title">
+    <span class="mk-kicker">تصميم مقترح · Execution 66 · الجوال (موقع)</span>
+    <h1>التصميم المتجاوب للموقع على الجوال</h1>
+    <p>نفس مكوّنات سطح المكتب، مع شريط إجراء سفلي ثابت يحمل السعر وزر المتابعة — فلا يضيع الزر خارج الشاشة كما يحدث الآن.</p>
+  </div>
+
+  <div class="mk-frame">
+    <div class="mk-frame-head">
+      <span class="mk-dots"><i></i><i></i><i></i></span>
+      <span class="mk-url ltr">mawatheq.com/book · 390px · stage=<span id="urlStage">1</span></span>
+    </div>
+    <div class="mk-frame-body">
+      <div style="background:var(--surface-2);padding:26px 16px">
+        <div class="mk-mobwrap">
+
+          <!-- ============ MOBILE STAGE 1 — lawyer list ============ -->
+          <div class="mk-mobframe">
+            <div class="cap">الخطوة 1 — اختيار المحامي (390px)</div>
+            <div class="mk-mobinner">
+              <div class="mk-topbar" style="height:56px;padding:0 14px">
+                <span class="mk-logo" style="font-size:15px"><span class="mk-mark" style="width:30px;height:30px;font-size:14px">م</span> مواثيق</span>
+                <span class="mk-topnav"><span class="mk-cart" style="margin-inline-start:auto">🔔 <span class="num">2</span></span></span>
+              </div>
+              <div class="mk-progress">
+                <div class="mk-step done"><span class="dot">✓</span><span class="lbl">المحامي</span></div>
+                <div class="mk-step done" data-min="2"><span class="dot">✓</span><span class="lbl">النوع</span></div>
+                <div class="mk-step now" data-min="3"><span class="dot num">3</span><span class="lbl">الموعد</span></div>
+                <div class="mk-step" data-min="4"><span class="dot num">4</span><span class="lbl">المراجعة</span></div>
+                <div class="mk-step" data-min="5"><span class="dot num">5</span><span class="lbl">الدفع</span></div>
+              </div>
+              <div class="mk-app">
+                <div class="mk-main">
+                  <div class="mk-card" style="padding:14px">
+                    <div class="mk-search" style="flex-direction:column;align-items:stretch">
+                      <input class="mk-input" placeholder="ابحث باسم المحامي أو التخصص…">
+                      <div class="mk-chips">
+                        <span class="mk-chip on">الرياض <span class="x">✕</span></span>
+                        <span class="mk-chip on">11–15 سنة <span class="x">✕</span></span>
+                        <span class="mk-chip">+ فلتر</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="mk-results-head"><div class="mk-count"><b>2</b> محامٍ مطابق</div><div class="mk-sort">الأعلى تقييماً</div></div>
+
+                  <article class="mk-lcard sel">
+                    <div class="mk-lcard-top">
+                      <div class="mk-avatar" style="width:60px;height:60px;font-size:20px">ع</div>
+                      <div class="who">
+                        <div class="nm" style="font-size:var(--fs-md)">عبدالله الشهري</div>
+                        <div class="spec">الأحوال الشخصية</div>
+                        <div class="loc">📍 الرياض، السعودية</div>
+                        <div class="mk-badges">
+                          <span class="mk-badge gold">★ 4.8</span>
+                          <span class="mk-badge teal"><span class="num">12</span> سنة</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="mk-lcard-stats">
+                      <div class="mk-stat"><div class="k">القيمة</div><div class="v price"><span class="num">750</span></div></div>
+                      <div class="mk-stat"><div class="k">المدة</div><div class="v"><span class="num">30</span> د</div></div>
+                      <div class="mk-stat"><div class="k">الخبرة</div><div class="v"><span class="num">12</span> سنة</div></div>
+                    </div>
+                    <div class="mk-lcard-slots">
+                      <div class="mk-sm mk-muted">أقرب المواعيد</div>
+                      <div class="mk-slotrow"><span class="mk-slotpill">الأحد ٠٩:٠٠</span><span class="mk-slotpill">الأحد ١١:٣٠</span><span class="mk-slotpill pick">+<span class="num">6</span></span></div>
+                    </div>
+                    <div class="mk-lcard-actions">
+                      <button class="btn btn-outline">عرض الملف</button>
+                      <button class="btn btn-primary">اختيار ✓</button>
+                    </div>
+                  </article>
+
+                  <article class="mk-lcard">
+                    <div class="mk-lcard-top">
+                      <div class="mk-avatar" style="width:60px;height:60px;font-size:20px">ن</div>
+                      <div class="who">
+                        <div class="nm" style="font-size:var(--fs-md)">نورة القحطاني</div>
+                        <div class="spec">الأحوال الشخصية</div>
+                        <div class="loc">📍 الرياض، السعودية</div>
+                        <div class="mk-badges"><span class="mk-badge gold">★ 4.6</span><span class="mk-badge teal"><span class="num">7</span> سنوات</span></div>
+                      </div>
+                    </div>
+                    <div class="mk-lcard-stats">
+                      <div class="mk-stat"><div class="k">القيمة</div><div class="v price"><span class="num">500</span></div></div>
+                      <div class="mk-stat"><div class="k">المدة</div><div class="v"><span class="num">30</span> د</div></div>
+                      <div class="mk-stat"><div class="k">الخبرة</div><div class="v"><span class="num">7</span> سنوات</div></div>
+                    </div>
+                    <div class="mk-lcard-actions">
+                      <button class="btn btn-outline">عرض الملف</button>
+                      <button class="btn btn-primary">اختيار</button>
+                    </div>
+                  </article>
+                </div>
+              </div>
+              <div class="mk-mobbar">
+                <div><div class="tot">الإجمالي</div><div class="amt num">750.00 ر.س</div></div>
+                <button class="btn btn-primary" style="flex:1">متابعة — نوع الاستشارة</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ============ MOBILE STAGE 3 — calendar + slots ============ -->
+          <div class="mk-mobframe">
+            <div class="cap">الخطوة 3 — الموعد (390px)</div>
+            <div class="mk-mobinner">
+              <div class="mk-topbar" style="height:56px;padding:0 14px">
+                <span class="mk-logo" style="font-size:15px"><span class="mk-mark" style="width:30px;height:30px;font-size:14px">م</span> مواثيق</span>
+                <span class="mk-topnav"><span class="mk-cart" style="margin-inline-start:auto">🔔 <span class="num">2</span></span></span>
+              </div>
+              <div class="mk-progress">
+                <div class="mk-step done"><span class="dot">✓</span><span class="lbl">المحامي</span></div>
+                <div class="mk-step done"><span class="dot">✓</span><span class="lbl">النوع</span></div>
+                <div class="mk-step now" data-min="3"><span class="dot num">3</span><span class="lbl">الموعد</span></div>
+                <div class="mk-step" data-min="4"><span class="dot num">4</span><span class="lbl">المراجعة</span></div>
+                <div class="mk-step" data-min="5"><span class="dot num">5</span><span class="lbl">الدفع</span></div>
+              </div>
+              <div class="mk-app">
+                <div class="mk-main">
+                  <div class="mk-cal">
+                    <div class="mk-cal-head">
+                      <div class="mk-cal-nav"><button>›</button><button>‹</button></div>
+                      <div class="m">نوفمبر ٢٠٢٦</div>
+                    </div>
+                    <div class="mk-cal-grid">
+                      <div class="dow">أحد</div><div class="dow">إثنين</div><div class="dow">ثلاثاء</div><div class="dow">أربعاء</div><div class="dow">خميس</div><div class="dow">جمعة</div><div class="dow">سبت</div>
+                      <div class="d empty"></div><div class="d empty"></div><div class="d empty"></div><div class="d empty"></div><div class="d empty"></div><div class="d empty"></div><div class="d avail">1</div>
+                      <div class="d avail">2</div><div class="d avail">3</div><div class="d avail">4</div><div class="d avail">5</div><div class="d off">6</div><div class="d off">7</div><div class="d avail">8</div>
+                      <div class="d avail">9</div><div class="d avail">10</div><div class="d sel">11</div><div class="d avail">12</div><div class="d off">13</div><div class="d off">14</div><div class="d avail">15</div>
+                      <div class="d avail">16</div><div class="d avail">17</div><div class="d avail">18</div><div class="d avail">19</div><div class="d off">20</div><div class="d off">21</div><div class="d avail">22</div>
+                      <div class="d avail">23</div><div class="d avail">24</div><div class="d avail">25</div><div class="d avail">26</div><div class="d off">27</div><div class="d off">28</div><div class="d avail">29</div>
+                      <div class="d avail">30</div>
+                    </div>
+                  </div>
+                  <div class="mk-card" style="padding:14px">
+                    <div class="mk-h" style="font-size:var(--fs-md)">الأوقات — الأربعاء ١١ نوفمبر</div>
+                    <div style="height:12px"></div>
+                    <div class="mk-slotgrid">
+                      <button class="mk-slot">٠٩:٠٠</button><button class="mk-slot">٠٩:٣٠</button>
+                      <button class="mk-slot off">١٠:٠٠</button><button class="mk-slot">١٠:٣٠</button>
+                      <button class="mk-slot sel">١١:٠٠</button><button class="mk-slot">١١:٣٠</button>
+                      <button class="mk-slot off">١٢:٠٠</button><button class="mk-slot">١٣:٠٠</button>
+                      <button class="mk-slot">١٣:٣٠</button><button class="mk-slot">١٤:٠٠</button>
+                      <button class="mk-slot">١٤:٣٠</button><button class="mk-slot">١٥:٠٠</button>
+                    </div>
+                    <div style="height:12px"></div>
+                    <div class="mk-note warn"><span>⚠️</span><span>المواعيد المشطوبة محجوزة أو خارج الدوام.</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="mk-mobbar">
+                <div><div class="tot">الموعد المختار</div><div class="amt num">11:00</div></div>
+                <button class="btn btn-primary" style="flex:1">متابعة — المراجعة</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ============ MOBILE STAGE 5 — payment ============ -->
+          <div class="mk-mobframe">
+            <div class="cap">الخطوة 5 — الدفع (390px)</div>
+            <div class="mk-mobinner">
+              <div class="mk-topbar" style="height:56px;padding:0 14px">
+                <span class="mk-logo" style="font-size:15px"><span class="mk-mark" style="width:30px;height:30px;font-size:14px">م</span> مواثيق</span>
+                <span class="mk-topnav"><span class="mk-cart" style="margin-inline-start:auto">🔔 <span class="num">2</span></span></span>
+              </div>
+              <div class="mk-progress">
+                <div class="mk-step done"><span class="dot">✓</span><span class="lbl">المحامي</span></div>
+                <div class="mk-step done"><span class="dot">✓</span><span class="lbl">النوع</span></div>
+                <div class="mk-step done"><span class="dot">✓</span><span class="lbl">الموعد</span></div>
+                <div class="mk-step done"><span class="dot">✓</span><span class="lbl">المراجعة</span></div>
+                <div class="mk-step now" data-min="5"><span class="dot num">5</span><span class="lbl">الدفع</span></div>
+              </div>
+              <div class="mk-app">
+                <div class="mk-main">
+                  <div class="mk-card" style="padding:14px">
+                    <div class="mk-h" style="font-size:var(--fs-md)">ملخص الحجز</div>
+                    <div style="height:12px"></div>
+                    <div class="mk-row"><span class="k">المحامي</span><span class="v">عبدالله الشهري</span></div>
+                    <div class="mk-row"><span class="k">النوع</span><span class="v">فيديو · 30 د</span></div>
+                    <div class="mk-row"><span class="k">الموعد</span><span class="v num">2026-11-11 · 11:00</span></div>
+                    <div class="mk-div"></div>
+                    <div class="mk-row"><span class="k">الإجمالي</span><span class="v num">750.00 ر.س</span></div>
+                  </div>
+                  <div class="mk-note info"><span>⏳</span><span>الموعد محجوز مؤقتاً <b><span class="num">14</span>:<span class="num">32</span></b> دقيقة.</span></div>
+                  <div class="mk-note ok"><span>🔒</span><span>الدفع عبر بوابة ن-جينيوس الآمنة.</span></div>
+                  <button class="btn btn-teal btn-lg btn-block">الانتقال إلى الدفع الآمن</button>
+                  <button class="btn btn-ghost btn-block">إلغاء الحجز المؤقت</button>
+                </div>
+              </div>
+              <div class="mk-mobbar">
+                <div><div class="tot">المطلوب دفعه</div><div class="amt num">750.00 ر.س</div></div>
+                <button class="btn btn-teal" style="flex:1">ادفع الآن</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mk-anno">
+    <h2 style="font-size:var(--fs-h3);margin-bottom:12px">ملاحظات الجوال</h2>
+    <table>
+      <thead><tr><th style="width:30%">البند</th><th style="width:35%">الوضع الحالي</th><th style="width:35%">التصميم المقترح</th></tr></thead>
+      <tbody>
+        <tr><td>زر الإجراء الرئيسي</td><td><span class="tag-before">آخر عنصر في النموذج</span> — يخرج من الشاشة عند التمرير</td><td><span class="tag-after">شريط سفلي ثابت</span> يعرض السعر والزر دائماً</td></tr>
+        <tr><td>مؤشّر الخطوات</td><td><span class="tag-before">لا يوجد</span> في نموذج الحجز</td><td><span class="tag-after">شريط تقدّم مدمج</span> مع تسمية الخطوة الحالية فقط</td></tr>
+        <tr><td>الفلاتر</td><td><span class="tag-before">صف واحد ينكسر</span> عند 360px</td><td><span class="tag-after">شرائح قابلة للإزالة</span> + زر «فلتر» يفتح لوحة</td></tr>
+        <tr><td>التقويم</td><td><span class="tag-before">حقل تاريخ أصلي</span></td><td><span class="tag-after">تقويم شبكي بمساحات لمس 38px+</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+<script>
+  var p = new URLSearchParams(location.search);
+  var dir = p.get('dir');
+  if (dir === 'ltr') { document.documentElement.setAttribute('dir','ltr'); document.documentElement.setAttribute('lang','en'); }
+
+  var s = parseInt(p.get('stage') || '1', 10);
+  var u = document.getElementById('urlStage'); if (u) u.textContent = s;
+</script>
+</body>
+</html>

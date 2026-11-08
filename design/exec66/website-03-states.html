@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>مواثيق — تصميم الحالات: تحميل، فراغ، خطأ، فشل دفع</title>
+<link rel="stylesheet" href="assets/design.css">
+<style>
+  .stage{display:none}.stage.on{display:block}
+  /* skeleton shimmer, mockup only */
+  .sk{ background:linear-gradient(90deg,#EEF2F6 25%,#F7FAFC 50%,#EEF2F6 75%); background-size:200% 100%;
+       animation:sk 1.4s ease-in-out infinite; border-radius:8px; }
+  @keyframes sk{ 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+</style>
+</head>
+<body>
+<div class="mk-stage">
+
+  <div class="mk-title">
+    <span class="mk-kicker">تصميم مقترح · Execution 66 · حالات الواجهة</span>
+    <h1>حالات الواجهة — تحميل، فراغ، خطأ، فشل دفع</h1>
+    <p>كل حالة مصمّمة لتشرح للمستخدم ما حدث وما الخطوة التالية، دون رسائل عامة أو شاشات فارغة. لا تُعرض أبداً أخطاء إنجليزية خام من الخادم.</p>
+  </div>
+
+  <div class="mk-frame">
+    <div class="mk-frame-head">
+      <span class="mk-dots"><i></i><i></i><i></i></span>
+      <span class="mk-url ltr">mawatheq.com/book?state=<span id="urlStage">1</span></span>
+    </div>
+    <div class="mk-frame-body">
+      <div class="mk-topbar">
+        <span class="mk-logo"><span class="mk-mark">م</span> مواثيق</span>
+        <nav class="mk-topnav"><span>الرئيسية</span><span class="on">الاستشارات</span><span>المحامون</span><span>خدماتي</span></nav>
+      </div>
+
+      <!-- ============ STATE 1 — loading (skeleton) ============ -->
+      <section class="stage" data-stage="1">
+        <div class="mk-app single">
+          <div class="mk-main">
+            <div class="mk-card">
+              <div class="mk-h" style="opacity:.6"><span class="n">1</span> جارٍ البحث عن المحامين…</div>
+              <div style="height:16px"></div>
+              <div class="sk" style="height:46px;width:100%"></div>
+            </div>
+            <div class="mk-lgrid">
+              <div class="mk-card">
+                <div style="display:flex;gap:16px">
+                  <div class="sk" style="width:76px;height:76px;border-radius:11px;flex:none"></div>
+                  <div style="flex:1;display:flex;flex-direction:column;gap:9px">
+                    <div class="sk" style="height:18px;width:70%"></div>
+                    <div class="sk" style="height:13px;width:50%"></div>
+                    <div class="sk" style="height:13px;width:40%"></div>
+                    <div class="sk" style="height:22px;width:60%"></div>
+                  </div>
+                </div>
+                <div style="height:16px"></div>
+                <div class="sk" style="height:56px;width:100%"></div>
+                <div style="height:14px"></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                  <div class="sk" style="height:44px"></div><div class="sk" style="height:44px"></div>
+                </div>
+              </div>
+              <div class="mk-card">
+                <div style="display:flex;gap:16px">
+                  <div class="sk" style="width:76px;height:76px;border-radius:11px;flex:none"></div>
+                  <div style="flex:1;display:flex;flex-direction:column;gap:9px">
+                    <div class="sk" style="height:18px;width:65%"></div>
+                    <div class="sk" style="height:13px;width:45%"></div>
+                    <div class="sk" style="height:13px;width:38%"></div>
+                    <div class="sk" style="height:22px;width:55%"></div>
+                  </div>
+                </div>
+                <div style="height:16px"></div>
+                <div class="sk" style="height:56px;width:100%"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ STATE 2 — no results (filters too narrow) ============ -->
+      <section class="stage" data-stage="2">
+        <div class="mk-app single">
+          <div class="mk-main">
+            <div class="mk-card pad-lg" style="text-align:center;padding:56px 24px">
+              <div style="font-size:52px;line-height:1">🔍</div>
+              <h2 style="font-size:var(--fs-h2);margin-top:14px">لا يوجد محامون مطابقون لهذه الفلاتر</h2>
+              <p class="mk-muted" style="margin-top:8px;max-width:52ch;margin-inline:auto">
+                يوجد <b><span class="num">4</span> محامٍ</b> في تخصص «الأحوال الشخصية»، لكن الفلاتر الحالية (مدينة الرياض + خبرة أكثر من 20 سنة) لا تطابق أياً منهم.
+              </p>
+              <div style="height:20px"></div>
+              <div class="mk-chips" style="justify-content:center">
+                <span class="mk-chip on">الرياض <span class="x">✕</span></span>
+                <span class="mk-chip on">أكثر من 20 سنة <span class="x">✕</span></span>
+                <span class="mk-chip on">أقل من 900 ر.س <span class="x">✕</span></span>
+              </div>
+              <div style="height:22px"></div>
+              <div class="mk-inline" style="justify-content:center;gap:10px;flex-wrap:wrap">
+                <button class="btn btn-primary">مسح كل الفلاتر</button>
+                <button class="btn btn-outline">توسيع نطاق السعر</button>
+                <button class="btn btn-ghost">تغيير التخصص</button>
+              </div>
+              <div style="height:22px"></div>
+              <div class="mk-note info" style="text-align:start"><span>💡</span><span>أقرب النتائج: إذا أزلت فلتر الخبرة، يظهر <b><span class="num">2</span> محامٍ</b> في الرياض.</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ STATE 3 — no lawyer for specialty at all ============ -->
+      <section class="stage" data-stage="3">
+        <div class="mk-app single">
+          <div class="mk-main">
+            <div class="mk-card pad-lg" style="text-align:center;padding:56px 24px">
+              <div style="font-size:52px;line-height:1">📭</div>
+              <h2 style="font-size:var(--fs-h2);margin-top:14px">لا يوجد محامٍ مسجّل في هذا التخصص بعد</h2>
+              <p class="mk-muted" style="margin-top:8px;max-width:52ch;margin-inline:auto">
+                تخصص «دعاوى التنفيذ» لا يوجد له محامٍ متاح على مواثيق حالياً. لن نعرض لك محامياً من تخصص آخر لأنه قد لا يقدّم الخدمة التي تحتاجها.
+              </p>
+              <div style="height:24px"></div>
+              <h3 style="font-size:var(--fs-md)">تخصصات يتوفر فيها محامون الآن</h3>
+              <div style="height:14px"></div>
+              <div class="mk-specgrid" style="max-width:640px;margin-inline:auto">
+                <div class="mk-spec"><span class="ico">👪</span><span class="t">الأحوال الشخصية</span><span class="foot"><span><b class="num">2</b> محامٍ</span><span>›</span></span></div>
+                <div class="mk-spec"><span class="ico">🏢</span><span class="t">الدعاوى التجارية</span><span class="foot"><span><b class="num">2</b> محامٍ</span><span>›</span></span></div>
+                <div class="mk-spec"><span class="ico">👷</span><span class="t">الدعاوى العمالية</span><span class="foot"><span><b class="num">1</b> محامٍ</span><span>›</span></span></div>
+              </div>
+              <div style="height:20px"></div>
+              <button class="btn btn-outline">تصفح جميع المحامين</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ STATE 4 — payment failed + retry ============ -->
+      <section class="stage" data-stage="4">
+        <div class="mk-app narrow">
+          <div class="mk-confirm">
+            <div class="mk-tick warn">✕</div>
+            <div>
+              <h2 style="font-size:var(--fs-h2)">لم تكتمل عملية الدفع</h2>
+              <p class="mk-muted" style="margin-top:6px">تم رفض العملية من البنك. <b>لم يُخصم أي مبلغ</b>، ولم يتم تأكيد الحجز.</p>
+            </div>
+
+            <div class="mk-note err" style="width:100%;text-align:start">
+              <span>⚠️</span>
+              <span><b>سبب الرفض:</b> رصيد غير كافٍ أو رفض من جهة الإصدار.<br>
+              <span class="mk-xs mk-muted">رقم المرجع: <span class="num ltr">NGN-ERR-4021</span> — يمكنك ذكره للدعم.</span></span>
+            </div>
+
+            <div class="mk-ticket" style="width:100%">
+              <div class="mk-ticket-head">
+                <div><div class="mk-xs mk-muted">الحجز المؤقت</div>
+                  <div style="font-weight:800;font-family:'Cairo',sans-serif" class="num">MWQ-C-2026-004821</div></div>
+                <span class="mk-badge mut">محجوز مؤقتاً · غير مدفوع</span>
+              </div>
+              <div class="mk-ticket-body">
+                <div class="mk-row"><span class="k">المحامي</span><span class="v">عبدالله الشهري</span></div>
+                <div class="mk-row"><span class="k">الموعد</span><span class="v num">2026-11-11 · 11:00 (GMT+3)</span></div>
+                <div class="mk-row"><span class="k">المبلغ المطلوب</span><span class="v num">750.00 ر.س</span></div>
+              </div>
+            </div>
+
+            <div class="mk-note warn" style="width:100%;text-align:start">
+              <span>⏳</span><span>موعدك محجوز مؤقتاً لمدة <b><span class="num">13</span> دقيقة و<span class="num">05</span> ثانية</b>. إذا لم يكتمل الدفع، يُحرَّر الموعد تلقائياً ولا يُخصم شيء.</span>
+            </div>
+
+            <div class="mk-inline" style="gap:10px;width:100%">
+              <button class="btn btn-teal btn-lg" style="flex:1.6">إعادة محاولة الدفع</button>
+              <button class="btn btn-outline btn-lg" style="flex:1">طريقة دفع أخرى</button>
+            </div>
+            <button class="btn btn-ghost">إلغاء الحجز والرجوع للمحامين</button>
+
+            <div class="mk-note info" style="width:100%;text-align:start"><span>ℹ️</span><span>يتكرّر رفض بطاقتك؟ جرّب بطاقة أخرى أو تواصل مع بنكك. الدعم متاح من «مركز الدعم» في حسابك.</span></div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <div class="mk-anno">
+    <h2 style="font-size:var(--fs-h3);margin-bottom:12px">قواعد الحالات</h2>
+    <table>
+      <thead><tr><th style="width:24%">الحالة</th><th style="width:38%">القاعدة</th><th style="width:38%">ما يراه المستخدم</th></tr></thead>
+      <tbody>
+        <tr><td>تحميل</td><td>هيكل عظمي بشكل المحتوى، لا مؤشّر دوّار يغطّي الشاشة</td><td>البطاقات بأبعادها النهائية حتى لا تقفز الواجهة عند وصول البيانات</td></tr>
+        <tr><td>لا نتائج</td><td>تُفرَّق «الفلاتر ضيّقة» عن «لا يوجد محامٍ في التخصص»</td><td>عدد حقيقي، والفلاتر المسبِّبة، وثلاثة حلول مباشرة</td></tr>
+        <tr><td>لا يوجد محامٍ</td><td>لا يُعرض محامٍ من تخصص آخر أبداً</td><td>التخصصات المتوفرة فعلاً + مسار عام</td></tr>
+        <tr><td>فشل الدفع</td><td>لا تأكيد بلا تحقق من الدفع على الخادم</td><td>سبب الرفض، رقم مرجعي، عدّاد الحجز المؤقت، وإعادة محاولة</td></tr>
+        <tr><td>خطأ خادم</td><td>لا تُعرض رسالة إنجليزية خام</td><td>رسالة عربية واضحة + زر إعادة المحاولة + مسار بديل</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+<script>
+  var p = new URLSearchParams(location.search);
+  var dir = p.get('dir');
+  if (dir === 'ltr') { document.documentElement.setAttribute('dir','ltr'); document.documentElement.setAttribute('lang','en'); }
+
+  var s = parseInt(p.get('stage') || '1', 10);
+  document.querySelectorAll('.stage').forEach(function(el){ el.classList.toggle('on', parseInt(el.dataset.stage,10) === s); });
+  var u = document.getElementById('urlStage'); if (u) u.textContent = s;
+</script>
+</body>
+</html>
