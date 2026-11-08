@@ -33,6 +33,10 @@ import 'package:mawatheq_mobile/core/network/models.dart';
 import 'package:mawatheq_mobile/core/storage/token_storage.dart';
 import 'package:mawatheq_mobile/core/theme/app_theme.dart';
 import 'package:mawatheq_mobile/core/theme/theme_controller.dart';
+import 'package:mawatheq_mobile/features/account/privacy_screen.dart';
+import 'package:mawatheq_mobile/features/account/support_appointments_screen.dart';
+import 'package:mawatheq_mobile/features/account/support_center_screen.dart';
+import 'package:mawatheq_mobile/features/account/transactions_screen.dart';
 import 'package:mawatheq_mobile/features/consultations/consultations_screen.dart';
 import 'package:mawatheq_mobile/features/consultations/journey_screen.dart';
 import 'package:mawatheq_mobile/features/home/home_shell.dart';
@@ -292,6 +296,160 @@ Future<(int, Object)> _api(Uri uri) async {
       'type': 'client',
       'role': 'client',
       'permissions': [],
+    });
+  }
+  // Execution 65 account surfaces.
+  if (p.endsWith('/support.php')) {
+    switch (uri.queryParameters['action']) {
+      case 'settings':
+        return (200, {
+          'ok': true,
+          'channels': [
+            {'key': 'email', 'type': 'email', 'value': 'info@mawatheq.com'},
+            {'key': 'whatsapp', 'type': 'whatsapp', 'value': '966501453765'},
+            {'key': 'tickets', 'type': 'tickets', 'value': ''},
+            {'key': 'appointments', 'type': 'appointments', 'value': ''},
+          ],
+          'hours': 'الأحد – الخميس، 9 صباحاً – 5 مساءً',
+          'whatsapp_url': 'https://wa.me/966501453765',
+        });
+      case 'tickets':
+        return (200, {
+          'ok': true,
+          'tickets': [
+            {
+              'id': 11,
+              'ticket_number': 'TKT-2026-000111',
+              'subject': 'استفسار عن تجديد الاشتراك',
+              'status': 'answered',
+              'priority': 'normal',
+              'category_ar': 'الفواتير والدفع',
+              'category_en': 'Billing and payments',
+              'updated_at': '2026-11-04 10:30',
+              'unread_for_customer': 1,
+            },
+            {
+              'id': 12,
+              'ticket_number': 'TKT-2026-000112',
+              'subject': 'مشكلة في رفع مستند',
+              'status': 'open',
+              'priority': 'normal',
+              'category_ar': 'المستندات',
+              'category_en': 'Documents',
+              'updated_at': '2026-11-03 09:10',
+              'unread_for_customer': 0,
+            },
+          ],
+        });
+      case 'slots':
+        return (200, {
+          'ok': true,
+          'slots': [
+            {
+              'id': 21,
+              'starts_at': '2026-11-10 04:32',
+              'ends_at': '2026-11-10 05:02',
+              'remaining': 2,
+              'note': '',
+            },
+            {
+              'id': 22,
+              'starts_at': '2026-11-11 04:32',
+              'ends_at': '2026-11-11 05:02',
+              'remaining': 0,
+              'note': '',
+            },
+          ],
+        });
+      case 'appointments':
+        return (200, {
+          'ok': true,
+          'appointments': [
+            {
+              'id': 31,
+              'reference': 'SUP-2026-822193',
+              'subject': 'طلب موعد تجريبي',
+              'status': 'pending',
+              'starts_at': '2026-11-10 04:32',
+              'admin_note': '',
+            },
+          ],
+        });
+    }
+    return (200, {'ok': true});
+  }
+  if (p.endsWith('/privacy.php')) {
+    switch (uri.queryParameters['action']) {
+      case 'info':
+        return (200, {
+          'ok': true,
+          'privacy_url': 'https://mawatheq.com/privacy.php',
+          'terms_url': 'https://mawatheq.com/terms.php',
+          'account_url': 'https://mawatheq.com/account.php',
+          'deletion': {
+            'deletes': ['الاسم', 'البريد الإلكتروني', 'الجوال'],
+            'keeps': ['الفواتير الصادرة', 'الاستشارات المكتملة'],
+          },
+        });
+      case 'consents':
+        return (200, {
+          'ok': true,
+          'consents': [
+            {
+              'key': 'analytics',
+              'label_ar': 'تحليلات الاستخدام',
+              'label_en': 'Usage analytics',
+              'granted': true,
+            },
+            {
+              'key': 'product_updates',
+              'label_ar': 'تحديثات المنتج والعروض',
+              'label_en': 'Product updates',
+              'granted': false,
+            },
+          ],
+        });
+    }
+    return (200, {'ok': true});
+  }
+  if (p.endsWith('/transactions.php')) {
+    return (200, {
+      'ok': true,
+      'transactions': [
+        {
+          'id': 51,
+          'type': 'invoice',
+          'status': 'paid',
+          'amount': '350.00',
+          'currency': 'SAR',
+          'date': '2026-11-01',
+          'reference': 'INV-2026-0051',
+          'title': 'فاتورة استشارة قانونية',
+          'subtitle': 'المحامي عبدالله الحربي',
+          'link': '',
+        },
+        {
+          'id': 52,
+          'type': 'refund',
+          'status': 'refunded',
+          'amount': '75.00',
+          'currency': 'SAR',
+          'date': '2026-10-28',
+          'reference': 'REF-2026-0052',
+          'title': 'مبلغ مسترد',
+          'subtitle': '',
+          'link': '',
+        },
+      ],
+      'summary': {
+        'count': 2,
+        'paid': '350.00 ر.س',
+        'pending': '0.00 ر.س',
+        'refunded': '75.00 ر.س',
+        'currency': 'SAR',
+      },
+      'types': ['consultation', 'package', 'invoice', 'invoice_payment', 'refund'],
+      'statuses': ['paid', 'pending', 'failed', 'refunded', 'unpaid'],
     });
   }
   return (200, {'ok': true, 'cases': [], 'documents': [], 'notifications': []});
@@ -669,6 +827,72 @@ void main() {
       'لا يوجد محامي متاح',
       'المساعد الذكي',
       'تواصل معنا',
+    ]);
+  });
+
+  // Execution 65 — customer account surfaces.
+  testWidgets('support centre', (tester) async {
+    final t = _FakeTransport(_api);
+    await tester.pumpWidget(_app(
+      auth: await _auth(t, signedIn: true),
+      repo: _repo(t),
+      home: SupportCenterScreen(repository: _repo(t)),
+    ));
+    await _settle(tester);
+    await _shot(tester, '14_support_center.png', <String>[
+      'مركز الدعم',
+      'قنوات التواصل',
+      'info@mawatheq.com',
+      'استفسار عن تجديد الاشتراك',
+      'TKT-2026-000111',
+    ]);
+  });
+
+  testWidgets('support appointments', (tester) async {
+    final t = _FakeTransport(_api);
+    await tester.pumpWidget(_app(
+      auth: await _auth(t, signedIn: true),
+      repo: _repo(t),
+      home: SupportAppointmentsScreen(repository: _repo(t)),
+    ));
+    await _settle(tester);
+    await _shot(tester, '15_support_appointments.png', <String>[
+      'مواعيد الدعم',
+      'المواعيد المتاحة',
+      '2026-11-10 04:32',
+      'المتبقّي: 2',
+    ]);
+  });
+
+  testWidgets('privacy & consent', (tester) async {
+    final t = _FakeTransport(_api);
+    await tester.pumpWidget(_app(
+      auth: await _auth(t, signedIn: true),
+      repo: _repo(t),
+      home: PrivacyScreen(repository: _repo(t)),
+    ));
+    await _settle(tester);
+    await _shot(tester, '16_privacy_consent.png', <String>[
+      'الخصوصية والموافقات',
+      'سياسة الخصوصية',
+      'تحليلات الاستخدام',
+      'عند حذف الحساب',
+    ]);
+  });
+
+  testWidgets('transaction history', (tester) async {
+    final t = _FakeTransport(_api);
+    await tester.pumpWidget(_app(
+      auth: await _auth(t, signedIn: true),
+      repo: _repo(t),
+      home: TransactionsScreen(repository: _repo(t)),
+    ));
+    await _settle(tester);
+    await _shot(tester, '17_transactions.png', <String>[
+      'سجل العمليات',
+      'فاتورة استشارة قانونية',
+      '350.00 SAR',
+      '+75.00 SAR',
     ]);
   });
 }
