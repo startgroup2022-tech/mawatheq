@@ -65,9 +65,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header('Location: /package-payment-return.php?order_id=' . $orderId);
             exit;
         } else {
+            // The gateway requires a payer email; the session does not carry one (login stores
+            // only user_id and user_name), so read it from the account — otherwise the order is
+            // created with an empty emailAddress and rejected.
+            $cust = $pdo->prepare('SELECT full_name, email FROM users WHERE id=?');
+            $cust->execute([$userId]);
+            $customer = $cust->fetch() ?: [];
             $started = package_payment_start($pdo, $order, [
-                'customer_email' => (string)($_SESSION['email'] ?? ''),
-                'customer_name'  => (string)($_SESSION['full_name'] ?? ''),
+                'customer_email' => (string)($customer['email'] ?? ''),
+                'customer_name'  => (string)($customer['full_name'] ?? ($_SESSION['user_name'] ?? '')),
                 'language'       => current_lang(),
             ]);
             if (!empty($started['ok'])) {

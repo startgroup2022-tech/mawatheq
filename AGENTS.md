@@ -3723,3 +3723,79 @@ booking was saved but the payment did not start. That is a client-app change, so
 bundle *would* include it — but the shipped `v2026.11.05-exec62` bundle (1.8.0+18) predates
 only this message. The owner decides whether to rebuild; the delivery notes say which.
 
+
+## Execution 64 — the payment gateway rejected every request (the `[]` body)
+
+### The root cause was a JSON array where the gateway requires an object
+
+`ngenius_get_access_token()` built the token request body with `json_encode($body)`, and
+`$body` is `[]` whenever no explicit realm is configured — which is the normal case, because
+`ngenius_realm_name` seeds to `'ni'` and the code correctly treats `'ni'` as "unset".
+`json_encode([])` in PHP emits **`[]`** (a JSON *array*), not `{}` (an object). The live KSA
+gateway rejects a non-object body with a **bare** `HTTP 400 {"message":"Bad Request","code":400}`
+— no `access_token` and no error detail — *before* it inspects the API key. Every payment path
+(package purchase, paid consultation, invoice) therefore failed with the generic
+"تعذّر بدء عملية الدفع الإلكتروني" message. The fix is `json_encode((object)$body)`, which is
+identical for the `realmName` variant and correct for the empty case.
+
+Proven against the live gateway with a dummy key (a wrong key is fine: the *shape* rejection
+happens before credentials are read):
+
+| body sent | live response |
+|---|---|
+| `[]` (what the bug sent) | `400 {"message":"Bad Request","code":400}` — bare, no `errors[]` |
+| `{}` | `400 … errors:[{errorCode:"badTokenRequest"}]` — credential evaluation reached |
+| `{"realmName":"ni"}` | `404 … errorCode:"realmNameNotAvailable"` |
+| no body | Akamai HTML `400 Bad Request` |
+
+The discriminator is the response envelope, not the status code: a bare `400` with no
+`errors[]` means the **body shape** was refused; a `400` carrying `badTokenRequest` means the
+body was accepted and the **key** was wrong. Do not "fix" a bare 400 by re-entering the API key.
+
+### The fixture was too permissive, which is why this shipped
+
+`tests/fixtures/ngenius_server.php` returned a token for *any* body, including `[]` and even
+non-JSON. A fixture that cannot reject the broken request cannot catch the bug it exists to
+model. It now refuses any token body that is not a JSON object (first non-space char must be
+`{`), exactly as the live gateway does, so `tests/exec64_ngenius_gateway_test.php` fails if the
+body regresses to `[]`. **Rule: a gateway fixture must validate the request shape, not only
+answer with a happy path.**
+
+### The payer email was empty on two of three payment paths
+
+The gateway requires `emailAddress` on order creation. `checkout.php` (packages) read it from
+`$_SESSION['email']`, and `api/v1/consultations.php` from `$auth['email']` — but neither exists:
+`login.php` stores only `user_id`/`user_name`, and `api_authenticate()` returns only
+`id`/`type`/`token_id`. Both now read `full_name,email` from the account by id, matching what
+`pay-invoice.php` already did (`SELECT i.*, u.full_name, u.email …`). When adding a payment
+caller, read the payer from the database — never from a session key you did not verify is set.
+
+### The real reason is now visible
+
+`ngenius_get_access_token()` and `ngenius_create_order()` parse `errors[0].errorCode` /
+`errors[0].message` and `error_log()` the HTTP status, `errorCode`, environment and a bounded
+response snippet — never the key or the token. Before this, the response was discarded and the
+operator saw only a generic Arabic message; the production Apache log now names the cause.
+
+### Sandbox reset fallout (2026-11-08) — all environmental, none of it a code defect
+
+A container reset removed Apache, the PHP XML/zip extensions and the `www-data` group
+membership, and each loss surfaced as a *different* misleading suite failure:
+
+- `*_http_probe.php` and `execution30`/`exec35` failed en masse because `8080` was being served
+  by `php -S`, which ignores `.htaccess` — so `uploads/*/.htaccess` (`Require all denied`) did
+  nothing and `execution29_file_security_probe` reported "a direct file request is refused
+  (HTTP 200)". Reinstall Apache and re-run `tests/setup_test_env.sh`; the deny rule then returns
+  403 as designed.
+- `executive09_sso_test` died with `Class "DOMDocument" not found` — install `php-xml`.
+- `execution29_1_release_smoke_test` died with `zip is not installed` — install `zip`.
+- `config/secrets.php` must be `openhands:www-data` `640` (not `openhands:openhands` `660`),
+  or Apache cannot read it and every page returns 500 while `php -S` is happy.
+- `execution30`/`exec35` still fail when the CLI user is not in `www-data` (the private root is
+  `openhands:www-data 2770`). `sg www-data -c …` prompts for a password until you re-login
+  after `usermod -aG`; run the suite directly and expect those two, or re-login first.
+- `execution30` also depends on `lawyers.id = 1` being `approved` (its `booking.php?lawyer_id=1`
+  CSRF step). On a partially-seeded DB that row is absent, the page fatals on
+  `nav_render_bottom()` (booking.php requires `app_footer.php` before `app_header.php`), and 21
+  checks cascade-fail. Seeding an approved lawyer id 1 drops it to the 2 group-permission
+  failures — proof it is test data, not code.

@@ -55,6 +55,12 @@ function ngenius_get_access_token(string $environment, string $apiKey, string $r
     // hard-coded default that the live gateway rejects, so it means "not configured".
     $realm = trim($realmName);
     $body = ($realm === '' || $realm === 'ni') ? [] : ['realmName' => $realm];
+    // json_encode([]) emits a JSON *array* ('[]'), which the live KSA gateway rejects with a
+    // bare HTTP 400 before it even looks at the API key — so every payment path fails with no
+    // token and no explanation. A JSON *object* ('{}') is required. (object) cast keeps the
+    // realmName variant identical. This is invisible to a fixture that does not validate shape.
+    $payload = json_encode((object)$body, JSON_UNESCAPED_SLASHES);
+    if ($payload === false) $payload = '{}';
 
     $ch = curl_init(ngenius_base_url($environment) . '/identity/auth/access-token');
     curl_setopt_array($ch, [
@@ -69,7 +75,7 @@ function ngenius_get_access_token(string $environment, string $apiKey, string $r
             'Authorization: Basic ' . $apiKey,
             'Content-Type: application/vnd.ni-identity.v1+json',
         ],
-        CURLOPT_POSTFIELDS => json_encode($body),
+        CURLOPT_POSTFIELDS => $payload,
     ]);
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -81,11 +87,20 @@ function ngenius_get_access_token(string $environment, string $apiKey, string $r
     }
     $data = json_decode($response, true);
     if ($httpCode !== 200 || empty($data['access_token'])) {
+        // Surface the gateway's own reason (errorCode) so an operator can tell a rejected key
+        // from a rejected body shape without guessing. Never include the key itself.
         $detail = $data['errors'][0]['errorCode'] ?? null;
-        $hint = $detail === 'realmNameNotAvailable'
-            ? ' لا تُرسل قيمة realmName — البوابة تستخرجها من مفتاح الحساب.'
-            : '';
-        return ['ok' => false, 'token' => null, 'error' => 'فشل الحصول على رمز دخول من بوابة الدفع (HTTP ' . $httpCode . '). تحقق من مفتاح API.' . $hint];
+        $hint = '';
+        if ($detail === 'realmNameNotAvailable') {
+            $hint = ' لا تُرسل قيمة realmName — البوابة تستخرجها من مفتاح الحساب.';
+        } elseif ($detail === 'badTokenRequest') {
+            $hint = ' تحقق من صحة Service Account API Key ومن أنه من نفس البيئة (تجريبية/حقيقية).';
+        }
+        error_log('ngenius token failed: HTTP ' . $httpCode . ' detail=' . (string)$detail
+            . ' env=' . $environment . ' body=' . substr((string)$response, 0, 300));
+        return ['ok' => false, 'token' => null,
+            'error' => 'فشل الحصول على رمز دخول من بوابة الدفع (HTTP ' . $httpCode . ').'
+                . ($detail ? ' [' . $detail . ']' : '') . $hint];
     }
 
     // Cache the token; a failure to write the cache is not fatal (the token is still returned).
@@ -180,7 +195,14 @@ function ngenius_create_order(
     }
     $data = json_decode($response, true);
     if ($httpCode >= 300 || empty($data['reference']) || empty($data['_links']['payment']['href'])) {
-        $msg = $data['error']['message'] ?? ('فشل إنشاء طلب الدفع (HTTP ' . $httpCode . ').');
+        // The gateway reports the reason under errors[0].message/errorCode (array); older
+        // responses used a single error.message object. Accept both so the real cause is not
+        // replaced by a generic message, and log it (never the token).
+        $detail = $data['errors'][0]['errorCode'] ?? $data['errors'][0]['message'] ?? null;
+        $msg = $detail ?? ($data['error']['message'] ?? null)
+            ?? ('فشل إنشاء طلب الدفع (HTTP ' . $httpCode . ').');
+        error_log('ngenius create order failed: HTTP ' . $httpCode . ' detail=' . (string)$detail
+            . ' env=' . $environment . ' outlet=' . $outletRef . ' body=' . substr((string)$response, 0, 300));
         return ['ok' => false, 'order_reference' => null, 'payment_url' => null, 'error' => $msg];
     }
     return ['ok' => true, 'order_reference' => $data['reference'], 'payment_url' => $data['_links']['payment']['href'], 'error' => null];

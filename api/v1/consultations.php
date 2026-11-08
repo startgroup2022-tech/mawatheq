@@ -242,9 +242,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $consultationRow = ['id' => $consultationId, 'price' => $lawyer['hourly_rate'], 'lawyer_id' => $lawyerId];
     if (consultation_payment_schema_ready($pdo) && consultation_payment_required($consultationRow)) {
         $paymentRequired = true;
+        // api_authenticate() returns only the id/type, so the payer email must be read from
+        // the account: the gateway requires emailAddress and an empty one rejects the order.
+        $custStmt = $pdo->prepare('SELECT full_name, email FROM users WHERE id=?');
+        $custStmt->execute([(int)$auth['id']]);
+        $customer = $custStmt->fetch() ?: [];
         $started = consultation_payment_start($pdo, $consultationRow, [
-            'customer_name' => (string)($auth['full_name'] ?? ''),
-            'customer_email' => (string)($auth['email'] ?? ''),
+            'customer_name' => (string)($customer['full_name'] ?? ''),
+            'customer_email' => (string)($customer['email'] ?? ''),
             'language' => current_lang(),
         ]);
         if (!empty($started['ok'])) {

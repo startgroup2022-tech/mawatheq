@@ -39,6 +39,17 @@ if ($method === 'GET' && $path === '/__health') { echo json_encode(['ok' => true
 
 // --- token -------------------------------------------------------------------
 if ($path === '/identity/auth/access-token') {
+    // The live gateway requires a JSON *object* body. json_encode([]) in PHP emits '[]' (an
+    // array), which the live gateway rejects with a BARE 400 — no access_token and no reason —
+    // silently disabling every payment path. Reproduce that here so the regression fails in
+    // the suite instead of only in production. A raw body of '[]' (or any non-object) is
+    // refused exactly as the live gateway refuses it.
+    $trimmed = ltrim($raw);
+    if ($trimmed === '' || $trimmed[0] !== '{') {
+        http_response_code(400);
+        echo json_encode(['message' => 'Bad Request', 'code' => 400]);
+        exit;
+    }
     // The live gateway rejects a body carrying a realmName; the fixture reproduces that so a
     // regression to the old hard-coded 'ni' fails here instead of silently in production.
     if (isset($body['realmName']) && $body['realmName'] !== '') {
