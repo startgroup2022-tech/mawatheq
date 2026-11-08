@@ -16,6 +16,7 @@
 | 60 | نموذج إضافة/تعديل المحامي + فلاتر الحجز الاحترافية | `upgrade_v68.sql` |
 | 62 | دفع الاستشارات عبر N-Genius (بوابة الدفع السعودية) | `upgrade_v69.sql` |
 | 63 | إصلاح رحلة الحجز المدفوع + شراء الباقات | `upgrade_v70.sql` |
+| 65 | مركز الدعم والموافقات وسجل العمليات في تطبيق العميل | `upgrade_v71.sql` |
 
 **جميع التعديلات إضافية (additive).** لا يُحذف جدول ولا عمود ولا بيانات، ولا تتغيّر أي
 إعدادات بريد أو أسرار، ولا يُثبَّت أي نموذج ذكاء اصطناعي.
@@ -376,6 +377,29 @@ mariadb -u USERNAME -p DBNAME < database/upgrade_v70.sql
 > **بعد الترحيل، افتح `/admin/settings.php` وتأكد من تفعيل بوابة N-Genius** (نفس إعداد
 > الخطوة 9.2) — الباقات المدفوعة تستخدم البوابة نفسها التي تستخدمها الاستشارات.
 
+### الخطوة 9.4 — ترحيل مركز الدعم (التنفيذ 65)
+
+```bash
+mariadb -u USERNAME -p DBNAME < database/upgrade_v71.sql
+```
+
+- ينشئ جداول تذاكر الدعم: `support_ticket_categories`، `support_tickets`،
+  `support_ticket_messages`، `support_ticket_attachments` (المرفقات تُخزَّن تحت جذر خاص
+  بها ولا تُقدَّم إلا عبر مسار محمي)؛
+- ينشئ `support_appointment_slots` و`support_appointments` لقناة «احجز موعداً مع الدعم»؛
+- ينشئ `user_consents` لتفضيلات الموافقة (الخصوصية)؛
+- يضيف مفاتيح قنوات الدعم إلى `site_settings`، **منسوخة من القيم الموجودة أصلاً**
+  (`contact_email`، `whatsapp_number`) — لا يُختَرع بريد أو رقم جديد؛ وعند غياب القيمة
+  يُنشأ المفتاح فارغاً وتُبلّغ القناة عن نفسها كغير مُعدّة؛
+- **إضافي وآمن تماماً:** كل جدول `CREATE TABLE IF NOT EXISTS`، وكل إدراج بشرط
+  «غير موجود»، فإعادة تشغيله لا تفعل شيئاً. لا يُحذف ولا يُعدَّل أي جدول أو صف قائم.
+
+> **بدون هذا الترحيل** تعطي صفحات `admin/support-*.php` وواجهات
+> `api/v1/support.php` و`api/v1/privacy.php` و`api/v1/transactions.php` خطأ 500.
+> بعد الترحيل، افتح **لوحة الإدارة → الدعم** واضبط قنوات التواصل وساعات العمل من
+> `admin/support-settings.php`، وأنشئ فئات التذاكر ومواعيد الدعم من
+> `admin/support-tickets.php` و`admin/support-appointments.php`.
+
 ### الخطوة 10 — التحقق والتسجيل
 
 ```bash
@@ -652,6 +676,9 @@ php cron/ngenius-reconcile.php
 | البوابة ترفض إصدار رمز الدخول (`realmNameNotAvailable` / 404) | أُدخل Realm Name يدوياً في الإعدادات | اتركه فارغاً — المفتاح يحتوي على الـRealm داخله |
 | «عملة غير مدعومة» عند بدء الدفع | عملة الموقع لا تطابق عملة حساب N-Genius | اضبط عملة التسوية في الإعدادات لتطابق الحساب |
 | الاستشارة تبقى `pending` بعد الدفع | لم تصل صفحة العودة/الـWebhook، أو لم تُتحقّق البوابة بعد | شغّل `php cron/ngenius-reconcile.php` وتحقق من سجل `payment_transactions` |
+| خطأ 500 في `admin/support-*.php` أو `api/v1/support.php` أو `privacy.php` أو `transactions.php` | لم يُطبَّق `upgrade_v71.sql` (جداول الدعم/الموافقات غير موجودة) | طبّق الخطوة 9.4 |
+| «تعذّر حفظ التفضيل» في شاشة الخصوصية | `action` يُقرأ من الـbody — تأكد من رفع النسخة الحالية من `api/v1/privacy.php` | ارفع الملف المحدّث |
+| مركز الدعم لا يعرض أي قناة | لم يفعّل المشغّل أي قناة تواصل | اضبط القنوات من `admin/support-settings.php` |
 | البرنامج لا يعمل بعد الترحيل | مغلق افتراضياً | فعّله من إعدادات البرنامج |
 
 ---
@@ -724,6 +751,8 @@ php cron/ngenius-reconcile.php
 - [ ] **`upgrade_v68.sql` — عمودا `country_code` و`city` في جدول `lawyers`** — بدونه لا يعمل فلتر الدولة/المدينة في الحجز
 - [ ] **`upgrade_v69.sql` — أعمدة دفع الاستشارات** — بدونه لا يظهر زر الدفع
 - [ ] **`upgrade_v70.sql` — جدول `package_orders` وتصنيف الباقات** — بدونه لا يمكن شراء أي باقة
+- [ ] **`upgrade_v71.sql` — جداول مركز الدعم والموافقات** — بدونه `admin/support-*.php` و`api/v1/support.php` تعطي 500
+- [ ] بعد الترحيل: اضبط قنوات الدعم من `admin/support-settings.php` وأنشئ فئات التذاكر ومواعيد الدعم
 - [ ] `php database/repair/02_migration_ledger.php` ينتهي بـ `0`
 - [ ] مجلد `mawatheq-private/consultation-attachments/` بصلاحية `02770`
 - [ ] فكّ `MAWATHEQ_WEBSITE_FINAL.zip` في `public_html`

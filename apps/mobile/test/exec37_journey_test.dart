@@ -59,6 +59,11 @@ class _MemoryTokenStore implements TokenStore {
   Future<String?> readDeviceLabel() async => null;
 
   @override
+  Future<void> saveBiometricEnabled(bool enabled) async {}
+  @override
+  Future<bool> readBiometricEnabled() async => false;
+
+  @override
   Future<void> clear() async {
     _token = null;
     _type = null;

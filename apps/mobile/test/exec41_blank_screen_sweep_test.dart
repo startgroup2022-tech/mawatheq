@@ -65,6 +65,11 @@ class _Tokens implements TokenStore {
   @override
   Future<String?> readDeviceLabel() async => 'sweep';
   @override
+  Future<void> saveBiometricEnabled(bool enabled) async {}
+  @override
+  Future<bool> readBiometricEnabled() async => false;
+
+  @override
   Future<void> clear() async => _token = null;
 }
 

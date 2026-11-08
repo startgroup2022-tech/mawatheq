@@ -57,6 +57,11 @@ $adminNavGroups = [
         'banners' => ['i' => 'image', 'ar' => 'بانرات الصفحة الرئيسية', 'en' => 'Home banners', 'href' => '/admin/banners.php'],
         'laws' => ['i' => 'landmark', 'ar' => 'مكتبة الأنظمة', 'en' => 'Law library', 'href' => '/admin/laws.php'],
     ]],
+    ['t' => adm('الدعم', 'Support'), 'items' => [
+        'support-tickets' => ['i' => 'inbox', 'ar' => 'تذاكر الدعم', 'en' => 'Support tickets', 'href' => '/admin/support-tickets.php'],
+        'support-appointments' => ['i' => 'calendar', 'ar' => 'مواعيد الدعم', 'en' => 'Support appointments', 'href' => '/admin/support-appointments.php'],
+        'support-settings' => ['i' => 'settings', 'ar' => 'إعدادات الدعم', 'en' => 'Support settings', 'href' => '/admin/support-settings.php'],
+    ]],
     ['t' => adm('النظام', 'System'), 'items' => [
         'integrations' => ['i' => 'external', 'ar' => 'التكاملات الخارجية', 'en' => 'External integrations', 'href' => '/admin/integrations.php'],
         'audit-log' => ['i' => 'shield', 'ar' => 'سجل التدقيق', 'en' => 'Audit log', 'href' => '/admin/audit-log.php'],

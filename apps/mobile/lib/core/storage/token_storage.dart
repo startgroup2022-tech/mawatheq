@@ -18,6 +18,15 @@ abstract class TokenStore {
   Future<void> saveDeviceLabel(String label);
   Future<String?> readDeviceLabel();
 
+  /// Whether biometric sign-in is enabled for this device.
+  ///
+  /// Stored beside the token (in the keychain, not plain preferences) because the
+  /// flag alone is harmless but it must be cleared with the token on sign-out: a
+  /// leftover "enabled" flag with no token would offer an unlock that can never
+  /// succeed. Absent means disabled.
+  Future<void> saveBiometricEnabled(bool enabled);
+  Future<bool> readBiometricEnabled();
+
   /// Remove every stored credential. Called on sign-out and when the server
   /// rejects a token, so a revoked session cannot be resumed from disk.
   Future<void> clear();
@@ -44,6 +53,7 @@ class TokenStorage implements TokenStore {
   String get _tokenKey => '$_prefix.token';
   String get _accountTypeKey => '$_prefix.account_type';
   String get _deviceLabelKey => '$_prefix.device_label';
+  String get _biometricKey => '$_prefix.biometric_enabled';
 
   @override
   Future<void> saveToken(String value) =>
@@ -67,12 +77,21 @@ class TokenStorage implements TokenStore {
   Future<String?> readDeviceLabel() => _storage.read(key: _deviceLabelKey);
 
   @override
+  Future<void> saveBiometricEnabled(bool enabled) =>
+      _storage.write(key: _biometricKey, value: enabled ? '1' : '0');
+
+  @override
+  Future<bool> readBiometricEnabled() async =>
+      await _storage.read(key: _biometricKey) == '1';
+
+  @override
   Future<void> clear() async {
     // Delete each known key rather than deleteAll(): deleteAll() would also wipe
     // keys written by other parts of the app that this store does not own.
     await _storage.delete(key: _tokenKey);
     await _storage.delete(key: _accountTypeKey);
     await _storage.delete(key: _deviceLabelKey);
+    await _storage.delete(key: _biometricKey);
   }
 }
 

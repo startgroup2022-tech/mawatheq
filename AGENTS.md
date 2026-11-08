@@ -3799,3 +3799,65 @@ membership, and each loss surfaced as a *different* misleading suite failure:
   `nav_render_bottom()` (booking.php requires `app_footer.php` before `app_header.php`), and 21
   checks cascade-fail. Seeding an approved lawyer id 1 drops it to the 2 group-permission
   failures — proof it is test data, not code.
+
+## Execution 65 — customer account surfaces (support centre, privacy, transactions)
+
+Four new customer-facing screens share one account entry point. The backend is
+`api/v1/support.php`, `api/v1/privacy.php`, `api/v1/transactions.php` and
+`api/v1/invoice.php`, backed by `includes/support.php` / `includes/transactions.php`
+and migration `database/upgrade_v71.sql` (support ticket tables, support appointment
+slots, `user_consents`). The screens are
+`apps/mobile/lib/features/account/{support_center,support_ticket,support_appointments,privacy,transactions,invoice_detail}_screen.dart`.
+
+### A POST action that is only read from the query string silently fails every write
+
+`api/v1/privacy.php` read `$action` from `$_GET` only. The client posts `action` in the
+JSON body, so every consent write answered `unknown action` (400) while the endpoint
+looked correct and the read path worked. `support.php` already read the body. The rule:
+**a POST handler must take its action from `api_input()` first, then fall back to the
+query string** — `$action = (string)($in['action'] ?? $action)`. Assert it over HTTP
+(POST with a body action and no query action), not only with `curl "...?action=..."`,
+which passes for the wrong reason.
+
+### Consent defaults are "not granted", never "granted"
+
+`privacy.php` builds the consent list from the fixed key allow-list in
+`privacy_consent_keys()`, then overlays stored rows. A key with no row reports
+`granted: false`. An unknown key is refused (400) rather than stored, so the table
+cannot accumulate keys nothing reads. If you add a key, add it to that function — the
+app and the endpoint both read it.
+
+### The support probe is `tests/exec65_account_surfaces_probe.php`
+
+43 checks over real HTTP: auth/role isolation (client token cannot read another
+account's ticket → 404), the public `settings`/`info` reads, the ticket lifecycle
+(create → reply → close → reopen), consent set/revoke plus the bad-key 400, appointment
+slot listing and booking, and the duplicate booking refused with 409. It seeds its own
+rows with a random suffix and deletes them in cleanup. Run it with Apache up on 8080.
+
+### Flutter widget coverage
+
+`apps/mobile/test/exec65_account_surfaces_test.dart` mounts each screen against a fake
+transport that answers with the real response shapes and asserts the fetched content is
+on screen. Two assertions are worth keeping:
+
+- The transaction filter test asserts a **new request with `type=consultation`** was
+  issued, not merely that the chip highlighted — a filter that only repaints passes a
+  visual check and returns wrong data.
+- The consent test reads the `Switch.value`s and asserts granted/not-granted match the
+  fixture, so a default-granted regression is caught.
+
+### Sandbox resets drop the `mawatheq` DB user's global grants
+
+A reset left `GRANT ALL PRIVILEGES ON mawatheq_test.*` only, so every suite that creates a
+scratch database (`execution29_1_*`, `execution29_migration_repair_test`, `saudi_defaults_test`)
+died with `1044 Access denied … to database 'mawatheq_e291_reset'`. Re-grant before blaming
+the code: `sudo mysql -e "GRANT ALL PRIVILEGES ON *.* TO 'mawatheq'@'localhost'; FLUSH PRIVILEGES;"`.
+The mock AI provider (`/tmp/mockai/router.php`, regenerate from `tests/setup_test_env.sh`)
+is also lost in a reset; without it `execution12_ai_connectivity_test` reports three failures.
+
+### The admin test password is `Test-Password-2026`
+
+`tests/seed_phase6.php` sets it (and clears `totp_enabled`), so the admin console can be
+driven with a plain password login. The Execution-59 `Test-Admin-2026` value is not what
+the seeded row holds.

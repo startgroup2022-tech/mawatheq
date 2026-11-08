@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'account_models.dart';
 import 'api_client.dart';
 import 'api_exception.dart';
 import 'lawyer_models.dart';
@@ -472,6 +473,161 @@ class ApiRepository {
   }
 
   // ----------------------------------------------------------- invoices
+
+  /// `GET /api/v1/transactions.php` — the merged transaction history.
+  ///
+  /// One request for the whole list; the filters are applied server-side so the
+  /// count and the rows always agree.
+  Future<TransactionPage> transactions({
+    String type = 'all',
+    String status = 'all',
+    String? from,
+    String? to,
+  }) async {
+    final json = await _client.get('/transactions.php', query: {
+      'type': type,
+      'status': status,
+      if (from != null && from.isNotEmpty) 'from': from,
+      if (to != null && to.isNotEmpty) 'to': to,
+    });
+    return TransactionPage(
+      transactions: Json(json)
+          .list('transactions')
+          .map((e) => Transaction.fromJson(e.asMap))
+          .toList(),
+      summary: TransactionSummary.fromJson(
+        Json(json).object('summary')?.asMap ?? const {},
+      ),
+    );
+  }
+
+  /// `GET /api/v1/invoice.php?id=N` — one invoice with its items and payments.
+  Future<InvoiceDetail> invoiceDetail(int id, {bool isLawyerView = false}) async {
+    final json = await _client.get('/invoice.php', query: {'id': id});
+    final items = Json(json).list('items').map((e) => e.asMap).toList();
+    final payments = Json(json).list('payments').map((e) => e.asMap).toList();
+    return InvoiceDetail.fromJson(
+      Json(json).object('invoice')?.asMap ?? const {},
+      items: items,
+      payments: payments,
+      receiptUrl: Json(json).str('receipt_url'),
+      isLawyerView: isLawyerView,
+    );
+  }
+
+  // -------------------------------------------------------------- support
+
+  /// `GET /api/v1/support.php?action=settings` — public channel configuration.
+  Future<SupportSettings> supportSettings() async {
+    final json = await _client.get('/support.php', query: {'action': 'settings'});
+    return SupportSettings.fromJson(json);
+  }
+
+  /// `GET /api/v1/support.php?action=categories`
+  Future<List<SupportCategory>> supportCategories() async {
+    final json = await _client.get('/support.php', query: {'action': 'categories'});
+    return Json(json)
+        .list('categories')
+        .map((e) => SupportCategory.fromJson(e.asMap))
+        .toList();
+  }
+
+  /// `GET /api/v1/support.php?action=tickets`
+  Future<List<SupportTicket>> supportTickets() async {
+    final json = await _client.get('/support.php', query: {'action': 'tickets'});
+    return Json(json)
+        .list('tickets')
+        .map((e) => SupportTicket.fromJson(e.asMap))
+        .toList();
+  }
+
+  /// `GET /api/v1/support.php?action=ticket&id=N`
+  Future<SupportTicketDetail> supportTicket(int id) async {
+    final json = await _client.get('/support.php', query: {'action': 'ticket', 'id': id});
+    final root = Json(json);
+    return SupportTicketDetail(
+      ticket: SupportTicket.fromJson(root.object('ticket')?.asMap ?? const {}),
+      messages: root.list('messages').map((e) => SupportMessage.fromJson(e.asMap)).toList(),
+      attachments:
+          root.list('attachments').map((e) => SupportAttachment.fromJson(e.asMap)).toList(),
+    );
+  }
+
+  /// `POST /api/v1/support.php` `action=create-ticket`
+  Future<Map<String, dynamic>> createSupportTicket({
+    required String subject,
+    required String body,
+    int categoryId = 0,
+  }) async {
+    return _client.post('/support.php', body: {
+      'action': 'create-ticket',
+      'subject': subject,
+      'body': body,
+      'category_id': categoryId,
+    });
+  }
+
+  /// `POST /api/v1/support.php` `action=reply-ticket`
+  Future<void> replySupportTicket({required int id, required String body}) =>
+      _client.post('/support.php', body: {'action': 'reply-ticket', 'id': id, 'body': body});
+
+  /// `POST /api/v1/support.php` `action=close-ticket` / `reopen-ticket`
+  Future<void> setSupportTicketStatus({required int id, required bool close}) =>
+      _client.post('/support.php',
+          body: {'action': close ? 'close-ticket' : 'reopen-ticket', 'id': id});
+
+  /// `GET /api/v1/support.php?action=slots`
+  Future<List<SupportSlot>> supportSlots() async {
+    final json = await _client.get('/support.php', query: {'action': 'slots'});
+    return Json(json).list('slots').map((e) => SupportSlot.fromJson(e.asMap)).toList();
+  }
+
+  /// `GET /api/v1/support.php?action=appointments`
+  Future<List<SupportAppointment>> supportAppointments() async {
+    final json = await _client.get('/support.php', query: {'action': 'appointments'});
+    return Json(json)
+        .list('appointments')
+        .map((e) => SupportAppointment.fromJson(e.asMap))
+        .toList();
+  }
+
+  /// `POST /api/v1/support.php` `action=book-appointment`
+  Future<Map<String, dynamic>> bookSupportAppointment({
+    required int slotId,
+    required String subject,
+    String note = '',
+  }) =>
+      _client.post('/support.php', body: {
+        'action': 'book-appointment',
+        'slot_id': slotId,
+        'subject': subject,
+        'note': note,
+      });
+
+  /// `POST /api/v1/support.php` `action=cancel-appointment`
+  Future<void> cancelSupportAppointment(int id) =>
+      _client.post('/support.php', body: {'action': 'cancel-appointment', 'id': id});
+
+  // -------------------------------------------------------------- privacy
+
+  /// `GET /api/v1/privacy.php?action=info` — public policy links and deletion terms.
+  Future<PrivacyInfo> privacyInfo() async {
+    final json = await _client.get('/privacy.php', query: {'action': 'info'});
+    return PrivacyInfo.fromJson(json);
+  }
+
+  /// `GET /api/v1/privacy.php?action=consents`
+  Future<List<ConsentPreference>> consentPreferences() async {
+    final json = await _client.get('/privacy.php', query: {'action': 'consents'});
+    return Json(json)
+        .list('consents')
+        .map((e) => ConsentPreference.fromJson(e.asMap))
+        .toList();
+  }
+
+  /// `POST /api/v1/privacy.php` `action=set-consent`
+  Future<void> setConsent({required String key, required bool granted}) =>
+      _client.post('/privacy.php', body: {'action': 'set-consent', 'key': key, 'granted': granted});
 
   Future<List<Invoice>> invoices() async {
     final json = await _client.get('/invoices.php');

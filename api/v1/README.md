@@ -188,6 +188,26 @@ X-Mawatheq-Signature: sha256=<hex>
 → `{ "ok": true, "status": "paid"|"unpaid"|"overdue"|"cancelled", "gateway_state": "CAPTURED" }`
 هذا الاستعلام يتحقق من بوابة الدفع الفعلية (وليس فقط ما هو محفوظ)، ويُحدّث حالة الفاتورة تلقائياً إن تأكد النجاح — بالإضافة لتحديث فوري مستقل عبر Webhook من طرف الخادم.
 
+### سجل العمليات (عميل، يحتاج توكن)
+`GET /api/v1/transactions.php?type=all&status=all&from=YYYY-MM-DD&to=YYYY-MM-DD`
+→ `{ "ok": true, "transactions": [ { type, id, date, amount, currency, reference, status, title, link } ], "summary": {...} }`
+يجمع المدفوعات من الاستشارات والباقات والفواتير والدفعات في قائمة واحدة. `type` ∈ `consultation|package|invoice|invoice_payment|refund|all`، و`status` ∈ `paid|pending|failed|refunded|unpaid|cancelled|all`. لا يعرض إلا صفوف العميل نفسه.
+
+### تفاصيل فاتورة (يحتاج توكن)
+`GET /api/v1/invoice.php?id=123`
+→ `{ "ok": true, "invoice": {...}, "items": [...], "payments": [...], "receipt_url": "https://…/invoice-print.php?id=123" }`
+العميل يقرأ فواتيره فقط، والمحامي يقرأ فواتير مكتبه فقط؛ معرّف غير مملوك يعيد `404`. `receipt_url` صفحة قابلة للطباعة تُفتح في المتصفح.
+
+### مركز الدعم (يحتاج توكن، عدا `settings`)
+`GET /api/v1/support.php?action=settings` (عام) → القنوات المهيّأة + ساعات العمل + رابط واتساب.
+`GET ?action=categories|tickets|ticket&id=N|slots|appointments`
+`POST` مع `action=create-ticket|reply-ticket|close-ticket|reopen-ticket|book-appointment|cancel-appointment|upload-attachment`
+→ تذكرة أو موعد لا يخصّ الحساب يعيد `404`؛ القنوات الفارغة لا تظهر أبداً.
+
+### الخصوصية والموافقات (يحتاج توكن)
+`GET /api/v1/privacy.php?action=info` (عام) → روابط السياسة والشروط وما يُحذف وما يبقى.
+`GET ?action=consents` / `POST action=set-consent { key, granted }` — المفاتيح المسموحة: `analytics`, `product_updates`, `ai_processing`. غياب الموافقة يعني «غير موافق»، وليس «موافق افتراضياً».
+
 ## الأخطاء
 
 كل الأخطاء بصيغة: `{ "ok": false, "error": "..." }` مع كود HTTP مناسب (400/401/403/404/405/409).

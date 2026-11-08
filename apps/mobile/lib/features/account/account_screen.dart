@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/auth_controller.dart';
 import '../../core/config/app_config.dart';
@@ -9,19 +7,32 @@ import '../../core/locale_controller.dart';
 import '../../core/network/api_repository.dart';
 import '../../core/network/models.dart';
 import '../../core/public_content.dart';
+import '../../core/security/biometric_service.dart';
+import '../../core/security/rate_app_service.dart';
+import '../../core/storage/token_storage.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/theme/theme_controller.dart';
 import '../../shared/widgets/brand_widgets.dart';
 import '../home/home_shell.dart';
 import '../public/pricing_screen.dart';
+import 'invoice_detail_screen.dart';
+import 'privacy_screen.dart';
+import 'support_center_screen.dart';
+import 'transactions_screen.dart';
 
 /// Profile, permissions, invoices and session controls.
 ///
 /// The permission list is rendered exactly as the server reported it, so the
 /// screen never claims a capability the account does not have.
 class AccountScreen extends StatefulWidget {
-  const AccountScreen({super.key, this.repository, this.onOpenProfessionalProfile});
+  const AccountScreen({
+    super.key,
+    this.repository,
+    this.onOpenProfessionalProfile,
+    this.biometrics,
+    this.rateApp,
+  });
 
   /// The shared repository, so an embedding can inject a test edge. Falls back to the
   /// default client, which is what the customer shell relies on.
@@ -32,19 +43,83 @@ class AccountScreen extends StatefulWidget {
   /// and the tile is absent.
   final VoidCallback? onOpenProfessionalProfile;
 
+  /// Device biometric capability. Injectable so a widget test can answer "the tile
+  /// is hidden when the device cannot do biometrics" without a device. The default
+  /// is the real `local_auth` service, which is what production uses.
+  final BiometricService? biometrics;
+
+  /// In-app store rating. Injectable for the same reason as [biometrics].
+  final RateAppService? rateApp;
+
   @override
   State<AccountScreen> createState() => _AccountScreenState();
 }
 
 class _AccountScreenState extends State<AccountScreen> {
   late final ApiRepository _repo = widget.repository ?? ApiRepository();
+  late final BiometricService _biometrics =
+      widget.biometrics ?? LocalAuthBiometricService();
+  late final RateAppService _rateApp = widget.rateApp ?? InAppReviewService();
+  late final TokenStore _tokens = TokenStorage();
+
   List<Invoice> _invoices = const [];
   bool _loadingInvoices = true;
+
+  /// Whether this device can offer biometric sign-in, and whether it is enabled.
+  /// The tile is hidden entirely when the device cannot, rather than shown disabled,
+  /// so a customer without the hardware never sees a feature they cannot use.
+  bool _biometricAvailable = false;
+  bool _biometricEnabled = false;
 
   @override
   void initState() {
     super.initState();
     _loadInvoices();
+    _loadBiometricState();
+  }
+
+  Future<void> _loadBiometricState() async {
+    final available = await _biometrics.isAvailable();
+    final enabled = await _tokens.readBiometricEnabled();
+    if (!mounted) return;
+    setState(() {
+      _biometricAvailable = available;
+      // A stale "enabled" flag with no token would offer an unlock that cannot
+      // succeed; treat that as disabled rather than showing a broken switch.
+      _biometricEnabled = available && enabled;
+    });
+  }
+
+  /// Enabling asks for a biometric first, so the customer proves the factor works
+  /// before it becomes the thing that unlocks the app. Disabling needs no proof.
+  Future<void> _toggleBiometric(bool value) async {
+    final rtl = context.read<LocaleController>().isRtl;
+    if (value) {
+      final ok = await _biometrics.authenticate(
+        reason: rtl ? 'تأكيد تفعيل الدخول بالبصمة' : 'Confirm enabling biometric sign-in',
+      );
+      if (!ok || !mounted) return;
+    }
+    await _tokens.saveBiometricEnabled(value);
+    if (!mounted) return;
+    setState(() => _biometricEnabled = value);
+  }
+
+  Future<void> _openRateApp() async {
+    final rtl = context.read<LocaleController>().isRtl;
+    final available = await _rateApp.isAvailable();
+    if (!available) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(rtl
+              ? 'تقييم التطبيق غير متاح على هذا الجهاز.'
+              : 'In-app rating is not available on this device.'),
+        ),
+      );
+      return;
+    }
+    await _rateApp.requestReview();
   }
 
   Future<void> _loadInvoices() async {
@@ -59,30 +134,6 @@ class _AccountScreenState extends State<AccountScreen> {
       // Invoices are optional on this screen; a failure here must not blank it.
       if (mounted) setState(() => _loadingInvoices = false);
     }
-  }
-
-  /// Opens the support address in the device's mail client.
-  ///
-  /// The tile previously had an empty callback, so tapping Support did nothing.
-  /// A mail client is not guaranteed (an emulator, a locked-down device), so the
-  /// address is copied to the clipboard and the customer is told, rather than the
-  /// tap appearing to fail.
-  Future<void> _contactSupport() async {
-    final address = PublicContent.supportEmail;
-    final uri = Uri(scheme: 'mailto', path: address);
-    var opened = false;
-    try {
-      opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (_) {
-      opened = false;
-    }
-    if (opened || !mounted) return;
-
-    await Clipboard.setData(ClipboardData(text: address));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('تم نسخ البريد $address')),
-    );
   }
 
   /// Google Play requires an in-app route to delete an account.
@@ -264,41 +315,54 @@ class _AccountScreenState extends State<AccountScreen> {
         else
           ..._invoices.take(5).map((inv) => Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Container(
-                  padding: const EdgeInsets.all(13),
-                  decoration: BoxDecoration(
-                    color: context.tokens.surface,
-                    border: Border.all(color: context.tokens.border),
+                child: Material(
+                  color: context.tokens.surface,
+                  shape: RoundedRectangleBorder(
+                    side: BorderSide(color: context.tokens.border),
                     borderRadius: BorderRadius.circular(AppRadius.md),
                   ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              inv.number.isEmpty
-                                  ? 'فاتورة #${inv.id}'
-                                  : inv.number,
-                              style: Theme.of(context).textTheme.bodyMedium,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => InvoiceDetailScreen(
+                          invoiceId: inv.id,
+                          repository: widget.repository,
+                        ),
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(13),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  inv.number.isEmpty
+                                      ? 'فاتورة #${inv.id}'
+                                      : inv.number,
+                                  style: Theme.of(context).textTheme.bodyMedium,
+                                ),
+                                if (inv.issuedAt.isNotEmpty)
+                                  Text(inv.issuedAt,
+                                      style: Theme.of(context).textTheme.bodySmall),
+                              ],
                             ),
-                            if (inv.issuedAt.isNotEmpty)
-                              Text(inv.issuedAt,
-                                  style: Theme.of(context).textTheme.bodySmall),
-                          ],
-                        ),
+                          ),
+                          Text(
+                            '${inv.total.toStringAsFixed(0)} ${inv.currency}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: context.tokens.heading,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          StatusBadge(status: inv.status),
+                        ],
                       ),
-                      Text(
-                        '${inv.total.toStringAsFixed(0)} ${inv.currency}',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: context.tokens.heading,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      StatusBadge(status: inv.status),
-                    ],
+                    ),
                   ),
                 ),
               )),
@@ -323,6 +387,15 @@ class _AccountScreenState extends State<AccountScreen> {
         // widget tests mount this screen without a ThemeController.
         _ThemeSettingTile(),
         _SettingTile(
+          icon: Icons.receipt_long_outlined,
+          label: 'سجل العمليات',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => TransactionsScreen(repository: widget.repository),
+            ),
+          ),
+        ),
+        _SettingTile(
           icon: Icons.workspace_premium_outlined,
           label: 'الخطط والأسعار',
           onTap: () => Navigator.of(context).push(
@@ -333,7 +406,35 @@ class _AccountScreenState extends State<AccountScreen> {
           icon: Icons.help_outline,
           label: 'الدعم',
           value: PublicContent.supportEmail,
-          onTap: _contactSupport,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => SupportCenterScreen(repository: widget.repository),
+            ),
+          ),
+        ),
+        // Opt-in biometric sign-in. Hidden entirely on a device without the
+        // hardware or without an enrolled biometric, so the customer never sees a
+        // switch that cannot work. Placed next to the other security controls.
+        if (_biometricAvailable)
+          _SettingTile(
+            icon: Icons.fingerprint,
+            label: 'الدخول بالبصمة',
+            value: _biometricEnabled ? 'مفعّل' : 'معطّل',
+            onTap: () => _toggleBiometric(!_biometricEnabled),
+          ),
+        _SettingTile(
+          icon: Icons.shield_outlined,
+          label: 'الخصوصية والموافقات',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => PrivacyScreen(repository: widget.repository),
+            ),
+          ),
+        ),
+        _SettingTile(
+          icon: Icons.star_outline,
+          label: 'قيّم التطبيق',
+          onTap: _openRateApp,
         ),
         // Google Play requires an in-app account-deletion route; privacy.php on the
         // website promises one. It is the last tile, away from the everyday actions.
