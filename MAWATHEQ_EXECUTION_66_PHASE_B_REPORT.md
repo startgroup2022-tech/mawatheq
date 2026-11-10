@@ -43,7 +43,7 @@
 | 15 | لا انحدار في دخول المحامي | `exec59_lawyer_login_calls_probe` (53 فحصاً) | ✅ |
 | 16 | لا انحدار في تكامل Jitsi | `exec59` — الحمولة والتوقيع عبر HTTP حقيقي | ⚠️ جزئي: **الوسائط بين جهازين لم تُختبر** (§5) |
 
-**السويتات كاملة:** 51/51 ناجحة · **Flutter:** 341/341 · **Playwright (رحلة + نموذج المحامي):** 114 ناجح / 6 متجاوز.
+**السويتات كاملة:** 51/51 ناجحة · **Flutter:** 341/341 · **Playwright (الحزمة الكاملة):** 780 ناجح / 12 متجاوز / 0 فاشل · **تدقيق RTL/الاستجابة:** 0px تجاوز على 360/390/768/1366/1920 لصفحات الرحلة والمحامين والحجز.
 
 ---
 
@@ -132,6 +132,8 @@ second check (same time): {"ok":false,"error":"slot_taken"}
 - **رفض الموعد المأخوذ (409):** الـ REST كان يسمح بالحجز المزدوج سابقاً؛ الآن يرفضه — وهو السلوك الصحيح والمطابق للموقع. اختبار `exec35` كان يعيد استخدام موعد واحد، فصار يمنح كل حجز موعده الخاص.
 - **نص التأكيد** تغيّر إلى «تم استلام طلب الحجز»؛ `execution30` حُدِّث ليتبعه.
 - **لا هجرة مطلوبة:** كل الأعمدة المستخدمة (`duration_minutes`, `slot_minutes`, `payment_status`, `specialty_category_id`) موجودة في `schema.sql`. لا حاجة لتشغيل أي `upgrade_v*.sql` إضافي لهذه المرحلة.
+- **عنوان `h1` واحد لكل صفحة (جولة المتابعة):** صفحات الرحلة/المحامين/الحجز كانت بلا `<h1>` (العنوان المرئي كان `h2`). عُزِّز إلى `h1` — و`.toolbar` تنسّق `h1`/`h2`/`h3` بالتساوي فلا يتغيّر شيء بصرياً — ونال معالج الحجز `<h1>` مخفياً بصرياً. أُضيفت قاعدة `.sr-only` إلى `app.css` لأن `enterprise.css` طبقة اختيارية.
+- **الاختبارات تُؤكّد الكود لا البذرة:** `exec63` كان يؤكد وجود زر دفع بلا شرط، والبذرة لا تُنشئ استشارة للحساب المزروع؛ صار يتخطّى بصدق عند غياب الصف (تحقّق: بوجود صف سعري 36/36). و`consultation-journey.spec.js` كان يطابق زرّي البطاقة معاً فيُخفق مع وضع Playwright الصارم؛ صار يستهدف زر الحجز (`btn-primary`) تحديداً.
 
 ---
 
@@ -149,8 +151,14 @@ php tests/exec60_lawyer_form_filters_test.php # 139 فحصاً
 export PATH="/workspace/flutter_sdk/bin:$PATH"
 cd apps/mobile && flutter analyze && flutter test   # 341
 
-# المتصفح (يتطلّب خادم التطوير على 127.0.0.1:12000)
+# المتصفح (يتطلّب خادم التطوير على 127.0.0.1:12000 أو 8080)
+npx playwright test                       # الحزمة الكاملة: 780 ناجح / 12 متجاوز
 npx playwright test tests/e2e/consultation-journey.spec.js tests/e2e/exec60-lawyer-form-filters.spec.js
+
+# تدقيق RTL/الاستجابة للصفحات الثلاث (خادم على 8080)
+node tools/exec66_rtl_audit.js "/consultation-journey.php"
+node tools/exec66_rtl_audit.js "/consultation-journey-lawyers.php?category_id=1"
+node tools/exec66_rtl_audit.js "/booking.php?lawyer_id=1"
 
 # لقطات قبل/بعد (خادم على 8080)
 node tools/exec66_shots.js
@@ -175,7 +183,8 @@ node tools/exec66_shots.js
 
 - **الفرع:** `exec56-lawyer-platform`
 - **PR:** https://github.com/startgroup2022-tech/mawatheq/pull/10
-- **الالتزام:** `7ca2a3b`
+- **الالتزام:** `920eaa0`
 - **الوسم السابق:** https://github.com/startgroup2022-tech/mawatheq/releases/tag/v2026.11.05-exec66
+- **وسم المرحلة ب:** https://github.com/startgroup2022-tech/mawatheq/releases/tag/v2026.11.05-exec66b
 
 هذا التقرير أُنشئ بمساعدة وكيل ذكاء اصطناعي (OpenHands) نيابة عن المالك.
