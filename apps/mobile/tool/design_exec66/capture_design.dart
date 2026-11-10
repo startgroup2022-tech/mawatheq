@@ -14,8 +14,6 @@
 //   flutter test tool/design_exec66/capture_design.dart --update-goldens
 // The PNGs land in tool/design_exec66/goldens/.
 
-import 'dart:ui' show FontFeature;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -220,12 +218,10 @@ class _BottomBar extends StatelessWidget {
     required this.label,
     required this.value,
     required this.cta,
-    this.ctaColor = AppColors.navy,
   });
   final String label;
   final String value;
   final String cta;
-  final Color ctaColor;
 
   @override
   Widget build(BuildContext context) {
@@ -254,7 +250,7 @@ class _BottomBar extends StatelessWidget {
                 child: Container(
                   height: 48,
                   decoration: BoxDecoration(
-                    color: ctaColor,
+                    color: AppColors.navy,
                     borderRadius: BorderRadius.circular(AppRadius.md),
                   ),
                   alignment: Alignment.center,
@@ -271,10 +267,9 @@ class _BottomBar extends StatelessWidget {
 }
 
 class _Card extends StatelessWidget {
-  const _Card({required this.child, this.padding = const EdgeInsets.all(16), this.border});
+  const _Card({required this.child, this.padding = const EdgeInsets.all(16)});
   final Widget child;
   final EdgeInsets padding;
-  final Color? border;
 
   @override
   Widget build(BuildContext context) {
@@ -283,7 +278,7 @@ class _Card extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: border ?? AppColors.border),
+        border: Border.all(color: AppColors.border),
         boxShadow: AppShadow.xs,
       ),
       child: child,
@@ -783,7 +778,9 @@ Widget _screenLawyers() => _Phone(
       title: 'اختر المحامي',
       subtitle: 'الخطوة 1 من 5 · الأحوال الشخصية',
       step: 1,
-      children: [
+      bottom: const _BottomBar(
+          label: 'الإجمالي', value: '750.00 ر.س', cta: 'متابعة — نوع الاستشارة'),
+            children: [
         _Card(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -861,8 +858,6 @@ Widget _screenLawyers() => _Phone(
           selected: false,
         ),
       ],
-      bottom: const _BottomBar(
-          label: 'الإجمالي', value: '750.00 ر.س', cta: 'متابعة — نوع الاستشارة'),
     );
 
 Widget _typeOption(String emoji, String title, String desc, String price, bool on) =>
@@ -913,7 +908,9 @@ Widget _screenType() => _Phone(
       title: 'نوع الاستشارة',
       subtitle: 'الخطوة 2 من 5 · عبدالله الشهري',
       step: 2,
-      children: [
+      bottom: const _BottomBar(
+          label: 'الإجمالي', value: '750.00 ر.س', cta: 'متابعة — اختر الموعد'),
+            children: [
         _Card(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -941,15 +938,15 @@ Widget _screenType() => _Phone(
           ),
         ),
       ],
-      bottom: const _BottomBar(
-          label: 'الإجمالي', value: '750.00 ر.س', cta: 'متابعة — اختر الموعد'),
     );
 
 Widget _screenSchedule() => _Phone(
       title: 'اختر الموعد',
       subtitle: 'الخطوة 3 من 5 · التوقيت المحلي للرياض (GMT+3)',
       step: 3,
-      children: [
+      bottom: const _BottomBar(
+          label: 'الموعد المختار', value: '11:00', cta: 'متابعة — المراجعة'),
+            children: [
         const _Calendar(),
         const SizedBox(height: 14),
         _Card(
@@ -989,15 +986,15 @@ Widget _screenSchedule() => _Phone(
           ),
         ),
       ],
-      bottom: const _BottomBar(
-          label: 'الموعد المختار', value: '11:00', cta: 'متابعة — المراجعة'),
     );
 
 Widget _screenReview() => _Phone(
       title: 'مراجعة الحجز',
       subtitle: 'الخطوة 4 من 5 · تأكد قبل الدفع',
       step: 4,
-      children: [
+      bottom: const _BottomBar(
+          label: 'الإجمالي', value: '750.00 ر.س', cta: 'متابعة إلى الدفع'),
+            children: [
         _Card(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1067,8 +1064,6 @@ Widget _screenReview() => _Phone(
             kind: 'info',
             icon: Icons.info_outline),
       ],
-      bottom: const _BottomBar(
-          label: 'الإجمالي', value: '750.00 ر.س', cta: 'متابعة إلى الدفع'),
     );
 
 Widget _payBadge(IconData i, String t, String s) => Column(
@@ -1316,7 +1311,9 @@ Widget _screenSpecialty() => _Phone(
       subtitle: 'الخطوة 1 من 5 · اختر الخدمة أولاً',
       step: 1,
       stepLabels: const ['التخصص', 'النوع', 'الموعد', 'المحامي', 'الدفع'],
-      children: [
+      bottom: const _BottomBar(
+          label: 'المختار', value: 'الأحوال الشخصية', cta: 'متابعة — نوع الخدمة'),
+            children: [
         _Card(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1365,8 +1362,6 @@ Widget _screenSpecialty() => _Phone(
           ),
         ),
       ],
-      bottom: const _BottomBar(
-          label: 'المختار', value: 'الأحوال الشخصية', cta: 'متابعة — نوع الخدمة'),
     );
 
 Widget _screenFailed() => _Phone(

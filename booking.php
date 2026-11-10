@@ -67,7 +67,7 @@ if (!$lawyer && ($firmInfo || $firmSlug !== '')) {
     <div class="app-content">
       <?php if ($firmInfo && $firmLawyers): ?>
         <div class="toolbar"><div>
-          <h2><?= is_rtl() ? 'احجز استشارة' : 'Book a consultation' ?></h2>
+          <h1><?= is_rtl() ? 'احجز استشارة' : 'Book a consultation' ?></h1>
           <p><?= ui_e(is_rtl() ? ($firmInfo['display_name'] ?: $firmInfo['name']) : ($firmInfo['display_name'] ?: $firmInfo['name'])) ?></p>
         </div></div>
         <div class="grid-2">
@@ -290,6 +290,10 @@ $typeLabels = is_rtl()
 <div class="app-content bk-has-mobilebar" data-booking-wizard
      data-lawyer-id="<?= $lawyerId ?>" data-endpoint="/api/available_slots.php"
      data-has-hours="<?= $hasAvailability ? '1' : '0' ?>" data-dir="<?= is_rtl() ? 'rtl' : 'ltr' ?>">
+
+  <?php /* The wizard's own title is carried by the progress rail, so the page's one <h1>
+           is exposed to assistive tech without adding a heading the design does not show. */ ?>
+  <h1 class="sr-only"><?= is_rtl() ? 'احجز استشارة' : 'Book a consultation' ?></h1>
 
   <nav class="bk-progress" aria-label="<?= is_rtl() ? 'خطوات الحجز' : 'Booking steps' ?>">
     <?php foreach ($wizardSteps as $i => $label): $n = $i + 1;

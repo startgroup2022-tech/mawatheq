@@ -44,7 +44,7 @@ $extraPageAssets = ['<link rel="stylesheet" href="/assets/css/journey.css">'];
 <div class="app-content">
   <div class="toolbar">
     <div>
-      <h2><?= is_rtl() ? 'احجز استشارتك' : 'Book your consultation' ?></h2>
+      <h1><?= is_rtl() ? 'احجز استشارتك' : 'Book your consultation' ?></h1>
       <p><?= is_rtl() ? 'اختر تخصصك القانوني ثم صف مشكلتك، وسنعرض لك المحامين المتاحين.' : 'Choose your legal specialty, describe your issue, and we will show you the available lawyers.' ?></p>
     </div>
   </div>

@@ -69,7 +69,7 @@ $bookQuery = function (int $lawyerId) use ($categoryId, $issueTypeId): string {
 <div class="app-content">
   <div class="toolbar">
     <div>
-      <h2><?= is_rtl() ? 'المحامون المتاحون' : 'Available lawyers' ?></h2>
+      <h1><?= is_rtl() ? 'المحامون المتاحون' : 'Available lawyers' ?></h1>
       <p><?= is_rtl() ? 'قارن بين المحامين واختر الأنسب لك.' : 'Compare lawyers and pick the one that suits you.' ?></p>
     </div>
   </div>

@@ -8,7 +8,6 @@ import 'package:mawatheq_mobile/core/network/api_repository.dart';
 import 'package:mawatheq_mobile/core/network/models.dart';
 import 'package:mawatheq_mobile/core/storage/token_storage.dart';
 import 'package:mawatheq_mobile/features/consultations/journey_screen.dart';
-import 'package:mawatheq_mobile/shared/widgets/brand_widgets.dart';
 
 /// Execution 66 phase B — the native booking calendar, pricing and the lawyer card.
 ///
