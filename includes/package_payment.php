@@ -22,6 +22,7 @@
 require_once __DIR__ . '/ngenius.php';
 require_once __DIR__ . '/gateway/contract.php';
 require_once __DIR__ . '/currency.php';
+require_once __DIR__ . '/gateway_diagnostics.php';
 
 /** The package payment schema is present (upgrade_v70.sql applied). */
 function package_payment_schema_ready(PDO $pdo): bool {
@@ -131,19 +132,20 @@ function package_activate_free(PDO $pdo, int $userId, int $planId, string $cycle
  * @return array{ok:bool, redirect_url?:string, reference?:string, gateway?:string, error?:string}
  */
 function package_payment_start(PDO $pdo, array $order, array $options = []): array {
-    if (!package_payment_schema_ready($pdo)) return ['ok' => false, 'error' => 'migration_required'];
+    if (!package_payment_schema_ready($pdo)) return gateway_diag_failure($pdo, 'package_payment', 'schema', 'migration_required', 'package_orders table missing (upgrade_v70.sql)');
 
     $settings = ngenius_settings($pdo);
-    if (!ngenius_is_enabled($settings)) return ['ok' => false, 'error' => 'no_enabled_gateway'];
+    $env = (string)($settings['ngenius_environment'] ?? 'sandbox');
+    if (!ngenius_is_enabled($settings)) return gateway_diag_failure($pdo, 'package_payment', 'config', 'no_enabled_gateway', 'N-Genius disabled or outlet/api key missing', $env);
 
     $orderCurrency = strtoupper((string)($order['currency'] ?: currency_code()));
     $currency = ngenius_currency($settings);
     if (!ngenius_supports_currency($settings, $orderCurrency)) {
-        return ['ok' => false, 'error' => 'unsupported_currency'];
+        return gateway_diag_failure($pdo, 'package_payment', 'config', 'unsupported_currency', 'order currency ' . $orderCurrency . ' != outlet ' . $currency, $env);
     }
 
     $amount = (float)$order['amount'];
-    if ($amount <= 0) return ['ok' => false, 'error' => 'zero_amount'];
+    if ($amount <= 0) return gateway_diag_failure($pdo, 'package_payment', 'config', 'zero_amount', 'order amount is not positive', $env);
 
     $orderId = (int)$order['id'];
     $reference = package_payment_reference($orderId);
@@ -151,7 +153,7 @@ function package_payment_start(PDO $pdo, array $order, array $options = []): arr
     $tokenResult = ngenius_get_access_token(
         $settings['ngenius_environment'], $settings['ngenius_api_key'], $settings['ngenius_realm_name'] ?? ''
     );
-    if (empty($tokenResult['ok'])) return ['ok' => false, 'error' => $tokenResult['error']];
+    if (empty($tokenResult['ok'])) return gateway_diag_failure($pdo, 'package_payment', 'token', 'token_failed', (string)($tokenResult['error'] ?? ''), $env);
 
     $gatewayOrder = ngenius_create_order(
         $settings['ngenius_environment'],
@@ -182,7 +184,8 @@ function package_payment_start(PDO $pdo, array $order, array $options = []): arr
 
     if (empty($gatewayOrder['ok'])) {
         $pdo->prepare("UPDATE package_orders SET status='failed' WHERE id=? AND status='pending'")->execute([$orderId]);
-        return ['ok' => false, 'error' => $gatewayOrder['error'] ?? 'gateway_error', 'gateway' => 'ngenius'];
+        $fail = gateway_diag_failure($pdo, 'package_payment', 'order', 'order_failed', (string)($gatewayOrder['error'] ?? ''), $env);
+        return ['ok' => false, 'error' => $fail['error'], 'correlation_id' => $fail['correlation_id'], 'gateway' => 'ngenius'];
     }
 
     $pdo->prepare("UPDATE package_orders SET status='pending', payment_reference=?, payment_gateway='ngenius' WHERE id=?")

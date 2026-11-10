@@ -17,6 +17,7 @@
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/../finance.php';
 require_once __DIR__ . '/../audit_log.php';
+require_once __DIR__ . '/../gateway_diagnostics.php';
 
 /** Build a stable, unique gateway reference for an invoice payment attempt. */
 function gateway_new_reference(string $gatewayId, int $invoiceId): string {
@@ -72,9 +73,9 @@ function gateway_start_invoice_payment(PDO $pdo, array $invoice, array $options 
     } else {
         $adapter = gateway_for_new_payment($pdo, $invoice);
     }
-    if (!$adapter) return ['ok' => false, 'error' => 'no_enabled_gateway'];
-    if (!$adapter->isEnabled()) return ['ok' => false, 'error' => 'gateway_disabled'];
-    if (!$adapter->supportsCurrency($invoice['currency'] ?? null)) return ['ok' => false, 'error' => 'unsupported_currency'];
+    if (!$adapter) return gateway_diag_failure($pdo, 'invoice_payment', 'config', 'no_enabled_gateway', 'no gateway enabled for this invoice');
+    if (!$adapter->isEnabled()) return gateway_diag_failure($pdo, 'invoice_payment', 'config', 'gateway_disabled', $adapter->id() . ' is disabled');
+    if (!$adapter->supportsCurrency($invoice['currency'] ?? null)) return gateway_diag_failure($pdo, 'invoice_payment', 'config', 'unsupported_currency', 'invoice currency ' . (string)($invoice['currency'] ?? '') . ' not supported by ' . $adapter->id());
 
     $invoiceId = (int)$invoice['id'];
     $reference = gateway_new_reference($adapter->id(), $invoiceId);
@@ -117,7 +118,8 @@ function gateway_start_invoice_payment(PDO $pdo, array $invoice, array $options 
 
     if (empty($result['ok'])) {
         log_action($pdo, 'فشل إنشاء عملية دفع (' . $adapter->id() . ')', 'invoice', $invoiceId);
-        return ['ok' => false, 'error' => $result['error'] ?? 'gateway_error', 'gateway' => $adapter->id()];
+        $fail = gateway_diag_failure($pdo, 'invoice_payment', 'order', 'order_failed', (string)($result['error'] ?? ''), method_exists($adapter, 'environment') ? $adapter->environment() : null);
+        return ['ok' => false, 'error' => $fail['error'], 'correlation_id' => $fail['correlation_id'], 'gateway' => $adapter->id()];
     }
 
     $pdo->prepare('UPDATE invoices SET gateway=?, gateway_order_ref=? WHERE id=?')

@@ -81,10 +81,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
             }
             // The gateway is not reachable or not configured. The order stays pending and
-            // the client sees an honest message with a retry, never a false success.
+            // the client sees an honest message with a retry, never a false success. The
+            // correlation id lets support find the exact gateway failure without guessing.
+            $corr = (string)($started['correlation_id'] ?? '');
             $error = $rtl
                 ? 'تعذّر بدء عملية الدفع الإلكتروني حالياً. لم يتم خصم أي مبلغ. يمكنك المحاولة مجدداً أو التواصل معنا.'
                 : 'Online payment could not be started. No amount was charged. You can retry or contact us.';
+            if ($corr !== '') {
+                $error .= ' ' . ($rtl ? 'الرقم المرجعي:' : 'Reference:') . ' ' . $corr;
+            }
         }
     }
 }

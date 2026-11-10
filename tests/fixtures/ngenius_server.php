@@ -64,7 +64,14 @@ if ($path === '/identity/auth/access-token') {
 }
 
 // --- create order ------------------------------------------------------------
-if ($method === 'POST' && preg_match('#^/transactions/outlets/[^/]+/orders$#', $path)) {
+if ($method === 'POST' && preg_match('#^/transactions/outlets/([^/]+)/orders$#', $path, $m)) {
+    // An outlet the fixture is told to reject, so the order stage (not the token stage) can be
+    // exercised. The live gateway answers a bad outlet with 400 + errors[0].errorCode.
+    if (stripos(urldecode($m[1]), 'BADOUTLET') !== false) {
+        http_response_code(400);
+        echo json_encode(['errors' => [['errorCode' => 'outletNotAvailable']]]);
+        exit;
+    }
     $reference = (string)($body['merchantOrderReference'] ?? ('ORD-' . bin2hex(random_bytes(4))));
     $store[$reference] = [
         'amount' => (int)($body['amount']['value'] ?? 0),

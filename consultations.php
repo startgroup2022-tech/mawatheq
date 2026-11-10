@@ -27,7 +27,7 @@ $myBookings = $myBookings->fetchAll();
   <p style="margin-bottom:20px"><?= t('feat4_body') ?></p>
 
   <?php if (isset($_GET['payment_error'])): ?>
-    <div class="form-alert error"><?= is_rtl() ? 'تعذّر بدء الدفع الإلكتروني حالياً. لم يتم خصم أي مبلغ. حاول مجدداً لاحقاً.' : 'Online payment could not be started. No amount was charged. Please try again later.' ?></div>
+    <div class="form-alert error"><?= is_rtl() ? 'تعذّر بدء الدفع الإلكتروني حالياً. لم يتم خصم أي مبلغ. حاول مجدداً لاحقاً.' : 'Online payment could not be started. No amount was charged. Please try again later.' ?><?php $ref = preg_replace('/[^A-Fa-f0-9]/', '', (string)($_GET['ref'] ?? '')); if ($ref !== '') echo ' ' . (is_rtl() ? 'الرقم المرجعي:' : 'Reference:') . ' ' . htmlspecialchars(strtoupper(substr($ref, 0, 8))); ?></div>
   <?php endif; ?>
   <?php if ($myBookings): ?>
   <h3 style="margin-bottom:12px"><?= is_rtl() ? 'حجوزاتي' : 'My bookings' ?></h3>

@@ -21,6 +21,7 @@
  */
 require_once __DIR__ . '/ngenius.php';
 require_once __DIR__ . '/finance.php';
+require_once __DIR__ . '/gateway_diagnostics.php';
 
 /** True when the consultation columns from upgrade_v69.sql are present. */
 function consultation_payment_schema_ready(PDO $pdo): bool {
@@ -74,11 +75,12 @@ function consultation_payment_return_url(int $consultationId): string {
  */
 function consultation_payment_start(PDO $pdo, array $consultation, array $options = []): array {
     if (!consultation_payment_schema_ready($pdo)) {
-        return ['ok' => false, 'error' => 'migration_required'];
+        return gateway_diag_failure($pdo, 'consultation_payment', 'schema', 'migration_required', 'consultation payment columns missing');
     }
     $settings = ngenius_settings($pdo);
+    $env = (string)($settings['ngenius_environment'] ?? 'sandbox');
     if (!ngenius_is_enabled($settings)) {
-        return ['ok' => false, 'error' => 'no_enabled_gateway'];
+        return gateway_diag_failure($pdo, 'consultation_payment', 'config', 'no_enabled_gateway', 'N-Genius disabled or outlet/api key missing', $env);
     }
     // The consultation price is stored in the site currency (consultations has no currency
     // column). The gateway charges in the outlet's settlement currency. If the two differ we
@@ -88,10 +90,10 @@ function consultation_payment_start(PDO $pdo, array $consultation, array $option
     $siteCurrency = strtoupper(currency_code());
     $currency = ngenius_currency($settings);
     if (!ngenius_supports_currency($settings, $siteCurrency)) {
-        return ['ok' => false, 'error' => 'unsupported_currency'];
+        return gateway_diag_failure($pdo, 'consultation_payment', 'config', 'unsupported_currency', 'site currency ' . $siteCurrency . ' != outlet ' . $currency, $env);
     }
     $amount = (float)$consultation['price'];
-    if ($amount <= 0) return ['ok' => false, 'error' => 'zero_amount'];
+    if ($amount <= 0) return gateway_diag_failure($pdo, 'consultation_payment', 'config', 'zero_amount', 'consultation price is not positive', $env);
 
     $consultationId = (int)$consultation['id'];
     $reference = consultation_payment_reference($consultationId);
@@ -100,7 +102,7 @@ function consultation_payment_start(PDO $pdo, array $consultation, array $option
         $settings['ngenius_environment'], $settings['ngenius_api_key'], $settings['ngenius_realm_name'] ?? ''
     );
     if (empty($tokenResult['ok'])) {
-        return ['ok' => false, 'error' => $tokenResult['error']];
+        return gateway_diag_failure($pdo, 'consultation_payment', 'token', 'token_failed', (string)($tokenResult['error'] ?? ''), $env);
     }
 
     $order = ngenius_create_order(
@@ -135,7 +137,8 @@ function consultation_payment_start(PDO $pdo, array $consultation, array $option
     if (empty($order['ok'])) {
         $pdo->prepare("UPDATE consultations SET payment_status='failed' WHERE id=?")
             ->execute([$consultationId]);
-        return ['ok' => false, 'error' => $order['error'] ?? 'gateway_error', 'gateway' => 'ngenius'];
+        $fail = gateway_diag_failure($pdo, 'consultation_payment', 'order', 'order_failed', (string)($order['error'] ?? ''), $env);
+        return ['ok' => false, 'error' => $fail['error'], 'correlation_id' => $fail['correlation_id'], 'gateway' => 'ngenius'];
     }
 
     $pdo->prepare("UPDATE consultations SET payment_status='pending', payment_reference=?, payment_amount=?, payment_currency=?, payment_gateway='ngenius' WHERE id=?")

@@ -41,6 +41,8 @@ if (!$invoice) {
                 : 'Online payment is not available for this invoice currency. Contact the lawyer for alternative payment methods.';
         } else {
             $pageError = is_rtl() ? 'تعذّر بدء عملية الدفع. حاول لاحقاً أو تواصل مع المحامي.' : 'Could not start the payment. Try again later or contact the lawyer.';
+            $corr = (string)($started['correlation_id'] ?? '');
+            if ($corr !== '') $pageError .= ' ' . (is_rtl() ? 'الرقم المرجعي:' : 'Reference:') . ' ' . $corr;
         }
     }
 }

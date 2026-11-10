@@ -48,6 +48,8 @@ if (!empty($started['ok']) && !empty($started['redirect_url'])) {
 }
 
 // The gateway could not be reached. Return to the list with an honest banner; the booking
-// stays pending and unpaid, which is the truth.
-header('Location: /consultations.php?payment_error=1');
+// stays pending and unpaid, which is the truth. The correlation id (when present) lets
+// support find the exact gateway failure behind the generic message.
+$corr = (string)($started['correlation_id'] ?? '');
+header('Location: /consultations.php?payment_error=1' . ($corr !== '' ? '&ref=' . urlencode($corr) : ''));
 exit;

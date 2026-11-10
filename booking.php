@@ -245,6 +245,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $error = is_rtl()
                         ? 'تم حفظ طلب الحجز، لكن تعذّر بدء الدفع الإلكتروني، لذلك لم يتم تأكيد الموعد بعد. يمكنك إكمال الدفع من صفحة الاستشارات.'
                         : 'Your booking request was saved, but online payment could not start, so the appointment is not confirmed yet. You can complete payment from your consultations page.';
+                    $corr = (string)($started['correlation_id'] ?? '');
+                    if ($corr !== '') $error .= ' ' . (is_rtl() ? 'الرقم المرجعي:' : 'Reference:') . ' ' . $corr;
                 }
             }
         }

@@ -55,6 +55,7 @@ function admin_route_roles(): array {
         'gateway-transactions.php' => ['super_admin'],
         'gateway-transaction.php' => ['super_admin'],
         'sadad-test.php' => ['super_admin'],
+        'ngenius-test.php' => ['super_admin'],
         'crm.php' => ['super_admin', 'support'],
         // Support centre. Reading and answering tickets is a support task, so the
         // support role gets it; changing the channel configuration is super_admin only.
