@@ -144,8 +144,20 @@ try {
     check('working weekdays are Sun-Thu (0-4)', $map['working_weekdays'] === [0, 1, 2, 3, 4]);
     $freeDays = array_filter($map['days'], fn($n) => $n > 0);
     check('at least one free day this month', count($freeDays) > 0);
-    $firstFreeDay = array_key_first($freeDays);
-    check('a free day shows the 6 slots its hours define', $map['days'][$firstFreeDay] === 6);
+    // The first free day can be *today*, and after a morning start today's earlier slots
+    // are correctly gone — so assert on a day that is still entirely in the future. A
+    // fresh lawyer has no bookings, so such a day shows exactly the 6 its hours define.
+    $today = date('Y-m-d');
+    $freeMap = $map;
+    $futureFreeDay = null;
+    foreach (array_keys($freeDays) as $d) { if ($d > $today) { $futureFreeDay = $d; break; } }
+    if ($futureFreeDay === null) {
+        // Running on the last working day of the month: take next month's first free day.
+        $freeMap = get_month_availability($pdo, $lawyerId, date('Y-m', strtotime('first day of next month')));
+        foreach (array_keys(array_filter($freeMap['days'], fn($n) => $n > 0)) as $d) { $futureFreeDay = $d; break; }
+    }
+    check('a future free day shows the 6 slots its hours define',
+        $futureFreeDay !== null && $freeMap['days'][$futureFreeDay] === 6);
 
     // A lawyer with no published hours has an empty map — an honest zero, not a guess.
     $noHours = get_month_availability($pdo, 1, $month);
