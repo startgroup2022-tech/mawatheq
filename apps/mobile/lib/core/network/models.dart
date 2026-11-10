@@ -419,6 +419,8 @@ class LawyerProfile {
     this.bio = '',
     this.photoPath = '',
     this.feeDisplay = '',
+    this.consultationPrice = 0,
+    this.durationMinutes = 30,
     this.hasPublishedHours = false,
     this.nextSlotCount = 0,
   });
@@ -448,7 +450,16 @@ class LawyerProfile {
 
   /// The fee already formatted with the tenant's currency by the backend
   /// (`fee_display`). The app never formats money itself, so this is shown verbatim.
+  /// This is the ONE authoritative payable amount (the flat consultation price), not
+  /// an hourly rate — the card must advertise exactly what the gateway will charge.
   final String feeDisplay;
+
+  /// The same payable amount as a number, for comparisons. Zero means no price set.
+  final double consultationPrice;
+
+  /// How long the consultation runs, in minutes (30 today). Shown beside the price so
+  /// "500 ر.س" is never mistaken for an hourly meter.
+  final int durationMinutes;
 
   /// Whether the lawyer has published working hours at all. A lawyer with none has no
   /// bookable slot, which the customer should see before opening the booking form.
@@ -494,6 +505,8 @@ class LawyerProfile {
       bio: j.str('bio'),
       photoPath: j.str('photo_path'),
       feeDisplay: j.str('fee_display'),
+      consultationPrice: j.object('pricing')?.dbl('total') ?? j.dbl('hourly_rate'),
+      durationMinutes: j.intg('duration_minutes', fallback: 30),
       hasPublishedHours: av.boolean('has_published_hours'),
       nextSlotCount: av.intg('slot_count', fallback: j.intg('slot_count')),
     );
@@ -1158,6 +1171,55 @@ class JourneyStagedAttachments {
       documentMb: limits?.intg('document_mb') ?? 0,
       audioMb: limits?.intg('audio_mb') ?? 0,
       videoMb: limits?.intg('video_mb') ?? 0,
+    );
+  }
+}
+
+/// A real availability calendar for one lawyer and one month.
+///
+/// `days` maps `YYYY-MM-DD` to the number of open 30-minute slots on that day (0 = none).
+/// It is computed server-side from the lawyer's own published hours and existing bookings
+/// (`get_month_availability`), so the app draws the days the customer can actually book —
+/// it never guesses which days are free. `workingWeekdays` (0=Sunday) is the lawyer's
+/// published week, used only to explain an empty month.
+class MonthAvailability {
+  const MonthAvailability({
+    required this.month,
+    this.days = const {},
+    this.workingWeekdays = const [],
+    this.hasHours = false,
+  });
+
+  final String month;
+  final Map<String, int> days;
+  final List<int> workingWeekdays;
+  final bool hasHours;
+
+  /// Open slot count for one `YYYY-MM-DD`, or 0 when the day is not in the map.
+  int slotsOn(String isoDate) => days[isoDate] ?? 0;
+
+  bool get isEmpty => days.isEmpty;
+
+  factory MonthAvailability.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    final rawDays = j.object('days')?.asMap ?? const <String, dynamic>{};
+    final days = <String, int>{};
+    rawDays.forEach((k, v) {
+      final n = v is int ? v : int.tryParse(v?.toString() ?? '');
+      if (n != null) days[k] = n;
+    });
+    final rawWeek = map['working_weekdays'];
+    final week = rawWeek is List
+        ? rawWeek
+            .map((e) => e is int ? e : int.tryParse(e.toString()) ?? -1)
+            .where((e) => e >= 0 && e <= 6)
+            .toList()
+        : <int>[];
+    return MonthAvailability(
+      month: j.str('month'),
+      days: days,
+      workingWeekdays: week,
+      hasHours: j.boolean('has_hours'),
     );
   }
 }

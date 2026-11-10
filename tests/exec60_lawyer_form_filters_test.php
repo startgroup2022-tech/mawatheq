@@ -312,18 +312,17 @@ section('11. Booking filters — server-side filtering is real');
 // ---------------------------------------------------------------------------
 // Seed a specialty, three approved lawyers with distinct country/city/experience/price,
 // and link them to the specialty. Every row is ours and is removed in cleanup.
+//
+// The category is ALWAYS a fresh, suite-owned one — never the first real category. That
+// first category is shared data: another suite, a seed script or a developer's manual
+// probe can link a lawyer to it, and then "the range keeps only our lawyer" fails against
+// a row this test never created. A category nobody else knows about makes every filter
+// assertion here about exactly the three lawyers below.
 $catId = 0;
-$catRow = $pdo->query("SELECT id FROM najiz_categories WHERE is_active = 1 ORDER BY id LIMIT 1")->fetchColumn();
-if ($catRow) {
-    $catId = (int)$catRow;
-} else {
-    // No taxonomy yet (fresh install) — create a temporary one so the filter path is
-    // still exercised. It is removed in cleanup.
-    $pdo->prepare("INSERT INTO najiz_categories (name_ar, is_active) VALUES (?, 1)")
-        ->execute(['تصنيف اختبار ' . $suffix]);
-    $catId = (int)$pdo->lastInsertId();
-    $createdCats[] = $catId;
-}
+$pdo->prepare("INSERT INTO najiz_categories (name_ar, is_active) VALUES (?, 1)")
+    ->execute(['تصنيف اختبار exec60 ' . $suffix]);
+$catId = (int)$pdo->lastInsertId();
+$createdCats[] = $catId;
 
 $mk = function (string $name, string $country, string $city, int $years, float $rate) use ($pdo, $suffix, $catId, &$created) {
     $pdo->prepare("INSERT INTO lawyers (full_name, email, password_hash, specialization, status, jurisdiction, country_code, city, years_experience, hourly_rate, rating)

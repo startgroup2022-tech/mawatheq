@@ -170,7 +170,8 @@ const _lawyersJson = [
     'full_name': 'سارة العتيبي',
     'specialization': 'الأحوال الشخصية',
     'jurisdiction': 'الرياض',
-    'rating': '4.800',
+    'fee_display': '350 ر.س',
+    'duration_minutes': 30,
     'hourly_rate': '350.000',
   },
   {
@@ -178,7 +179,8 @@ const _lawyersJson = [
     'full_name': 'خالد المطيري',
     'specialization': 'القضايا التجارية',
     'jurisdiction': 'جدة',
-    'rating': '0',
+    'fee_display': null,
+    'duration_minutes': 30,
     'hourly_rate': '0',
   },
 ];
@@ -628,9 +630,8 @@ void main() {
 
       expect(find.text('سارة العتيبي'), findsOneWidget);
       expect(find.text('الأحوال الشخصية'), findsOneWidget);
-      expect(find.text('350 ر.س/ساعة'), findsOneWidget);
+      expect(find.text('350 ر.س / 30 دقيقة'), findsOneWidget);
       expect(find.text('2 محامياً متاحاً'), findsOneWidget);
-      // A lawyer with no rating shows no stars rather than a fabricated zero.
       expect(find.text('خالد المطيري'), findsOneWidget);
     });
 

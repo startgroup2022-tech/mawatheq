@@ -411,6 +411,10 @@ function legal_journey_filter_params(array $input): array {
  * @return array<int,array<string,mixed>>
  */
 function legal_journey_lawyers_for_specialty(PDO $pdo, int $categoryId, array $opts = []): array {
+    // Required here, before the loop reads CONSULTATION_DEFAULT_MINUTES below: the
+    // constant is used to state a card's duration, and a require_once placed inside the
+    // loop is too late for its first iteration.
+    require_once __DIR__ . '/consultation_pricing.php';
     if (!legal_journey_ready($pdo) || $categoryId <= 0) return [];
 
     // Which lawyers provide this specialty — the same index the specialties list counts
@@ -422,7 +426,8 @@ function legal_journey_lawyers_for_specialty(PDO $pdo, int $categoryId, array $o
 
     $ph = implode(',', array_fill(0, count($ids), '?'));
     $sql = "SELECT l.id, l.full_name, l.specialization, l.bio, l.years_experience,
-                   l.hourly_rate, l.rating, l.photo_path, l.jurisdiction, l.country_code, l.city
+                   l.hourly_rate, l.rating, l.photo_path, l.jurisdiction, l.country_code, l.city,
+                   (SELECT MIN(a.slot_minutes) FROM lawyer_availability a WHERE a.lawyer_id = l.id) AS slot_minutes
               FROM lawyers l
              WHERE l.id IN ($ph) AND l.status = 'approved'";
     $params = $ids;
@@ -466,6 +471,12 @@ function legal_journey_lawyers_for_specialty(PDO $pdo, int $categoryId, array $o
         $lw['country_code'] = lawyer_country_code($lw);
         $lw['city'] = $lw['city'] !== null && $lw['city'] !== '' ? (string)$lw['city'] : null;
         $lw['location'] = lawyer_location_label($lw['country_code'], $lw['city']);
+        // The published consultation length, so the card can state the duration it prices.
+        $lw['duration_minutes'] = ((int)($lw['slot_minutes'] ?? 0)) > 0 ? (int)$lw['slot_minutes'] : CONSULTATION_DEFAULT_MINUTES;
+        // The one authoritative price breakdown. The card, the booking form and the gateway all
+        // read this, so a card can never advertise a number the gateway would not charge.
+        $lw['pricing'] = consultation_pricing_for_lawyer($pdo, $lw);
+        $lw['price_label'] = $lw['pricing']['has_price'] ? money_text($lw['pricing']['total']) : null;
         $lw['availability'] = legal_journey_availability_summary($pdo, $lw['id'], $today);
         // Availability is a real filter, not a badge: when it is requested, a lawyer
         // with no open slot is removed rather than shown with an empty slot line.

@@ -66,13 +66,19 @@ try {
             // filter identically. `available_only` is sent as `1`/`true`/`on`.
             $filters = legal_journey_filter_params($_GET);
             $lawyers = legal_journey_lawyers_for_specialty($pdo, $cid, $filters);
-            // Present each lawyer's fee with the tenant's currency so the app never
-            // formats money itself.
+            // Present each lawyer's consultation price with the tenant's currency so the app
+            // never formats money itself. `fee_display` is the one authoritative payable amount
+            // (`pricing.total`), not the raw hourly rate — the card must advertise exactly what
+            // the gateway will charge (owner decision, Execution 66).
             require_once __DIR__ . '/../../includes/currency.php';
+            require_once __DIR__ . '/../../includes/consultation_pricing.php';
             foreach ($lawyers as &$lw) {
-                $lw['fee_display'] = $lw['hourly_rate'] !== null
-                    ? currency_number($lw['hourly_rate']) . ' ' . currency_symbol()
+                $breakdown = $lw['pricing'] ?? consultation_pricing_for_lawyer($pdo, $lw);
+                $lw['fee_display'] = !empty($breakdown['has_price'])
+                    ? money_text($breakdown['total'])
                     : null;
+                $lw['duration_minutes'] = (int)($breakdown['duration_minutes'] ?? 30);
+                $lw['pricing'] = $breakdown;
             }
             unset($lw);
             $specialtyHasLawyers = count(legal_journey_lawyers_for_specialty($pdo, $cid, [])) > 0;

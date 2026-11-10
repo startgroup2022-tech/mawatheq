@@ -1,0 +1,164 @@
+/*
+ * Booking wizard — Execution 66 phase B.
+ *
+ * Loaded after style/app/enterprise, so it may override them; it uses only the existing brand
+ * tokens (--navy, --teal, --gold, --surface, --border, --r-*, --s-*, --focus-ring) so the
+ * wizard cannot drift from the rest of the platform. Layout uses LOGICAL properties
+ * (inline-start/end, margin-inline) so one stylesheet serves Arabic RTL and English LTR.
+ *
+ * It must survive a missing enhancement layer: every rule the wizard needs to be usable lives
+ * here, not in enterprise.css. If enterprise.css 403s, the wizard still works.
+ */
+
+/* ---- progress indicator ---- */
+.bk-progress{ display:flex; align-items:center; gap:0; margin:0 0 var(--s-6); overflow-x:auto; padding:var(--s-1) 0; }
+.bk-step{ display:flex; align-items:center; gap:var(--s-2); flex:0 0 auto; }
+.bk-step__dot{
+  width:32px; height:32px; border-radius:50%; display:grid; place-items:center;
+  font-weight:800; font-size:.85rem; background:var(--surface-3); color:var(--text-subtle);
+  border:2px solid var(--border); flex:0 0 auto;
+}
+.bk-step__label{ font-size:.82rem; font-weight:700; color:var(--text-subtle); white-space:nowrap; }
+.bk-step.is-current .bk-step__dot{ background:var(--navy); color:#fff; border-color:var(--navy); }
+.bk-step.is-current .bk-step__label{ color:var(--navy-dark); }
+.bk-step.is-done .bk-step__dot{ background:#1F9D55; color:#fff; border-color:#1F9D55; }
+.bk-step.is-done .bk-step__label{ color:#1F9D55; }
+.bk-step__line{ flex:1 1 auto; min-width:18px; height:2px; background:var(--border); margin:0 var(--s-2); }
+.bk-step.is-done .bk-step__line{ background:#1F9D55; }
+
+/* ---- layout: main + sticky summary rail ---- */
+.bk-layout{ display:grid; grid-template-columns:minmax(0,1fr); gap:var(--s-6); align-items:start; }
+@media (min-width:1024px){ .bk-layout.has-rail{ grid-template-columns:minmax(0,1fr) 340px; } }
+.bk-main{ min-width:0; }
+
+.bk-summary{
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg);
+  padding:var(--s-5); box-shadow:0 1px 2px rgba(15,31,51,.04);
+}
+@media (min-width:1024px){ .bk-summary{ position:sticky; top:var(--s-4); } }
+.bk-summary__title{ margin:0 0 var(--s-3); font-size:1rem; font-weight:800; color:var(--navy-dark); }
+.bk-summary__row{ display:flex; justify-content:space-between; gap:var(--s-3); padding:var(--s-2) 0; font-size:.9rem; }
+.bk-summary__row span:first-child{ color:var(--text-muted); }
+.bk-summary__row span:last-child{ font-weight:700; color:var(--navy-dark); }
+.bk-summary__total{ border-top:1px dashed var(--border-strong); margin-top:var(--s-2); padding-top:var(--s-3); font-size:1.05rem; }
+.bk-summary__total span:last-child{ color:var(--navy); font-size:1.15rem; }
+
+/* ---- lawyer cards ---- */
+.bk-cards{ display:grid; grid-template-columns:1fr; gap:var(--s-4); }
+@media (min-width:640px){ .bk-cards{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (min-width:1400px){ .bk-cards{ grid-template-columns:repeat(3,minmax(0,1fr)); } }
+.bk-card{
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg);
+  padding:var(--s-4); display:flex; flex-direction:column; gap:var(--s-3); min-width:0;
+  transition:box-shadow .15s ease, border-color .15s ease;
+}
+.bk-card:hover{ border-color:var(--teal); box-shadow:0 6px 18px rgba(15,31,51,.08); }
+.bk-card__head{ display:flex; gap:var(--s-3); align-items:center; min-width:0; }
+.bk-card__avatar{ width:56px; height:56px; border-radius:50%; object-fit:cover; background:var(--surface-3); flex:0 0 auto; }
+.bk-card__name{ margin:0; font-size:1rem; font-weight:800; color:var(--navy-dark); overflow-wrap:anywhere; }
+.bk-card__spec{ font-size:.82rem; color:var(--text-muted); }
+.bk-card__meta{ display:flex; flex-wrap:wrap; gap:var(--s-2) var(--s-3); font-size:.82rem; color:var(--text-muted); }
+.bk-card__chip{
+  display:inline-flex; align-items:center; gap:6px; background:var(--surface-2);
+  border:1px solid var(--border); border-radius:var(--r-pill); padding:3px 10px; font-size:.78rem;
+}
+.bk-card__price{ font-size:1.15rem; font-weight:800; color:var(--navy); }
+.bk-card__slots{ display:flex; flex-wrap:wrap; gap:6px; }
+.bk-slot-mini{
+  font-size:.76rem; background:#EAF6F9; color:#0E6A80; border:1px solid #BFE6EF;
+  border-radius:var(--r-sm); padding:3px 8px; font-variant-numeric:tabular-nums;
+}
+.bk-card__actions{ display:flex; gap:var(--s-2); margin-top:auto; }
+.bk-card__actions .btn{ flex:1 1 auto; justify-content:center; }
+
+/* ---- calendar ---- */
+.bk-cal{ background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); padding:var(--s-4); }
+.bk-cal__head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:var(--s-3); gap:var(--s-2); }
+.bk-cal__month{ font-weight:800; color:var(--navy-dark); font-size:.98rem; }
+.bk-cal__nav{ display:flex; gap:6px; }
+.bk-cal__nav button{
+  width:36px; height:36px; border-radius:var(--r-sm); border:1px solid var(--border);
+  background:var(--surface); color:var(--navy); cursor:pointer; font-size:1rem; line-height:1;
+}
+.bk-cal__nav button:hover:not(:disabled){ background:var(--surface-2); border-color:var(--teal); }
+.bk-cal__nav button:disabled{ opacity:.4; cursor:not-allowed; }
+.bk-cal__grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
+.bk-cal__dow{ text-align:center; font-size:.72rem; font-weight:700; color:var(--text-subtle); padding:4px 0; }
+.bk-cal__day{
+  aspect-ratio:1; border:1px solid transparent; border-radius:var(--r-sm); background:transparent;
+  color:var(--text); font-size:.85rem; font-weight:600; cursor:pointer; display:grid; place-items:center;
+  font-variant-numeric:tabular-nums; min-height:38px;
+}
+.bk-cal__day:disabled{ color:var(--text-subtle); opacity:.45; cursor:not-allowed; background:transparent; }
+.bk-cal__day.is-free{ background:#EAF6F9; color:#0E6A80; border-color:#BFE6EF; }
+.bk-cal__day.is-free:hover{ border-color:var(--teal); background:#DDF0F5; }
+.bk-cal__day.is-selected{ background:var(--navy); color:#fff; border-color:var(--navy); }
+.bk-cal__day.is-empty{ visibility:hidden; }
+.bk-cal__legend{ display:flex; flex-wrap:wrap; gap:var(--s-3); margin-top:var(--s-3); font-size:.76rem; color:var(--text-muted); }
+.bk-cal__legend i{ display:inline-block; width:12px; height:12px; border-radius:3px; margin-inline-end:5px; vertical-align:-1px; }
+
+/* ---- time slot grid ---- */
+.bk-slots{ display:grid; grid-template-columns:repeat(auto-fill,minmax(76px,1fr)); gap:var(--s-2); margin-top:var(--s-4); }
+.bk-slots .slot-btn{
+  min-height:44px; border:1px solid var(--border); border-radius:var(--r-sm); background:var(--surface);
+  color:var(--navy-dark); font-weight:700; font-size:.85rem; cursor:pointer; font-variant-numeric:tabular-nums;
+  transition:all .12s ease;
+}
+.bk-slots .slot-btn:hover{ border-color:var(--teal); background:var(--surface-2); }
+.bk-slots .slot-btn.selected{ background:var(--navy); color:#fff; border-color:var(--navy); }
+
+/* ---- type picker ---- */
+.bk-types{ display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:var(--s-3); }
+.bk-type{
+  border:2px solid var(--border); border-radius:var(--r-md); background:var(--surface); padding:var(--s-4);
+  cursor:pointer; text-align:center; min-height:96px; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:6px;
+}
+.bk-type:hover{ border-color:var(--teal); }
+.bk-type.is-on{ border-color:var(--navy); background:#F3F7FC; }
+.bk-type input{ position:absolute; opacity:0; width:1px; height:1px; }
+.bk-type__ico{ font-size:1.5rem; }
+.bk-type__name{ font-weight:800; color:var(--navy-dark); font-size:.92rem; }
+.bk-type__hint{ font-size:.75rem; color:var(--text-muted); }
+
+/* ---- review block ---- */
+.bk-review{ display:grid; gap:var(--s-3); }
+.bk-review__item{ display:flex; justify-content:space-between; gap:var(--s-3); padding:var(--s-3); background:var(--surface-2); border-radius:var(--r-md); flex-wrap:wrap; }
+.bk-review__k{ color:var(--text-muted); font-size:.86rem; }
+.bk-review__v{ font-weight:700; color:var(--navy-dark); font-size:.9rem; }
+
+/* ---- states ---- */
+.bk-empty{ text-align:center; padding:var(--s-10) var(--s-4); }
+.bk-empty__ico{ font-size:2.6rem; margin-bottom:var(--s-2); }
+.bk-empty h3{ margin:0 0 6px; color:var(--navy-dark); }
+.bk-empty p{ color:var(--text-muted); margin:0 auto var(--s-4); max-width:46ch; }
+.bk-skeleton{ display:grid; gap:var(--s-3); }
+.bk-skeleton__row{ height:74px; border-radius:var(--r-md); background:linear-gradient(90deg,var(--surface-2) 25%,var(--surface-3) 37%,var(--surface-2) 63%); background-size:400% 100%; animation:bk-shimmer 1.3s ease infinite; }
+@keyframes bk-shimmer{ 0%{ background-position:100% 0 } 100%{ background-position:0 0 } }
+@media (prefers-reduced-motion:reduce){ .bk-skeleton__row{ animation:none } }
+
+/* ---- mobile sticky action bar ---- */
+.bk-mobilebar{
+  position:fixed; inset-inline:0; bottom:0; background:var(--surface); border-top:1px solid var(--border);
+  padding:var(--s-3) var(--s-4); display:flex; gap:var(--s-3); align-items:center; z-index:60;
+  box-shadow:0 -4px 14px rgba(15,31,51,.08);
+}
+.bk-mobilebar__amount{ flex:1 1 auto; min-width:0; }
+.bk-mobilebar__amount small{ display:block; color:var(--text-muted); font-size:.72rem; }
+.bk-mobilebar__amount strong{ color:var(--navy); font-size:1.05rem; font-variant-numeric:tabular-nums; }
+@media (min-width:1024px){ .bk-mobilebar{ display:none } }
+.bk-has-mobilebar{ padding-bottom:84px; }
+@media (min-width:1024px){ .bk-has-mobilebar{ padding-bottom:0 } }
+
+/* ---- filters ---- */
+.bk-filters{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:var(--s-3); align-items:end; }
+.bk-filters .field{ margin:0; min-width:0; }
+.bk-count{ font-weight:700; color:var(--navy-dark); }
+
+/* numbers, prices, times stay LTR even inside Arabic RTL text */
+.num, .bk-card__price, .bk-slot-mini, .bk-cal__day, .bk-summary__total span:last-child{ direction:ltr; unicode-bidi:isolate; }
+
+/* With JS active the real calendar replaces the plain inputs; without JS the inputs remain
+   and the calendar markup stays inert. Either way the posted field names are identical. */
+.bk-js .bk-nojs-only{ display:none; }
+

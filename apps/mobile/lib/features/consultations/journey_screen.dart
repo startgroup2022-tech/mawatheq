@@ -466,6 +466,14 @@ class _JourneyBookingScreenState extends State<_JourneyBookingScreen> {
   bool _submitting = false;
   String? _error;
 
+  /// The month the calendar is showing, and the server's real per-day availability for
+  /// it. The grid draws only days the backend reports as bookable, so a customer never
+  /// taps a day the lawyer is closed or fully booked.
+  late DateTime _month = DateTime(_date.year, _date.month);
+  MonthAvailability _monthData =
+      const MonthAvailability(month: '', days: {}, workingWeekdays: [], hasHours: false);
+  bool _loadingMonth = false;
+
   /// The token this form's recordings/documents are staged against. Generated once per
   /// booking form: the files have to exist somewhere before the consultation does, and
   /// the booking POST binds them by carrying the same token.
@@ -496,6 +504,7 @@ class _JourneyBookingScreenState extends State<_JourneyBookingScreen> {
   @override
   void initState() {
     super.initState();
+    _loadMonth();
     _loadSlots();
     _loadStaged();
   }
@@ -603,6 +612,64 @@ class _JourneyBookingScreenState extends State<_JourneyBookingScreen> {
   String get _dateParam =>
       '${_date.year.toString().padLeft(4, '0')}-${_date.month.toString().padLeft(2, '0')}-${_date.day.toString().padLeft(2, '0')}';
 
+  String _iso(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  String get _monthParam =>
+      '${_month.year.toString().padLeft(4, '0')}-${_month.month.toString().padLeft(2, '0')}';
+
+  /// Loads the real per-day availability for the month the calendar is showing, so the
+  /// grid only lights up days the backend says have open slots.
+  Future<void> _loadMonth() async {
+    setState(() => _loadingMonth = true);
+    try {
+      final data = await widget.repository.monthAvailability(
+        lawyerId: widget.lawyer.id,
+        month: _monthParam,
+      );
+      if (!mounted) return;
+      setState(() {
+        _monthData = data;
+        _loadingMonth = false;
+      });
+      // If the currently-selected day has no slots in this month, move the selection to
+      // the first bookable day so the customer is not shown an empty time list on open.
+      final selIso = _dateParam;
+      if (data.slotsOn(selIso) == 0) {
+        final today = DateTime.now();
+        final todayIso = _iso(DateTime(today.year, today.month, today.day));
+        final firstBookable = data.days.entries
+            .where((e) => e.value > 0 && e.key.compareTo(todayIso) >= 0)
+            .map((e) => e.key)
+            .toList()
+          ..sort();
+        if (firstBookable.isNotEmpty && firstBookable.first != selIso) {
+          final parts = firstBookable.first.split('-');
+          _date = DateTime(
+              int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
+          _slot = null;
+          _loadSlots();
+        }
+      }
+    } on ApiException {
+      if (!mounted) return;
+      setState(() => _loadingMonth = false);
+    }
+  }
+
+  /// Moves the calendar a month and reloads its availability. Never allows a month
+  /// before the current one, since a past month can never be booked.
+  Future<void> _shiftMonth(int delta) async {
+    final next = DateTime(_month.year, _month.month + delta);
+    final now = DateTime.now();
+    if (next.year < now.year ||
+        (next.year == now.year && next.month < now.month)) {
+      return;
+    }
+    setState(() => _month = next);
+    await _loadMonth();
+  }
+
   Future<void> _loadSlots() async {
     setState(() {
       _loadingSlots = true;
@@ -625,17 +692,14 @@ class _JourneyBookingScreenState extends State<_JourneyBookingScreen> {
     }
   }
 
-  Future<void> _pickDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _date,
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 60)),
-    );
-    if (picked != null) {
-      setState(() => _date = picked);
-      _loadSlots();
-    }
+  /// Picks a day from the real calendar: only days the backend reports as bookable are
+  /// enabled, so the customer cannot choose a closed or fully-booked day.
+  void _pickDate(DateTime day) {
+    setState(() {
+      _date = day;
+      _slot = null;
+    });
+    _loadSlots();
   }
 
   Future<void> _submit() async {
@@ -812,17 +876,17 @@ class _JourneyBookingScreenState extends State<_JourneyBookingScreen> {
         const SizedBox(height: 12),
         _SummaryCard(label: 'المحامي', value: widget.lawyer.name),
         const SizedBox(height: 12),
-        ListTile(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-            side: BorderSide(color: context.tokens.border),
-          ),
-          tileColor: context.tokens.surface,
-          leading: const Icon(Icons.calendar_today_outlined),
-          title: const Text('التاريخ'),
-          subtitle: Text(_dateParam),
-          trailing: const Icon(Icons.edit_calendar_outlined, size: 18),
-          onTap: _pickDate,
+        // The real availability calendar. Days come from the backend's month map, so a
+        // closed day or a fully-booked day is not selectable — the customer can only tap
+        // a day the lawyer can actually take.
+        _BookingCalendar(
+          month: _month,
+          monthData: _monthData,
+          loading: _loadingMonth,
+          selected: _date,
+          onSelect: _pickDate,
+          onPrev: () => _shiftMonth(-1),
+          onNext: () => _shiftMonth(1),
         ),
         const SizedBox(height: 14),
         Text(
@@ -1327,11 +1391,6 @@ class _LawyerChoiceCard extends StatelessWidget {
                       spacing: 10,
                       runSpacing: 4,
                       children: [
-                        _MetaChip(
-                          icon: Icons.star,
-                          iconColor: AppColors.gold,
-                          text: lawyer.rating.toStringAsFixed(1),
-                        ),
                         if (lawyer.yearsExperience > 0)
                           _MetaChip(
                             icon: Icons.workspace_premium_outlined,
@@ -1348,6 +1407,41 @@ class _LawyerChoiceCard extends StatelessWidget {
                           _MetaChip(
                             icon: Icons.place_outlined,
                             text: lawyer.jurisdiction,
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    // The consultation price and the length it covers, straight from the
+                    // backend's one pricing calculation. Deliberately not a star rating:
+                    // there is no ratings data behind a star, so showing one would be a
+                    // fabricated badge (owner decision, Execution 66).
+                    Row(
+                      children: [
+                        if (lawyer.feeDisplay.isNotEmpty) ...[
+                          Icon(Icons.payments_outlined,
+                              size: 15, color: AppColors.teal),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              '${lawyer.feeDisplay} / ${lawyer.durationMinutes} دقيقة',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  color: AppColors.teal,
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ] else
+                          Flexible(
+                            child: Text(
+                              'حسب الاتفاق',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  color: context.tokens.textSubtle,
+                                  fontSize: 12.5),
+                            ),
                           ),
                       ],
                     ),
@@ -1380,6 +1474,232 @@ class _LawyerChoiceCard extends StatelessWidget {
   }
 }
 
+
+/// The real availability calendar for the booking step.
+///
+/// It renders one month at a time from the backend's `month` map: a day with open slots
+/// is tappable, a day with none (closed, in the past, or fully booked) is greyed and
+/// inert. This is the app's half of "connect the calendar to the actual appointments" —
+/// the grid is drawn from the same `get_month_availability()` the website calendar uses,
+/// so both surfaces agree slot-for-slot.
+class _BookingCalendar extends StatelessWidget {
+  const _BookingCalendar({
+    required this.month,
+    required this.monthData,
+    required this.loading,
+    required this.selected,
+    required this.onSelect,
+    required this.onPrev,
+    required this.onNext,
+  });
+
+  final DateTime month;
+  final MonthAvailability monthData;
+  final bool loading;
+  final DateTime selected;
+  final ValueChanged<DateTime> onSelect;
+  final VoidCallback onPrev;
+  final VoidCallback onNext;
+
+  static const _weekdaysAr = ['أحد', 'إثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت'];
+
+  String _iso(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  @override
+  Widget build(BuildContext context) {
+    final first = DateTime(month.year, month.month, 1);
+    final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
+    // Sunday-first grid, matching the Arabic week.
+    final leading = first.weekday % 7;
+    final today = DateTime.now();
+    final todayIso = _iso(DateTime(today.year, today.month, today.day));
+    final selectedIso = _iso(selected);
+    final canGoBack = !(month.year == today.year && month.month == today.month);
+
+    final cells = <Widget>[];
+    for (var i = 0; i < leading; i++) {
+      cells.add(const SizedBox.shrink());
+    }
+    for (var day = 1; day <= daysInMonth; day++) {
+      final date = DateTime(month.year, month.month, day);
+      final iso = _iso(date);
+      final slots = monthData.slotsOn(iso);
+      final isPast = iso.compareTo(todayIso) < 0;
+      final bookable = slots > 0 && !isPast;
+      final isSelected = iso == selectedIso;
+
+      cells.add(
+        _CalendarDay(
+          day: day,
+          slots: slots,
+          enabled: bookable,
+          selected: isSelected,
+          isToday: iso == todayIso,
+          onTap: bookable ? () => onSelect(date) : null,
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: context.tokens.surface,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: context.tokens.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_right, size: 20),
+                onPressed: canGoBack ? onPrev : null,
+                tooltip: 'الشهر السابق',
+              ),
+              Expanded(
+                child: Text(
+                  '${month.month} / ${month.year}',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      fontWeight: FontWeight.w700, color: context.tokens.heading),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_left, size: 20),
+                onPressed: onNext,
+                tooltip: 'الشهر التالي',
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: _weekdaysAr
+                .map((w) => Expanded(
+                      child: Text(
+                        w,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            fontSize: 10.5,
+                            color: context.tokens.textSubtle,
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ))
+                .toList(),
+          ),
+          const SizedBox(height: 6),
+          if (loading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            )
+          else ...[
+            GridView.count(
+              crossAxisCount: 7,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 4,
+              crossAxisSpacing: 4,
+              childAspectRatio: 1,
+              children: cells,
+            ),
+            if (!monthData.hasHours)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Text(
+                  'لم ينشر هذا المحامي أوقات دوام — سيؤكد الموعد بعد الطلب.',
+                  style: TextStyle(
+                      fontSize: 11.5, color: context.tokens.textSubtle),
+                ),
+              )
+            else if (monthData.days.values.every((n) => n == 0))
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Text(
+                  'لا توجد أيام متاحة في هذا الشهر. جرّب الشهر التالي.',
+                  style: TextStyle(
+                      fontSize: 11.5, color: context.tokens.textSubtle),
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// One day cell. A bookable day shows a small dot count; an unbookable day is flat.
+class _CalendarDay extends StatelessWidget {
+  const _CalendarDay({
+    required this.day,
+    required this.slots,
+    required this.enabled,
+    required this.selected,
+    required this.isToday,
+    required this.onTap,
+  });
+
+  final int day;
+  final int slots;
+  final bool enabled;
+  final bool selected;
+  final bool isToday;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color bg;
+    final Color fg;
+    if (selected) {
+      bg = AppColors.navy;
+      fg = Colors.white;
+    } else if (enabled) {
+      bg = AppColors.teal.withValues(alpha: 0.10);
+      fg = context.tokens.heading;
+    } else {
+      bg = context.tokens.surface2;
+      fg = context.tokens.textSubtle;
+    }
+    return Material(
+      color: bg,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: isToday && !selected
+                ? Border.all(color: AppColors.teal, width: 1.4)
+                : null,
+          ),
+          alignment: Alignment.center,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                '$day',
+                style: TextStyle(
+                    fontSize: 13, fontWeight: FontWeight.w600, color: fg),
+              ),
+              if (enabled && slots > 0)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    '$slots',
+                    style: TextStyle(
+                        fontSize: 9,
+                        color: selected ? Colors.white70 : AppColors.teal),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 /// The lawyer's photo when they have one, and a branded initials disc when they do
 /// not. A missing photo is the common case on a young platform, so the fallback has
@@ -1441,20 +1761,19 @@ class _LawyerAvatar extends StatelessWidget {
   }
 }
 
-/// One small labelled fact on a lawyer card (rating, experience, jurisdiction).
+/// One small labelled fact on a lawyer card (experience, city/country).
 class _MetaChip extends StatelessWidget {
-  const _MetaChip({required this.icon, required this.text, this.iconColor});
+  const _MetaChip({required this.icon, required this.text});
 
   final IconData icon;
   final String text;
-  final Color? iconColor;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 14, color: iconColor ?? context.tokens.textSubtle),
+        Icon(icon, size: 14, color: context.tokens.textSubtle),
         const SizedBox(width: 4),
         // Flexible so a long value (a jurisdiction, a long year count) ellipsizes
         // inside the Wrap instead of overflowing it. A chip is decorative metadata;

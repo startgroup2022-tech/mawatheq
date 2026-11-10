@@ -459,6 +459,20 @@ class ApiRepository {
         : <String>[];
   }
 
+  /// The real per-day availability map for one month, so the app can draw a calendar
+  /// that reflects the lawyer's actual open slots rather than a guess.
+  Future<MonthAvailability> monthAvailability({
+    required int lawyerId,
+    required String month,
+  }) async {
+    final json = await _client.get(
+      '/available-slots.php',
+      auth: false,
+      query: {'lawyer_id': lawyerId, 'month': month},
+    );
+    return MonthAvailability.fromJson(json);
+  }
+
   // ----------------------------------------------------------- calendar
 
   Future<List<CalendarEvent>> calendar() async {

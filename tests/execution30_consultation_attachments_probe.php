@@ -669,7 +669,7 @@ $body = (string)curl_exec($ch);
 $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
 curl_close($ch);
 check("booking without attachments succeeds (HTTP $code)", $code === 200);
-check('the confirmation is shown', str_contains($body, 'تم إرسال طلب الحجز'));
+check('the confirmation is shown', str_contains($body, 'تم استلام طلب الحجز'));
 $newBookingId = (int)$pdo->query("SELECT id FROM consultations WHERE topic='حجز بدون مرفقات $suffix' ORDER BY id DESC LIMIT 1")->fetchColumn();
 check('the consultation row was created', $newBookingId > 0);
 if ($newBookingId) $created['consultations'][] = $newBookingId;

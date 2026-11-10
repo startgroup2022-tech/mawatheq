@@ -563,10 +563,18 @@ void main() {
       await tester.tap(find.text('Firm A Owner'));
       await tester.pumpAndSettle();
 
-      // Step 4: the appointment. Continue is disabled until a time is chosen, so
-      // an empty slot cannot slip past this step.
+      // Step 4: the appointment. The real calendar makes this step taller than the test
+      // viewport and the step is a lazy ListView, so the time chip and the Continue
+      // button are scrolled into view — exactly what a person does.
+      await tester.scrollUntilVisible(find.text('10:00'), 200,
+          scrollable: find.byType(Scrollable).first);
+      await tester.pumpAndSettle();
       expect(find.widgetWithText(PrimaryButton, 'متابعة'), findsOneWidget);
       await tester.tap(find.text('10:00'));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+          find.widgetWithText(PrimaryButton, 'متابعة'), 200,
+          scrollable: find.byType(Scrollable).first);
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(PrimaryButton, 'متابعة'));
       await tester.pumpAndSettle();
@@ -603,6 +611,10 @@ void main() {
 
       // Tapping continue with no slot selected must leave the customer on step 4:
       // the button is disabled, so the details step is never reached.
+      await tester.scrollUntilVisible(
+          find.widgetWithText(PrimaryButton, 'متابعة'), 200,
+          scrollable: find.byType(Scrollable).first);
+      await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(PrimaryButton, 'متابعة'));
       await tester.pumpAndSettle();
 

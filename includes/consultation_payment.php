@@ -224,13 +224,28 @@ function consultation_payment_confirm(PDO $pdo, array $consultation, array $stat
     $amount = $status['amount'] !== null ? (float)$status['amount'] : (float)$consultation['payment_amount'];
     $currency = (string)($status['currency'] ?: $consultation['payment_currency'] ?: currency_code());
 
-    $upd = $pdo->prepare("UPDATE consultations
-        SET payment_status='paid', status='confirmed', payment_amount=?, payment_currency=?
-        WHERE id=? AND payment_status <> 'paid'");
-    $upd->execute([$amount, $currency, $consultationId]);
+    // Confirm atomically. The status guard means the return page and the webhook cannot both
+    // confirm the same booking, and `status <> 'cancelled'` means a booking the release path
+    // already gave up (its slot returned to availability) is never revived by a late capture —
+    // a paid-but-released booking must be reconciled by a human, not silently re-confirmed
+    // onto a slot another customer may now hold.
+    $ownTransaction = !$pdo->inTransaction();
+    if ($ownTransaction) $pdo->beginTransaction();
+    try {
+        $upd = $pdo->prepare("UPDATE consultations
+            SET payment_status='paid', status='confirmed', payment_amount=?, payment_currency=?
+            WHERE id=? AND payment_status <> 'paid' AND status <> 'cancelled'");
+        $upd->execute([$amount, $currency, $consultationId]);
+        $changed = $upd->rowCount();
+        if ($ownTransaction) $pdo->commit();
+    } catch (Throwable $e) {
+        if ($ownTransaction && $pdo->inTransaction()) $pdo->rollBack();
+        error_log('consultation confirm failed: ' . $e->getMessage());
+        return ['ok' => false, 'state' => 'PAID', 'confirmed' => false, 'error' => 'confirm_failed'];
+    }
 
-    // The row was already paid: this is a duplicate callback, so do not credit again.
-    if ($upd->rowCount() === 0) {
+    // The row was already paid, or it was cancelled: do not credit again.
+    if ($changed === 0) {
         return ['ok' => true, 'state' => 'PAID', 'confirmed' => false, 'error' => null];
     }
 

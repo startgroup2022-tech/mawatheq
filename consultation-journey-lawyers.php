@@ -146,11 +146,11 @@ $bookQuery = function (int $lawyerId) use ($categoryId, $issueTypeId): string {
       </div>
 
       <div class="field" style="max-width:150px">
-        <label for="min_fee"><?= is_rtl() ? 'أقل أجر ساعي' : 'Min hourly fee' ?></label>
+        <label for="min_fee"><?= is_rtl() ? 'أقل سعر استشارة' : 'Min consultation price' ?></label>
         <input type="number" id="min_fee" name="min_fee" min="0" step="<?= currency_step() ?>" dir="ltr" value="<?= $filters['min_fee'] !== null ? htmlspecialchars((string)$filters['min_fee']) : '' ?>">
       </div>
       <div class="field" style="max-width:150px">
-        <label for="max_fee"><?= is_rtl() ? 'أعلى أجر ساعي' : 'Max hourly fee' ?></label>
+        <label for="max_fee"><?= is_rtl() ? 'أعلى سعر استشارة' : 'Max consultation price' ?></label>
         <input type="number" id="max_fee" name="max_fee" min="0" step="<?= currency_step() ?>" dir="ltr" value="<?= $filters['max_fee'] !== null ? htmlspecialchars((string)$filters['max_fee']) : '' ?>">
       </div>
 
@@ -228,12 +228,21 @@ $bookQuery = function (int $lawyerId) use ($categoryId, $issueTypeId): string {
 
             <div class="compare-facts">
               <div class="fact">
-                <div class="k"><?= is_rtl() ? 'الأجر بالساعة' : 'Hourly fee' ?></div>
-                <div class="v ltr"><?= $lw['hourly_rate'] !== null ? htmlspecialchars(currency_number($lw['hourly_rate']) . ' ' . currency_symbol()) : (is_rtl() ? 'حسب الاتفاق' : 'On request') ?></div>
+                <div class="k"><?= is_rtl() ? 'سعر الاستشارة' : 'Consultation price' ?></div>
+                <div class="v ltr"><?php
+                  // The card shows the one authoritative payable amount, with the length it
+                  // prices. Never "per hour": the customer is charged a flat amount for the
+                  // booked consultation (owner decision, Execution 66).
+                  if (!empty($lw['pricing']['has_price'])) {
+                      echo htmlspecialchars(money_text($lw['pricing']['total']));
+                  } else {
+                      echo is_rtl() ? 'حسب الاتفاق' : 'On request';
+                  }
+                ?></div>
               </div>
               <div class="fact">
-                <div class="k"><?= is_rtl() ? 'التقييم' : 'Rating' ?></div>
-                <div class="v">★ <?= $lw['rating'] !== null ? htmlspecialchars(number_format($lw['rating'], 1)) : '—' ?></div>
+                <div class="k"><?= is_rtl() ? 'المدة' : 'Duration' ?></div>
+                <div class="v ltr"><?= (int)($lw['duration_minutes'] ?? 30) ?> <?= is_rtl() ? 'دقيقة' : 'min' ?></div>
               </div>
             </div>
 

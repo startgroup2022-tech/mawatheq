@@ -48,6 +48,18 @@ if ($categoryId > 0 && legal_journey_ready($pdo)) {
         'max_fee'        => $_GET['max_fee'] ?? '',
         'available_only' => $filters['available_only'],
     ]);
+    // Present the consultation price with the tenant's currency, exactly as journey.php
+    // does, so the app's directory and its journey cannot show two different numbers for
+    // the same lawyer.
+    require_once __DIR__ . '/../../includes/currency.php';
+    require_once __DIR__ . '/../../includes/consultation_pricing.php';
+    foreach ($lawyers as &$lw) {
+        $breakdown = $lw['pricing'] ?? consultation_pricing_for_lawyer($pdo, $lw);
+        $lw['pricing'] = $breakdown;
+        $lw['fee_display'] = !empty($breakdown['has_price']) ? money_text($breakdown['total']) : null;
+        $lw['duration_minutes'] = (int)($breakdown['duration_minutes'] ?? 30);
+    }
+    unset($lw);
     api_json([
         'ok'           => true,
         'lawyers'      => $lawyers,
@@ -93,7 +105,9 @@ if ($filters['available_only']) {
 }
 
 // Normalise the location fields the same way the journey does, so both surfaces agree.
-$rows = array_map(function ($lw) {
+require_once __DIR__ . '/../../includes/consultation_pricing.php';
+require_once __DIR__ . '/../../includes/currency.php';
+$rows = array_map(function ($lw) use ($pdo) {
     $lw['id'] = (int)$lw['id'];
     $lw['years_experience'] = (int)$lw['years_experience'];
     $lw['hourly_rate'] = $lw['hourly_rate'] !== null ? (float)$lw['hourly_rate'] : null;
@@ -101,6 +115,13 @@ $rows = array_map(function ($lw) {
     $lw['country_code'] = lawyer_country_code($lw);
     $lw['city'] = ($lw['city'] ?? '') !== '' ? (string)$lw['city'] : null;
     $lw['location'] = lawyer_location_label($lw['country_code'], $lw['city']);
+    // The ONE payable amount and the length it prices, computed by the shared module so
+    // the directory card shows exactly what the gateway will charge — never a raw hourly
+    // rate presented as the consultation price.
+    $breakdown = consultation_pricing_for_lawyer($pdo, $lw);
+    $lw['pricing'] = $breakdown;
+    $lw['fee_display'] = !empty($breakdown['has_price']) ? money_text($breakdown['total']) : null;
+    $lw['duration_minutes'] = (int)($breakdown['duration_minutes'] ?? 30);
     return $lw;
 }, $rows);
 

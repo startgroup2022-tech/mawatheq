@@ -23,6 +23,8 @@ require_once __DIR__ . '/../../includes/tenant.php';
 require_once __DIR__ . '/../../includes/consultation_attachments.php';
 require_once __DIR__ . '/../../includes/legal_journey.php';
 require_once __DIR__ . '/../../includes/consultation_payment.php';
+require_once __DIR__ . '/../../includes/booking_slots.php';
+require_once __DIR__ . '/../../includes/consultation_pricing.php';
 
 $auth = api_authenticate($pdo);
 
@@ -158,23 +160,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         api_error('a consultation needs a written description or at least one attached recording or document');
     }
 
-    $lawyerStmt = $pdo->prepare("SELECT hourly_rate FROM lawyers WHERE id=? AND status='approved'");
+    $lawyerStmt = $pdo->prepare("SELECT hourly_rate, (SELECT MIN(a.slot_minutes) FROM lawyer_availability a WHERE a.lawyer_id = lawyers.id) AS slot_minutes
+                                 FROM lawyers WHERE id=? AND status='approved'");
     $lawyerStmt->execute([$lawyerId]);
     $lawyer = $lawyerStmt->fetch();
     if (!$lawyer) api_error('lawyer not found', 404);
 
-    $availCount = $pdo->prepare('SELECT COUNT(*) c FROM lawyer_availability WHERE lawyer_id=?');
-    $availCount->execute([$lawyerId]);
-    $hasAvailability = (int)$availCount->fetch()['c'] > 0;
+    $scheduledAt = $date . ' ' . $time . ':00';
 
-    if ($hasAvailability) {
-        $validSlots = get_available_slots($pdo, $lawyerId, $date);
-        if (!in_array($time, $validSlots, true)) {
-            api_error('this time slot is no longer available', 409);
-        }
+    // Authoritative slot check. Stricter than "is it in the free list": it also refuses a
+    // past time and a time outside the lawyer's published hours, so a crafted request cannot
+    // book 03:00 on a Sunday. The same check runs again inside the lock, immediately before
+    // the INSERT, which is what removes the double-booking race.
+    $slotCheck = booking_slot_is_bookable($pdo, $lawyerId, $scheduledAt);
+    if (!$slotCheck['ok']) {
+        if ($slotCheck['error'] === 'in_past') api_error('this time is in the past', 409);
+        api_error('this time slot is no longer available', 409);
     }
 
-    $scheduledAt = $date . ' ' . $time . ':00';
+    // The one authoritative price. The stored price and the gateway amount are the same number.
+    $pricing = consultation_pricing_for_lawyer($pdo, $lawyer);
+    $durationMinutes = (int)$pricing['duration_minutes'];
+    $payable = (float)$pricing['payable'];
 
     // Tag the booking with the lawyer's firm. A firm-scoped lawyer is authorized by
     // consultations.firm_id, and upgrade_v42.sql only backfilled the rows that existed when
@@ -193,16 +200,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     );
 
     try {
-        // The specialty column is written only when upgrade_v63.sql has run, so a client
-        // pointed at a not-yet-migrated server still books successfully.
-        if (legal_journey_specialty_column_ready($pdo)) {
-            $pdo->prepare('INSERT INTO consultations (user_id, lawyer_id, firm_id, consultation_type, scheduled_at, topic, price, idempotency_key, najiz_case_type_id, specialty_category_id) VALUES (?,?,?,?,?,?,?,?,?,?)')
-                ->execute([$auth['id'], $lawyerId, $firmId, $type, $scheduledAt, $topic, $lawyer['hourly_rate'], $idempotencyKey !== '' ? $idempotencyKey : null, $choice['najiz_case_type_id'], $choice['specialty_category_id']]);
-        } else {
-            $pdo->prepare('INSERT INTO consultations (user_id, lawyer_id, firm_id, consultation_type, scheduled_at, topic, price, idempotency_key, najiz_case_type_id) VALUES (?,?,?,?,?,?,?,?,?)')
-                ->execute([$auth['id'], $lawyerId, $firmId, $type, $scheduledAt, $topic, $lawyer['hourly_rate'], $idempotencyKey !== '' ? $idempotencyKey : null, $choice['najiz_case_type_id']]);
+        $specialtyCol = legal_journey_specialty_column_ready($pdo);
+        // The INSERT runs inside the (lawyer, slot) lock, after a second availability check,
+        // so two clients submitting the same slot concurrently cannot both succeed.
+        $created = booking_create_locked($pdo, $lawyerId, $scheduledAt, function () use (
+            $pdo, $auth, $lawyerId, $firmId, $type, $scheduledAt, $durationMinutes, $topic,
+            $payable, $idempotencyKey, $choice, $specialtyCol
+        ) {
+            if ($specialtyCol) {
+                $pdo->prepare('INSERT INTO consultations (user_id, lawyer_id, firm_id, consultation_type, scheduled_at, duration_minutes, topic, price, idempotency_key, najiz_case_type_id, specialty_category_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+                    ->execute([$auth['id'], $lawyerId, $firmId, $type, $scheduledAt, $durationMinutes, $topic, $payable, $idempotencyKey !== '' ? $idempotencyKey : null, $choice['najiz_case_type_id'], $choice['specialty_category_id']]);
+            } else {
+                $pdo->prepare('INSERT INTO consultations (user_id, lawyer_id, firm_id, consultation_type, scheduled_at, duration_minutes, topic, price, idempotency_key, najiz_case_type_id) VALUES (?,?,?,?,?,?,?,?,?,?)')
+                    ->execute([$auth['id'], $lawyerId, $firmId, $type, $scheduledAt, $durationMinutes, $topic, $payable, $idempotencyKey !== '' ? $idempotencyKey : null, $choice['najiz_case_type_id']]);
+            }
+            return (int)$pdo->lastInsertId();
+        });
+        if (!$created['ok']) {
+            // Lost the race for this slot, or the lock timed out under load.
+            api_error($created['error'] === 'slot_taken'
+                ? 'this time slot is no longer available'
+                : 'the booking could not be completed, please try again', 409);
         }
-        $consultationId = (int)$pdo->lastInsertId();
+        $consultationId = (int)$created['id'];
     } catch (PDOException $e) {
         // Two retries raced and the unique key rejected the second. That is exactly the
         // duplicate this key exists to prevent, so the winner's consultation is returned
@@ -239,7 +259,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $paymentUrl = null;
     $paymentRequired = false;
     $paymentError = null;
-    $consultationRow = ['id' => $consultationId, 'price' => $lawyer['hourly_rate'], 'lawyer_id' => $lawyerId];
+    $consultationRow = ['id' => $consultationId, 'price' => $payable, 'lawyer_id' => $lawyerId];
     if (consultation_payment_schema_ready($pdo) && consultation_payment_required($consultationRow)) {
         $paymentRequired = true;
         // api_authenticate() returns only the id/type, so the payer email must be read from

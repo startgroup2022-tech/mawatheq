@@ -258,20 +258,6 @@ class _LawyerCard extends StatelessWidget {
                   ],
                 ),
               ),
-              if (lawyer.rating > 0)
-                Row(
-                  children: [
-                    const Icon(Icons.star, size: 15, color: AppColors.gold),
-                    const SizedBox(width: 3),
-                    Text(
-                      lawyer.rating.toStringAsFixed(1),
-                      style: TextStyle(
-                          color: context.tokens.textMuted,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600),
-                    ),
-                  ],
-                ),
             ],
           ),
           const SizedBox(height: 12),
@@ -291,14 +277,17 @@ class _LawyerCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 12),
               ],
-              if (lawyer.hourlyRate > 0) ...[
+              // The consultation price the backend charges, with its length. Never
+              // "/hr": the amount is flat for the booked consultation, so an hourly
+              // label would overstate what the customer actually pays.
+              if (lawyer.feeDisplay.isNotEmpty) ...[
                 Icon(Icons.payments_outlined,
                     size: 15, color: context.tokens.textSubtle),
                 const SizedBox(width: 4),
                 Text(
                   rtl
-                      ? '${lawyer.hourlyRate.toStringAsFixed(0)} ر.س/ساعة'
-                      : 'SAR ${lawyer.hourlyRate.toStringAsFixed(0)}/hr',
+                      ? '${lawyer.feeDisplay} / ${lawyer.durationMinutes} دقيقة'
+                      : '${lawyer.feeDisplay} / ${lawyer.durationMinutes} min',
                   style: TextStyle(
                       color: context.tokens.textSubtle, fontSize: 12),
                 ),
