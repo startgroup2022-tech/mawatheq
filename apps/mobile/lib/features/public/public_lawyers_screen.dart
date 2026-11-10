@@ -11,6 +11,7 @@ import '../../core/theme/app_tokens.dart';
 import '../../shared/widgets/auth_gate.dart';
 import '../../shared/widgets/brand_widgets.dart';
 import '../assistant/assistant_screen.dart';
+import '../consultations/journey_screen.dart';
 import 'public_info_screen.dart';
 
 /// The public directory of approved lawyers, from `GET /api/v1/lawyers.php`.
@@ -44,10 +45,29 @@ class _PublicLawyersScreenState extends State<PublicLawyersScreen> {
   String? _error;
   String _query = '';
 
+  /// The professional filters, applied server-side so the directory and the app's
+  /// journey return the same lawyers for the same choices. The options vocabulary
+  /// (countries, dependent cities, experience bands, specializations) comes from the
+  /// server too, so the app can never offer a value the backend would ignore.
+  JourneyFilters _filters = const JourneyFilters();
+  JourneyFilterOptions _filterOptions = const JourneyFilterOptions();
+
   @override
   void initState() {
     super.initState();
+    _loadFilterOptions();
     _load();
+  }
+
+  Future<void> _loadFilterOptions() async {
+    try {
+      final options = await _repo.journeyFilters();
+      if (!mounted) return;
+      setState(() => _filterOptions = options);
+    } on ApiException {
+      // The filter sheet degrades to whatever vocabulary it already has rather than
+      // turning the directory into an error screen.
+    }
   }
 
   Future<void> _load() async {
@@ -56,7 +76,14 @@ class _PublicLawyersScreenState extends State<PublicLawyersScreen> {
       _error = null;
     });
     try {
-      final list = await _repo.lawyers();
+      // The structured filters (specialization, country, city, experience, fee,
+      // availability) run server-side — only the backend can apply an availability or
+      // fee-band filter correctly. The free-text name box stays local so typing is
+      // instant and matches the hint (name, specialty or city).
+      final list = await _repo.lawyers(
+        specialization: _filters.specialization,
+        extraQuery: _filters.toQuery(),
+      );
       if (!mounted) return;
       setState(() {
         _all = list;
@@ -77,8 +104,32 @@ class _PublicLawyersScreenState extends State<PublicLawyersScreen> {
     }
   }
 
-  /// Filtered locally over the already-fetched directory. The endpoint also accepts
-  /// `q`, but filtering here keeps typing instant and avoids a request per keystroke.
+  Future<void> _openFilters() async {
+    final result = await showModalBottomSheet<JourneyFilters>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: context.tokens.surface,
+      builder: (_) => JourneyFilterSheet(
+        initial: _filters,
+        options: _filterOptions,
+      ),
+    );
+    if (result == null) return;
+    setState(() => _filters = result);
+    await _load();
+  }
+
+  void _clearFilters() {
+    setState(() => _filters = const JourneyFilters());
+    _load();
+  }
+
+  /// The name box updates the local search immediately; no request is fired.
+  void _onSearchChanged(String value) => setState(() => _query = value);
+
+  /// The name search is applied locally over the already-fetched directory, so typing
+  /// is instant and a keystroke does not fire a request. The structured filters are
+  /// applied server-side in `_load()`.
   List<LawyerProfile> get _visible {
     final needle = _query.trim();
     if (needle.isEmpty) return _all;
@@ -120,55 +171,65 @@ class _PublicLawyersScreenState extends State<PublicLawyersScreen> {
 
   Widget _body(bool rtl) {
     final visible = _visible;
+    final filtersActive = !_filters.isEmpty;
 
     return RefreshIndicator(
       onRefresh: _load,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
+      child: Column(
         children: [
-          TextField(
-            onChanged: (v) => setState(() => _query = v),
-            decoration: InputDecoration(
-              hintText: rtl
-                  ? 'ابحث بالاسم أو التخصص أو المدينة'
-                  : 'Search by name, specialty or city',
-              prefixIcon: const Icon(Icons.search),
-              filled: true,
-              fillColor: context.tokens.surface,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(AppRadius.lg),
-                borderSide: BorderSide(color: context.tokens.border),
-              ),
+          JourneyFilterBar(
+            active: filtersActive,
+            count: visible.length,
+            onOpen: _openFilters,
+            onClear: filtersActive ? _clearFilters : null,
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
+              children: [
+                TextField(
+                  onChanged: _onSearchChanged,
+                  decoration: InputDecoration(
+                    hintText: rtl
+                        ? 'ابحث بالاسم أو التخصص أو المدينة'
+                        : 'Search by name, specialty or city',
+                    prefixIcon: const Icon(Icons.search),
+                    filled: true,
+                    fillColor: context.tokens.surface,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppRadius.lg),
+                      borderSide: BorderSide(color: context.tokens.border),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                if (_all.isEmpty)
+                  NoLawyerState(
+                    onAskAssistant: _openAssistant,
+                    onContact: _openContact,
+                    message: filtersActive
+                        ? (rtl
+                            ? 'لا يوجد محامٍ يطابق الفلاتر المحددة'
+                            : 'No lawyer matches these filters')
+                        : (rtl ? 'لا يوجد محامي متاح' : 'No lawyers available'),
+                  )
+                else ...[
+                  Text(
+                    rtl
+                        ? '${visible.length} محامياً متاحاً'
+                        : '${visible.length} lawyers available',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 10),
+                  for (final lawyer in visible) ...[
+                    _LawyerCard(
+                        lawyer: lawyer, rtl: rtl, onBook: () => _book(lawyer)),
+                    const SizedBox(height: 10),
+                  ],
+                ],
+              ],
             ),
           ),
-          const SizedBox(height: 16),
-          if (_all.isEmpty)
-            NoLawyerState(
-              onAskAssistant: _openAssistant,
-              onContact: _openContact,
-              message: rtl ? 'لا يوجد محامي متاح' : 'No lawyers available',
-            )
-          else if (visible.isEmpty)
-            EmptyState(
-              icon: Icons.search_off,
-              title: rtl ? 'لا نتائج مطابقة' : 'No matches',
-              message: rtl
-                  ? 'جرّب كلمة أخرى، أو امسح البحث لعرض كل المحامين.'
-                  : 'Try another term, or clear the search to see everyone.',
-            )
-          else ...[
-            Text(
-              rtl
-                  ? '${visible.length} محامياً متاحاً'
-                  : '${visible.length} lawyers available',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 10),
-            for (final lawyer in visible) ...[
-              _LawyerCard(lawyer: lawyer, rtl: rtl, onBook: () => _book(lawyer)),
-              const SizedBox(height: 10),
-            ],
-          ],
         ],
       ),
     );

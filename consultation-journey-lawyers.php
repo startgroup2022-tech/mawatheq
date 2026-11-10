@@ -46,7 +46,7 @@ $specialtyHasLawyers = $category
     ? count(legal_journey_lawyers_for_specialty($pdo, $categoryId, [])) > 0
     : false;
 $alternative = ($category && !$specialtyHasLawyers) ? legal_journey_no_match_alternative($pdo, $categoryId) : null;
-$filterOptions = legal_journey_filter_options();
+$filterOptions = legal_journey_filter_options($pdo);
 
 // The chosen issue type's customer-facing label, so the summary line reads naturally.
 $issueLabel = null;

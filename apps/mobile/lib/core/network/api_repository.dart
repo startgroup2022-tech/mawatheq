@@ -422,10 +422,15 @@ class ApiRepository {
   // ------------------------------------------------------------ lawyers
 
   /// Public directory — no token required.
+  ///
+  /// [extraQuery] carries the professional filters (country, city, experience,
+  /// min_fee, max_fee, available_only) exactly as `JourneyFilters.toQuery()` produces
+  /// them, so the same filter set reaches the same server-side search the website uses.
   Future<List<LawyerProfile>> lawyers({
     String? jurisdiction,
     String? specialization,
     String? query,
+    Map<String, dynamic>? extraQuery,
   }) async {
     final json = await _client.get(
       '/lawyers.php',
@@ -434,6 +439,7 @@ class ApiRepository {
         if (jurisdiction != null && jurisdiction.isNotEmpty) 'jurisdiction': jurisdiction,
         if (specialization != null && specialization.isNotEmpty) 'specialization': specialization,
         if (query != null && query.isNotEmpty) 'q': query,
+        ...?extraQuery,
       },
     );
     return json['lawyers'] is List

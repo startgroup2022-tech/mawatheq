@@ -967,6 +967,7 @@ class JourneyFilterOptions {
     this.countries = const [],
     this.cities = const {},
     this.experience = const [],
+    this.specializations = const [],
   });
 
   final List<JourneyFilterCountry> countries;
@@ -975,6 +976,10 @@ class JourneyFilterOptions {
   final Map<String, List<String>> cities;
 
   final List<JourneyFilterBand> experience;
+
+  /// The specialization vocabulary the lawyer records use, so the filter offers
+  /// exactly the values a stored lawyer can match.
+  final List<String> specializations;
 
   factory JourneyFilterOptions.fromJson(Map<String, dynamic> map) {
     final j = Json(map);
@@ -991,6 +996,9 @@ class JourneyFilterOptions {
       countries: j.list('countries').map((e) => JourneyFilterCountry.fromJson(e.asMap)).toList(),
       cities: cityMap,
       experience: j.list('experience').map((e) => JourneyFilterBand.fromJson(e.asMap)).toList(),
+      specializations: (map['specializations'] is List)
+          ? (map['specializations'] as List).whereType<String>().toList()
+          : const [],
     );
   }
 }
@@ -1021,6 +1029,7 @@ class JourneyFilterBand {
 /// as query parameters; an empty field is omitted so the server applies no filter.
 class JourneyFilters {
   const JourneyFilters({
+    this.specialization = '',
     this.country = '',
     this.city = '',
     this.experience = '',
@@ -1030,6 +1039,7 @@ class JourneyFilters {
     this.query = '',
   });
 
+  final String specialization;
   final String country;
   final String city;
   final String experience;
@@ -1039,6 +1049,7 @@ class JourneyFilters {
   final String query;
 
   bool get isEmpty =>
+      specialization.isEmpty &&
       country.isEmpty &&
       city.isEmpty &&
       experience.isEmpty &&
@@ -1048,6 +1059,7 @@ class JourneyFilters {
       query.isEmpty;
 
   JourneyFilters copyWith({
+    String? specialization,
     String? country,
     String? city,
     String? experience,
@@ -1057,6 +1069,7 @@ class JourneyFilters {
     String? query,
   }) {
     return JourneyFilters(
+      specialization: specialization ?? this.specialization,
       country: country ?? this.country,
       city: city ?? this.city,
       experience: experience ?? this.experience,
@@ -1068,6 +1081,7 @@ class JourneyFilters {
   }
 
   Map<String, dynamic> toQuery() => {
+        if (specialization.isNotEmpty) 'specialization': specialization,
         if (country.isNotEmpty) 'country': country,
         if (city.isNotEmpty) 'city': city,
         if (experience.isNotEmpty) 'experience': experience,

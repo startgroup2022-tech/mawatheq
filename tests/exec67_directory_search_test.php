@@ -117,6 +117,17 @@ $r = legal_journey_directory_search($pdo, ['q' => $suffix]);
 check('a pending lawyer is excluded from the directory', !$has($r, "A $suffix"));
 $pdo->prepare("UPDATE lawyers SET status='approved' WHERE id=?")->execute([$ids[0]]);
 
+echo "\n== 10. the specialization vocabulary keeps legacy stored values findable ==\n";
+$legacyId = seed_lawyer($pdo, ['name' => "E $suffix", 'email' => "e-$suffix@ex.test", 'jurisdiction' => 'السعودية', 'country_code' => 'SA', 'city' => 'الرياض', 'specialization' => 'تجاري', 'years_experience' => 4, 'hourly_rate' => 120]);
+$ids[] = $legacyId;
+$vocab = legal_journey_specialization_vocabulary($pdo);
+check('the vocabulary offers the canonical label', in_array('قانون تجاري', $vocab, true));
+check('the vocabulary also offers the stored legacy synonym', in_array('تجاري', $vocab, true));
+$r = legal_journey_directory_search($pdo, ['specialization' => 'تجاري', 'q' => $suffix]);
+check('a lawyer stored with the legacy synonym is findable by it', $has($r, "E $suffix"));
+$r = legal_journey_directory_search($pdo, ['specialization' => 'قانون تجاري', 'q' => $suffix]);
+check('the canonical label does not falsely match the legacy row', !$has($r, "E $suffix"));
+
 echo "\n== cleanup ==\n";
 $ph = implode(',', array_fill(0, count($ids), '?'));
 $pdo->prepare("DELETE FROM lawyer_availability WHERE lawyer_id IN ($ph)")->execute($ids);

@@ -205,7 +205,7 @@ class _ConsultationJourneyScreenState extends State<ConsultationJourneyScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: context.tokens.surface,
-      builder: (_) => _JourneyFilterSheet(
+      builder: (_) => JourneyFilterSheet(
         initial: _filters,
         options: _filterOptions,
       ),
@@ -346,7 +346,7 @@ class _ConsultationJourneyScreenState extends State<ConsultationJourneyScreen> {
     // a wider search.
     return Column(
       children: [
-        _JourneyFilterBar(
+        JourneyFilterBar(
           active: !_filters.isEmpty,
           count: _match.count,
           onOpen: _openFilters,
@@ -1795,8 +1795,9 @@ class _MetaChip extends StatelessWidget {
 /// The bar above the lawyer list: the matching count, a Filters button, and a Clear
 /// action that appears only when a filter is active. The count is the server's own,
 /// so it always describes the list below it.
-class _JourneyFilterBar extends StatelessWidget {
-  const _JourneyFilterBar({
+class JourneyFilterBar extends StatelessWidget {
+  const JourneyFilterBar({
+    super.key,
     required this.active,
     required this.count,
     required this.onOpen,
@@ -1845,17 +1846,17 @@ class _JourneyFilterBar extends StatelessWidget {
 /// when the customer presses Apply, so a dismissed sheet changes nothing. The city
 /// list is dependent: choosing a country replaces the city options and clears a city
 /// that does not belong to the new country, matching the website.
-class _JourneyFilterSheet extends StatefulWidget {
-  const _JourneyFilterSheet({required this.initial, required this.options});
+class JourneyFilterSheet extends StatefulWidget {
+  const JourneyFilterSheet({super.key, required this.initial, required this.options});
 
   final JourneyFilters initial;
   final JourneyFilterOptions options;
 
   @override
-  State<_JourneyFilterSheet> createState() => _JourneyFilterSheetState();
+  State<JourneyFilterSheet> createState() => JourneyFilterSheetState();
 }
 
-class _JourneyFilterSheetState extends State<_JourneyFilterSheet> {
+class JourneyFilterSheetState extends State<JourneyFilterSheet> {
   late JourneyFilters _draft = widget.initial;
   late final TextEditingController _minFee =
       TextEditingController(text: widget.initial.minFee);
@@ -1891,6 +1892,21 @@ class _JourneyFilterSheetState extends State<_JourneyFilterSheet> {
                     fontWeight: FontWeight.w800,
                     color: context.tokens.heading)),
             const SizedBox(height: 14),
+            if (widget.options.specializations.isNotEmpty) ...[
+              _label('التخصص'),
+              DropdownButtonFormField<String>(
+                initialValue:
+                    _draft.specialization.isEmpty ? null : _draft.specialization,
+                isExpanded: true,
+                decoration: const InputDecoration(hintText: 'كل التخصصات'),
+                items: widget.options.specializations
+                    .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                    .toList(),
+                onChanged: (v) => setState(
+                    () => _draft = _draft.copyWith(specialization: v ?? '')),
+              ),
+              const SizedBox(height: 12),
+            ],
             _label('الدولة'),
             DropdownButtonFormField<String>(
               initialValue: _draft.country.isEmpty ? null : _draft.country,

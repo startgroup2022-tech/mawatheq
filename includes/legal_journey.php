@@ -688,9 +688,10 @@ function legal_journey_lawyer_profile(PDO $pdo, int $lawyerId): ?array {
  *
  * @return array<string,mixed>
  */
-function legal_journey_filter_options(): array {
+function legal_journey_filter_options(?PDO $pdo = null): array {
     require_once __DIR__ . '/cities.php';
     require_once __DIR__ . '/lawyer_experience.php';
+    require_once __DIR__ . '/specialization_field.php';
 
     $countries = [];
     foreach (country_options() as $code => $labels) {
@@ -706,10 +707,41 @@ function legal_journey_filter_options(): array {
     }
 
     return [
-        'countries'  => $countries,
-        'cities'     => $cities,
-        'experience' => $experience,
+        'countries'       => $countries,
+        'cities'          => $cities,
+        'experience'      => $experience,
+        'specializations' => legal_journey_specialization_vocabulary($pdo ?? null),
     ];
+}
+
+/**
+ * The specialization values the directory filter offers.
+ *
+ * The canonical list (`specialization_options()`) is what the lawyer forms write, but
+ * older lawyer rows were stored with a shorter synonym ("تجاري" instead of "قانون
+ * تجاري"). Offering only the canonical list would leave such a lawyer unfindable by any
+ * specialization, so the vocabulary is the canonical list UNION the values actually
+ * stored — the operator sees exactly what a lawyer can be matched by, and no existing
+ * record becomes invisible to the filter. Canonical entries come first and the order is
+ * otherwise stable.
+ */
+function legal_journey_specialization_vocabulary(?PDO $pdo = null): array {
+    require_once __DIR__ . '/specialization_field.php';
+    $canonical = array_values(specialization_options());
+    if (!$pdo instanceof PDO) return $canonical;
+
+    try {
+        $stmt = $pdo->query("SELECT DISTINCT specialization FROM lawyers
+                              WHERE specialization IS NOT NULL AND specialization <> ''
+                              ORDER BY specialization");
+        foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $stored) {
+            $stored = trim((string)$stored);
+            if ($stored !== '' && !in_array($stored, $canonical, true)) $canonical[] = $stored;
+        }
+    } catch (Throwable $e) {
+        // A missing column or table just means the canonical list is the whole vocabulary.
+    }
+    return $canonical;
 }
 
 /** The customer-visible specialties a lawyer provides (names only, never internal ids). */

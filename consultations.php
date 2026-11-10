@@ -30,7 +30,7 @@ $filtersActive = $filters['jurisdiction'] !== '' || $filters['specialization'] !
     || $filters['country'] !== '' || $filters['city'] !== ''
     || $filters['experience'] !== '' || $filters['min_fee'] !== null
     || $filters['max_fee'] !== null || $filters['available_only'] || $filters['q'] !== '';
-$filterOptions = legal_journey_filter_options();
+$filterOptions = legal_journey_filter_options($pdo);
 
 $myBookings = $pdo->prepare("SELECT c.*, l.full_name AS lawyer_name FROM consultations c JOIN lawyers l ON l.id=c.lawyer_id WHERE c.user_id=? ORDER BY c.scheduled_at DESC");
 $myBookings->execute([$_SESSION['user_id']]);

@@ -98,7 +98,7 @@ try {
             // The vocabulary the client renders, read from the same constants the server
             // filters with — so an option the app shows can never be one the backend
             // silently ignores.
-            api_json(['ok' => true] + legal_journey_filter_options());
+            api_json(['ok' => true] + legal_journey_filter_options($pdo));
             break;
 
         case 'lawyer':
