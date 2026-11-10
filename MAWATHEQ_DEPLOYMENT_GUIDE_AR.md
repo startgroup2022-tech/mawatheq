@@ -928,6 +928,66 @@ curl -s https://mawatheq.com/ | grep -o 'style.css?v=[0-9]*'     # يجب أن �
 
 ---
 
+## 10.3 التنفيذ 66 المرحلة (ب) — محرّك الحجز، التوفّر الحقيقي، الفلاتر
+
+### أ) لا هجرة قاعدة بيانات مطلوبة
+
+هذه المرحلة **لا تضيف أي جدول أو عمود**. كل ما تستخدمه موجود في `schema.sql` والترقيات
+السابقة: `consultations.duration_minutes`، `lawyers.hourly_rate`، `lawyer_availability.slot_minutes`،
+`consultations.payment_status`، `consultations.specialty_category_id`. تحقّق قبل النشر:
+
+```bash
+mariadb "$DB" -e "SHOW COLUMNS FROM consultations LIKE 'duration_minutes'; SHOW COLUMNS FROM lawyer_availability LIKE 'slot_minutes';"
+```
+
+إن كان أحدها غائباً فقاعدة البيانات متأخّرة عن الترقيات، شغّل `database/upgrade_v*.sql` بالترتيب
+الرقمي أولاً.
+
+### ب) قاعدة السعر الواحدة
+
+سعر المحامي (`lawyers.hourly_rate`) يُحتسب **مرة واحدة** كرسم استشارة ثابت. البطاقة والسعر
+المخزَّن في `consultations.price` ومبلغ البوابة رقم واحد، من `consultation_pricing_for_lawyer()`.
+لا يُعرض أي وصف «/ساعة» على أي شاشة. إن كان المحامي بلا سعر فالاستشارة مجانية (تدفّق
+الطلب والتأكيد كما هو).
+
+### ج) ملفّات جديدة يجب أن تكون مقروءة
+
+المرحلة تضيف ملفّات جديدة — تأكّد من صلاحيتها `644` بعد الرفع، وإلا فسيرجع الخادم **500**:
+
+- `includes/booking_slots.php`
+- `includes/consultation_pricing.php`
+- `assets/css/booking.css`
+- `assets/js/booking.js`
+
+```bash
+find . -name 'booking_slots.php' -o -name 'consultation_pricing.php' -o -name 'booking.css' -o -name 'booking.js' | xargs chmod 644
+```
+
+### د) فلاتر الحجز — اختبار سريع بعد النشر
+
+```bash
+# العدد الكلي لمحامي تخصص (استبدل category_id بالمعرّف الحقيقي)
+curl -s 'https://<نطاقك>/api/v1/journey.php?action=lawyers&category_id=1' | head -c 300
+# المتاحون بمواعيد فقط
+curl -s 'https://<نطاقك>/api/v1/journey.php?action=lawyers&category_id=1&available_only=1'
+```
+
+يجب أن يعيد عدداً منطقياً، وأن يعطي `available_only=1` عدداً **أقل** من أو يساوي العدد الكلي.
+
+### هـ) قائمة تحقّق مختصرة للتنفيذ 66 (ب)
+
+- [ ] لا هجرة مطلوبة، والأعمدة الأربعة موجودة
+- [ ] الملفّات الأربعة الجديدة بصلاحية `644`
+- [ ] صفحة الفلاتر تعرض عدّاد النتائج وتعمل الفلاتر الستة
+- [ ] «المتاحون بمواعيد فقط» يستبعد من لا دوام له
+- [ ] تقويم الحجز يرسم أياماً قابلة للحجز فعلاً (لا تخمين)
+- [ ] الحجز من نتيجة مفلترة ينجح ويظهر في لوحة المحامي
+- [ ] السعر المعروض = السعر المخزَّن = مبلغ البوابة (رسم ثابت مرة واحدة)
+- [ ] لا شارة تقييم على أي بطاقة محامٍ
+- [ ] الموقع والتطبيق يعطيان نفس السعر والمدة لنفس المحامي
+
+---
+
 ## 11. بعد النشر
 
 1. **راقب `error_log`** أول 24 ساعة بحثاً عن أي خطأ في `affiliate_` أو المرفقات.
