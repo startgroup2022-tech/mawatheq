@@ -3,6 +3,7 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../lang/strings.php';
 require_once __DIR__ . '/includes/admin_guard.php';
 require_once __DIR__ . '/../includes/audit_log.php';
+require_once __DIR__ . '/../includes/plans_admin.php';
 
 $error = null; $success = null;
 $editingPlan = null;
@@ -13,31 +14,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
     if ($action === 'save_plan') {
         $planId = (int)($_POST['plan_id'] ?? 0);
-        $data = [
-            'name_ar' => trim($_POST['name_ar'] ?? ''),
-            'name_en' => trim($_POST['name_en'] ?? ''),
-            'description_ar' => trim($_POST['description_ar'] ?? ''),
-            'description_en' => trim($_POST['description_en'] ?? ''),
-            'price_monthly' => (float)($_POST['price_monthly'] ?? 0),
-            'price_yearly' => ($_POST['price_yearly'] ?? '') !== '' ? (float)$_POST['price_yearly'] : null,
-            'ai_queries_limit' => ($_POST['ai_queries_limit'] ?? '') !== '' ? (int)$_POST['ai_queries_limit'] : null,
-            'document_analysis_limit' => ($_POST['document_analysis_limit'] ?? '') !== '' ? (int)$_POST['document_analysis_limit'] : null,
-            'consultations_included' => (int)($_POST['consultations_included'] ?? 0),
-            'is_corporate' => isset($_POST['is_corporate']) ? 1 : 0,
-            'is_featured' => isset($_POST['is_featured']) ? 1 : 0,
-            'status' => in_array($_POST['status'] ?? '', ['active','hidden'], true) ? $_POST['status'] : 'active',
-            'sort_order' => (int)($_POST['sort_order'] ?? 0),
-        ];
-        if ($data['name_ar'] === '' || $data['name_en'] === '') {
-            $error = 'اسم الباقة (عربي وإنجليزي) مطلوب.';
-        } else {
+        $data = plan_normalize_input($_POST);
+        $error = plan_validation_error($data);
+        if ($error === null) {
+            $cols = 'name_ar,name_en,description_ar,description_en,price_monthly,price_yearly,ai_queries_limit,document_analysis_limit,consultations_included,classification,billing_cycle,consultation_price,is_corporate,is_featured,status,sort_order';
             if ($planId) {
-                $pdo->prepare('UPDATE plans SET name_ar=?,name_en=?,description_ar=?,description_en=?,price_monthly=?,price_yearly=?,ai_queries_limit=?,document_analysis_limit=?,consultations_included=?,is_corporate=?,is_featured=?,status=?,sort_order=? WHERE id=?')
+                $pdo->prepare("UPDATE plans SET name_ar=?,name_en=?,description_ar=?,description_en=?,price_monthly=?,price_yearly=?,ai_queries_limit=?,document_analysis_limit=?,consultations_included=?,classification=?,billing_cycle=?,consultation_price=?,is_corporate=?,is_featured=?,status=?,sort_order=? WHERE id=?")
                     ->execute(array_merge(array_values($data), [$planId]));
                 log_action($pdo, "تعديل باقة '" . $data['name_ar'] . "'", 'plan', $planId);
                 $success = 'تم تحديث الباقة بنجاح. الحدود والمزايا الجديدة سارية فوراً على جميع المشتركين الحاليين بهذه الباقة.';
             } else {
-                $pdo->prepare('INSERT INTO plans (name_ar,name_en,description_ar,description_en,price_monthly,price_yearly,ai_queries_limit,document_analysis_limit,consultations_included,is_corporate,is_featured,status,sort_order) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')
+                $pdo->prepare("INSERT INTO plans ($cols) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
                     ->execute(array_values($data));
                 log_action($pdo, "إضافة باقة جديدة '" . $data['name_ar'] . "'", 'plan', (int)$pdo->lastInsertId());
                 $success = 'تمت إضافة الباقة بنجاح.';
@@ -180,7 +167,7 @@ require_once __DIR__ . '/includes/admin_header.php';
       <button type="button" class="modal-close" onclick="closeModal('planModal-new')">✕</button>
       <input type="hidden" name="action" value="save_plan"><input type="hidden" name="plan_id" value="0">
       <h3 style="margin-bottom:14px">إضافة باقة جديدة</h3>
-      <?php $plan = ['name_ar'=>'','name_en'=>'','description_ar'=>'','description_en'=>'','price_monthly'=>0,'price_yearly'=>'','ai_queries_limit'=>'','document_analysis_limit'=>'','consultations_included'=>0,'is_corporate'=>0,'is_featured'=>0,'status'=>'active','sort_order'=>count($plans)]; ?>
+      <?php $plan = ['name_ar'=>'','name_en'=>'','description_ar'=>'','description_en'=>'','price_monthly'=>0,'price_yearly'=>'','ai_queries_limit'=>'','document_analysis_limit'=>'','consultations_included'=>0,'classification'=>'paid','billing_cycle'=>'both','consultation_price'=>'','is_corporate'=>0,'is_featured'=>0,'status'=>'active','sort_order'=>count($plans)]; ?>
       <?php include __DIR__ . '/includes/plan_form_fields.php'; ?>
       <button class="btn btn-primary btn-block" type="submit">إضافة الباقة</button>
     </form>
