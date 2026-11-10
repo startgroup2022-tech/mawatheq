@@ -389,6 +389,7 @@ function legal_journey_filter_params(array $input): array {
         'max_fee'        => $maxFee,
         'available_only' => $availableOnly,
         'jurisdiction'   => trim((string)($input['jurisdiction'] ?? '')),
+        'specialization' => trim((string)($input['specialization'] ?? '')),
         'q'              => trim((string)($input['q'] ?? '')),
     ];
 }
@@ -464,24 +465,98 @@ function legal_journey_lawyers_for_specialty(PDO $pdo, int $categoryId, array $o
     $today = date('Y-m-d');
     $out = [];
     foreach ($lawyers as $lw) {
-        $lw['id'] = (int)$lw['id'];
-        $lw['hourly_rate'] = $lw['hourly_rate'] !== null ? (float)$lw['hourly_rate'] : null;
-        $lw['rating'] = $lw['rating'] !== null ? (float)$lw['rating'] : null;
-        $lw['years_experience'] = (int)$lw['years_experience'];
-        $lw['country_code'] = lawyer_country_code($lw);
-        $lw['city'] = $lw['city'] !== null && $lw['city'] !== '' ? (string)$lw['city'] : null;
-        $lw['location'] = lawyer_location_label($lw['country_code'], $lw['city']);
-        // The published consultation length, so the card can state the duration it prices.
-        $lw['duration_minutes'] = ((int)($lw['slot_minutes'] ?? 0)) > 0 ? (int)$lw['slot_minutes'] : CONSULTATION_DEFAULT_MINUTES;
-        // The one authoritative price breakdown. The card, the booking form and the gateway all
-        // read this, so a card can never advertise a number the gateway would not charge.
-        $lw['pricing'] = consultation_pricing_for_lawyer($pdo, $lw);
-        $lw['price_label'] = $lw['pricing']['has_price'] ? money_text($lw['pricing']['total']) : null;
-        $lw['availability'] = legal_journey_availability_summary($pdo, $lw['id'], $today);
         // Availability is a real filter, not a badge: when it is requested, a lawyer
         // with no open slot is removed rather than shown with an empty slot line.
-        if ($f['available_only'] && ($lw['availability']['slot_count'] ?? 0) < 1) continue;
-        $out[] = $lw;
+        if ($f['available_only'] && (legal_journey_availability_summary($pdo, (int)$lw['id'], $today)['slot_count'] ?? 0) < 1) continue;
+        $out[] = legal_journey_hydrate_lawyer($pdo, $lw, $today);
+    }
+    return $out;
+}
+
+/**
+ * Normalise one lawyer row into everything a comparison card needs — location, the
+ * published duration, the one authoritative price breakdown and the real availability
+ * summary. Shared by the specialty comparison and the directory search so a card built
+ * by either surface states the same price, duration and slots for the same lawyer.
+ *
+ * @param array<string,mixed> $lw a row selecting id, full_name, specialization, bio,
+ *        years_experience, hourly_rate, rating, photo_path, jurisdiction, country_code,
+ *        city and (optionally) slot_minutes
+ * @return array<string,mixed>
+ */
+function legal_journey_hydrate_lawyer(PDO $pdo, array $lw, ?string $today = null): array {
+    require_once __DIR__ . '/consultation_pricing.php';
+    require_once __DIR__ . '/cities.php';
+    $today = $today ?: date('Y-m-d');
+
+    $lw['id'] = (int)$lw['id'];
+    $lw['hourly_rate'] = $lw['hourly_rate'] !== null ? (float)$lw['hourly_rate'] : null;
+    $lw['rating'] = $lw['rating'] !== null ? (float)$lw['rating'] : null;
+    $lw['years_experience'] = (int)$lw['years_experience'];
+    $lw['country_code'] = lawyer_country_code($lw);
+    $lw['city'] = ($lw['city'] ?? null) !== null && $lw['city'] !== '' ? (string)$lw['city'] : null;
+    $lw['location'] = lawyer_location_label($lw['country_code'], $lw['city']);
+    $lw['duration_minutes'] = ((int)($lw['slot_minutes'] ?? 0)) > 0 ? (int)$lw['slot_minutes'] : CONSULTATION_DEFAULT_MINUTES;
+    $lw['pricing'] = consultation_pricing_for_lawyer($pdo, $lw);
+    $lw['price_label'] = $lw['pricing']['has_price'] ? money_text($lw['pricing']['total']) : null;
+    $lw['availability'] = legal_journey_availability_summary($pdo, $lw['id'], $today);
+    return $lw;
+}
+
+/**
+ * The professional lawyer directory search — no specialty required.
+ *
+ * This is the general "find a lawyer" filter the website's consultations page and the
+ * API directory both need, applied with the same shared normaliser the specialty
+ * comparison uses, so the two cannot disagree about what a filter means. Every filter
+ * is server-side and bound; `available_only` removes a lawyer with no real open slot
+ * rather than showing them with an empty availability line.
+ *
+ * @param array<string,mixed> $opts see legal_journey_filter_params()
+ * @return array<int,array<string,mixed>>
+ */
+function legal_journey_directory_search(PDO $pdo, array $opts = []): array {
+    require_once __DIR__ . '/cities.php';
+    require_once __DIR__ . '/lawyer_experience.php';
+
+    $f = legal_journey_filter_params($opts);
+
+    $sql = "SELECT l.id, l.full_name, l.specialization, l.bio, l.years_experience,
+                   l.hourly_rate, l.rating, l.photo_path, l.jurisdiction, l.country_code, l.city,
+                   (SELECT MIN(a.slot_minutes) FROM lawyer_availability a WHERE a.lawyer_id = l.id) AS slot_minutes
+              FROM lawyers l
+             WHERE l.status = 'approved'";
+    $params = [];
+
+    if ($f['jurisdiction'] !== '') { $sql .= ' AND l.jurisdiction = ?'; $params[] = $f['jurisdiction']; }
+    if ($f['specialization'] !== '') { $sql .= ' AND l.specialization = ?'; $params[] = $f['specialization']; }
+    if ($f['country'] !== '') {
+        $name = jurisdiction_for_country($f['country']);
+        $sql .= ' AND (l.country_code = ? OR l.jurisdiction = ?)';
+        $params[] = $f['country'];
+        $params[] = $name ?? '';
+    }
+    if ($f['city'] !== '')       { $sql .= ' AND l.city = ?'; $params[] = $f['city']; }
+    if ($f['min_fee'] !== null)  { $sql .= ' AND l.hourly_rate IS NOT NULL AND l.hourly_rate >= ?'; $params[] = $f['min_fee']; }
+    if ($f['max_fee'] !== null)  { $sql .= ' AND (l.hourly_rate IS NULL OR l.hourly_rate <= ?)'; $params[] = $f['max_fee']; }
+    if ($f['q'] !== '')          { $sql .= ' AND l.full_name LIKE ?'; $params[] = '%' . $f['q'] . '%'; }
+    if ($f['experience'] !== '') {
+        $band = lawyer_experience_band($f['experience']);
+        $sql .= ' AND l.years_experience >= ?';
+        $params[] = $band['min'];
+        if ($band['max'] !== null) { $sql .= ' AND l.years_experience <= ?'; $params[] = $band['max']; }
+    }
+
+    $sql .= ' ORDER BY l.rating DESC, l.years_experience DESC, l.id LIMIT 60';
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $rows = $stmt->fetchAll();
+
+    $today = date('Y-m-d');
+    $out = [];
+    foreach ($rows as $lw) {
+        if ($f['available_only'] && (legal_journey_availability_summary($pdo, (int)$lw['id'], $today)['slot_count'] ?? 0) < 1) continue;
+        $out[] = legal_journey_hydrate_lawyer($pdo, $lw, $today);
     }
     return $out;
 }

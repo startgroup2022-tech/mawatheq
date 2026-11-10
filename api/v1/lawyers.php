@@ -68,62 +68,19 @@ if ($categoryId > 0 && legal_journey_ready($pdo)) {
     ]);
 }
 
-$sql = "SELECT id, full_name, specialization, years_experience, hourly_rate, rating, bio, photo_path, jurisdiction, country_code, city
-          FROM lawyers WHERE status='approved'";
-$params = [];
+// No specialty: the general directory, filtered by the SAME shared search the website's
+// consultations page uses. One function means the website and the app cannot return
+// different lawyers for the same filters.
+$rows = legal_journey_directory_search($pdo, $_GET);
 
-if (!empty($_GET['jurisdiction'])) { $sql .= ' AND jurisdiction = ?'; $params[] = $_GET['jurisdiction']; }
-if (!empty($_GET['specialization'])) { $sql .= ' AND specialization = ?'; $params[] = $_GET['specialization']; }
-if ($filters['country'] !== '') {
-    $name = jurisdiction_for_country($filters['country']);
-    $sql .= ' AND (country_code = ? OR jurisdiction = ?)';
-    $params[] = $filters['country'];
-    $params[] = $name ?? '';
-}
-if ($filters['city'] !== '')       { $sql .= ' AND city = ?'; $params[] = $filters['city']; }
-if ($filters['min_fee'] !== null)  { $sql .= ' AND hourly_rate IS NOT NULL AND hourly_rate >= ?'; $params[] = $filters['min_fee']; }
-if ($filters['max_fee'] !== null)  { $sql .= ' AND (hourly_rate IS NULL OR hourly_rate <= ?)'; $params[] = $filters['max_fee']; }
-if ($filters['experience'] !== '') {
-    $band = lawyer_experience_band($filters['experience']);
-    $sql .= ' AND years_experience >= ?';
-    $params[] = $band['min'];
-    if ($band['max'] !== null) { $sql .= ' AND years_experience <= ?'; $params[] = $band['max']; }
-}
-if (!empty($_GET['q'])) { $sql .= ' AND full_name LIKE ?'; $params[] = '%' . $_GET['q'] . '%'; }
-
-$sql .= ' ORDER BY rating DESC LIMIT 50';
-$stmt = $pdo->prepare($sql);
-$stmt->execute($params);
-$rows = $stmt->fetchAll();
-
-// `available_only` is a real filter, not a badge: a lawyer with no open slot is removed.
-if ($filters['available_only']) {
-    $today = date('Y-m-d');
-    $rows = array_values(array_filter($rows, function ($lw) use ($pdo, $today) {
-        return (legal_journey_availability_summary($pdo, (int)$lw['id'], $today)['slot_count'] ?? 0) > 0;
-    }));
-}
-
-// Normalise the location fields the same way the journey does, so both surfaces agree.
-require_once __DIR__ . '/../../includes/consultation_pricing.php';
+// Present the consultation price with the tenant's currency, exactly as journey.php
+// does, so the app's directory and its journey cannot show two different numbers for
+// the same lawyer.
 require_once __DIR__ . '/../../includes/currency.php';
-$rows = array_map(function ($lw) use ($pdo) {
-    $lw['id'] = (int)$lw['id'];
-    $lw['years_experience'] = (int)$lw['years_experience'];
-    $lw['hourly_rate'] = $lw['hourly_rate'] !== null ? (float)$lw['hourly_rate'] : null;
-    $lw['rating'] = $lw['rating'] !== null ? (float)$lw['rating'] : null;
-    $lw['country_code'] = lawyer_country_code($lw);
-    $lw['city'] = ($lw['city'] ?? '') !== '' ? (string)$lw['city'] : null;
-    $lw['location'] = lawyer_location_label($lw['country_code'], $lw['city']);
-    // The ONE payable amount and the length it prices, computed by the shared module so
-    // the directory card shows exactly what the gateway will charge — never a raw hourly
-    // rate presented as the consultation price.
-    $breakdown = consultation_pricing_for_lawyer($pdo, $lw);
-    $lw['pricing'] = $breakdown;
-    $lw['fee_display'] = !empty($breakdown['has_price']) ? money_text($breakdown['total']) : null;
-    $lw['duration_minutes'] = (int)($breakdown['duration_minutes'] ?? 30);
-    return $lw;
-}, $rows);
+foreach ($rows as &$lw) {
+    $lw['fee_display'] = $lw['price_label'];
+}
+unset($lw);
 
 // Report the count the same way the specialty branch does, so the website and the
 // app can render "N lawyers" from either endpoint without special-casing.
