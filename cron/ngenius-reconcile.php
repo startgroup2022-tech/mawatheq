@@ -17,14 +17,48 @@
 
   require_once __DIR__ . '/../config/config.php';
   require_once __DIR__ . '/../includes/consultation_payment.php';
+  require_once __DIR__ . '/../includes/package_payment.php';
 
   $settings = ngenius_settings($pdo);
   if (!ngenius_is_enabled($settings)) {
       fwrite(STDOUT, 'N-Genius is not enabled; nothing to reconcile.' . PHP_EOL);
       exit(0);
   }
+
+  // Package orders are reconciled the same way as consultations: a customer who paid for a
+  // plan but whose callback never arrived must still get their subscription. This ran only
+  // for consultations before, so a missed package webhook left the plan pending forever even
+  // though the money was captured. Runs regardless of the consultation schema being present.
+  $pkgConfirmed = 0; $pkgReleased = 0; $pkgPending = 0; $pkgErrors = 0;
+  if (package_payment_schema_ready($pdo)) {
+      $pkgStmt = $pdo->prepare("SELECT id, payment_reference FROM package_orders
+          WHERE status = 'pending'
+            AND payment_reference IS NOT NULL
+            AND created_at < (NOW() - INTERVAL 2 MINUTE)
+            AND created_at > (NOW() - INTERVAL 1 DAY)
+          ORDER BY id ASC LIMIT 100");
+      $pkgStmt->execute();
+      foreach ($pkgStmt->fetchAll() as $row) {
+          $result = package_payment_verify_and_confirm($pdo, (int)$row['id'], (string)$row['payment_reference']);
+          if (empty($result['ok'])) {
+              $pkgErrors++;
+              error_log('ngenius-reconcile: package order ' . $row['id'] . ' verify failed: ' . ($result['error'] ?? 'unknown'));
+              continue;
+          }
+          if (!empty($result['activated'])) {
+              $pkgConfirmed++;
+          } elseif (in_array($result['state'], ['FAILED', 'CANCELLED', 'EXPIRED'], true)) {
+              $pkgReleased++;
+          } else {
+              $pkgPending++;
+          }
+      }
+      fwrite(STDOUT, 'N-Genius reconcile (packages): confirmed=' . $pkgConfirmed
+          . ' failed=' . $pkgReleased . ' pending=' . $pkgPending . ' errors=' . $pkgErrors . PHP_EOL);
+  }
+
   if (!consultation_payment_schema_ready($pdo)) {
-      fwrite(STDOUT, 'upgrade_v69.sql has not been applied; nothing to reconcile.' . PHP_EOL);
+      fwrite(STDOUT, 'upgrade_v69.sql has not been applied; consultation reconciliation skipped.' . PHP_EOL);
       exit(0);
   }
 
@@ -49,6 +83,9 @@
       }
       if (!empty($result['confirmed'])) {
           $confirmed++;
+          // A payment confirmed here (rather than by the return page or webhook) still needs its
+          // invoice; issue() is idempotent, so an already-invoiced booking is a no-op.
+          try { consultation_invoice_issue($pdo, (int)$row['id']); } catch (Throwable $e) { error_log('reconcile invoice issue failed: ' . $e->getMessage()); }
       } elseif (in_array($result['state'], ['FAILED', 'CANCELLED', 'EXPIRED'], true)) {
           // A cancelled/expired order frees the slot; the verify call already stamped the
           // payment_status, and release() only touches a booking that is still pending.

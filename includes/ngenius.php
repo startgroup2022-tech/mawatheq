@@ -300,12 +300,27 @@ function ngenius_is_paid_state(?string $state): bool {
 
 /** يجلب إعدادات بوابة الدفع المحفوظة من site_settings كمصفوفة جاهزة. */
 function ngenius_settings(PDO $pdo): array {
-    $settings = [];
-    $keys = ['ngenius_enabled','ngenius_environment','ngenius_outlet_ref','ngenius_api_key','ngenius_realm_name','ngenius_webhook_secret','ngenius_currency'];
+    // Defaults first. A setting row that has never been written (a fresh install, or a
+    // half-configured gateway where only the API key was entered) must yield an empty
+    // string, not a missing key. A missing key reaches ngenius_get_access_token() as
+    // null, which is a fatal TypeError (HTTP 500) on the payment path — the exact
+    // "could not start the payment" symptom, but with no diagnostic and no order row.
+    $settings = [
+        'ngenius_enabled' => '0',
+        'ngenius_environment' => 'sandbox',
+        'ngenius_outlet_ref' => '',
+        'ngenius_api_key' => '',
+        'ngenius_realm_name' => '',
+        'ngenius_webhook_secret' => '',
+        'ngenius_currency' => '',
+    ];
+    $keys = array_keys($settings);
     $placeholders = implode(',', array_fill(0, count($keys), '?'));
     $stmt = $pdo->prepare("SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ($placeholders)");
     $stmt->execute($keys);
-    foreach ($stmt->fetchAll() as $row) { $settings[$row['setting_key']] = $row['setting_value']; }
+    foreach ($stmt->fetchAll() as $row) {
+        if ($row['setting_value'] !== null) $settings[$row['setting_key']] = (string)$row['setting_value'];
+    }
     foreach (['ngenius_api_key','ngenius_webhook_secret'] as $secretKey) {
         if (!isset($settings[$secretKey])) continue;
         $raw=$settings[$secretKey]; $settings[$secretKey]=secret_decrypt_value($raw);

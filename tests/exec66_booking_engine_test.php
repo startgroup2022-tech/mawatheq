@@ -83,6 +83,18 @@ function book_post(string $jar, string $csrf, int $lawyerId, string $date, strin
     return [$code, $body];
 }
 
+// Section 4 asserts the "gateway not enabled" state, but the shared dev host may have N-Genius
+// switched on (a fixture conf, a seeded key). Snapshot the setting and force it off so the
+// assertion is about the code, not about whatever the machine happens to be configured with.
+$ngeniusSnapshot = [];
+try {
+    foreach ($pdo->query("SELECT setting_key, setting_value FROM site_settings WHERE setting_key='ngenius_enabled'")->fetchAll() as $r) {
+        $ngeniusSnapshot[$r['setting_key']] = $r['setting_value'];
+    }
+    $pdo->exec("INSERT INTO site_settings (setting_key, setting_value) VALUES ('ngenius_enabled','0')
+        ON DUPLICATE KEY UPDATE setting_value='0'");
+} catch (Throwable $e) {}
+
 try {
     section('Setup: a lawyer with published hours, and a client');
     $pwd = password_hash('Exec66-Test-Pass-2026', PASSWORD_DEFAULT);
@@ -327,6 +339,15 @@ try {
 
 } finally {
     section('Cleanup');
+    // Restore the gateway setting exactly as it was found (delete only if it was absent).
+    try {
+        if (array_key_exists('ngenius_enabled', $ngeniusSnapshot)) {
+            $pdo->prepare("UPDATE site_settings SET setting_value=? WHERE setting_key='ngenius_enabled'")
+                ->execute([$ngeniusSnapshot['ngenius_enabled']]);
+        } else {
+            $pdo->exec("DELETE FROM site_settings WHERE setting_key='ngenius_enabled'");
+        }
+    } catch (Throwable $e) {}
     if ($lawyerId > 0) {
         try { $pdo->prepare('DELETE FROM consultations WHERE lawyer_id=?')->execute([$lawyerId]); } catch (Throwable $e) {}
         try { $pdo->prepare('DELETE FROM lawyer_availability WHERE lawyer_id=?')->execute([$lawyerId]); } catch (Throwable $e) {}

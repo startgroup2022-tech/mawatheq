@@ -1322,6 +1322,13 @@ PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 SET @c := (SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='invoices' AND INDEX_NAME='idx_invoices_status_due');
 SET @s := IF(@c=0, 'ALTER TABLE invoices ADD INDEX idx_invoices_status_due (status,due_date)', 'SELECT 1');
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+-- A paid booking (consultation) issues its own invoice; this is the link back to it (v73).
+SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='invoices' AND COLUMN_NAME='consultation_id');
+SET @s := IF(@c=0, 'ALTER TABLE invoices ADD COLUMN consultation_id INT UNSIGNED NULL DEFAULT NULL', 'SELECT 1');
+PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+SET @c := (SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='invoices' AND INDEX_NAME='idx_invoices_consultation');
+SET @s := IF(@c=0, 'ALTER TABLE invoices ADD INDEX idx_invoices_consultation (consultation_id)', 'SELECT 1');
+PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 
 CREATE TABLE IF NOT EXISTS invoice_items (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, invoice_id INT UNSIGNED NOT NULL, firm_id INT UNSIGNED DEFAULT NULL,

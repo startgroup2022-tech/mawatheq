@@ -51,6 +51,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'sadad
 }
 
 $config = sadad_settings($pdo, $tenantType, $tenantId);
+// Read the N-Genius configuration up front: the "half-configured N-Genius" banner below
+// reads it, and the health table further down renders it. Reading it only inside the table
+// left the banner comparing against an undefined $nconfig, so the warning it exists to show
+// never appeared.
+$nconfig = ngenius_settings($pdo);
 $gateway = new SadadGateway($config);
 $missing = sadad_missing_keys($config);
 $connected = !empty($config['sadad_last_connection_ok']) ? (int)$config['sadad_last_connection_ok'] === 1 : null;
@@ -311,7 +316,6 @@ $statusLabel = $gateway->isEnabled() ? ($env === 'live' ? '🟢 مفعّلة (إ
       <thead><tr><th>Gateway</th><th><?= is_rtl() ? 'الاعتماد' : 'Credentials' ?></th><th><?= is_rtl() ? 'البيئة' : 'Environment' ?></th><th><?= is_rtl() ? 'الاتصال' : 'Connectivity' ?></th><th><?= is_rtl() ? 'الويب هوك' : 'Webhook' ?></th><th><?= is_rtl() ? 'العملة' : 'Currency' ?></th></tr></thead>
       <tbody>
         <?php
-        $nconfig = ngenius_settings($pdo);
         $nConfigured = !empty($nconfig['ngenius_outlet_ref']) && !empty($nconfig['ngenius_api_key']);
         $nWebhook = !empty($nconfig['ngenius_webhook_secret']);
         $sWebhook = $secretConfigured['sadad_webhook_secret'];

@@ -3919,3 +3919,63 @@ Arabic RTL and the English LTR evidence (`?stage=1&dir=ltr`). If a future mockup
   copy* instead (`design/exec66/screenshots/app/`); the harness keeps the pristine bytes.
   The website screenshots (`design/exec66/screenshots/website*`) are evidence only and are
   compressed in place — 38 MB → 12 MB.
+
+## Execution 68 — payment 500, consultation invoices, and scope confirmation
+
+### The "could not start the payment" 500 was a missing settings key, not a gateway failure
+
+`ngenius_settings()` built its array only from rows that exist in `site_settings`. On an install
+where `ngenius_enabled`, the outlet and the key were written but `ngenius_environment` never was,
+the returned array had **no** `ngenius_environment` key. Every consumer passed
+`$settings['ngenius_environment']` straight into `ngenius_get_access_token(string $environment, …)`,
+which is a fatal `TypeError` — an HTTP 500 with no order row and no diagnostic. The customer saw
+the generic "تعذّر بدء عملية الدفع الإلكتروني" message and support had nothing to match.
+
+`ngenius_settings()` now **seeds every documented key with a default first** and only overrides
+with a non-null stored value. The key set is `ngenius_enabled` (`'0'`), `ngenius_environment`
+(`'sandbox'`), `ngenius_outlet_ref`, `ngenius_api_key`, `ngenius_realm_name`,
+`ngenius_webhook_secret`, `ngenius_currency`. Rule: a settings accessor must always return every
+key it documents — a missing row must degrade to a default, never to a missing array key.
+
+### `admin/gateways.php` read the N-Genius config only inside the health table
+
+The "half-configured N-Genius" banner compares against `$nconfig`, but `$nconfig` was assigned
+*inside* the `<tbody>` further down the page. The banner therefore compared against an undefined
+variable and never appeared. `$nconfig = ngenius_settings($pdo)` is now read once, up top, before
+both consumers. A warning whose variable is defined after it is a warning that cannot fire.
+
+### A captured consultation payment must issue a client invoice
+
+`consultation_payment_confirm()` confirmed the booking and credited the lawyer's wallet, but
+`/invoices.php` stayed empty — the customer paid and had no document to download or reconcile.
+`includes/consultation_payment.php` now calls `consultation_invoice_issue()`, idempotent on
+`invoices.consultation_id` (`database/upgrade_v73.sql`, also folded into `schema.sql`). The
+invoice is issued from the return page, the webhook **and** the reconcile cron, so a missed
+callback still produces it. A confirmation also notifies the **customer** (not just the lawyer)
+that their appointment is confirmed.
+
+### Package orders are reconciled by the same cron as consultations
+
+`cron/ngenius-reconcile.php` only reconciled consultations, so a missed package webhook left the
+plan pending forever even though the money was captured. It now reconciles `package_orders` too
+(guarded by `package_payment_schema_ready()`), then continues to consultations regardless of
+whether the consultation schema exists.
+
+### Car-inspection ("نقاط فحص السيارات") and point-of-sale ("نقاط البيع") are not in this repository
+
+A `git grep` for `سيار`, `نقاط البيع`, `فحص السيارات`, `car inspection`, `vehicle`, `point of sale`
+across every tracked file returns **nothing** in application code — the only hits for `سيار` are
+unrelated and the only `معاينة` hits mean "preview". These features have never existed in this
+codebase; they are not a regression and are not part of the legal platform's scope. Do not claim
+them complete or nearly complete. If the owner wants them, they are new features (estimation
+required), not a fix.
+
+### Verification for this execution
+
+- `tests/exec68_payment_packages_test.php` — 45 checks, including section 1b (a missing settings
+  row is not a fatal) and section 8 (a confirmed booking notifies the customer). Green.
+- `tests/exec66_booking_engine_test.php` snapshots and forces `ngenius_enabled=0` for the duration
+  of the "gateway disabled" section and restores it, because the shared dev host's Apache conf
+  points the gateway at a fixture and enables it. A test that assumes the deployment default must
+  set it, not inherit it.
+- Full PHP suite: 55/55 suites green. Playwright: 780 passed / 12 skipped / 0 failed.

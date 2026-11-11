@@ -265,12 +265,97 @@ function consultation_payment_confirm(PDO $pdo, array $consultation, array $stat
         if (function_exists('log_action')) log_action($pdo, 'تأكيد دفعة استشارة (ngenius)', 'consultation', $consultationId);
     }
 
+    // A captured payment must produce a document the client can download and an accountant can
+    // reconcile. Without this the booking was paid but /invoices.php stayed empty.
+    try {
+        consultation_invoice_issue($pdo, $consultationId, $amount, $currency, (string)($status['payment_ref'] ?? $consultation['payment_reference'] ?? ''));
+    } catch (Throwable $e) {
+        // The booking is confirmed and paid; an invoice problem must not undo that. The cron
+        // re-issues it on the next reconciliation because no invoice row exists yet.
+        error_log('consultation invoice issue failed: ' . $e->getMessage());
+    }
+
     require_once __DIR__ . '/notifications.php';
     notify($pdo, 'lawyer', (int)$consultation['lawyer_id'],
         is_rtl() ? 'تم تأكيد استشارة مدفوعة' : 'Paid consultation confirmed',
         (string)($consultation['topic'] ?? ''), '/lawyer/consultations.php');
+    // The customer must also learn that their payment cleared and the appointment is now
+    // confirmed — otherwise they saw "awaiting payment" and nothing tells them it went through.
+    if ((int)($consultation['user_id'] ?? 0) > 0) {
+        $when = (string)($consultation['scheduled_at'] ?? '');
+        notify($pdo, 'client', (int)$consultation['user_id'],
+            is_rtl() ? 'تم تأكيد موعدك بعد الدفع' : 'Your appointment is confirmed',
+            trim((string)($consultation['topic'] ?? '') . ($when !== '' ? ' — ' . $when : '')),
+            '/consultations.php');
+    }
 
     return ['ok' => true, 'state' => 'PAID', 'confirmed' => true, 'error' => null];
+}
+
+/**
+ * Issue (once) the paid invoice for a confirmed consultation.
+ *
+ * Idempotent on invoices.consultation_id: a replayed confirmation or the reconcile cron finds
+ * the existing invoice and returns its id instead of creating a second one. The amount and
+ * currency are the ones the gateway captured, never a value from a request.
+ *
+ * @return int|null the invoice id, or null when there is nothing to issue
+ */
+function consultation_invoice_issue(PDO $pdo, int $consultationId, ?float $amount = null, ?string $currency = null, string $gatewayRef = ''): ?int {
+    if ($consultationId <= 0) return null;
+    // Requires upgrade_v73.sql; a database that has not run it keeps working without invoices.
+    try {
+        $hasCol = (bool)$pdo->query("SELECT 1 FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'invoices' AND COLUMN_NAME = 'consultation_id' LIMIT 1")->fetchColumn();
+    } catch (Throwable $e) {
+        return null;
+    }
+    if (!$hasCol) return null;
+
+    $existing = $pdo->prepare('SELECT id FROM invoices WHERE consultation_id=? LIMIT 1');
+    $existing->execute([$consultationId]);
+    $found = $existing->fetchColumn();
+    if ($found !== false && $found !== null) return (int)$found;
+
+    $stmt = $pdo->prepare('SELECT c.*, l.full_name AS lawyer_name FROM consultations c JOIN lawyers l ON l.id = c.lawyer_id WHERE c.id=?');
+    $stmt->execute([$consultationId]);
+    $c = $stmt->fetch();
+    if (!$c) return null;
+
+    $amount   = $amount !== null ? $amount : (float)($c['payment_amount'] ?? 0);
+    $currency = strtoupper((string)($currency ?: ($c['payment_currency'] ?? '')));
+    if ($currency === '') $currency = currency_code();
+    if ($amount <= 0) return null;
+
+    require_once __DIR__ . '/finance.php';
+
+    $lawyerId = (int)$c['lawyer_id'];
+    $firmId   = !empty($c['firm_id']) ? (int)$c['firm_id'] : null;
+    $desc = (string)($c['topic'] ?? '');
+    if ($desc === '') $desc = is_rtl() ? 'استشارة قانونية' : 'Legal consultation';
+    $desc = mb_substr($desc, 0, 250);
+
+    // The unique invoice_number is the real guard; retry once on a rare concurrent collision.
+    for ($attempt = 0; $attempt < 3; $attempt++) {
+        $number = finance_next_invoice_number($pdo, $firmId, $lawyerId);
+        try {
+            $pdo->prepare('INSERT INTO invoices
+                (invoice_number, lawyer_id, created_by_lawyer_id, firm_id, user_id, description,
+                 amount, currency, subtotal, amount_paid, status, is_draft, issue_date, paid_at,
+                 payment_method, gateway, gateway_order_ref, consultation_id)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,NOW(),NOW(),?,?,?,?)')
+                ->execute([
+                    $number, $lawyerId, $lawyerId, $firmId, (int)$c['user_id'], $desc,
+                    $amount, $currency, $amount, $amount, 'paid', 0,
+                    'ngenius', 'ngenius', $gatewayRef !== '' ? $gatewayRef : null, $consultationId,
+                ]);
+            return (int)$pdo->lastInsertId();
+        } catch (PDOException $e) {
+            // 1062 = duplicate invoice_number; recompute and retry. Anything else is real.
+            if ((int)$e->getCode() !== 23000 || $attempt === 2) throw $e;
+        }
+    }
+    return null;
 }
 
 /**

@@ -125,15 +125,14 @@ printf '  removed %s root-level .md file(s) from the site package\n' "$removed_d
     || fail "database/upgrade_v56.sql is missing from the migration package"
 [ -f "$STAGE/migrations/database/upgrade_v57.sql" ] \
     || fail "database/upgrade_v57.sql is missing from the migration package"
-# upgrade_v72.sql is the last migration in the chain. It carries the payment
-# diagnostics table (Execution 67): one row per failed gateway attempt with the
-# correlation id the customer quotes. A package that stops earlier deploys the
-# diagnostics log viewer against a table that does not exist, so the admin
-# gateway page reports "apply upgrade_v72.sql" instead of a failure history.
-# Assert the current head, not a remembered one — this assertion moves with each
-# execution, and a stale expectation fails the next build for the wrong reason.
-[ -f "$STAGE/migrations/database/upgrade_v72.sql" ] \
-    || fail "database/upgrade_v72.sql is missing from the migration package"
+# upgrade_v73.sql is the last migration in the chain. It adds invoices.consultation_id
+# (Execution 68): the link that lets a captured consultation payment issue a real client
+# invoice. A package that stops earlier still takes the money and confirms the booking,
+# but /invoices.php stays empty. Assert the current head, not a remembered one — this
+# assertion moves with each execution, and a stale expectation fails the next build for
+# the wrong reason.
+[ -f "$STAGE/migrations/database/upgrade_v73.sql" ] \
+    || fail "database/upgrade_v73.sql is missing from the migration package"
 
 # --- modes and timestamps --------------------------------------------------
 step "normalizing file modes and timestamps"
