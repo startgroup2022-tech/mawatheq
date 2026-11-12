@@ -14,8 +14,12 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../core/theme/theme_controller.dart';
 import '../../shared/widgets/brand_widgets.dart';
+import '../alerts/availability_alerts_screen.dart';
+import '../favorites/favorites_screen.dart';
 import '../home/home_shell.dart';
+import '../notifications_settings/notification_settings_screen.dart';
 import '../public/pricing_screen.dart';
+import '../reviews/reviews_screen.dart';
 import 'invoice_detail_screen.dart';
 import 'privacy_screen.dart';
 import 'support_center_screen.dart';
@@ -368,6 +372,41 @@ class _AccountScreenState extends State<AccountScreen> {
               )),
         const SizedBox(height: 22),
 
+        // Client-only engagement destinations. A lawyer has no favorites, no
+        // availability alerts and no consultations to rate, so the whole block is
+        // absent for them rather than shown empty.
+        if (!user.isLawyer) ...[
+          SectionHeader(title: 'نشاطي'),
+          _SettingTile(
+            icon: Icons.favorite_border,
+            label: 'المحامون المفضّلون',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => FavoritesScreen(repository: widget.repository),
+              ),
+            ),
+          ),
+          _SettingTile(
+            icon: Icons.notifications_active_outlined,
+            label: 'تنبيهات توفّر المواعيد',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => AvailabilityAlertsScreen(repository: widget.repository),
+              ),
+            ),
+          ),
+          _SettingTile(
+            icon: Icons.star_outline,
+            label: 'قيّم استشاراتك',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => ReviewsScreen(repository: widget.repository),
+              ),
+            ),
+          ),
+          const SizedBox(height: 22),
+        ],
+
         SectionHeader(title: 'الإعدادات'),
         // Lawyer-only: the professional profile is what clients see, so it sits at the
         // top of the settings block when the shell supplies the route.
@@ -428,6 +467,15 @@ class _AccountScreenState extends State<AccountScreen> {
           onTap: () => Navigator.of(context).push(
             MaterialPageRoute(
               builder: (_) => PrivacyScreen(repository: widget.repository),
+            ),
+          ),
+        ),
+        _SettingTile(
+          icon: Icons.notifications_none,
+          label: 'إعدادات الإشعارات',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => NotificationSettingsScreen(repository: widget.repository),
             ),
           ),
         ),

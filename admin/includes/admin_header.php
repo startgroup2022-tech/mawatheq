@@ -27,6 +27,7 @@ $adminNavGroups = [
         'consultation-attachments' => ['i' => 'file', 'ar' => 'مرفقات الاستشارات', 'en' => 'Consultation attachments', 'href' => '/admin/consultation-attachments.php'],
         'documents' => ['i' => 'file', 'ar' => 'المستندات', 'en' => 'Documents', 'href' => '/admin/documents.php'],
         'classification' => ['i' => 'scale', 'ar' => 'تصنيفات ناجز', 'en' => 'Najiz classifications', 'href' => '/admin/classification.php'],
+        'reviews' => ['i' => 'check-circle', 'ar' => 'تقييمات المحامين', 'en' => 'Lawyer reviews', 'href' => '/admin/reviews.php'],
     ]],
     ['t' => adm('المالية والتحليلات', 'Finance & insights'), 'items' => [
         'invoices' => ['i' => 'receipt', 'ar' => 'الفواتير والإيرادات', 'en' => 'Invoices & revenue', 'href' => '/admin/invoices.php'],

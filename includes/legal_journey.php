@@ -385,6 +385,23 @@ function legal_journey_filter_params(array $input): array {
     $avail = $input['available_only'] ?? ($input['available'] ?? '');
     $availableOnly = ($avail === true || $avail === 1 || $avail === '1' || $avail === 'true' || $avail === 'on');
 
+    // Execution 72 filters. Language and consultation mode are validated against their
+    // closed catalogues; an unknown value is dropped rather than passed to SQL. The date
+    // must be a real Y-m-d on/after today, so a past or malformed date cannot silently
+    // mean "any date".
+    require_once __DIR__ . '/customer_features.php';
+    $language = strtolower(trim((string)($input['language'] ?? '')));
+    if ($language !== '' && !isset(lawyer_languages_catalog()[$language])) $language = '';
+
+    $mode = trim((string)($input['mode'] ?? ''));
+    if (!isset(consultation_modes_catalog()[$mode])) $mode = '';
+
+    $date = trim((string)($input['date'] ?? ''));
+    if ($date !== '') {
+        $d = DateTime::createFromFormat('Y-m-d', $date);
+        if (!$d || $d->format('Y-m-d') !== $date || $date < date('Y-m-d')) $date = '';
+    }
+
     return [
         'category_id'    => $categoryId,
         'country'        => $country,
@@ -396,7 +413,35 @@ function legal_journey_filter_params(array $input): array {
         'jurisdiction'   => trim((string)($input['jurisdiction'] ?? '')),
         'specialization' => trim((string)($input['specialization'] ?? '')),
         'q'              => trim((string)($input['q'] ?? '')),
+        'language'       => $language,
+        'mode'           => $mode,
+        'date'           => $date,
     ];
+}
+
+/**
+ * The Execution 72 predicates (spoken language and consultation mode) as a bound SQL
+ * fragment, shared by the specialty comparison and the directory so both filter
+ * identically. Returns ['', []] when neither filter is active, so a caller can append
+ * it unconditionally.
+ *
+ * @param array<string,mixed> $f output of legal_journey_filter_params()
+ * @return array{0:string,1:array<int,string>}
+ */
+function legal_journey_extra_predicates(array $f, string $alias = 'l'): array {
+    require_once __DIR__ . '/customer_features.php';
+    $sql = '';
+    $params = [];
+    if (!empty($f['language'])) {
+        [$pred, $p] = lawyer_language_predicate($alias, (string)$f['language']);
+        if ($pred !== '') { $sql .= ' AND ' . $pred; $params = array_merge($params, $p); }
+    }
+    if (($f['mode'] ?? '') === 'remote') {
+        $sql .= " AND {$alias}.offers_remote = 1";
+    } elseif (($f['mode'] ?? '') === 'office') {
+        $sql .= " AND {$alias}.offers_in_office = 1";
+    }
+    return [$sql, $params];
 }
 
 /**
@@ -433,6 +478,7 @@ function legal_journey_lawyers_for_specialty(PDO $pdo, int $categoryId, array $o
     $ph = implode(',', array_fill(0, count($ids), '?'));
     $sql = "SELECT l.id, l.full_name, l.specialization, l.specializations, l.bio, l.years_experience,
                    l.hourly_rate, l.rating, l.photo_path, l.jurisdiction, l.country_code, l.city,
+                   l.languages, l.offers_remote, l.offers_in_office, l.office_address,
                    (SELECT MIN(a.slot_minutes) FROM lawyer_availability a WHERE a.lawyer_id = l.id) AS slot_minutes
               FROM lawyers l
              WHERE l.id IN ($ph) AND l.status = 'approved'";
@@ -461,6 +507,11 @@ function legal_journey_lawyers_for_specialty(PDO $pdo, int $categoryId, array $o
         if ($band['max'] !== null) { $sql .= ' AND l.years_experience <= ?'; $params[] = $band['max']; }
     }
 
+    // Execution 72: spoken language and consultation mode, shared with the directory.
+    [$extraSql, $extraParams] = legal_journey_extra_predicates($f, 'l');
+    $sql .= $extraSql;
+    $params = array_merge($params, $extraParams);
+
     $sql .= ' ORDER BY l.rating DESC, l.years_experience DESC, l.id';
 
     $stmt = $pdo->prepare($sql);
@@ -473,6 +524,9 @@ function legal_journey_lawyers_for_specialty(PDO $pdo, int $categoryId, array $o
         // Availability is a real filter, not a badge: when it is requested, a lawyer
         // with no open slot is removed rather than shown with an empty slot line.
         if ($f['available_only'] && (legal_journey_availability_summary($pdo, (int)$lw['id'], $today)['slot_count'] ?? 0) < 1) continue;
+        // A specific booking date is also a real filter: keep only lawyers who actually
+        // have a free slot on that day, so the date picker never shows a false positive.
+        if ($f['date'] !== '' && empty(get_available_slots($pdo, (int)$lw['id'], $f['date']))) continue;
         $out[] = legal_journey_hydrate_lawyer($pdo, $lw, $today);
     }
     return $out;
@@ -492,6 +546,7 @@ function legal_journey_lawyers_for_specialty(PDO $pdo, int $categoryId, array $o
 function legal_journey_hydrate_lawyer(PDO $pdo, array $lw, ?string $today = null): array {
     require_once __DIR__ . '/consultation_pricing.php';
     require_once __DIR__ . '/cities.php';
+    require_once __DIR__ . '/customer_features.php';
     $today = $today ?: date('Y-m-d');
 
     $lw['id'] = (int)$lw['id'];
@@ -505,6 +560,22 @@ function legal_journey_hydrate_lawyer(PDO $pdo, array $lw, ?string $today = null
     $lw['pricing'] = consultation_pricing_for_lawyer($pdo, $lw);
     $lw['price_label'] = $lw['pricing']['has_price'] ? money_text($lw['pricing']['total']) : null;
     $lw['availability'] = legal_journey_availability_summary($pdo, $lw['id'], $today);
+
+    // Execution 72 card fields: consultation modes, spoken languages and the verified
+    // rating summary. Both the website and the app render from these, so a card cannot
+    // disagree between the two clients.
+    $lw['modes'] = array_map(fn($m) => ['key' => $m['key'], 'label' => is_rtl() ? $m['label_ar'] : $m['label_en']], lawyer_consultation_modes($lw));
+    $lw['mode_chips'] = lawyer_consultation_mode_chips($lw);
+    $lw['offers_remote'] = lawyer_offers_remote($lw);
+    $lw['offers_in_office'] = lawyer_offers_office($lw);
+    $lw['office_address'] = ($lw['office_address'] ?? null) !== null && $lw['office_address'] !== '' ? (string)$lw['office_address'] : null;
+    $lw['languages'] = lawyer_languages_labels($lw['languages'] ?? null);
+    $summary = review_summary_for_lawyer($pdo, $lw['id']);
+    $lw['rating_average'] = $summary['average'];
+    $lw['rating_count'] = $summary['count'];
+    // The legacy `rating` column is kept in sync by review_recompute_lawyer_rating(); the
+    // card shows the verified average when reviews exist, otherwise the stored value.
+    if ($summary['average'] !== null) $lw['rating'] = $summary['average'];
     return $lw;
 }
 
@@ -528,6 +599,7 @@ function legal_journey_directory_search(PDO $pdo, array $opts = []): array {
 
     $sql = "SELECT l.id, l.full_name, l.specialization, l.specializations, l.bio, l.years_experience,
                    l.hourly_rate, l.rating, l.photo_path, l.jurisdiction, l.country_code, l.city,
+                   l.languages, l.offers_remote, l.offers_in_office, l.office_address,
                    (SELECT MIN(a.slot_minutes) FROM lawyer_availability a WHERE a.lawyer_id = l.id) AS slot_minutes
               FROM lawyers l
              WHERE l.status = 'approved'";
@@ -559,6 +631,12 @@ function legal_journey_directory_search(PDO $pdo, array $opts = []): array {
         if ($band['max'] !== null) { $sql .= ' AND l.years_experience <= ?'; $params[] = $band['max']; }
     }
 
+    // Execution 72: spoken language and consultation mode, shared with the specialty
+    // comparison so both surfaces filter identically.
+    [$extraSql, $extraParams] = legal_journey_extra_predicates($f, 'l');
+    $sql .= $extraSql;
+    $params = array_merge($params, $extraParams);
+
     $sql .= ' ORDER BY l.rating DESC, l.years_experience DESC, l.id LIMIT 60';
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
@@ -568,6 +646,8 @@ function legal_journey_directory_search(PDO $pdo, array $opts = []): array {
     $out = [];
     foreach ($rows as $lw) {
         if ($f['available_only'] && (legal_journey_availability_summary($pdo, (int)$lw['id'], $today)['slot_count'] ?? 0) < 1) continue;
+        // A requested booking date keeps only lawyers with a real slot that day.
+        if ($f['date'] !== '' && empty(get_available_slots($pdo, (int)$lw['id'], $f['date']))) continue;
         $out[] = legal_journey_hydrate_lawyer($pdo, $lw, $today);
     }
     return $out;
@@ -718,11 +798,25 @@ function legal_journey_filter_options(?PDO $pdo = null): array {
         $experience[] = ['key' => $b['key'], 'label' => is_rtl() ? $b['label_ar'] : $b['label_en']];
     }
 
+    // Execution 72: the language and consultation-mode choices, built from the same
+    // catalogues the search validates against, so a rendered option always matches.
+    require_once __DIR__ . '/customer_features.php';
+    $languages = [];
+    foreach (lawyer_languages_catalog() as $code => $label) {
+        $languages[] = ['key' => $code, 'label' => $label];
+    }
+    $modes = [];
+    foreach (consultation_modes_catalog() as $m) {
+        $modes[] = ['key' => $m['key'], 'label' => is_rtl() ? $m['label_ar'] : $m['label_en']];
+    }
+
     return [
         'countries'       => $countries,
         'cities'          => $cities,
         'experience'      => $experience,
         'specializations' => legal_journey_specialization_vocabulary($pdo ?? null),
+        'languages'       => $languages,
+        'modes'           => $modes,
     ];
 }
 

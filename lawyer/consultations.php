@@ -28,7 +28,19 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action'] ?? '')==='change_st
         }
         $upd = $pdo->prepare('UPDATE consultations SET status=? WHERE id=? AND ' . $scope['sql']);
         $upd->execute(array_merge([$status,$id], $scope['params']));
-        if ($upd->rowCount()) log_action($pdo,'تغيير حالة استشارة المحامي إلى '.$status,'consultation',$id);
+        if ($upd->rowCount()) {
+            log_action($pdo,'تغيير حالة استشارة المحامي إلى '.$status,'consultation',$id);
+            // Cancelling a booking frees its slot, so the customers waiting on «أبلغني عند
+            // توفّر موعد» for this lawyer are told now rather than at the next cron sweep.
+            if ($status === 'cancelled') {
+                try {
+                    require_once __DIR__ . '/../includes/customer_features.php';
+                    availability_alerts_dispatch($pdo, (int)$lawyerId);
+                } catch (Throwable $e) {
+                    error_log('availability alert on cancel: ' . $e->getMessage());
+                }
+            }
+        }
     }
     header('Location: /lawyer/consultations.php'); exit;
 }

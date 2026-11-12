@@ -424,6 +424,13 @@ class LawyerProfile {
     this.durationMinutes = 30,
     this.hasPublishedHours = false,
     this.nextSlotCount = 0,
+    this.modeChips = const <String>[],
+    this.languages = const <String>[],
+    this.officeAddress = '',
+    this.offersRemote = true,
+    this.offersInOffice = false,
+    this.ratingCount = 0,
+    this.ratingAverage,
   });
 
   final int id;
@@ -484,6 +491,28 @@ class LawyerProfile {
   /// How many open slots the server found in the coming days.
   final int nextSlotCount;
 
+  /// The consultation modes the lawyer offers, as ready-to-show Arabic labels
+  /// ("عن بُعد" / "في المكتب"). The server builds these from the lawyer's own
+  /// `offers_remote` / `offers_in_office` columns, so the app never re-derives the
+  /// vocabulary and a card cannot disagree with the website.
+  final List<String> modeChips;
+
+  /// The languages the lawyer consults in, as display labels.
+  final List<String> languages;
+
+  /// The office address, shown only when the lawyer accepts in-person visits.
+  final String officeAddress;
+
+  final bool offersRemote;
+  final bool offersInOffice;
+
+  /// Verified-rating summary. `ratingCount` is 0 for a lawyer nobody has rated yet,
+  /// so a card can say "no ratings yet" instead of showing a fake zero.
+  final int ratingCount;
+  final double? ratingAverage;
+
+  bool get hasVerifiedRating => ratingCount > 0 && (ratingAverage ?? 0) > 0;
+
   bool get hasPhoto => photoPath.isNotEmpty;
   bool get hasAvailability => nextSlotCount > 0;
 
@@ -528,6 +557,17 @@ class LawyerProfile {
       durationMinutes: j.intg('duration_minutes', fallback: 30),
       hasPublishedHours: av.boolean('has_published_hours'),
       nextSlotCount: av.intg('slot_count', fallback: j.intg('slot_count')),
+      modeChips: (map['mode_chips'] is List)
+          ? (map['mode_chips'] as List).whereType<String>().toList()
+          : const <String>[],
+      languages: (map['languages'] is List)
+          ? (map['languages'] as List).whereType<String>().toList()
+          : const <String>[],
+      officeAddress: j.str('office_address'),
+      offersRemote: map['offers_remote'] is bool ? map['offers_remote'] as bool : j.boolean('offers_remote', fallback: true),
+      offersInOffice: j.boolean('offers_in_office'),
+      ratingCount: j.intg('rating_count'),
+      ratingAverage: map['rating_average'] == null ? null : j.dbl('rating_average'),
     );
   }
 }
@@ -987,6 +1027,8 @@ class JourneyFilterOptions {
     this.cities = const {},
     this.experience = const [],
     this.specializations = const [],
+    this.languages = const [],
+    this.modes = const [],
   });
 
   final List<JourneyFilterCountry> countries;
@@ -999,6 +1041,13 @@ class JourneyFilterOptions {
   /// The specialization vocabulary the lawyer records use, so the filter offers
   /// exactly the values a stored lawyer can match.
   final List<String> specializations;
+
+  /// Spoken-language choices (`key` + display label) built from the same catalogue the
+  /// server validates against, so a rendered option is never one the backend rejects.
+  final List<JourneyFilterBand> languages;
+
+  /// Consultation-mode choices (`remote` / `office`) with their labels.
+  final List<JourneyFilterBand> modes;
 
   factory JourneyFilterOptions.fromJson(Map<String, dynamic> map) {
     final j = Json(map);
@@ -1018,6 +1067,8 @@ class JourneyFilterOptions {
       specializations: (map['specializations'] is List)
           ? (map['specializations'] as List).whereType<String>().toList()
           : const [],
+      languages: j.list('languages').map((e) => JourneyFilterBand.fromJson(e.asMap)).toList(),
+      modes: j.list('modes').map((e) => JourneyFilterBand.fromJson(e.asMap)).toList(),
     );
   }
 }
@@ -1056,6 +1107,8 @@ class JourneyFilters {
     this.maxFee = '',
     this.availableOnly = false,
     this.query = '',
+    this.language = '',
+    this.mode = '',
   });
 
   final String specialization;
@@ -1067,6 +1120,10 @@ class JourneyFilters {
   final bool availableOnly;
   final String query;
 
+  /// Spoken language (`ar` / `en`) and consultation mode (`remote` / `office`).
+  final String language;
+  final String mode;
+
   bool get isEmpty =>
       specialization.isEmpty &&
       country.isEmpty &&
@@ -1075,7 +1132,9 @@ class JourneyFilters {
       minFee.isEmpty &&
       maxFee.isEmpty &&
       !availableOnly &&
-      query.isEmpty;
+      query.isEmpty &&
+      language.isEmpty &&
+      mode.isEmpty;
 
   JourneyFilters copyWith({
     String? specialization,
@@ -1086,6 +1145,8 @@ class JourneyFilters {
     String? maxFee,
     bool? availableOnly,
     String? query,
+    String? language,
+    String? mode,
   }) {
     return JourneyFilters(
       specialization: specialization ?? this.specialization,
@@ -1096,6 +1157,8 @@ class JourneyFilters {
       maxFee: maxFee ?? this.maxFee,
       availableOnly: availableOnly ?? this.availableOnly,
       query: query ?? this.query,
+      language: language ?? this.language,
+      mode: mode ?? this.mode,
     );
   }
 
@@ -1108,7 +1171,180 @@ class JourneyFilters {
         if (maxFee.isNotEmpty) 'max_fee': maxFee,
         if (availableOnly) 'available_only': '1',
         if (query.isNotEmpty) 'q': query,
+        if (language.isNotEmpty) 'language': language,
+        if (mode.isNotEmpty) 'mode': mode,
       };
+}
+
+/// One "notify me when a slot opens" subscription, from
+/// `GET /api/v1/availability-alerts.php`.
+class AvailabilityAlert {
+  const AvailabilityAlert({
+    required this.id,
+    required this.lawyerId,
+    this.lawyerName = '',
+    this.status = 'active',
+    this.createdAt = '',
+    this.notifiedAt = '',
+  });
+
+  final int id;
+  final int lawyerId;
+  final String lawyerName;
+  final String status;
+  final String createdAt;
+  final String notifiedAt;
+
+  bool get isActive => status == 'active';
+
+  factory AvailabilityAlert.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return AvailabilityAlert(
+      id: j.intg('id'),
+      lawyerId: j.intg('lawyer_id'),
+      lawyerName: j.str('lawyer_name'),
+      status: j.str('status', fallback: 'active'),
+      createdAt: j.str('created_at'),
+      notifiedAt: j.str('notified_at'),
+    );
+  }
+}
+
+/// The public rating summary + reviews for one lawyer, from
+/// `GET /api/v1/lawyer-reviews.php?lawyer_id=N`.
+class LawyerReviewSummary {
+  const LawyerReviewSummary({
+    this.average,
+    this.count = 0,
+    this.distribution = const <int, int>{},
+    this.reviews = const <LawyerReview>[],
+  });
+
+  final double? average;
+  final int count;
+  final Map<int, int> distribution;
+  final List<LawyerReview> reviews;
+
+  bool get hasReviews => count > 0;
+
+  factory LawyerReviewSummary.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    final summary = j.object('summary') ?? const Json(<String, dynamic>{});
+    final dist = <int, int>{};
+    final rawDist = summary.raw['distribution'];
+    if (rawDist is Map) {
+      rawDist.forEach((k, v) {
+        final star = int.tryParse('$k');
+        if (star != null && v is num) dist[star] = v.toInt();
+      });
+    }
+    return LawyerReviewSummary(
+      average: summary.raw['average'] == null ? null : summary.dbl('average'),
+      count: summary.intg('count'),
+      distribution: dist,
+      reviews: j.list('reviews').map((e) => LawyerReview.fromJson(e.asMap)).toList(),
+    );
+  }
+}
+
+/// One published review. Only the reviewer's first name is ever sent by the server.
+class LawyerReview {
+  const LawyerReview({
+    required this.id,
+    required this.rating,
+    this.comment = '',
+    this.displayName = '',
+    this.createdAt = '',
+  });
+
+  final int id;
+  final int rating;
+  final String comment;
+  final String displayName;
+  final String createdAt;
+
+  factory LawyerReview.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return LawyerReview(
+      id: j.intg('id'),
+      rating: j.intg('rating'),
+      comment: j.str('comment'),
+      displayName: j.str('display_name', fallback: j.str('client_name')),
+      createdAt: j.str('created_at'),
+    );
+  }
+}
+
+/// A completed consultation the client has not yet rated, from
+/// `GET /api/v1/lawyer-reviews.php?reviewable=1`.
+class ReviewableConsultation {
+  const ReviewableConsultation({
+    required this.id,
+    required this.lawyerId,
+    this.lawyerName = '',
+    this.topic = '',
+    this.scheduledAt = '',
+    this.photoPath = '',
+  });
+
+  final int id;
+  final int lawyerId;
+  final String lawyerName;
+  final String topic;
+  final String scheduledAt;
+  final String photoPath;
+
+  factory ReviewableConsultation.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return ReviewableConsultation(
+      id: j.intg('id'),
+      lawyerId: j.intg('lawyer_id'),
+      lawyerName: j.str('lawyer_name'),
+      topic: j.str('topic'),
+      scheduledAt: j.str('scheduled_at'),
+      photoPath: j.str('photo_path'),
+    );
+  }
+}
+
+/// One notification channel and its state, from
+/// `GET /api/v1/notification-preferences.php`. `locked` marks a channel the customer
+/// cannot turn off (the in-app bell), so the UI disables it rather than pretending.
+class NotificationChannel {
+  const NotificationChannel({
+    required this.key,
+    required this.enabled,
+    this.locked = false,
+    this.labelAr = '',
+    this.labelEn = '',
+    this.descriptionAr = '',
+    this.descriptionEn = '',
+  });
+
+  final String key;
+  final bool enabled;
+  final bool locked;
+  final String labelAr;
+  final String labelEn;
+  final String descriptionAr;
+  final String descriptionEn;
+
+  String label({bool rtl = true}) => rtl ? (labelAr.isNotEmpty ? labelAr : labelEn) : labelEn;
+  String description({bool rtl = true}) =>
+      rtl ? (descriptionAr.isNotEmpty ? descriptionAr : descriptionEn) : descriptionEn;
+
+  factory NotificationChannel.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return NotificationChannel(
+      key: j.str('key'),
+      enabled: j.boolean('enabled'),
+      locked: j.boolean('locked'),
+      labelAr: j.str('label_ar'),
+      labelEn: j.str('label_en'),
+      descriptionAr: j.str('description_ar'),
+      descriptionEn: j.str('description_en'),
+    );
+  }
 }
 
 /// One recording or document staged against a draft token, from

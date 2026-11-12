@@ -12,6 +12,7 @@ require_once __DIR__ . '/includes/specialization_field.php';
 require_once __DIR__ . '/includes/consultation_payment.php';
 require_once __DIR__ . '/includes/booking_slots.php';
 require_once __DIR__ . '/includes/consultation_pricing.php';
+require_once __DIR__ . '/includes/customer_features.php';
 
 // A paid booking redirects to the gateway, and a redirect must happen before the shell
 // prints anything (there is no output buffering, so a later header() is dropped — see the
@@ -118,6 +119,13 @@ $paymentStarted = false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $type = in_array($_POST['consultation_type'] ?? '', ['text', 'voice', 'video'], true) ? $_POST['consultation_type'] : 'text';
+    // The consultation mode (remote vs in-office). Validated against the lawyer's own
+    // offered modes: a crafted POST cannot pick a mode the lawyer does not offer, and a
+    // lawyer who only offers remote keeps remote. NULL is stored when unspecified, which
+    // the UI reads back as remote (the previous behaviour).
+    $mode = in_array($_POST['consultation_mode'] ?? '', ['remote', 'office'], true) ? (string)$_POST['consultation_mode'] : null;
+    if ($mode === 'office' && !lawyer_offers_office($lawyer)) $mode = 'remote';
+    if ($mode === 'remote' && !lawyer_offers_remote($lawyer)) $mode = null;
     $date = (string)($_POST['date'] ?? '');
     $time = (string)($_POST['time'] ?? '');
     $topic = trim((string)($_POST['topic'] ?? ''));
@@ -162,13 +170,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // The insert is handed to booking_create_locked(), which re-checks the slot while
         // holding the (lawyer, slot) lock, so two simultaneous requests cannot both take the
         // same time. Nothing between the check and the INSERT can interleave.
-        $insertFn = function () use ($pdo, $lawyerId, $firmId, $type, $scheduledAt, $topic, $payable, $durationMinutes, $najizTypeId, $specialtyCategoryId, $specialtyCol) {
+        $insertFn = function () use ($pdo, $lawyerId, $firmId, $type, $mode, $scheduledAt, $topic, $payable, $durationMinutes, $najizTypeId, $specialtyCategoryId, $specialtyCol) {
             if ($specialtyCol) {
-                $pdo->prepare('INSERT INTO consultations (user_id, lawyer_id, firm_id, consultation_type, scheduled_at, duration_minutes, topic, price, najiz_case_type_id, specialty_category_id) VALUES (?,?,?,?,?,?,?,?,?,?)')
-                    ->execute([$_SESSION['user_id'], $lawyerId, $firmId, $type, $scheduledAt, $durationMinutes, $topic, $payable, $najizTypeId, $specialtyCategoryId]);
+                $pdo->prepare('INSERT INTO consultations (user_id, lawyer_id, firm_id, consultation_type, consultation_mode, scheduled_at, duration_minutes, topic, price, najiz_case_type_id, specialty_category_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+                    ->execute([$_SESSION['user_id'], $lawyerId, $firmId, $type, $mode, $scheduledAt, $durationMinutes, $topic, $payable, $najizTypeId, $specialtyCategoryId]);
             } else {
-                $pdo->prepare('INSERT INTO consultations (user_id, lawyer_id, firm_id, consultation_type, scheduled_at, duration_minutes, topic, price, najiz_case_type_id) VALUES (?,?,?,?,?,?,?,?,?)')
-                    ->execute([$_SESSION['user_id'], $lawyerId, $firmId, $type, $scheduledAt, $durationMinutes, $topic, $payable, $najizTypeId]);
+                $pdo->prepare('INSERT INTO consultations (user_id, lawyer_id, firm_id, consultation_type, consultation_mode, scheduled_at, duration_minutes, topic, price, najiz_case_type_id) VALUES (?,?,?,?,?,?,?,?,?,?)')
+                    ->execute([$_SESSION['user_id'], $lawyerId, $firmId, $type, $mode, $scheduledAt, $durationMinutes, $topic, $payable, $najizTypeId]);
             }
             return (int)$pdo->lastInsertId();
         };
@@ -211,7 +219,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 log_action($pdo, 'حجز استشارة مع ' . $claimed . ' مرفق', 'consultation', $consultationId);
             }
 
-            notify($pdo, 'lawyer', $lawyerId, is_rtl() ? 'طلب حجز استشارة جديد' : 'New consultation request', ($topic ?: '') . ' — ' . $scheduledAt, '/lawyer/consultations.php');
+            // Preference-gated dispatch: the lawyer's in-app bell always fires; email and
+            // push fire only when the lawyer allowed them. A booking request is
+            // transactional, so this uses the normal preferences (not force) — a lawyer who
+            // muted email still sees the request in the bell.
+            $lwMail = $pdo->prepare('SELECT email FROM lawyers WHERE id=?');
+            $lwMail->execute([$lawyerId]);
+            notification_dispatch(
+                $pdo, 'lawyer', $lawyerId,
+                is_rtl() ? 'طلب حجز استشارة جديد' : 'New consultation request',
+                ($topic ?: '') . ' — ' . $scheduledAt,
+                '/lawyer/consultations.php',
+                ['email' => true, 'email_to' => (string)$lwMail->fetchColumn()]
+            );
             require_once __DIR__ . '/includes/integrations.php';
             integration_emit_for_lawyer($pdo, $lawyerId, 'consultation.booked', [
                 'consultation_id' => $consultationId, 'lawyer_id' => (int)$lawyerId,
@@ -370,6 +390,27 @@ $typeLabels = is_rtl()
               <?php endforeach; ?>
             </div>
           </section>
+
+          <?php /* ---- Step 2b: consultation mode (remote vs office) ---- */ ?>
+          <?php $modes = lawyer_consultation_modes($lawyer); if (count($modes) > 1): ?>
+            <section class="dash-card">
+              <h3 class="bk-summary__title"><?= is_rtl() ? 'طريقة الاستشارة' : 'Consultation mode' ?></h3>
+              <div class="bk-types">
+                <?php foreach ($modes as $m): ?>
+                  <label class="bk-type">
+                    <input type="radio" name="consultation_mode" value="<?= htmlspecialchars($m['key']) ?>" <?= $m['key'] === 'remote' ? 'checked' : '' ?>>
+                    <span class="bk-type__ico"><?= $m['key'] === 'office' ? '🏢' : '💻' ?></span>
+                    <span class="bk-type__name"><?= htmlspecialchars(is_rtl() ? $m['label_ar'] : $m['label_en']) ?></span>
+                    <span class="bk-type__hint"><?= $m['key'] === 'office'
+                      ? htmlspecialchars($lawyer['office_address'] ?? '' ?: (is_rtl() ? 'يُحدَّد العنوان عند التأكيد' : 'Address confirmed on booking'))
+                      : (is_rtl() ? 'جلسة مرئية/صوتية عبر المنصة' : 'Video/voice on the platform') ?></span>
+                  </label>
+                <?php endforeach; ?>
+              </div>
+            </section>
+          <?php else: ?>
+            <input type="hidden" name="consultation_mode" value="remote">
+          <?php endif; ?>
 
           <?php /* ---- Step 3: date & time ---- */ ?>
           <section class="dash-card">

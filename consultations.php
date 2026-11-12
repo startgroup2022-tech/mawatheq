@@ -19,6 +19,7 @@ require_once __DIR__ . '/includes/journey_ui.php';
 require_once __DIR__ . '/includes/currency.php';
 require_once __DIR__ . '/includes/consultation_payment.php';
 require_once __DIR__ . '/includes/specialization_field.php';
+require_once __DIR__ . '/includes/customer_features.php';
 
 $rtl = is_rtl();
 
@@ -29,8 +30,11 @@ $resultCount = count($lawyers);
 $filtersActive = $filters['jurisdiction'] !== '' || $filters['specialization'] !== ''
     || $filters['country'] !== '' || $filters['city'] !== ''
     || $filters['experience'] !== '' || $filters['min_fee'] !== null
-    || $filters['max_fee'] !== null || $filters['available_only'] || $filters['q'] !== '';
+    || $filters['max_fee'] !== null || $filters['available_only'] || $filters['q'] !== ''
+    || $filters['language'] !== '' || $filters['mode'] !== '' || $filters['date'] !== '';
 $filterOptions = legal_journey_filter_options($pdo);
+// The customer's saved lawyers, so each card can paint its heart without a query per row.
+$favoriteIds = array_fill_keys(favorite_ids_for_client($pdo, (int)$_SESSION['user_id']), true);
 
 $myBookings = $pdo->prepare("SELECT c.*, l.full_name AS lawyer_name FROM consultations c JOIN lawyers l ON l.id=c.lawyer_id WHERE c.user_id=? ORDER BY c.scheduled_at DESC");
 $myBookings->execute([$_SESSION['user_id']]);
@@ -137,6 +141,31 @@ $extraPageAssets = ['<link rel="stylesheet" href="/assets/css/journey.css">'];
       <input type="number" step="<?= currency_step() ?>" min="0" id="max_fee" name="max_fee" value="<?= $filters['max_fee'] !== null ? htmlspecialchars((string)$filters['max_fee']) : '' ?>" class="ltr">
     </div>
 
+    <div class="field">
+      <label for="f_language"><?= is_rtl() ? 'لغة الاستشارة' : 'Consultation language' ?></label>
+      <div class="select-wrap"><select id="f_language" name="language" class="pro-select">
+        <option value=""><?= is_rtl() ? 'أي لغة' : 'Any language' ?></option>
+        <?php foreach ($filterOptions['languages'] as $lang): ?>
+          <option value="<?= htmlspecialchars($lang['key']) ?>" <?= $filters['language'] === $lang['key'] ? 'selected' : '' ?>><?= htmlspecialchars($lang['label']) ?></option>
+        <?php endforeach; ?>
+      </select></div>
+    </div>
+
+    <div class="field">
+      <label for="f_mode"><?= is_rtl() ? 'طريقة الاستشارة' : 'Consultation mode' ?></label>
+      <div class="select-wrap"><select id="f_mode" name="mode" class="pro-select">
+        <option value=""><?= is_rtl() ? 'الكل' : 'Any' ?></option>
+        <?php foreach ($filterOptions['modes'] as $mode): ?>
+          <option value="<?= htmlspecialchars($mode['key']) ?>" <?= $filters['mode'] === $mode['key'] ? 'selected' : '' ?>><?= htmlspecialchars($mode['label']) ?></option>
+        <?php endforeach; ?>
+      </select></div>
+    </div>
+
+    <div class="field">
+      <label for="f_date"><?= is_rtl() ? 'متاح في تاريخ' : 'Available on date' ?></label>
+      <input type="date" id="f_date" name="date" class="ltr" min="<?= date('Y-m-d') ?>" value="<?= htmlspecialchars($filters['date']) ?>">
+    </div>
+
     <div class="field" style="align-self:end">
       <label class="check-row" for="f_available" style="display:flex;align-items:center;gap:8px;min-height:44px">
         <input type="checkbox" id="f_available" name="available_only" value="1" <?= $filters['available_only'] ? 'checked' : '' ?>>
@@ -167,54 +196,8 @@ $extraPageAssets = ['<link rel="stylesheet" href="/assets/css/journey.css">'];
     </div>
   <?php else: ?>
     <div class="compare-grid">
-      <?php foreach ($lawyers as $lw): $av = $lw['availability']; ?>
-        <div class="compare-card">
-          <div class="compare-head">
-            <img src="<?= journey_avatar($lw['photo_path']) ?>" alt="<?= htmlspecialchars($lw['full_name']) ?>" onerror="this.src='/assets/img/avatar-placeholder.svg'">
-            <div class="who">
-              <strong><?= htmlspecialchars($lw['full_name']) ?></strong>
-              <div class="sub">
-                <?php $lwSpec = lawyer_specialization_display($lw); if ($lwSpec !== ''): ?><?= htmlspecialchars($lwSpec) ?> · <?php endif; ?>
-                <?= (int)$lw['years_experience'] ?> <?= is_rtl() ? 'سنة خبرة' : 'yrs experience' ?>
-              </div>
-              <?php if (!empty($lw['location'])): ?>
-                <div class="sub loc"><span aria-hidden="true">📍</span> <?= htmlspecialchars($lw['location']) ?></div>
-              <?php endif; ?>
-            </div>
-          </div>
-
-          <div class="compare-facts">
-            <div class="fact">
-              <div class="k"><?= is_rtl() ? 'سعر الاستشارة' : 'Consultation price' ?></div>
-              <div class="v ltr"><?php
-                if (!empty($lw['pricing']['has_price'])) echo htmlspecialchars(money_text($lw['pricing']['total']));
-                else echo is_rtl() ? 'حسب الاتفاق' : 'On request';
-              ?></div>
-            </div>
-            <div class="fact">
-              <div class="k"><?= is_rtl() ? 'المدة' : 'Duration' ?></div>
-              <div class="v ltr"><?= (int)($lw['duration_minutes'] ?? 30) ?> <?= is_rtl() ? 'دقيقة' : 'min' ?></div>
-            </div>
-          </div>
-
-          <div class="avail-line">
-            <?php if (!$av['has_published_hours']): ?>
-              <span class="avail-chip none"><?= is_rtl() ? 'لم يحدد أوقات دوام — سيؤكد الموعد' : 'No published hours — will confirm' ?></span>
-            <?php elseif (empty($av['next_slots'])): ?>
-              <span class="avail-chip none"><?= is_rtl() ? 'لا توجد أوقات متاحة قريبًا' : 'No slots open soon' ?></span>
-            <?php else: ?>
-              <span><?= is_rtl() ? 'أقرب الأوقات:' : 'Next available:' ?></span>
-              <?php foreach ($av['next_slots'] as $slot): ?>
-                <span class="avail-chip ltr"><?= htmlspecialchars($slot['date']) ?> <?= htmlspecialchars($slot['time']) ?></span>
-              <?php endforeach; ?>
-            <?php endif; ?>
-          </div>
-
-          <div class="compare-actions">
-            <a href="/lawyer-profile.php?id=<?= (int)$lw['id'] ?>" class="btn btn-outline" style="flex:1"><?= is_rtl() ? 'عرض الملف' : 'View profile' ?></a>
-            <a href="/booking.php?lawyer_id=<?= (int)$lw['id'] ?>" class="btn btn-primary" style="flex:1"><?= is_rtl() ? 'حجز استشارة' : 'Book consultation' ?></a>
-          </div>
-        </div>
+      <?php foreach ($lawyers as $lw): ?>
+        <?= journey_lawyer_card($lw, $favoriteIds) ?>
       <?php endforeach; ?>
     </div>
   <?php endif; ?>

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/auth_controller.dart';
 import '../../core/guest_session.dart';
 import '../../core/locale_controller.dart';
 import '../../core/network/api_exception.dart';
@@ -10,6 +11,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../shared/widgets/auth_gate.dart';
 import '../../shared/widgets/brand_widgets.dart';
+import '../../shared/widgets/lawyer_card.dart';
 import '../assistant/assistant_screen.dart';
 import '../consultations/journey_screen.dart';
 import 'public_info_screen.dart';
@@ -52,11 +54,72 @@ class _PublicLawyersScreenState extends State<PublicLawyersScreen> {
   JourneyFilters _filters = const JourneyFilters();
   JourneyFilterOptions _filterOptions = const JourneyFilterOptions();
 
+  /// The client's saved lawyer ids, so a heart is filled on the right cards. Empty
+  /// for a guest, who has no favorites and sees no heart at all.
+  Set<int> _favoriteIds = const {};
+
   @override
   void initState() {
     super.initState();
     _loadFilterOptions();
     _load();
+    _loadFavorites();
+  }
+
+  Future<void> _loadFavorites() async {
+    // Tolerant read: a widget test mounts this screen without an AuthController.
+    // No provider means "not signed in", so the heart is simply absent.
+    final auth = context.read<AuthController?>();
+    if (auth == null || !auth.isSignedIn) return;
+    try {
+      final ids = await _repo.favoriteIds();
+      if (!mounted) return;
+      setState(() => _favoriteIds = ids);
+    } on ApiException {
+      // Favorites are a convenience layer; a failure must not break the directory.
+    }
+  }
+
+  Future<void> _toggleFavorite(LawyerProfile lawyer) async {
+    final auth = context.read<AuthController?>();
+    if (auth == null || !auth.isSignedIn) {
+      await requireAccount(
+        context,
+        ProtectedDestination.consultations,
+        message: context.read<LocaleController>().isRtl
+            ? 'أنشئ حساباً لحفظ المحامين في مفضّلتك.'
+            : 'Create an account to save lawyers to your favorites.',
+      );
+      return;
+    }
+    final wasFavorite = _favoriteIds.contains(lawyer.id);
+    // Optimistic flip, restored on failure so the heart never disagrees with the server.
+    setState(() {
+      final next = Set<int>.from(_favoriteIds);
+      if (wasFavorite) {
+        next.remove(lawyer.id);
+      } else {
+        next.add(lawyer.id);
+      }
+      _favoriteIds = next;
+    });
+    try {
+      await _repo.toggleFavorite(lawyer.id, action: wasFavorite ? 'remove' : 'add');
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        final next = Set<int>.from(_favoriteIds);
+        if (wasFavorite) {
+          next.add(lawyer.id);
+        } else {
+          next.remove(lawyer.id);
+        }
+        _favoriteIds = next;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذّر تحديث المفضّلة. حاول مرة أخرى.')),
+      );
+    }
   }
 
   Future<void> _loadFilterOptions() async {
@@ -222,8 +285,13 @@ class _PublicLawyersScreenState extends State<PublicLawyersScreen> {
                   ),
                   const SizedBox(height: 10),
                   for (final lawyer in visible) ...[
-                    _LawyerCard(
-                        lawyer: lawyer, rtl: rtl, onBook: () => _book(lawyer)),
+                    LawyerCard(
+                      lawyer: lawyer,
+                      rtl: rtl,
+                      isFavorite: _favoriteIds.contains(lawyer.id),
+                      onToggleFavorite: () => _toggleFavorite(lawyer),
+                      onBook: () => _book(lawyer),
+                    ),
                     const SizedBox(height: 10),
                   ],
                 ],
@@ -259,110 +327,6 @@ class _PublicLawyersScreenState extends State<PublicLawyersScreen> {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => const PublicInfoScreen(section: InfoSection.contact),
-      ),
-    );
-  }
-}
-
-class _LawyerCard extends StatelessWidget {
-  const _LawyerCard({
-    required this.lawyer,
-    required this.rtl,
-    required this.onBook,
-  });
-
-  final LawyerProfile lawyer;
-  final bool rtl;
-  final VoidCallback onBook;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: context.tokens.surface,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: context.tokens.border),
-        boxShadow: AppShadow.xs,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const CircleAvatar(
-                radius: 24,
-                backgroundColor: AppColors.navy,
-                child: Icon(Icons.person, color: Colors.white),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      lawyer.name,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: context.tokens.heading,
-                        fontSize: 15,
-                      ),
-                    ),
-                    if (lawyer.specializationLabel.isNotEmpty) ...[
-                      const SizedBox(height: 3),
-                      Text(
-                        lawyer.specializationLabel,
-                        style: TextStyle(
-                            color: context.tokens.textMuted, fontSize: 13),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              if (lawyer.jurisdiction.isNotEmpty) ...[
-                Icon(Icons.place_outlined,
-                    size: 15, color: context.tokens.textSubtle),
-                const SizedBox(width: 4),
-                Flexible(
-                  child: Text(
-                    lawyer.jurisdiction,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        color: context.tokens.textSubtle, fontSize: 12),
-                  ),
-                ),
-                const SizedBox(width: 12),
-              ],
-              // The consultation price the backend charges, with its length. Never
-              // "/hr": the amount is flat for the booked consultation, so an hourly
-              // label would overstate what the customer actually pays.
-              if (lawyer.feeDisplay.isNotEmpty) ...[
-                Icon(Icons.payments_outlined,
-                    size: 15, color: context.tokens.textSubtle),
-                const SizedBox(width: 4),
-                Text(
-                  rtl
-                      ? '${lawyer.feeDisplay} / ${lawyer.durationMinutes} دقيقة'
-                      : '${lawyer.feeDisplay} / ${lawyer.durationMinutes} min',
-                  style: TextStyle(
-                      color: context.tokens.textSubtle, fontSize: 12),
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 12),
-          SecondaryButton(
-            label: rtl ? 'احجز استشارة' : 'Book a consultation',
-            icon: Icons.event_available_outlined,
-            expand: true,
-            onPressed: onBook,
-          ),
-        ],
       ),
     );
   }

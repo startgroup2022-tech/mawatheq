@@ -145,17 +145,8 @@ if ($method === 'GET') {
             break;
 
         case 'settings':
-            $prefs = ['in_app' => true, 'email' => true];
-            try {
-                $stmt = $pdo->prepare("SELECT channel, enabled FROM notification_preferences
-                    WHERE subject_type='lawyer' AND subject_id=? AND event_key='all'");
-                $stmt->execute([$lawyerId]);
-                foreach ($stmt->fetchAll() as $p) {
-                    $prefs[(string)$p['channel']] = ((int)$p['enabled'] === 1);
-                }
-            } catch (Throwable $e) {
-                // Defaults stand.
-            }
+            require_once __DIR__ . '/../../includes/customer_features.php';
+            $prefs = notification_preferences_for($pdo, 'lawyer', $lawyerId);
             $profileVisible = true;
             try {
                 $stmt = $pdo->prepare("SELECT granted FROM privacy_consents
@@ -181,6 +172,8 @@ if ($method === 'GET') {
                 'settings' => [
                     'notify_in_app' => $prefs['in_app'],
                     'notify_email' => $prefs['email'],
+                    'notify_push' => $prefs['push'] ?? true,
+                    'channels' => notification_preferences_payload($pdo, 'lawyer', $lawyerId),
                     'profile_visible' => $profileVisible,
                     'active_sessions' => $sessions,
                 ],
@@ -321,18 +314,10 @@ switch ($action) {
     }
 
     case 'save-settings': {
-        $inApp = !empty($in['in_app']);
-        $email = !empty($in['email']);
-        try {
-            $stmt = $pdo->prepare("INSERT INTO notification_preferences
-                (subject_type, subject_id, channel, event_key, enabled)
-                VALUES ('lawyer', ?, ?, 'all', ?)
-                ON DUPLICATE KEY UPDATE enabled=VALUES(enabled)");
-            $stmt->execute([$lawyerId, 'in_app', $inApp ? 1 : 0]);
-            $stmt->execute([$lawyerId, 'email', $email ? 1 : 0]);
-        } catch (Throwable $e) {
-            api_error('could not save notification preferences', 500);
-        }
+        require_once __DIR__ . '/../../includes/customer_features.php';
+        if (array_key_exists('in_app', $in)) notification_preference_set($pdo, 'lawyer', $lawyerId, 'in_app', !empty($in['in_app']));
+        if (array_key_exists('email', $in))  notification_preference_set($pdo, 'lawyer', $lawyerId, 'email', !empty($in['email']));
+        if (array_key_exists('push', $in))   notification_preference_set($pdo, 'lawyer', $lawyerId, 'push', !empty($in['push']));
         if (array_key_exists('profile_visible', $in)) {
             $granted = !empty($in['profile_visible']);
             try {
