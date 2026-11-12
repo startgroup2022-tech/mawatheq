@@ -3979,3 +3979,54 @@ required), not a fix.
   points the gateway at a fixture and enables it. A test that assumes the deployment default must
   set it, not inherit it.
 - Full PHP suite: 55/55 suites green. Playwright: 780 passed / 12 skipped / 0 failed.
+
+## Execution 69 — multiple legal specializations, and lawyer panel readiness
+
+### One column added, two readers kept
+
+`lawyers.specializations` (v74, folded into `schema.sql`) stores a lawyer's chosen areas joined by
+`" - "` in the canonical order of `specialization_options()`. The legacy `lawyers.specialization`
+column is **kept** and always holds the *first* value, so every older reader (and every row written
+before v74) still works and stays discoverable in the customer journey. Read a row through
+`lawyer_specialization_list()` (new column first, legacy fallback) and display it through
+`lawyer_specialization_display()` (joins with `·`). Never read `specialization` directly in new
+code — a multi-area lawyer would appear under only one of their areas.
+
+- Normalisation is `specialization_normalize_list()`: accepts an array **or** a legacy joined
+  string, dedupes, drops anything not in `specialization_options()`, and returns canonical order.
+  An unknown-only submission is refused before any row is written — silence, never a guess.
+- The multi-select is `render_specialization_checklist()`: searchable chips whose real control is a
+  checkbox (`name="specializations[]"`), so the form submits without JavaScript. The filter script
+  only hides non-matching chips; it never touches checked state.
+- Directory search matches a whole token inside the multi-value column
+  (`CONCAT(' - ', l.specializations, ' - ') LIKE CONCAT('% - ', ?, ' - %')`), so a filter never
+  returns a lawyer for a substring of another value.
+- REST is backward compatible: `lawyer-login`, `me.php` and `lawyer-profile.php` return the
+  `specializations` **array** *alongside* the legacy single `specialization`.
+
+### Lawyer panel readiness is one predicate both surfaces read
+
+`includes/lawyer_readiness.php` (`lawyer_panel_readiness()`) answers "can this lawyer actually be
+booked?". **Required** signals block it — a declared area, a price (`hourly_rate > 0`) and
+published working hours (`lawyer_availability`). **Recommended** signals only move the percentage —
+photo, bio, experience, qualifications, linked specialties, social. Account `status='approved'` is
+reported *separately* (`account_approved`), because it is a moderation decision, not a field the
+lawyer completes.
+
+- The lawyer dashboard shows the readiness card and a "not ready" attention row naming the missing
+  required fields; the profile page repeats the card where the lawyer fixes the gaps; the admin
+  lawyers list shows a Ready/Incomplete pill.
+- The admin list batches its counts (`lawyer_readiness_counts()`) in one pass — do not add a
+  per-row query to a list page.
+
+### Flutter failures here are environmental, not regressions
+
+`flutter test` reports 10 failures, and **every one** carries the same framework signature: "An
+animation is still running even after the widget tree was disposed", raised from
+`_SystemFontsNotifier.notifyListeners` in `packages/flutter/lib/src/painting/binding.dart`. The
+environment's SDK is **Flutter 3.50.0** while the project was verified on **3.47.7**, so the
+framework changed when it notifies system-font listeners after disposal. Confirm before blaming the
+app: the grep for any *other* exception type in the run must return nothing, and none of the failing
+files may be one you touched. Also note a fresh checkout may need `flutter pub get` first — without
+it `context.watch` fails to resolve (a `provider` package missing from the pub cache) and the whole
+suite fails to compile, which looks nothing like the real result.
