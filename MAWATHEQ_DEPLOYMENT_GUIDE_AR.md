@@ -818,6 +818,7 @@ php cron/ngenius-reconcile.php
 - [ ] **`upgrade_v71.sql` — جداول مركز الدعم والموافقات** — بدونه `admin/support-*.php` و`api/v1/support.php` تعطي 500
 - [ ] **`upgrade_v72.sql` — جدول `gateway_diagnostics`** — بدونه تُعطَّل أداة تشخيص الدفع (تعمل الدفعات كما هي، لكن دون رقم مرجعي أو سجلّ)
 - [ ] **`upgrade_v73.sql` — `invoices.consultation_id`** — بدونه يُدفَع ثمن الاستشارة ويُؤكَّد الموعد دون إصدار فاتورة للعميل
+- [ ] **`upgrade_v74.sql` — `lawyers.specializations`** — بدونه لا يُخزَّن اختيار المحامي لأكثر من تخصص عند التسجيل (تظهر الخيارات لكن يُحفظ الأول فقط)
 - [ ] بعد الترحيل: اضبط قنوات الدعم من `admin/support-settings.php` وأنشئ فئات التذاكر ومواعيد الدعم
 - [ ] بعد الترحيل: افحص البوابة من `/admin/ngenius-test.php` (فحص مرحلي) وراجع السجل من `/admin/gateways.php`
 - [ ] `php database/repair/02_migration_ledger.php` ينتهي بـ `0`
