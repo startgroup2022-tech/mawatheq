@@ -125,13 +125,13 @@ printf '  removed %s root-level .md file(s) from the site package\n' "$removed_d
     || fail "database/upgrade_v56.sql is missing from the migration package"
 [ -f "$STAGE/migrations/database/upgrade_v57.sql" ] \
     || fail "database/upgrade_v57.sql is missing from the migration package"
-# upgrade_v74.sql is the last migration in the chain. It adds lawyers.specializations
-# (Execution 69): a lawyer may declare more than one area of law. A package that stops
-# earlier still runs — the multi-select is simply not persisted — but the feature is not
-# usable. Assert the current head, not a remembered one — this assertion moves with each
-# execution, and a stale expectation fails the next build for the wrong reason.
-[ -f "$STAGE/migrations/database/upgrade_v74.sql" ] \
-    || fail "database/upgrade_v74.sql is missing from the migration package"
+# upgrade_v75.sql is the last migration in the chain. It fixes the lawyer country to
+# Saudi Arabia (Execution 68): the platform onboards Saudi lawyers only, so the column
+# default becomes 'SA' and any pre-existing non-Saudi row is normalised. Assert the
+# current head, not a remembered one — this assertion moves with each execution, and a
+# stale expectation fails the next build for the wrong reason.
+[ -f "$STAGE/migrations/database/upgrade_v75.sql" ] \
+    || fail "database/upgrade_v75.sql is missing from the migration package"
 
 # --- modes and timestamps --------------------------------------------------
 step "normalizing file modes and timestamps"

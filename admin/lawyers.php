@@ -1376,11 +1376,12 @@ foreach (city_options() as $code => $list) $cityData[$code] = array_values($list
                     <div class="field">
                         <label for="lawyer_country">الدولة</label>
                         <?php render_lawyer_country_select('country_code', lawyer_country_code($modalOld), true, 'lawyer_country'); ?>
+                        <div class="form-hint">المنصة تستقبل محامين من السعودية فقط حالياً.</div>
                     </div>
 
                     <div class="field">
                         <label for="lawyer_city">المدينة</label>
-                        <?php render_city_select('city', lawyer_country_code($modalOld), (string)($modalOld['city'] ?? ''), true, 'lawyer_city'); ?>
+                        <?php render_city_select('city', LAWYER_COUNTRY_ONLY, (string)($modalOld['city'] ?? ''), true, 'lawyer_city'); ?>
                         <div class="form-hint">تظهر المدن المتاحة حسب الدولة المختارة.</div>
                     </div>
                 </div>

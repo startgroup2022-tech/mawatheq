@@ -16,9 +16,9 @@
  *   password         required on create, 8–72 bytes (bcrypt's own ceiling), hashed
  *                    with PASSWORD_BCRYPT and never returned in any form.
  *   specialization   must be one of the platform's controlled list, not free text.
- *   country          must resolve to a supported ISO code (from the code field or
- *                    the legacy jurisdiction name).
- *   city             required, and must belong to the chosen country.
+ *   country          fixed to Saudi Arabia (the platform onboards Saudi lawyers only);
+ *                    any other posted code or jurisdiction name is ignored, never stored.
+ *   city             required, and must belong to Saudi Arabia.
  *   phone            validated by country dialling pattern (includes/phone.php).
  *   years_experience normalised to a whole non-negative number ("20+" → 20).
  *   hourly_rate      non-negative, rounded to the currency's precision, or null.
@@ -100,10 +100,10 @@ function lawyer_admin_validate(PDO $pdo, array $post, ?int $excludeId = null, bo
         return lawyer_admin_fail('يرجى اختيار تخصص قانوني واحد على الأقل من القائمة.', $d);
     }
 
+    // The platform onboards Saudi lawyers only, so the country is fixed rather than
+    // chosen. `lawyer_country_from_input()` resolves to Saudi Arabia regardless of the
+    // posted code, so a crafted request cannot file a lawyer elsewhere.
     $country = lawyer_country_from_input($d['country_code'], $d['jurisdiction']);
-    if ($country['code'] === null) {
-        return lawyer_admin_fail('يرجى اختيار الدولة.', $d);
-    }
     if ($d['city'] === '') {
         return lawyer_admin_fail('يرجى اختيار المدينة.', $d);
     }

@@ -94,16 +94,18 @@ test.describe('execution 60 — add/edit lawyer modal', () => {
     expect(await group.locator('input[type="checkbox"]:checked').count()).toBe(2);
   });
 
-  test('the city select depends on the chosen country', async ({ page }) => {
+  test('the country is locked to Saudi Arabia and the city list follows it', async ({ page }) => {
     await page.goto('/admin/lawyers.php');
     await page.click('[data-open-lawyer-modal]');
-    await page.selectOption('#lawyer_country', 'SA');
+    // The platform onboards Saudi lawyers only, so the country field offers exactly one
+    // option — Saudi Arabia — and it is already selected.
+    const countryOptions = await page.$$eval('#lawyer_country option', (o) => o.map((x) => x.value));
+    expect(countryOptions).toEqual(['SA']);
+    expect(await page.inputValue('#lawyer_country')).toBe('SA');
+    // The dependent city list is the Saudi list.
     const saCities = await page.$$eval('#lawyer_city option', (o) => o.map((x) => x.value).filter(Boolean));
     expect(saCities).toContain('الرياض');
-    await page.selectOption('#lawyer_country', 'BH');
-    const bhCities = await page.$$eval('#lawyer_city option', (o) => o.map((x) => x.value).filter(Boolean));
-    expect(bhCities).toContain('المنامة');
-    expect(bhCities).not.toContain('الرياض');
+    expect(saCities).not.toContain('المنامة');
   });
 
   test('the price field is LTR and refuses a negative value', async ({ page }) => {

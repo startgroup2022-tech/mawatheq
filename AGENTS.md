@@ -4093,3 +4093,31 @@ total another suite can move.
 `MAWATHEQ_APP_v1.8.3+21_release.apk`, matching `aapt2 dump badging`. The `+` is percent-encoded
 (`%2B`) in the download URL — a link with a literal `+` 404s. Verify the served bytes, not just the
 local ones: download the asset and `sha256sum` it against `SHA256SUMS.txt`.
+
+## Execution 71 — lawyers practise from Saudi Arabia only
+
+### The country is a policy constant, not a field
+
+The platform onboards lawyers in Saudi Arabia only, so a lawyer's country is no longer a choice.
+`LAWYER_COUNTRY_ONLY` (`includes/country.php`, `'SA'`) is the single point of truth: every write
+path stores it and ignores anything else, so a crafted request cannot file a lawyer elsewhere.
+Do not reintroduce a literal `'SA'` in a write path — change the constant.
+
+- `lawyer_country_from_input()` (`includes/cities.php`) **always** resolves to Saudi Arabia now;
+  its return shape (`code`/`jurisdiction`) is unchanged, so callers did not need to change.
+- `render_lawyer_country_select()` renders **one** pre-selected option (still posting
+  `country_code`), so the dependent city selector keeps working.
+- `lawyer_admin_validate()` **fixes** the country rather than rejecting a foreign one, and checks
+  the city against Saudi Arabia.
+- `lawyer/profile.php` shows a read-only Saudi field and forces `jurisdiction`; the REST
+  `save-profile` (`api/v1/lawyer-profile.php`) forces it server-side.
+- **The country field governs lawyers only.** `country_options()` still lists the wider GCC region
+  because the directory/affiliate filters legitimately use it — the constant does not narrow those.
+- `database/upgrade_v75.sql` normalises existing non-Saudi rows and sets the column default to
+  `'SA'`. It is additive and idempotent; the `MODIFY COLUMN` is also the observable requirement the
+  migration ledger verifies the file against (a data-only file is `unknown` to the scanner).
+- `tests/exec71_saudi_only_lawyer_test.php` (35 checks) proves the helpers, the validator, the
+  admin create over HTTP, the profile page and the REST save all ignore a crafted country, and that
+  the migration normalises a legacy row. `tests/e2e/exec60-lawyer-form-filters.spec.js` was updated:
+  the country select now offers exactly `['SA']` instead of repopulating on a country change.
+

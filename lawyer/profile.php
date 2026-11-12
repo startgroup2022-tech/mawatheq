@@ -6,6 +6,7 @@ require_once __DIR__ . '/../includes/specialization_field.php';
 require_once __DIR__ . '/../includes/profile_completion.php';
 require_once __DIR__ . '/../includes/lawyer_readiness.php';
 require_once __DIR__ . '/../includes/jurisdiction.php';
+require_once __DIR__ . '/../includes/cities.php';
 $lawyerId = $_SESSION['lawyer_id'];
 
 $stmt = $pdo->prepare('SELECT * FROM lawyers WHERE id=?');
@@ -44,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     trim($_POST['full_name']), $phoneResult['value'], ($specList[0] ?? ''), specialization_list_to_stored($specList), trim($_POST['bio'] ?? ''),
                     (int)$_POST['years_experience'], (float)$_POST['hourly_rate'], trim($_POST['license_number'] ?? ''),
                     trim($_POST['qualifications'] ?? ''), trim($_POST['social_linkedin'] ?? ''), trim($_POST['social_twitter'] ?? ''),
-                    trim($_POST['social_website'] ?? ''), $photoPath, $_POST['jurisdiction'] ?? 'السعودية', $lawyerId
+                    trim($_POST['social_website'] ?? ''), $photoPath, lawyer_country_from_input(null, null)['jurisdiction'], $lawyerId
                 ]);
             if (!empty($_POST['new_password'])) {
                 $pdo->prepare('UPDATE lawyers SET password_hash=? WHERE id=?')
@@ -100,9 +101,10 @@ $readiness = lawyer_panel_readiness($pdo, $lawyer);
       <p class="field-hint"><?= is_rtl() ? 'اختر كل التخصصات التي تمارسها — يمكنك اختيار أكثر من تخصص.' : 'Choose every specialization you practise — you may select more than one.' ?></p>
     </div>
     <div class="field">
-      <label><?= is_rtl() ? 'الدولة / الاختصاص القضائي' : 'Country / Jurisdiction' ?></label>
-      <?php render_jurisdiction_select('jurisdiction', $lawyer['jurisdiction'] ?? 'السعودية'); ?>
-      <p class="field-hint"><?= is_rtl() ? 'الدولة التي تمارس فيها المحاماة — تساعد العملاء على إيجادك حسب الدولة.' : 'The country where you practice law — helps clients find you by country.' ?></p>
+      <label><?= is_rtl() ? 'الدولة' : 'Country' ?></label>
+      <input class="pro-input" type="text" value="<?= htmlspecialchars(country_name(LAWYER_COUNTRY_ONLY)) ?>" readonly disabled>
+      <input type="hidden" name="jurisdiction" value="<?= htmlspecialchars(country_name(LAWYER_COUNTRY_ONLY)) ?>">
+      <p class="field-hint"><?= is_rtl() ? 'المنصة تستقبل محامين من السعودية فقط حالياً.' : 'The platform currently onboards lawyers from Saudi Arabia only.' ?></p>
     </div>
     <div class="grid-2">
       <div class="field"><label><?= is_rtl() ? 'سنوات الخبرة' : 'Years of experience' ?></label><input class="pro-input" type="number" min="0" name="years_experience" value="<?= $lawyer['years_experience'] ?>"></div>

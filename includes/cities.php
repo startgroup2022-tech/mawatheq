@@ -106,42 +106,39 @@ function lawyer_country_code(array $lawyer): ?string {
 }
 
 /**
- * Resolve the country a lawyer write should store, from the posted country code
- * (preferred) or the legacy jurisdiction name. Returns null when neither is a
- * country we support, so the caller can refuse the write instead of guessing.
+ * Resolve the country a lawyer write should store.
  *
- * @return array{code:?string, jurisdiction:?string}
+ * The platform onboards Saudi lawyers only, so this always resolves to Saudi Arabia:
+ * any other posted code or jurisdiction name is ignored rather than stored, and a
+ * crafted request cannot file a lawyer outside the supported jurisdiction. The return
+ * shape is unchanged (`code`/`jurisdiction`) so callers do not need to know the policy.
+ *
+ * @return array{code:string, jurisdiction:string}
  */
 function lawyer_country_from_input($countryCode, $jurisdiction): array {
-    if (is_string($countryCode) && $countryCode !== '' && country_is_valid($countryCode)) {
-        $code = strtoupper(trim($countryCode));
-        return ['code' => $code, 'jurisdiction' => jurisdiction_for_country($code) ?? $jurisdiction];
-    }
-    if (is_string($jurisdiction)) {
-        $name = trim($jurisdiction);
-        if (isset(jurisdiction_country_map()[$name])) {
-            return ['code' => jurisdiction_country_map()[$name], 'jurisdiction' => $name];
-        }
-    }
-    return ['code' => null, 'jurisdiction' => null];
+    // Saudi Arabia is both the resolved code and the jurisdiction name, so the two
+    // columns can never disagree. The inputs are accepted for signature compatibility
+    // with the earlier two-column form; they no longer influence the result.
+    return [
+        'code'         => LAWYER_COUNTRY_ONLY,
+        'jurisdiction' => jurisdiction_for_country(LAWYER_COUNTRY_ONLY) ?? 'السعودية',
+    ];
 }
 
 /**
- * Country picker whose value is the ISO code (unlike render_jurisdiction_select(),
- * whose value is the localised name). Used by the lawyer forms so the stored value
- * and the city list share one key.
+ * Country picker for the lawyer forms. The platform onboards Saudi lawyers only, so
+ * this renders a single, pre-selected Saudi Arabia option rather than a choice — the
+ * value is still posted as `country_code` so the write path and the dependent city
+ * selector keep working, but there is no other country to pick. `$selectedCode` is
+ * ignored (any stored value is normalised to Saudi Arabia).
  */
 function render_lawyer_country_select(string $name, ?string $selectedCode = null, bool $required = false, string $id = ''): void {
-    $selected = $selectedCode !== null && country_is_valid($selectedCode)
-        ? strtoupper($selectedCode)
-        : COUNTRY_DEFAULT;
+    $code = LAWYER_COUNTRY_ONLY;
+    $label = is_rtl() ? country_options()[$code]['ar'] : country_options()[$code]['en'];
     $id = $id !== '' ? $id : $name;
-    echo '<select name="' . ui_e($name) . '" id="' . ui_e($id) . '" class="pro-select" data-country-select' . ($required ? ' required' : '') . '>';
-    foreach (country_options() as $code => $labels) {
-        $label = is_rtl() ? $labels['ar'] : $labels['en'];
-        $sel = $code === $selected ? ' selected' : '';
-        echo '<option value="' . ui_e($code) . '"' . $sel . '>' . ui_e($label) . '</option>';
-    }
+    echo '<select name="' . ui_e($name) . '" id="' . ui_e($id) . '" class="pro-select" data-country-select'
+        . ($required ? ' required' : '') . '>';
+    echo '<option value="' . ui_e($code) . '" selected>' . ui_e($label) . '</option>';
     echo '</select>';
 }
 

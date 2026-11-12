@@ -29,6 +29,7 @@
  */
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/../../includes/specialization_field.php';
+require_once __DIR__ . '/../../includes/cities.php';
 
 $auth = api_authenticate($pdo);
 if ($auth['type'] !== 'lawyer') api_error('this endpoint is for lawyers', 403);
@@ -223,18 +224,12 @@ switch ($action) {
         $linkedin = trim((string)($in['social_linkedin'] ?? ''));
         $twitter = trim((string)($in['social_twitter'] ?? ''));
         $website = trim((string)($in['social_website'] ?? ''));
-        $jurisdiction = trim((string)($in['jurisdiction'] ?? ''));
+        // The platform onboards Saudi lawyers only: the country is fixed here rather than
+        // taken from the request, so a crafted `jurisdiction` cannot move a lawyer out of
+        // the supported jurisdiction. The response shape is unchanged (a request that
+        // omits the field, and one that sends Saudi Arabia, both succeed).
+        $jurisdiction = lawyer_country_from_input($in['country_code'] ?? null, $in['jurisdiction'] ?? null)['jurisdiction'];
         $rate = (float)($in['hourly_rate'] ?? 0);
-        // `lawyers.jurisdiction` is NOT NULL with a default. An omitted field must keep
-        // the stored value rather than write NULL, which the column rejects — the
-        // difference between "the client did not send it" and "the client cleared it"
-        // matters here.
-        if ($jurisdiction === '') {
-            $current = $pdo->prepare('SELECT jurisdiction FROM lawyers WHERE id=?');
-            $current->execute([$lawyerId]);
-            $jurisdiction = (string)($current->fetchColumn() ?: '');
-            if ($jurisdiction === '') $jurisdiction = 'السعودية';
-        }
 
         // Only the columns a lawyer owns. `status` and `email_verified` are absent by
         // construction, which is what makes them unwritable here.
