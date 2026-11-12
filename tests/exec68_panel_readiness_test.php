@@ -220,11 +220,37 @@ check('the admin page has no PHP fatal',
 check('the now-ready lawyer shows a "ready" pill',
     strpos($apage, 'جاهز لاستقبال الحجوزات') !== false);
 
+// The filtered list (?readiness=incomplete) must drop a fully-ready lawyer and keep one
+// that is not ready. The same row is used in both directions so the test does not depend
+// on which other lawyers the seed happens to leave behind.
+[, $afilterReady] = http68('GET', '/admin/lawyers.php?readiness=incomplete', ['jar' => $ajar]);
+check('the filtered list renders 200 while the lawyer is ready', strlen($afilterReady) > 20000);
+check('the filtered list has no PHP fatal',
+    stripos($afilterReady, 'fatal error') === false && stripos($afilterReady, 'uncaught') === false);
+check('a fully-ready lawyer is excluded from the not-ready filter',
+    strpos($afilterReady, 'exec68-ready-' . $suffix . '@example.com') === false);
+
 // Break readiness and confirm the pill flips.
 $pdo->prepare('DELETE FROM lawyer_availability WHERE lawyer_id=?')->execute([$lawyerId]);
 [, $apage2] = http68('GET', '/admin/lawyers.php', ['jar' => $ajar]);
 check('a lawyer with no hours no longer shows a "ready" pill for that row',
     substr_count($apage2, 'جاهز لاستقبال الحجوزات') < substr_count($apage, 'جاهز لاستقبال الحجوزات') + 1);
+
+// The admin dashboard counts approved lawyers that cannot be booked, and links to the
+// filtered list. exec68 leaves other seeded lawyers in place, so the exact number is not
+// asserted — only that the signal is present, wired, and answers 200.
+[, $adash] = http68('GET', '/admin/index.php', ['jar' => $ajar]);
+check('the admin dashboard renders 200', strlen($adash) > 5000);
+check('the admin dashboard has no PHP fatal',
+    stripos($adash, 'fatal error') === false && stripos($adash, 'uncaught') === false);
+check('the admin dashboard carries the unbookable-lawyers signal',
+    strpos($adash, 'غير جاهز للحجز') !== false);
+
+// Now that the lawyer has no published hours it must appear in the filtered list.
+[, $afilterBroken] = http68('GET', '/admin/lawyers.php?readiness=incomplete', ['jar' => $ajar]);
+check('the filtered list renders 200 after hours were removed', strlen($afilterBroken) > 20000);
+check('the filtered list keeps the lawyer whose hours were removed',
+    strpos($afilterBroken, 'exec68-ready-' . $suffix . '@example.com') !== false);
 
 // ---------------------------------------------------------------------------
 section('5. Cleanup');

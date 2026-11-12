@@ -188,6 +188,20 @@ $totalLawyers = count($lawyers);
 // One batched pass for the per-lawyer counts the readiness signal needs, so the list
 // does not run two queries per row.
 $readinessCounts = lawyer_readiness_counts($pdo, array_map(fn($l) => (int)$l['id'], $lawyers));
+
+// Readiness is evaluated once per lawyer and reused by both the ?readiness=incomplete
+// filter and the row badge, so the two can never disagree. The dashboard's "approved
+// but not ready to be booked" pill links here with that query parameter.
+$readinessMap = [];
+foreach ($lawyers as $lw) {
+    $readinessMap[(int)$lw['id']] = lawyer_panel_readiness($pdo, $lw, $readinessCounts[(int)$lw['id']] ?? null);
+}
+$readinessFilter = ($_GET['readiness'] ?? '') === 'incomplete';
+$unbookableCount = count(array_filter($readinessMap, fn($r) => empty($r['ready'])));
+$visibleLawyers = $readinessFilter
+    ? array_values(array_filter($lawyers, fn($l) => empty($readinessMap[(int)$l['id']]['ready'])))
+    : $lawyers;
+$visibleCount = count($visibleLawyers);
 $activeLawyers = 0;
 $suspendedLawyers = 0;
 
@@ -1057,7 +1071,7 @@ body.lawyers-modal-open {
         <div class="list-card-head">
             <div>
                 <h2 class="list-card-title">قائمة المحامين</h2>
-                <p class="list-card-caption">جميع المحامين المسجلين في النظام</p>
+                <p class="list-card-caption"><?php if ($readinessFilter): ?><?= adm('المحامون غير الجاهزين للحجز', 'Lawyers not ready to be booked') ?> — <?= $visibleCount ?><?php else: ?><?= adm('جميع المحامين المسجلين في النظام', 'Every lawyer registered on the platform') ?> — <?= $totalLawyers ?><?php endif; ?></p>
             </div>
 
             <button type="button" class="primary-action" data-open-lawyer-modal>
@@ -1065,6 +1079,13 @@ body.lawyers-modal-open {
                 <span>إضافة محامٍ</span>
             </button>
         </div>
+
+        <?php if ($readinessFilter || $unbookableCount > 0): ?>
+        <div class="readiness-filter" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 18px;border-bottom:1px solid var(--lawyers-border, #e7eaf0)">
+            <a class="status-pill <?= $readinessFilter ? 'status-default' : 'status-approved' ?>" href="/admin/lawyers.php" style="text-decoration:none"><?= adm('الكل', 'All') ?> (<?= $totalLawyers ?>)</a>
+            <a class="status-pill <?= $readinessFilter ? 'status-approved' : 'status-default' ?>" href="/admin/lawyers.php?readiness=incomplete" style="text-decoration:none"><?= adm('غير جاهز للحجز', 'Not ready to be booked') ?> (<?= $unbookableCount ?>)</a>
+        </div>
+        <?php endif; ?>
 
         <div class="table-scroll">
             <table class="lawyers-table">
@@ -1088,7 +1109,7 @@ body.lawyers-modal-open {
                 </thead>
 
                 <tbody>
-                <?php foreach ($lawyers as $lw): ?>
+                <?php foreach ($visibleLawyers as $lw): ?>
                     <?php
                     $pct = lawyer_completion_percent($lw);
                     $status = $lw['status'] ?? '';
@@ -1152,7 +1173,7 @@ body.lawyers-modal-open {
                         </td>
 
                         <td>
-                            <?php $ready = lawyer_panel_readiness($pdo, $lw, $readinessCounts[(int)$lw['id']] ?? null); ?>
+                            <?php $ready = $readinessMap[(int)$lw['id']] ?? lawyer_panel_readiness($pdo, $lw, $readinessCounts[(int)$lw['id']] ?? null); ?>
                             <?php if ($ready['ready']): ?>
                                 <span class="status-pill status-approved" title="<?= htmlspecialchars(adm('جاهز لاستقبال الحجوزات', 'Ready to take bookings')) ?>"><?= adm('جاهز', 'Ready') ?></span>
                             <?php else: ?>
@@ -1220,6 +1241,16 @@ body.lawyers-modal-open {
                                 <div class="empty-icon">⚖</div>
                                 <h3 class="empty-title">لا يوجد محامون بعد</h3>
                                 <p class="empty-text">ابدأ بإضافة أول محامٍ إلى النظام باستخدام زر «إضافة محامٍ».</p>
+                            </div>
+                        </td>
+                    </tr>
+                <?php elseif ($readinessFilter && empty($visibleLawyers)): ?>
+                    <tr>
+                        <td colspan="13">
+                            <div class="empty-state">
+                                <div class="empty-icon">✓</div>
+                                <h3 class="empty-title"><?= adm('كل المحامين جاهزون للحجز', 'Every lawyer is ready to be booked') ?></h3>
+                                <p class="empty-text"><a href="/admin/lawyers.php"><?= adm('عرض الكل', 'Show all') ?></a></p>
                             </div>
                         </td>
                     </tr>

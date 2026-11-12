@@ -451,11 +451,11 @@ html[dir="ltr"] .pro-select{ background-position:right 14px center; }
 /* شرائح اختيار التخصص */
 .spec-chips{ display:flex; flex-wrap:wrap; gap:8px; }
 .spec-chip{
-  display:inline-flex; align-items:center; gap:6px; border:1.5px solid var(--border); border-radius:20px;
+  position:relative; display:inline-flex; align-items:center; gap:6px; border:1.5px solid var(--border); border-radius:20px;
   padding:8px 14px; font-size:.85rem; font-weight:600; cursor:pointer; background:#fff; color:var(--text-muted);
   transition:all .15s ease; user-select:none;
 }
-.spec-chip input{ position:absolute; opacity:0; width:0; height:0; }
+.spec-chip input{ position:absolute; inset:0; width:100%; height:100%; margin:0; opacity:0; z-index:1; cursor:pointer; }
 .spec-chip:hover{ border-color:var(--teal); color:var(--navy-dark); }
 .spec-chip:has(input:checked){ background:var(--navy); border-color:var(--navy); color:#fff; }
 .spec-chip.is-checked{ background:var(--navy); border-color:var(--navy); color:#fff; }

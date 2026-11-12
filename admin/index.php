@@ -48,6 +48,19 @@ $tot = [
     'tasks_due' => (int)$val("SELECT COUNT(*) FROM crm_tasks WHERE status='open' AND due_at IS NOT NULL AND due_at<=DATE_ADD(CURDATE(),INTERVAL 1 DAY)") + (int)$val("SELECT COUNT(*) FROM case_tasks WHERE status='pending' AND due_date IS NOT NULL AND due_date<=CURDATE()"),
     'pending_lawyers' => (int)$val("SELECT COUNT(*) FROM lawyers WHERE status='pending'"),
 ];
+// An approved lawyer who is missing a price, a specialization, or published hours is
+// listed to clients as bookable but cannot actually be booked — the same required signals
+// the lawyer's own readiness card uses. Counted here for the operator. A pre-migration
+// database without lawyer_availability fails the subquery to 0 bookable, which is the
+// honest reading (nobody has published hours), and never a fatal.
+$approvedBookable = (int)$val(
+    "SELECT COUNT(*) FROM lawyers l WHERE l.status='approved'
+        AND (COALESCE(NULLIF(TRIM(l.specializations),''), NULLIF(TRIM(l.specialization),'')) IS NOT NULL)
+        AND l.hourly_rate > 0
+        AND EXISTS (SELECT 1 FROM lawyer_availability a WHERE a.lawyer_id = l.id)",
+    [], 0
+);
+$tot['approved_unbookable'] = max(0, $tot['lawyers'] - $approvedBookable);
 [$dRev, $cRev] = $delta(end($revenueSeries), $revenueSeries[10]);
 [$dCons, $cCons] = $delta(end($consultSeries), $consultSeries[10]);
 [$dCli, $cCli] = $delta(end($clientSeries), $clientSeries[10]);
@@ -90,11 +103,12 @@ $stCol = ['open' => '#2547b8', 'in_review' => '#c39a3e', 'closed_won' => '#12805
     </div>
   </div>
 
-  <?php if ($tot['pending_lawyers'] || $tot['overdue'] || $tot['leads_new'] || $tot['tasks_due']): ?>
+  <?php if ($tot['pending_lawyers'] || $tot['approved_unbookable'] || $tot['overdue'] || $tot['leads_new'] || $tot['tasks_due']): ?>
   <div class="card" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:14px 18px">
     <b style="font-size:13px"><?= h(adm('يحتاج انتباهك:', 'Needs attention:')) ?></b>
     <?php if ($tot['leads_new']): ?><a class="pill amber" href="/admin/leads.php"><?= $tot['leads_new'] ?> <?= h(adm('طلب وارد جديد', 'new inbound leads')) ?></a><?php endif; ?>
     <?php if ($tot['pending_lawyers']): ?><a class="pill blue" href="/admin/lawyers.php"><?= $tot['pending_lawyers'] ?> <?= h(adm('محامٍ بانتظار الاعتماد', 'lawyers awaiting approval')) ?></a><?php endif; ?>
+    <?php if ($tot['approved_unbookable']): ?><a class="pill gold" href="/admin/lawyers.php?readiness=incomplete"><?= $tot['approved_unbookable'] ?> <?= h(adm('محامٍ معتمد غير جاهز للحجز', 'approved lawyers not ready to be booked')) ?></a><?php endif; ?>
     <?php if ($tot['overdue']): ?><a class="pill red" href="/admin/invoices.php"><?= $tot['overdue'] ?> <?= h(adm('فاتورة متأخرة', 'overdue invoices')) ?></a><?php endif; ?>
     <?php if ($tot['tasks_due']): ?><a class="pill gold" href="/admin/crm.php#tasks"><?= $tot['tasks_due'] ?> <?= h(adm('مهمة مستحقة', 'tasks due')) ?></a><?php endif; ?>
   </div>

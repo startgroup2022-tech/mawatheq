@@ -97,6 +97,7 @@ $pdo->prepare("INSERT INTO invoices (user_id,lawyer_id,invoice_number,descriptio
 $invoiceId = (int)$pdo->lastInsertId();
 $created['invoices'][] = $invoiceId;
 
+$totalsBefore = wallet_totals($pdo, $walletId);
 $before = wallet_balances($pdo, $walletId, $currency);
 $pay = finance_record_payment($pdo, $invoiceId, 100.00, ['method' => 'manual', 'recorded_by_type' => 'lawyer', 'recorded_by_id' => $lawyerId]);
 check('the payment is recorded', !empty($pay['ok']));
@@ -147,9 +148,16 @@ $sumStmt->execute([$walletId]);
 check('available + pending equals the raw ledger sum', $balances['total_minor'] === (int)$sumStmt->fetchColumn());
 
 $totals = wallet_totals($pdo, $walletId);
-check('gross earned is 200.00 (20000 minor)', $totals['gross_earned_minor'] === 20000);
-check('commission total is 10.00 (1000 minor)', $totals['commission_minor'] === 1000);
-check('net earned is 190.00 (19000 minor)', $totals['net_earned_minor'] === 19000);
+// The wallet belongs to a *shared* approved lawyer, so the absolute totals include any
+// rows an earlier run left behind (the suite deletes its own rows, so a completed run is
+// clean, but an interrupted one is not). What the two payments added is what this suite
+// controls: gross +200.00, commission 10%, net +190.00.
+check('the two payments add 200.00 gross (20000 minor)',
+    $totals['gross_earned_minor'] - $totalsBefore['gross_earned_minor'] === 20000);
+check('commission total is 10.00 (1000 minor)',
+    $totals['commission_minor'] - $totalsBefore['commission_minor'] === 1000);
+check('the two payments add 190.00 net (19000 minor)',
+    $totals['net_earned_minor'] - $totalsBefore['net_earned_minor'] === 19000);
 
 echo "\n== 6. statement reconciles: opening + movement = closing ==\n";
 $statement = wallet_statement($pdo, $walletId, date('Y-m-d', strtotime('-1 day')), date('Y-m-d', strtotime('+1 day')));
