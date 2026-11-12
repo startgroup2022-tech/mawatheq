@@ -4030,3 +4030,66 @@ app: the grep for any *other* exception type in the run must return nothing, and
 files may be one you touched. Also note a fresh checkout may need `flutter pub get` first — without
 it `context.watch` fails to resolve (a `provider` package missing from the pub cache) and the whole
 suite fails to compile, which looks nothing like the real result.
+
+## Execution 70 — admin readiness triage, wallet-test robustness, app 1.8.3+21
+
+### The environment's Flutter is 3.50.0, and the repo is pinned to 3.47.7
+
+A sandbox reset moved `/workspace/flutter_sdk` to **stable 3.50.0**. Two consequences, both
+mistaken for app bugs:
+
+- `flutter build apk` fails outright: *"Your project's Gradle version (8.14.3) is lower than
+  Flutter's minimum supported version of 9.3.1."* 3.50 raises the Gradle floor to 9.3.1; the repo
+  is on 8.14.3 (the verified combination). Do **not** bump Gradle to satisfy it — the AGP 8.11.1 /
+  Kotlin 2.3.20 / Gradle 8.14.3 set is what the release was built and signed with.
+- The `flutter test` failures that Exec 69 recorded as "environmental" (10 failures, all
+  `_SystemFontsNotifier.notifyListeners` "animation still running after disposal") are **also**
+  the version skew. On 3.47.7 the same suite is **350/350 green** with no such signature.
+
+Fix: build and test with the pinned SDK. The tags are present in the SDK repo, so a worktree is
+enough — no second clone:
+
+```bash
+cd /workspace/flutter_sdk && git fetch --depth 1 origin tag 3.47.7
+git worktree add /tmp/flutter347 3.47.7
+export PATH="/tmp/flutter347/bin:$PATH"
+flutter pub get && flutter test && flutter build apk --release && flutter build appbundle --release
+```
+
+`flutter pub get` rewrites `apps/mobile/pubspec.lock` (a few packages resolve newer); revert it with
+`git checkout -- apps/mobile/pubspec.lock` unless the dependency change is intended.
+
+### Admin readiness triage reads one map, not two evaluations
+
+`admin/lawyers.php` evaluates `lawyer_panel_readiness()` **once per lawyer** into `$readinessMap`
+and reuses it for both the row badge and the `?readiness=incomplete` filter, so the pill and the
+filter can never disagree. The dashboard's `approved_unbookable` counter (`admin/index.php`) uses
+the same required signals — declared area, `hourly_rate > 0`, published `lawyer_availability` — and
+links to that filter. A pre-v74 database makes the `specializations` subquery fail to 0 bookable,
+which is the honest reading, never a 500.
+
+### `.spec-chip` needs `position: relative`, or the label swallows the click
+
+The specialization chip is an `inline-flex` `<label>` wrapping a zero-size, absolutely-positioned
+`<input type=checkbox>`. With no positioned ancestor the input has no containing block, so at
+narrow viewports the *text* sibling intercepts the tap and the checkbox never toggles. Fix is in
+`assets/css/style.css`: `.spec-chip { position: relative }` and the input fills the chip
+(`inset:0; width/height:100%; z-index:1; cursor:pointer`). The rule is shared by
+`admin/lawyers.php`, `includes/specialization_field.php`, `register.php` and `lawyer/profile.php`,
+and the rendered output is unchanged. The failure only appears below ~600px, which is why the
+`exec60-lawyer-form-filters.spec.js` viewports caught it and a desktop check did not.
+
+### A test must measure what it controls, not a shared row's absolute total
+
+`tests/exec56_wallet_test.php` asserted absolute wallet totals (`gross_earned_minor === 20000`) on
+the wallet of the **first approved lawyer** — a shared row. Any ledger rows left by an interrupted
+earlier run inflate the sum, so the suite fails in a batch run and passes alone, which reads like a
+code regression. It now measures the **delta** the two probe payments add (gross +20000, commission
+1000, net +19000). Same rule as the Exec 34/37 notes: assert the code's contribution, not a global
+total another suite can move.
+
+### Release asset naming carries the version *and* the version code
+
+`MAWATHEQ_APP_v1.8.3+21_release.apk`, matching `aapt2 dump badging`. The `+` is percent-encoded
+(`%2B`) in the download URL — a link with a literal `+` 404s. Verify the served bytes, not just the
+local ones: download the asset and `sha256sum` it against `SHA256SUMS.txt`.
