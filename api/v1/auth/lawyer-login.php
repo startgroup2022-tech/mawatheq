@@ -6,6 +6,7 @@
  */
 require_once __DIR__ . '/../bootstrap.php';
 require_once __DIR__ . '/../../../includes/auth_security.php';
+require_once __DIR__ . '/../../../includes/specialization_field.php';
 
 $in = api_input();
 $email = isset($in['email']) && is_string($in['email']) ? strtolower(trim($in['email'])) : '';
@@ -57,6 +58,7 @@ api_json([
         'full_name' => $lawyer['full_name'],
         'email' => $lawyer['email'],
         'specialization' => $lawyer['specialization'],
+        'specializations' => lawyer_specialization_list($lawyer),
         'rating' => (float)$lawyer['rating'],
         'photo_path' => $lawyer['photo_path'],
     ],

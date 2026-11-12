@@ -81,6 +81,35 @@
         });
       }
     });
+
+    // Multi-select checklist: search filters the chips, and a chip reflects its
+    // checked state. The checkbox is the real control, so no-JS still submits.
+    document.querySelectorAll('[data-spec-check]').forEach(function (group) {
+      var input = group.querySelector('[data-spec-filter]');
+      var empty = group.querySelector('[data-spec-empty]');
+      var chips = Array.prototype.slice.call(group.querySelectorAll('[data-spec-label]'));
+
+      chips.forEach(function (chip) {
+        var box = chip.querySelector('input[type=checkbox]');
+        if (box) {
+          box.addEventListener('change', function () {
+            chip.classList.toggle('is-checked', box.checked);
+          });
+        }
+      });
+
+      if (!input) return;
+      input.addEventListener('input', function () {
+        var needle = normalize(input.value);
+        var visible = 0;
+        chips.forEach(function (chip) {
+          var match = needle === '' || normalize(chip.getAttribute('data-spec-label')).indexOf(needle) !== -1;
+          chip.hidden = !match;
+          if (match) visible++;
+        });
+        if (empty) empty.hidden = !(needle !== '' && visible === 0);
+      });
+    });
   }
 
   if (document.readyState === 'loading') {

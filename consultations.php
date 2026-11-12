@@ -174,7 +174,7 @@ $extraPageAssets = ['<link rel="stylesheet" href="/assets/css/journey.css">'];
             <div class="who">
               <strong><?= htmlspecialchars($lw['full_name']) ?></strong>
               <div class="sub">
-                <?php if (!empty($lw['specialization'])): ?><?= htmlspecialchars($lw['specialization']) ?> · <?php endif; ?>
+                <?php $lwSpec = lawyer_specialization_display($lw); if ($lwSpec !== ''): ?><?= htmlspecialchars($lwSpec) ?> · <?php endif; ?>
                 <?= (int)$lw['years_experience'] ?> <?= is_rtl() ? 'سنة خبرة' : 'yrs experience' ?>
               </div>
               <?php if (!empty($lw['location'])): ?>

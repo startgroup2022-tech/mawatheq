@@ -409,6 +409,7 @@ class LawyerProfile {
     required this.id,
     required this.name,
     this.specialization = '',
+    this.specializations = const <String>[],
     this.jurisdiction = '',
     this.city = '',
     this.countryCode = '',
@@ -428,7 +429,22 @@ class LawyerProfile {
   final int id;
   final String name;
   final String specialization;
+
+  /// Every area of law the lawyer declared, in the server's canonical order.
+  ///
+  /// A lawyer may practise more than one. `specialization` keeps the primary value for
+  /// callers written against the older single field; this list is the full set. When the
+  /// server sends none (an older deployment, or a lawyer who declared nothing) the getter
+  /// below falls back to the single value, so a card never loses a specialization it used
+  /// to show.
+  final List<String> specializations;
   final String jurisdiction;
+
+  /// The label a card shows: the joined list, or the single value when the list is empty.
+  String get specializationLabel {
+    if (specializations.isNotEmpty) return specializations.join(' · ');
+    return specialization;
+  }
 
   /// The city the lawyer practises in, and its ISO country code. Both are optional
   /// and may be empty on a lawyer whose row predates the country/city migration.
@@ -495,6 +511,9 @@ class LawyerProfile {
       id: j.intg('id'),
       name: j.str('full_name', fallback: j.str('name')),
       specialization: j.str('specialization'),
+      specializations: (map['specializations'] is List)
+          ? (map['specializations'] as List).whereType<String>().toList()
+          : const <String>[],
       jurisdiction: j.str('jurisdiction'),
       city: j.str('city'),
       countryCode: j.str('country_code'),

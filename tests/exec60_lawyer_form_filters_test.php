@@ -166,6 +166,34 @@ check('a too-short phone number is rejected', lawyer_admin_validate($pdo, $bad, 
 $bad = $goodPost; $bad['specialization'] = 'تخصص وهمي';
 check('an unknown specialization is rejected', lawyer_admin_validate($pdo, $bad, null, true)['ok'] === false);
 
+// Multi-specialization: the checklist posts an array. The validator accepts one or
+// more, and stores the full list joined in the canonical order while keeping the first
+// value in the legacy single column so older readers still work.
+$multiPost = $goodPost;
+unset($multiPost['specialization']);
+$multiPost['specializations'] = [specialization_options()[2], specialization_options()[0], specialization_options()[0]];
+$mv = lawyer_admin_validate($pdo, $multiPost, null, true);
+check('a multi-specialization form passes', $mv['ok'] === true);
+check('the multi list keeps the canonical order and drops duplicates',
+    ($mv['data']['specializations'] ?? '') === specialization_options()[0] . ' - ' . specialization_options()[2]);
+check('the first canonical value fills the legacy single column',
+    ($mv['data']['specialization'] ?? '') === specialization_options()[0]);
+
+$emptyPost = $goodPost; unset($emptyPost['specialization']); $emptyPost['specializations'] = [];
+check('an empty multi-specialization selection is rejected',
+    lawyer_admin_validate($pdo, $emptyPost, null, true)['ok'] === false);
+
+$junkPost = $goodPost; unset($junkPost['specialization']); $junkPost['specializations'] = ['تخصص وهمي'];
+check('a multi-specialization list of only unknown values is rejected',
+    lawyer_admin_validate($pdo, $junkPost, null, true)['ok'] === false);
+
+// The legacy single-field shape (an older form, or a third-party client) is still
+// accepted as a one-element list.
+$legacySpec = lawyer_admin_validate($pdo, $goodPost, null, true);
+check('the legacy single specialization still validates and stores one value',
+    $legacySpec['ok'] === true
+    && ($legacySpec['data']['specializations'] ?? '') === specialization_options()[0]);
+
 $bad = $goodPost; $bad['city'] = 'مدينة ليست في الدولة';
 check('a city outside the chosen country is rejected', lawyer_admin_validate($pdo, $bad, null, true)['ok'] === false);
 
@@ -209,8 +237,9 @@ section('7. Real HTTP: create a lawyer through the admin page');
 [$jar, $token, $page] = admin_session60();
 check('the admin lawyers page renders 200', $token !== '' && strlen($page) > 20000);
 check('the page carries the unified add/edit modal', strpos($page, 'id="lawyerModal"') !== false);
-check('the page carries a searchable specialization control',
-    strpos($page, 'lawyer_specialization_search') !== false && strpos($page, 'specialization-combo.js') !== false);
+check('the page carries a searchable multi-specialization control',
+    strpos($page, 'data-spec-check') !== false && strpos($page, 'data-spec-filter') !== false
+    && strpos($page, 'name="specializations[]"') !== false && strpos($page, 'specialization-combo.js') !== false);
 check('the page carries the dependent city select', strpos($page, 'id="lawyer_city"') !== false);
 check('the page carries the country select', strpos($page, 'id="lawyer_country"') !== false);
 check('the page carries the form JS', strpos($page, 'lawyer-form.js') !== false);

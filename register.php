@@ -37,6 +37,7 @@ $old = [
     'phone_local' => $postString('phone_local'),
     'account_type' => $postString('account_type', 'individual'),
     'specialization' => $postString('specialization'),
+    'specializations' => is_array($_POST['specializations'] ?? null) ? $_POST['specializations'] : [],
 ];
 
 // تسجيل = إنشاء الحساب الأساسي فقط. باقي بيانات المحامي (الخبرة، الترخيص،
@@ -63,8 +64,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = is_rtl() ? 'كلمتا المرور غير متطابقتين.' : 'Passwords do not match.';
     } elseif (!$phoneResult['ok']) {
         $error = $phoneResult['error'];
-    } elseif ($who === 'lawyer' && !in_array($old['specialization'], specialization_options(), true)) {
-        $error = is_rtl() ? 'يرجى اختيار تخصص قانوني من القائمة.' : 'Please choose a legal specialization from the list.';
+    } elseif ($who === 'lawyer' && !specialization_normalize_list($old['specializations'])) {
+        $error = is_rtl() ? 'يرجى اختيار تخصص قانوني واحد على الأقل من القائمة.' : 'Please choose at least one legal specialization from the list.';
     } elseif (auth_rate_limit_remaining($pdo, 'register-' . $who, $email) > 0) {
         $error = is_rtl() ? 'طلبات تسجيل كثيرة من هذا الاتصال. حاول بعد 15 دقيقة.' : 'Too many sign-up requests from this connection. Try again in 15 minutes.';
     } else {
@@ -91,9 +92,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // lawyer self-registration -> pending admin approval, with email verification
             $hash = password_hash($password, PASSWORD_BCRYPT);
             $src = get_lead_source();
-            $stmt = $pdo->prepare('INSERT INTO lawyers (full_name,email,phone,password_hash,specialization,status,email_verified,utm_source,utm_medium,utm_campaign,source_page) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
+            // A lawyer may declare several areas of law. The first becomes the legacy
+            // single value (so old readers still work); the full list is stored joined.
+            $specList = specialization_normalize_list($old['specializations']);
+            $stmt = $pdo->prepare('INSERT INTO lawyers (full_name,email,phone,password_hash,specialization,specializations,status,email_verified,utm_source,utm_medium,utm_campaign,source_page) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)');
             $stmt->execute([
-                $name, $email, $phoneResult['value'], $hash, $old['specialization'], 'pending', 0,
+                $name, $email, $phoneResult['value'], $hash, ($specList[0] ?? ''), specialization_list_to_stored($specList), 'pending', 0,
                 $src['utm_source'], $src['utm_medium'], $src['utm_campaign'], $src['source_page'],
             ]);
             $accountCreated = true;
@@ -163,9 +167,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       </div>
       <?php if ($who === 'lawyer'): ?>
         <div class="field">
-          <label><?= is_rtl() ? 'التخصص القانوني' : 'Legal specialization' ?></label>
-          <?php render_specialization_field('specialization', $old['specialization']); ?>
-          <p class="field-hint"><?= is_rtl() ? 'يمكنك إضافة تخصصات وخبرات إضافية لاحقاً من ملفك الشخصي بعد الدخول.' : 'You can add more specializations and experience later from your profile.' ?></p>
+          <label><?= is_rtl() ? 'التخصصات القانونية' : 'Legal specializations' ?></label>
+          <?php render_specialization_checklist('specializations', specialization_normalize_list($old['specializations'])); ?>
+          <p class="field-hint"><?= is_rtl() ? 'يمكنك اختيار أكثر من تخصص. أضف تخصصات وخبرات إضافية لاحقاً من ملفك الشخصي بعد الدخول.' : 'You may choose more than one specialization. You can add more specializations and experience later from your profile.' ?></p>
         </div>
       <?php endif; ?>
       <div class="field"><label for="registerPassword"><?= is_rtl() ? 'كلمة المرور' : 'Password' ?></label><div class="password-input"><input type="password" name="password" id="registerPassword" minlength="8" autocomplete="new-password" required><button type="button" class="password-toggle" data-password-toggle="registerPassword" aria-label="<?= is_rtl() ? 'إظهار كلمة المرور' : 'Show password' ?>"><?= is_rtl() ? 'إظهار' : 'Show' ?></button></div></div>
@@ -200,5 +204,6 @@ document.getElementById('registerForm').addEventListener('submit',function(e){
 });
 document.getElementById('registerPasswordConfirm').addEventListener('input',function(){this.setCustomValidity('');});
 </script>
+<script src="<?= asset_url('/assets/js/specialization-combo.js') ?>" defer></script>
 </body>
 </html>

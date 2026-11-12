@@ -68,19 +68,30 @@ test.describe('execution 60 — add/edit lawyer modal', () => {
     expect(h, 'the name field must be at least 40px tall').toBeGreaterThanOrEqual(40);
   });
 
-  test('the specialization control is searchable and filters the list', async ({ page }) => {
+  test('the specialization control is a searchable multi-select checklist', async ({ page }) => {
     await page.goto('/admin/lawyers.php');
     await page.click('[data-open-lawyer-modal]');
-    const search = page.locator('#lawyer_specialization_search');
-    await expect(search).toBeVisible();
+    const group = page.locator('#lawyerModal [data-spec-check]');
+    await expect(group).toBeVisible();
+
+    // It is a checklist, not a single select: every canonical specialization is a chip
+    // backed by a real checkbox, so more than one can be chosen.
+    const boxes = group.locator('input[type="checkbox"][name="specializations[]"]');
+    expect(await boxes.count()).toBeGreaterThan(4);
+
+    // Typing in the search box narrows the chips (it hides, never rebuilds, so state holds).
+    const search = group.locator('[data-spec-filter]');
     await search.fill('عمل');
-    const options = page.locator('#lawyer_specialization option:not([hidden])');
-    // At least one option remains and every visible option contains the query.
-    const visible = await page.$$eval('#lawyer_specialization option', (opts) =>
-      opts.filter((o) => !o.hidden && o.value).map((o) => o.value));
-    expect(visible.length).toBeGreaterThan(0);
-    expect(visible.every((v) => v.includes('عمل'))).toBe(true);
-    await expect(options.first()).toBeAttached();
+    const visibleLabels = await group.locator('[data-spec-label]:not([hidden])').evaluateAll(
+      (els) => els.map((e) => e.getAttribute('data-spec-label')));
+    expect(visibleLabels.length).toBeGreaterThan(0);
+    expect(visibleLabels.every((v) => v.includes('عمل'))).toBe(true);
+
+    // Choosing two boxes really checks two — the multi-select contract.
+    await search.fill('');
+    await group.locator('[data-spec-label="قانون تجاري"] input').check();
+    await group.locator('[data-spec-label="قانون جنائي"] input').check();
+    expect(await group.locator('input[type="checkbox"]:checked').count()).toBe(2);
   });
 
   test('the city select depends on the chosen country', async ({ page }) => {

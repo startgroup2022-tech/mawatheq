@@ -136,7 +136,7 @@ class _PublicLawyersScreenState extends State<PublicLawyersScreen> {
     return _all
         .where((l) =>
             l.name.contains(needle) ||
-            l.specialization.contains(needle) ||
+            l.specializationLabel.contains(needle) ||
             l.jurisdiction.contains(needle))
         .toList();
   }
@@ -308,10 +308,10 @@ class _LawyerCard extends StatelessWidget {
                         fontSize: 15,
                       ),
                     ),
-                    if (lawyer.specialization.isNotEmpty) ...[
+                    if (lawyer.specializationLabel.isNotEmpty) ...[
                       const SizedBox(height: 3),
                       Text(
-                        lawyer.specialization,
+                        lawyer.specializationLabel,
                         style: TextStyle(
                             color: context.tokens.textMuted, fontSize: 13),
                       ),

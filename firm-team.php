@@ -7,6 +7,7 @@ require_once __DIR__ . '/config/config.php';
 require_once __DIR__ . '/lang/strings.php';
 require_once __DIR__ . '/includes/ui.php';
 require_once __DIR__ . '/includes/firm_site.php';
+require_once __DIR__ . '/includes/specialization_field.php';
 
 $slug = trim((string)($_GET['firm'] ?? ''));
 $firm = firm_site_public_firm($pdo, $slug);
@@ -29,7 +30,7 @@ require __DIR__ . '/includes/firm_header.php';
           <article class="firm-person">
             <?php if (!empty($m['photo_path'])): ?><img src="<?= ui_e($m['photo_path']) ?>" alt="<?= ui_e($m['full_name']) ?>" loading="lazy"><?php endif; ?>
             <h3><?= ui_e($m['full_name']) ?></h3>
-            <?php if (!empty($m['specialization'])): ?><p class="firm-role"><?= ui_e($m['specialization']) ?></p><?php endif; ?>
+            <?php $_spec = lawyer_specialization_display($m); if ($_spec !== ''): ?><p class="firm-role"><?= ui_e($_spec) ?></p><?php endif; ?>
             <?php if (!empty($m['years_experience'])): ?><p class="firm-meta"><?= (int)$m['years_experience'] ?> <?= is_rtl() ? 'سنة خبرة' : 'years experience' ?></p><?php endif; ?>
             <?php if (!empty($m['bio'])): ?><p class="firm-bio"><?= ui_e((string)$m['bio']) ?></p><?php endif; ?>
             <?php if (!empty($m['qualifications'])): ?><p class="firm-qual"><?= ui_e((string)$m['qualifications']) ?></p><?php endif; ?>

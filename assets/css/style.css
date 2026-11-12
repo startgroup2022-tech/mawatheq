@@ -407,6 +407,14 @@ html[dir="ltr"] .pro-select{ background-position:right 14px center; }
 .completion-list li.is-done .dot{ background:var(--success); border-color:var(--success); }
 @media (max-width:560px){ .completion-list{ grid-template-columns:1fr; } }
 
+/* ---------- بطاقة جاهزية لوحة المحامي للحجز ---------- */
+.readiness-card{ background:#fff; border:1px solid var(--border); border-inline-start:4px solid var(--warning,#B45309); border-radius:16px; padding:26px; margin-bottom:24px; }
+.readiness-card .completion-head{ margin-bottom:14px; }
+.readiness-subhead{ margin:14px 0 8px; font-size:.8rem; font-weight:800; color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em; }
+.readiness-subhead:first-of-type{ margin-top:0; }
+.readiness-required li.is-pending{ color:var(--warning,#B45309); font-weight:600; }
+.readiness-required li.is-pending .dot{ border-color:var(--warning,#B45309); }
+
 /* ---------- روابط السوشيال ميديا (هيدر + فوتر) ---------- */
 .social-row{ display:flex; align-items:center; gap:8px; }
 .social-row-dark{ margin-top:14px; }
@@ -451,6 +459,14 @@ html[dir="ltr"] .pro-select{ background-position:right 14px center; }
 .spec-chip:hover{ border-color:var(--teal); color:var(--navy-dark); }
 .spec-chip:has(input:checked){ background:var(--navy); border-color:var(--navy); color:#fff; }
 .spec-chip.is-checked{ background:var(--navy); border-color:var(--navy); color:#fff; }
+.spec-chip:focus-within{ outline:2px solid var(--teal); outline-offset:2px; }
+
+/* مجموعة اختيار التخصصات المتعددة (مربّع بحث + شرائح) */
+.spec-check{ display:flex; flex-direction:column; gap:10px; }
+.spec-check .spec-combo-search{ display:flex; align-items:center; gap:8px; position:relative; }
+.spec-check .spec-combo-icon{ position:absolute; inset-inline-start:12px; font-size:12px; pointer-events:none; opacity:.6; }
+.spec-check .spec-combo-input{ padding-inline-start:34px; }
+.spec-check .spec-combo-empty{ margin:0; color:#b42318; font-size:12px; }
 
 /* شريط تقدّم الاكتمال */
 .progress-wrap{ margin:14px 0; }

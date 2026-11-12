@@ -217,7 +217,7 @@ $bookQuery = function (int $lawyerId) use ($categoryId, $issueTypeId): string {
               <div class="who">
                 <strong><?= htmlspecialchars($lw['full_name']) ?></strong>
                 <div class="sub">
-                  <?php if (!empty($lw['specialization'])): ?><?= htmlspecialchars($lw['specialization']) ?> · <?php endif; ?>
+                  <?php if (!empty($lw['specialization'])): ?><?= htmlspecialchars(lawyer_specialization_display($lw)) ?> · <?php endif; ?>
                   <?= (int)$lw['years_experience'] ?> <?= is_rtl() ? 'سنة خبرة' : 'yrs experience' ?>
                 </div>
                 <?php if (!empty($lw['location'])): ?>

@@ -8,6 +8,7 @@ require_once __DIR__ . '/includes/notifications.php';
 require_once __DIR__ . '/includes/consultation_attachments.php';
 require_once __DIR__ . '/includes/tenant.php';
 require_once __DIR__ . '/includes/legal_journey.php';
+require_once __DIR__ . '/includes/specialization_field.php';
 require_once __DIR__ . '/includes/consultation_payment.php';
 require_once __DIR__ . '/includes/booking_slots.php';
 require_once __DIR__ . '/includes/consultation_pricing.php';
@@ -76,7 +77,7 @@ if (!$lawyer && ($firmInfo || $firmSlug !== '')) {
               <img src="<?= !empty($fl['photo_path']) ? '/' . htmlspecialchars($fl['photo_path']) : '/assets/img/avatar-placeholder.svg' ?>" alt="<?= htmlspecialchars($fl['full_name']) ?>" style="width:56px;height:56px;border-radius:50%;object-fit:cover;background:#EAEFF3" onerror="this.src='/assets/img/avatar-placeholder.svg'">
               <div style="flex:1">
                 <strong style="color:var(--navy-dark)"><?= htmlspecialchars($fl['full_name']) ?></strong>
-                <div class="muted-sm"><?= htmlspecialchars($fl['specialization'] ?? '') ?></div>
+                <div class="muted-sm"><?= htmlspecialchars(lawyer_specialization_display($fl)) ?></div>
               </div>
               <a href="/booking.php?lawyer_id=<?= (int)$fl['id'] ?>" class="btn btn-primary btn-sm"><?= is_rtl() ? 'احجز' : 'Book' ?></a>
             </div>
@@ -443,7 +444,7 @@ $typeLabels = is_rtl()
           <img class="bk-card__avatar" src="<?= !empty($lawyer['photo_path']) ? '/' . htmlspecialchars($lawyer['photo_path']) : '/assets/img/avatar-placeholder.svg' ?>" alt="<?= htmlspecialchars($lawyer['full_name']) ?>" onerror="this.src='/assets/img/avatar-placeholder.svg'">
           <div style="min-width:0">
             <h3 class="bk-card__name"><?= htmlspecialchars($lawyer['full_name']) ?></h3>
-            <div class="bk-card__spec"><?= htmlspecialchars($lawyer['specialization'] ?? '') ?></div>
+            <div class="bk-card__spec"><?= htmlspecialchars(lawyer_specialization_display($lawyer)) ?></div>
           </div>
         </div>
         <h3 class="bk-summary__title"><?= is_rtl() ? 'ملخّص الحجز' : 'Summary' ?></h3>

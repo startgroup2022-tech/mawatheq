@@ -1378,10 +1378,10 @@ class _LawyerChoiceCard extends StatelessWidget {
                         style: TextStyle(
                             fontWeight: FontWeight.w700,
                             color: context.tokens.heading)),
-                    if (lawyer.specialization.isNotEmpty) ...[
+                    if (lawyer.specializationLabel.isNotEmpty) ...[
                       const SizedBox(height: 3),
-                      Text(lawyer.specialization,
-                          maxLines: 1,
+                      Text(lawyer.specializationLabel,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                               color: context.tokens.textMuted, fontSize: 12.5)),

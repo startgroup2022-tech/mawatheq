@@ -28,6 +28,7 @@
  * ============================================================
  */
 require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/../../includes/specialization_field.php';
 
 $auth = api_authenticate($pdo);
 if ($auth['type'] !== 'lawyer') api_error('this endpoint is for lawyers', 403);
@@ -44,7 +45,7 @@ $action = (string)($_GET['action'] ?? ($in['action'] ?? ''));
 
 /** The profile row, or null. */
 $profileRow = function () use ($pdo, $lawyerId): ?array {
-    $stmt = $pdo->prepare('SELECT id, full_name, email, phone, specialization, bio,
+    $stmt = $pdo->prepare('SELECT id, full_name, email, phone, specialization, specializations, bio,
         years_experience, license_number, photo_path, qualifications, social_linkedin,
         social_twitter, social_website, jurisdiction, hourly_rate, rating, status,
         email_verified, created_at
@@ -98,6 +99,7 @@ if ($method === 'GET') {
                     'email' => (string)$row['email'],
                     'phone' => (string)($row['phone'] ?? ''),
                     'specialization' => (string)($row['specialization'] ?? ''),
+                    'specializations' => lawyer_specialization_list($row),
                     'bio' => (string)($row['bio'] ?? ''),
                     'years_experience' => (int)($row['years_experience'] ?? 0),
                     'license_number' => (string)($row['license_number'] ?? ''),
@@ -195,9 +197,23 @@ if ($method !== 'POST') api_error('method not allowed', 405);
 switch ($action) {
     case 'save-profile': {
         $name = trim((string)($in['full_name'] ?? ''));
-        $specialization = trim((string)($in['specialization'] ?? ''));
+        // A lawyer may declare several areas of law. The client may send `specializations`
+        // (an array from the controlled multi-select) or the legacy single `specialization`.
+        //
+        // The array is normalised against the canonical list — that is the controlled UI, so
+        // an unknown value is dropped. The legacy single field is NOT forced through that
+        // list: older clients and stored rows legitimately carry a synonym the canonical list
+        // does not contain (e.g. "تجاري"), and the previous contract stored it verbatim.
+        // Rejecting it here would be a backward-incompatible 422 on a request that used to
+        // succeed, so it is kept as the single declared value.
+        $specList = specialization_normalize_list($in['specializations'] ?? null);
+        if (!$specList) {
+            $legacy = trim((string)($in['specialization'] ?? ''));
+            if ($legacy !== '') $specList = [$legacy];
+        }
         if ($name === '') api_error('full_name is required', 422);
-        if ($specialization === '') api_error('specialization is required', 422);
+        if (!$specList) api_error('specialization is required', 422);
+        $specialization = $specList[0];
 
         $phone = trim((string)($in['phone'] ?? ''));
         $bio = trim((string)($in['bio'] ?? ''));
@@ -222,7 +238,7 @@ switch ($action) {
 
         // Only the columns a lawyer owns. `status` and `email_verified` are absent by
         // construction, which is what makes them unwritable here.
-        $pdo->prepare('UPDATE lawyers SET full_name=?, phone=?, specialization=?, bio=?,
+        $pdo->prepare('UPDATE lawyers SET full_name=?, phone=?, specialization=?, specializations=?, bio=?,
             years_experience=?, license_number=?, qualifications=?, social_linkedin=?,
             social_twitter=?, social_website=?, jurisdiction=?, hourly_rate=?,
             updated_at=NOW() WHERE id=?')
@@ -230,6 +246,7 @@ switch ($action) {
                 $name,
                 $phone !== '' ? $phone : null,
                 $specialization,
+                implode(' - ', $specList),
                 $bio !== '' ? $bio : null,
                 $years,
                 $license !== '' ? $license : null,

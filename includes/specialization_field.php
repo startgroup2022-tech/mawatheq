@@ -58,6 +58,95 @@ function specialization_normalize_stored(string $stored): string {
 }
 
 /**
+ * قائمة تخصصات متعددة → مصفوفة معتمدة، بترتيب القائمة القانونية، بلا تكرار.
+ *
+ * يقبل مصفوفة (من مربّعات الاختيار) أو نصاً مخزّناً مفصولاً بـ " - "، فلا يهمّ إن
+ * جاء المدخل من نموذج جديد أو من صفّ قديم. القيم غير المعروفة تُهمَل (لا نخترع تخصصاً)،
+ * ويُعاد الترتيب حسب القائمة القانونية حتى تكون النتيجة حتمية مهما كان ترتيب الإرسال.
+ */
+function specialization_normalize_list($input): array {
+    if (is_string($input)) {
+        $input = $input === '' ? [] : array_map('trim', explode(' - ', $input));
+    }
+    if (!is_array($input)) return [];
+
+    $options = specialization_options();
+    $chosen = [];
+    foreach ($input as $value) {
+        if (!is_scalar($value)) continue;
+        $value = trim((string)$value);
+        if (in_array($value, $options, true)) $chosen[$value] = true;
+    }
+    return array_values(array_filter($options, fn($opt) => isset($chosen[$opt])));
+}
+
+/** قائمة التخصصات → القيمة المخزّنة في العمود (مفصولة بـ " - "). */
+function specialization_list_to_stored(array $list): string {
+    return implode(' - ', $list);
+}
+
+/**
+ * التخصصات المخزّنة للمحامي كقائمة.
+ *
+ * يقرأ العمود الجديد `specializations` إن وُجد، وإلا يسقط إلى العمود القديم
+ * `specialization` (قيمة واحدة أو مفصولة بـ " - ")، فلا يفقد صفٌّ قديم تخصصه.
+ */
+function lawyer_specialization_list(array $lawyerRow): array {
+    $multi = (string)($lawyerRow['specializations'] ?? '');
+    if (trim($multi) !== '') return specialization_normalize_list($multi);
+    return specialization_normalize_list((string)($lawyerRow['specialization'] ?? ''));
+}
+
+/**
+ * التخصصات المخزّنة → نص عرض واحد مفصول بـ " · ".
+ *
+ * يستخدم في البطاقات والقوائم التي كانت تعرض تخصصاً واحداً. صفٌّ بلا تخصص يُعيد ''،
+ * فلا يعرض القالب فاصلاً معلّقاً.
+ */
+function lawyer_specialization_display(array $lawyerRow): string {
+    return implode(' · ', lawyer_specialization_list($lawyerRow));
+}
+
+
+/**
+ * حقل تخصصات متعددة (شرائح اختيار) مع مربّع بحث.
+ *
+ * يُستخدم في تسجيل المحامي وملفه الشخصي حيث يُسمح بأكثر من تخصص. كل مربّع اختيار
+ * مخفي داخل شريحة هو عنصر التحكم الحقيقي (`name="specializations[]"`)، فالمسار يعمل
+ * بلا JavaScript والقيم المُرسَلة محصورة في القائمة. الشريحة المختارة تتلوّن عبر
+ * `:has(input:checked)` (مع `.is-checked` كبديل لمتصفح قديم)، ومربّع البحث يُخفي
+ * الشرائح غير المطابقة فقط (عبر `data-spec-filter`)، ولا يمسّ حالة الاختيار.
+ *
+ * @param array<int,string> $selected التخصصات المختارة حالياً
+ */
+function render_specialization_checklist(string $name = 'specializations', array $selected = []): void {
+    $rtl = is_rtl();
+    $options = specialization_options();
+    $selected = specialization_normalize_list($selected);
+    $searchPlaceholder = $rtl ? 'ابحث عن تخصص...' : 'Search specializations...';
+    $emptyText = $rtl ? 'لا يوجد تخصص مطابق.' : 'No matching specialization.';
+    ?>
+    <div class="spec-check" data-spec-check>
+      <div class="spec-combo-search">
+        <span class="spec-combo-icon" aria-hidden="true">&#128269;</span>
+        <input type="text" class="pro-input spec-combo-input" data-spec-filter autocomplete="off"
+               placeholder="<?= htmlspecialchars($searchPlaceholder) ?>"
+               aria-label="<?= htmlspecialchars($searchPlaceholder) ?>">
+      </div>
+      <div class="spec-chips" role="group">
+        <?php foreach ($options as $opt): $checked = in_array($opt, $selected, true); ?>
+          <label class="spec-chip<?= $checked ? ' is-checked' : '' ?>" data-spec-label="<?= htmlspecialchars($opt) ?>">
+            <input type="checkbox" name="<?= htmlspecialchars($name) ?>[]" value="<?= htmlspecialchars($opt) ?>" <?= $checked ? 'checked' : '' ?>>
+            <span><?= htmlspecialchars($opt) ?></span>
+          </label>
+        <?php endforeach; ?>
+      </div>
+      <p class="spec-combo-empty" data-spec-empty hidden><?= htmlspecialchars($emptyText) ?></p>
+    </div>
+    <?php
+}
+
+/**
  * حقل تخصص قابل للبحث: مربّع بحث فوق قائمة منسدلة أصلية.
  *
  * الـ `<select>` يبقى عنصر التحكم الحقيقي، فيحتفظ بـ `required` وبمسار «بلا JavaScript»،

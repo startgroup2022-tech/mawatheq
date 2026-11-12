@@ -9,6 +9,12 @@ function lawyer_completion_items(array $lawyer): array {
         || trim((string)($lawyer['social_twitter'] ?? '')) !== ''
         || trim((string)($lawyer['social_website'] ?? '')) !== '';
 
+    // A lawyer may hold several specializations. The checklist item is "declared at
+    // least one area of law", read through the shared helper so the new multi-value
+    // column and the legacy single column both count — never only the legacy one.
+    require_once __DIR__ . '/specialization_field.php';
+    $hasSpecialization = lawyer_specialization_list($lawyer) !== [];
+
     return [
         [
             'label' => $rtl ? 'بيانات الحساب الأساسية' : 'Basic account info',
@@ -27,7 +33,7 @@ function lawyer_completion_items(array $lawyer): array {
         ],
         [
             'label' => $rtl ? 'التخصص' : 'Specialization',
-            'done'  => trim((string)($lawyer['specialization'] ?? '')) !== '',
+            'done'  => $hasSpecialization,
             'weight'=> 15,
         ],
         [

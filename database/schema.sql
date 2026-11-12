@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS lawyers (
     phone VARCHAR(30) DEFAULT NULL,
     password_hash VARCHAR(255) NOT NULL,
     specialization VARCHAR(150) DEFAULT NULL,
+    specializations VARCHAR(500) DEFAULT NULL,
     bio TEXT DEFAULT NULL,
     years_experience SMALLINT UNSIGNED DEFAULT 0,
     license_number VARCHAR(100) DEFAULT NULL,

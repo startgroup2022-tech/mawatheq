@@ -68,15 +68,14 @@
     if (sel.value !== (city || '')) sel.value = '';
   }
 
-  function setSpecialization(value) {
-    var sel = document.getElementById('lawyer_specialization');
-    var search = document.getElementById('lawyer_specialization_search');
-    if (!sel) return;
-    sel.value = value || '';
-    if (search) {
-      var opt = sel.options[sel.selectedIndex];
-      search.value = opt && opt.value !== '' ? opt.textContent : '';
-    }
+  function setSpecializations(list) {
+    var chosen = Array.isArray(list) ? list : (list ? [list] : []);
+    var boxes = document.querySelectorAll('#lawyerForm input[name="specializations[]"]');
+    Array.prototype.forEach.call(boxes, function (box) {
+      box.checked = chosen.indexOf(box.value) !== -1;
+      var chip = box.closest('.spec-chip');
+      if (chip) chip.classList.toggle('is-checked', box.checked);
+    });
   }
 
   function openCreate() {
@@ -91,7 +90,7 @@
     var pw = document.getElementById('lawyer_password');
     if (pw) { pw.required = true; pw.placeholder = '8 أحرف على الأقل'; }
     resetError();
-    setSpecialization('');
+    setSpecializations([]);
     setCountry('SA');
     setCity('');
     open();
@@ -138,7 +137,7 @@
     }
 
     resetError();
-    setSpecialization(data.specialization);
+    setSpecializations(data.specializations || []);
     setCountry(data.country_code);
     setCity(data.city);
     open();

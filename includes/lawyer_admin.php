@@ -44,6 +44,7 @@ function lawyer_admin_collect(array $post): array {
         'phone_dial'       => $str('phone_dial', '+966'),
         'phone_local'      => $str('phone_local'),
         'specialization'   => $str('specialization'),
+        'specializations'  => is_array($post['specializations'] ?? null) ? $post['specializations'] : [],
         'years_experience' => $str('years_experience'),
         'hourly_rate'      => $str('hourly_rate'),
         'jurisdiction'     => $str('jurisdiction', 'السعودية'),
@@ -88,8 +89,15 @@ function lawyer_admin_validate(PDO $pdo, array $post, ?int $excludeId = null, bo
         }
     }
 
-    if (!in_array($d['specialization'], specialization_options(), true)) {
-        return lawyer_admin_fail('يرجى اختيار تخصص قانوني من القائمة.', $d);
+    // A lawyer may hold more than one specialization. The multi-select is authoritative
+    // when present; a caller that still posts the single field (an older form) is
+    // accepted as a one-element list, so both shapes work.
+    $specList = specialization_normalize_list($d['specializations']);
+    if (!$specList && $d['specialization'] !== '' && in_array($d['specialization'], specialization_options(), true)) {
+        $specList = [$d['specialization']];
+    }
+    if (!$specList) {
+        return lawyer_admin_fail('يرجى اختيار تخصص قانوني واحد على الأقل من القائمة.', $d);
     }
 
     $country = lawyer_country_from_input($d['country_code'], $d['jurisdiction']);
@@ -134,7 +142,8 @@ function lawyer_admin_validate(PDO $pdo, array $post, ?int $excludeId = null, bo
             'full_name'        => $d['full_name'],
             'email'            => $d['email'],
             'phone'            => $phone['value'],
-            'specialization'   => $d['specialization'],
+            'specialization'   => $specList[0],
+            'specializations'  => specialization_list_to_stored($specList),
             'years_experience' => lawyer_experience_normalize($d['years_experience']),
             'hourly_rate'      => lawyer_price_normalize($d['hourly_rate']),
             'jurisdiction'     => $country['jurisdiction'],

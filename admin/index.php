@@ -1,6 +1,7 @@
 <?php
 $activeAdmin = 'dashboard';
 require_once __DIR__ . '/includes/admin_header.php';
+require_once __DIR__ . '/../includes/specialization_field.php';
 
 // A restricted staff account gets its own dashboard. The main one below is built around
 // confidential figures — revenue, outstanding invoices, client and case counts, the
@@ -69,7 +70,7 @@ foreach ($rows("SELECT due_at t, title FROM crm_tasks WHERE status='open' AND du
     $agenda[] = ['t' => $r['t'], 'title' => $r['title'], 'sub' => 'CRM', 'type' => 'crm'];
 usort($agenda, fn($a, $b) => strcmp($a['t'], $b['t'])); $agenda = array_slice($agenda, 0, 7);
 
-$topLawyers = $rows("SELECT l.id,l.full_name,l.rating,l.specialization, COUNT(c.id) total_c, COALESCE(SUM(c.status='completed'),0) done_c FROM lawyers l LEFT JOIN consultations c ON c.lawyer_id=l.id WHERE l.status='approved' GROUP BY l.id ORDER BY done_c DESC, l.rating DESC LIMIT 5");
+$topLawyers = $rows("SELECT l.id,l.full_name,l.rating,l.specialization,l.specializations, COUNT(c.id) total_c, COALESCE(SUM(c.status='completed'),0) done_c FROM lawyers l LEFT JOIN consultations c ON c.lawyer_id=l.id WHERE l.status='approved' GROUP BY l.id ORDER BY done_c DESC, l.rating DESC LIMIT 5");
 $recentLeads = $rows('SELECT * FROM contact_leads ORDER BY id DESC LIMIT 5');
 $recentBookings = $rows('SELECT c.*, u.full_name user_name, l.full_name lawyer_name FROM consultations c JOIN users u ON u.id=c.user_id JOIN lawyers l ON l.id=c.lawyer_id ORDER BY c.id DESC LIMIT 5');
 $money = fn($v) => money($v);
@@ -159,7 +160,7 @@ $stCol = ['open' => '#2547b8', 'in_review' => '#c39a3e', 'closed_won' => '#12805
 
   <div class="grid g-3">
     <div class="card"><div class="card-h"><h3><?= h(adm('أفضل المحامين أداءً', 'Top lawyers')) ?></h3><a class="btn btn-outline btn-sm" href="/admin/lawyers.php"><?= h(adm('الكل', 'All')) ?></a></div>
-      <ul class="rowlist"><?php foreach ($topLawyers as $lw): ?><li><span class="av"><?= h(mb_substr($lw['full_name'], 0, 1, 'UTF-8')) ?></span><div class="grow"><b><?= h($lw['full_name']) ?></b><small><?= h($lw['specialization']) ?> · <?= (int)$lw['done_c'] ?>/<?= (int)$lw['total_c'] ?></small></div><span class="pill gold">★ <?= h($lw['rating']) ?></span></li>
+      <ul class="rowlist"><?php foreach ($topLawyers as $lw): ?><li><span class="av"><?= h(mb_substr($lw['full_name'], 0, 1, 'UTF-8')) ?></span><div class="grow"><b><?= h($lw['full_name']) ?></b><small><?= h(lawyer_specialization_display($lw)) ?> · <?= (int)$lw['done_c'] ?>/<?= (int)$lw['total_c'] ?></small></div><span class="pill gold">★ <?= h($lw['rating']) ?></span></li>
       <?php endforeach; if (!$topLawyers) echo '<li class="empty">' . h(adm('لا يوجد محامون بعد', 'No lawyers yet')) . '</li>'; ?></ul></div>
     <div class="card"><div class="card-h"><h3><?= h(adm('أحدث الحجوزات', 'Latest bookings')) ?></h3><a class="btn btn-outline btn-sm" href="/admin/consultations.php"><?= h(adm('الكل', 'All')) ?></a></div>
       <ul class="rowlist"><?php foreach ($recentBookings as $b): ?><li><div class="grow"><b><?= h($b['user_name']) ?></b><small><?= h($b['lawyer_name']) ?> · <?= h(date('m-d H:i', strtotime($b['scheduled_at']))) ?></small></div><span class="status-pill status-<?= h($b['status']) ?>"><?= h($b['status']) ?></span></li>

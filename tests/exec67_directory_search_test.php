@@ -94,7 +94,12 @@ $r = legal_journey_directory_search($pdo, ['country' => 'AE', 'specialization' =
 check('combined filters that cannot all hold return empty', count($r) === 0);
 
 echo "\n== 7. availability is real, not a badge ==\n";
-$day = (int)date('w'); // 0=Sunday
+// Seed hours for TOMORROW's weekday, not today. A window on today is entirely in the
+// past once the clock passes its end time, and `get_available_slots()` correctly drops
+// past slots — so seeding today makes this check pass in the morning and fail every
+// afternoon, a phantom that has nothing to do with the code. Tomorrow's weekday always
+// has future slots and still falls inside the 7-day availability window.
+$day = (int)date('w', strtotime('+1 day'));
 $pdo->prepare('INSERT INTO lawyer_availability (lawyer_id, day_of_week, start_time, end_time, slot_minutes) VALUES (?,?,?,?,?)')
     ->execute([$ids[0], $day, '09:00:00', '12:00:00', 30]);
 $r = legal_journey_directory_search($pdo, ['available_only' => 1, 'q' => $suffix]);

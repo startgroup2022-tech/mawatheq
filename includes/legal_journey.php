@@ -186,7 +186,8 @@ function legal_journey_lawyer_category_index(PDO $pdo): array {
         }
 
         $map = legal_journey_specialization_categories();
-        $lawyers = $pdo->query("SELECT id, specialization FROM lawyers WHERE status = 'approved'")->fetchAll();
+        require_once __DIR__ . '/specialization_field.php';
+        $lawyers = $pdo->query("SELECT id, specialization, specializations FROM lawyers WHERE status = 'approved'")->fetchAll();
 
         foreach ($lawyers as $lw) {
             $lid = (int)$lw['id'];
@@ -197,9 +198,13 @@ function legal_journey_lawyer_category_index(PDO $pdo): array {
                 $cats = $explicit[$lid];
             } else {
                 $cats = [];
-                $spec = trim((string)$lw['specialization']);
-                foreach ($map[$spec] ?? [] as $catName) {
-                    if (isset($catIdByName[$catName])) $cats[] = $catIdByName[$catName];
+                // A lawyer may declare several areas of law; every declared area is a
+                // statement they made, so each maps to its category. An unmapped value
+                // still contributes nothing (silence, never a guess).
+                foreach (lawyer_specialization_list($lw) as $spec) {
+                    foreach ($map[$spec] ?? [] as $catName) {
+                        if (isset($catIdByName[$catName])) $cats[] = $catIdByName[$catName];
+                    }
                 }
             }
             foreach (array_unique($cats) as $cid) {
@@ -426,7 +431,7 @@ function legal_journey_lawyers_for_specialty(PDO $pdo, int $categoryId, array $o
     $f = legal_journey_filter_params($opts + ['category_id' => $categoryId]);
 
     $ph = implode(',', array_fill(0, count($ids), '?'));
-    $sql = "SELECT l.id, l.full_name, l.specialization, l.bio, l.years_experience,
+    $sql = "SELECT l.id, l.full_name, l.specialization, l.specializations, l.bio, l.years_experience,
                    l.hourly_rate, l.rating, l.photo_path, l.jurisdiction, l.country_code, l.city,
                    (SELECT MIN(a.slot_minutes) FROM lawyer_availability a WHERE a.lawyer_id = l.id) AS slot_minutes
               FROM lawyers l
@@ -521,7 +526,7 @@ function legal_journey_directory_search(PDO $pdo, array $opts = []): array {
 
     $f = legal_journey_filter_params($opts);
 
-    $sql = "SELECT l.id, l.full_name, l.specialization, l.bio, l.years_experience,
+    $sql = "SELECT l.id, l.full_name, l.specialization, l.specializations, l.bio, l.years_experience,
                    l.hourly_rate, l.rating, l.photo_path, l.jurisdiction, l.country_code, l.city,
                    (SELECT MIN(a.slot_minutes) FROM lawyer_availability a WHERE a.lawyer_id = l.id) AS slot_minutes
               FROM lawyers l
@@ -529,7 +534,14 @@ function legal_journey_directory_search(PDO $pdo, array $opts = []): array {
     $params = [];
 
     if ($f['jurisdiction'] !== '') { $sql .= ' AND l.jurisdiction = ?'; $params[] = $f['jurisdiction']; }
-    if ($f['specialization'] !== '') { $sql .= ' AND l.specialization = ?'; $params[] = $f['specialization']; }
+    if ($f['specialization'] !== '') {
+        // Match the declared value as a whole token in the multi-value column as well as
+        // the legacy single column, so a lawyer who listed several areas is found under
+        // each of them and a filter never returns a lawyer for a substring of a value.
+        $sql .= " AND (l.specialization = ? OR CONCAT(' - ', l.specializations, ' - ') LIKE CONCAT('% - ', ?, ' - %'))";
+        $params[] = $f['specialization'];
+        $params[] = $f['specialization'];
+    }
     if ($f['country'] !== '') {
         $name = jurisdiction_for_country($f['country']);
         $sql .= ' AND (l.country_code = ? OR l.jurisdiction = ?)';

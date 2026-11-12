@@ -5,6 +5,7 @@ require_once __DIR__ . '/includes/admin_guard.php';
 require_once __DIR__ . '/../includes/phone.php';
 require_once __DIR__ . '/../includes/specialization_field.php';
 require_once __DIR__ . '/../includes/profile_completion.php';
+require_once __DIR__ . '/../includes/lawyer_readiness.php';
 require_once __DIR__ . '/../includes/notifications.php';
 require_once __DIR__ . '/../includes/audit_log.php';
 require_once __DIR__ . '/../includes/jurisdiction.php';
@@ -24,6 +25,7 @@ $blankLawyer = [
     'phone_dial' => '+966',
     'phone_local' => '',
     'specialization' => '',
+    'specializations' => [],
     'years_experience' => '0',
     'hourly_rate' => '',
     'jurisdiction' => 'السعودية',
@@ -45,14 +47,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'creat
         try {
             $stmt = $pdo->prepare(
                 'INSERT INTO lawyers
-                (full_name,email,phone,password_hash,specialization,years_experience,hourly_rate,
+                (full_name,email,phone,password_hash,specialization,specializations,years_experience,hourly_rate,
                  jurisdiction,country_code,city,status,email_verified)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,1)'
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1)'
             );
             $stmt->execute([
                 $d['full_name'], $d['email'], $d['phone'],
                 password_hash($d['password'], PASSWORD_BCRYPT),
-                $d['specialization'], $d['years_experience'], $d['hourly_rate'],
+                $d['specialization'], $d['specializations'], $d['years_experience'], $d['hourly_rate'],
                 $d['jurisdiction'], $d['country_code'], $d['city'], $d['status'],
             ]);
             $newId = (int)$pdo->lastInsertId();
@@ -90,11 +92,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit'
         } else {
             $d = $result['data'];
             try {
-                $sql = 'UPDATE lawyers SET full_name=?, email=?, phone=?, specialization=?,
+                $sql = 'UPDATE lawyers SET full_name=?, email=?, phone=?, specialization=?, specializations=?,
                         years_experience=?, hourly_rate=?, jurisdiction=?, country_code=?, city=?,
                         status=?';
                 $params = [
-                    $d['full_name'], $d['email'], $d['phone'], $d['specialization'],
+                    $d['full_name'], $d['email'], $d['phone'], $d['specialization'], $d['specializations'],
                     $d['years_experience'], $d['hourly_rate'], $d['jurisdiction'],
                     $d['country_code'], $d['city'], $d['status'],
                 ];
@@ -182,6 +184,10 @@ try {
 }
 
 $totalLawyers = count($lawyers);
+
+// One batched pass for the per-lawyer counts the readiness signal needs, so the list
+// does not run two queries per row.
+$readinessCounts = lawyer_readiness_counts($pdo, array_map(fn($l) => (int)$l['id'], $lawyers));
 $activeLawyers = 0;
 $suspendedLawyers = 0;
 
@@ -1073,6 +1079,7 @@ body.lawyers-modal-open {
                         <th>الأجر/ساعة</th>
                         <th>التقييم</th>
                         <th>اكتمال الملف</th>
+                        <th>الجاهزية للحجز</th>
                         <th>المصدر</th>
                         <th>المكتب</th>
                         <th>الحالة</th>
@@ -1113,7 +1120,8 @@ body.lawyers-modal-open {
 
                         <td>
                             <div class="specialization-cell">
-                                <?= htmlspecialchars($lw['specialization'] ?: '—') ?>
+                                <?php $specLabels = lawyer_specialization_list($lw); ?>
+                                <?= $specLabels ? htmlspecialchars(implode(' · ', $specLabels)) : '—' ?>
                             </div>
                         </td>
 
@@ -1141,6 +1149,15 @@ body.lawyers-modal-open {
 
                         <td class="completion-cell">
                             <?php render_progress_bar($pct); ?>
+                        </td>
+
+                        <td>
+                            <?php $ready = lawyer_panel_readiness($pdo, $lw, $readinessCounts[(int)$lw['id']] ?? null); ?>
+                            <?php if ($ready['ready']): ?>
+                                <span class="status-pill status-approved" title="<?= htmlspecialchars(adm('جاهز لاستقبال الحجوزات', 'Ready to take bookings')) ?>"><?= adm('جاهز', 'Ready') ?></span>
+                            <?php else: ?>
+                                <span class="status-pill status-default" title="<?= htmlspecialchars(lawyer_readiness_blocking_label($ready['blocking'])) ?>"><?= adm('غير مكتمل', 'Incomplete') ?></span>
+                            <?php endif; ?>
                         </td>
 
                         <td>
@@ -1180,6 +1197,7 @@ body.lawyers-modal-open {
                                         'full_name' => (string)($lw['full_name'] ?? ''),
                                         'email' => (string)($lw['email'] ?? ''),
                                         'specialization' => specialization_normalize_stored((string)($lw['specialization'] ?? '')),
+                                        'specializations' => lawyer_specialization_list($lw),
                                         'years_experience' => (string)(int)($lw['years_experience'] ?? 0),
                                         'hourly_rate' => $lw['hourly_rate'] !== null ? (string)currency_number($lw['hourly_rate']) : '',
                                         'country_code' => lawyer_country_code($lw) ?? COUNTRY_DEFAULT,
@@ -1319,9 +1337,9 @@ foreach (city_options() as $code => $list) $cityData[$code] = array_values($list
 
                 <div class="form-grid">
                     <div class="field full">
-                        <label for="lawyer_specialization">التخصص القانوني</label>
-                        <?php render_specialization_combobox('specialization', (string)($modalOld['specialization'] ?? ''), 'lawyer_specialization'); ?>
-                        <div class="form-hint">اكتب للبحث ثم اختر تخصصاً واحداً من القائمة.</div>
+                        <label>التخصصات القانونية</label>
+                        <?php render_specialization_checklist('specializations', lawyer_specialization_list($modalOld)); ?>
+                        <div class="form-hint">اختر تخصصاً واحداً أو أكثر. اكتب في مربّع البحث لتضييق القائمة.</div>
                     </div>
 
                     <div class="field">

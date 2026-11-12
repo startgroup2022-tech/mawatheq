@@ -4,6 +4,7 @@ require_once __DIR__ . '/includes/lawyer_header.php';
 require_once __DIR__ . '/../includes/phone.php';
 require_once __DIR__ . '/../includes/specialization_field.php';
 require_once __DIR__ . '/../includes/profile_completion.php';
+require_once __DIR__ . '/../includes/lawyer_readiness.php';
 require_once __DIR__ . '/../includes/jurisdiction.php';
 $lawyerId = $_SESSION['lawyer_id'];
 
@@ -17,8 +18,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $phoneResult = validate_phone($_POST['phone_dial'] ?? '+966', $_POST['phone_local'] ?? '');
     if (!$phoneResult['ok']) {
         $error = $phoneResult['error'];
-    } elseif (trim($_POST['specialization'] ?? '') === '') {
-        $error = is_rtl() ? 'يرجى اختيار التخصص القانوني.' : 'Please select your legal specialization.';
+    } elseif (specialization_normalize_list($_POST['specializations'] ?? []) === []) {
+        $error = is_rtl() ? 'يرجى اختيار تخصص قانوني واحد على الأقل.' : 'Please select at least one legal specialization.';
     } else {
         // رفع صورة شخصية (اختياري)
         $photoPath = $lawyer['photo_path'];
@@ -37,9 +38,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if (!$error) {
-            $pdo->prepare('UPDATE lawyers SET full_name=?, phone=?, specialization=?, bio=?, years_experience=?, hourly_rate=?, license_number=?, qualifications=?, social_linkedin=?, social_twitter=?, social_website=?, photo_path=?, jurisdiction=? WHERE id=?')
+            $specList = specialization_normalize_list($_POST['specializations'] ?? []);
+            $pdo->prepare('UPDATE lawyers SET full_name=?, phone=?, specialization=?, specializations=?, bio=?, years_experience=?, hourly_rate=?, license_number=?, qualifications=?, social_linkedin=?, social_twitter=?, social_website=?, photo_path=?, jurisdiction=? WHERE id=?')
                 ->execute([
-                    trim($_POST['full_name']), $phoneResult['value'], trim($_POST['specialization']), trim($_POST['bio'] ?? ''),
+                    trim($_POST['full_name']), $phoneResult['value'], ($specList[0] ?? ''), specialization_list_to_stored($specList), trim($_POST['bio'] ?? ''),
                     (int)$_POST['years_experience'], (float)$_POST['hourly_rate'], trim($_POST['license_number'] ?? ''),
                     trim($_POST['qualifications'] ?? ''), trim($_POST['social_linkedin'] ?? ''), trim($_POST['social_twitter'] ?? ''),
                     trim($_POST['social_website'] ?? ''), $photoPath, $_POST['jurisdiction'] ?? 'السعودية', $lawyerId
@@ -57,11 +59,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $phoneParts = split_phone($lawyer['phone'] ?? '');
+$readiness = lawyer_panel_readiness($pdo, $lawyer);
 ?>
 <div class="app-content">
   <h2><?= is_rtl() ? 'ملفي الشخصي' : 'My Profile' ?></h2>
 
   <?php render_completion_card($lawyer); ?>
+
+  <?php if (!$readiness['ready']): ?>
+    <?php render_lawyer_readiness_card($readiness); ?>
+  <?php endif; ?>
 
   <?php if ($saved): ?><div class="form-alert success"><?= is_rtl() ? 'تم الحفظ بنجاح.' : 'Saved successfully.' ?></div><?php endif; ?>
   <?php if ($error): ?><div class="form-alert error"><?= htmlspecialchars($error) ?></div><?php endif; ?>
@@ -88,8 +95,9 @@ $phoneParts = split_phone($lawyer['phone'] ?? '');
 
     <div class="form-section-title"><?= is_rtl() ? 'التخصص والخبرة' : 'Specialization & experience' ?></div>
     <div class="field">
-      <label><?= is_rtl() ? 'التخصص القانوني' : 'Legal specialization' ?></label>
-      <?php render_specialization_field('specialization', $lawyer['specialization']); ?>
+      <label><?= is_rtl() ? 'التخصصات القانونية' : 'Legal specializations' ?></label>
+      <?php render_specialization_checklist('specializations', lawyer_specialization_list($lawyer)); ?>
+      <p class="field-hint"><?= is_rtl() ? 'اختر كل التخصصات التي تمارسها — يمكنك اختيار أكثر من تخصص.' : 'Choose every specialization you practise — you may select more than one.' ?></p>
     </div>
     <div class="field">
       <label><?= is_rtl() ? 'الدولة / الاختصاص القضائي' : 'Country / Jurisdiction' ?></label>
