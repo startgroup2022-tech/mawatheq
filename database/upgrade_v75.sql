@@ -1,5 +1,5 @@
 -- ============================================================================
--- Mawatheq Platform — lawyers practise from Saudi Arabia only (Execution 68)
+-- Mawatheq Platform — lawyers practise from Saudi Arabia only (Execution 71)
 -- upgrade_v75.sql
 -- ============================================================================
 --
