@@ -1,6 +1,12 @@
 <?php
 require_once __DIR__ . '/secret_crypto.php';
 require_once __DIR__ . '/currency.php';
+// ngenius_refund_order() maps the gateway's own state through gateway_normalize_state(),
+// which lives in the gateway contract. Loading it here — rather than trusting every caller
+// to have done so — is what keeps a consumer that includes only ngenius.php (the paid-
+// consultation return page and webhook path do exactly that) from dying with "Call to
+// undefined function" the moment a payment is verified.
+require_once __DIR__ . '/gateway/contract.php';
 /**
  * ============================================================
  * تكامل حقيقي مع بوابة الدفع السعودية N-Genius (Network International)
@@ -194,7 +200,17 @@ function ngenius_create_order(
         return ['ok' => false, 'order_reference' => null, 'payment_url' => null, 'error' => 'تعذّر الاتصال ببوابة الدفع: ' . $curlError];
     }
     $data = json_decode($response, true);
-    if ($httpCode >= 300 || empty($data['reference']) || empty($data['_links']['payment']['href'])) {
+    // N-Genius documents the hosted page at _links.payment.href. Some responses wrap the
+    // link in a one-element list instead of an object; accept both shapes so a schema that
+    // moved is read correctly rather than reported as a failed order with a valid reference.
+    $paymentHref = '';
+    if (is_array($data)) {
+        $payment = $data['_links']['payment'] ?? null;
+        if (is_array($payment)) {
+            $paymentHref = (string)($payment['href'] ?? ($payment[0]['href'] ?? ''));
+        }
+    }
+    if ($httpCode >= 300 || empty($data['reference']) || $paymentHref === '') {
         // The gateway reports the reason under errors[0].message/errorCode (array); older
         // responses used a single error.message object. Accept both so the real cause is not
         // replaced by a generic message, and log it (never the token).
@@ -205,7 +221,7 @@ function ngenius_create_order(
             . ' env=' . $environment . ' outlet=' . $outletRef . ' body=' . substr((string)$response, 0, 300));
         return ['ok' => false, 'order_reference' => null, 'payment_url' => null, 'error' => $msg];
     }
-    return ['ok' => true, 'order_reference' => $data['reference'], 'payment_url' => $data['_links']['payment']['href'], 'error' => null];
+    return ['ok' => true, 'order_reference' => $data['reference'], 'payment_url' => $paymentHref, 'error' => null];
 }
 
 /**

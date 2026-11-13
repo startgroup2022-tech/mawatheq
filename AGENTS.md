@@ -4170,3 +4170,45 @@ before investigating.
 Run it as `sg www-data -c 'bash tests/run_all_tests.sh'`. A sandbox reset removes PHP, MariaDB
 and Apache entirely (not just their state); `bash tests/setup_test_env.sh` re-provisions all of
 it, creates `config/secrets.php`, seeds QA data, and brings up both `:8080` and `:12000`.
+
+## Execution 68 (resume) — the customer's payment reference must be actionable
+
+A production customer reported *"تعذّر بدء عملية الدفع الإلكتروني … لم يتم خصم أي مبلغ"* with
+reference `B7A81366`. That exact sentence is `checkout.php`'s **package** branch; the reference
+is `gateway_diagnostics.correlation_id` (the only `^[A-F0-9]{8}$` generator in the payment
+path). The failure is a *structured* branch in `package_payment_start()`, not a 500 — the Exec 67
+diagnostics already recorded it. Three defects made that reference a dead end, and each is
+pinned by `tests/exec68_payment_diagnostics_fixes_test.php`:
+
+1. **`includes/ngenius.php` did not require `includes/gateway/contract.php`.** `consultation_payment.php`
+   calls `gateway_normalize_state()` / `gateway_is_paid_state()` (defined in `contract.php`) but
+   only includes `ngenius.php`. On the paid-consultation **return page** and the **webhook**
+   confirm path — which never load the gateway bootstrap — verification died with
+   "Call to undefined function". `ngenius.php` now requires the contract, so every consumer of
+   the ngenius helpers has the state functions. Guard: a real include closure, not a grep.
+2. **There was no lookup by reference.** The console only listed the last 25 rows, so an attempt
+   older than a few minutes could not be found even with the id in hand. Added
+   `gateway_diag_find()` (+ `gateway_diag_is_correlation_id()`) and a lookup form on
+   `admin/gateways.php?ref=…` that renders the row and a plain-language reason
+   (`gateway_diag_reason()`). `tools/gateway_doctor.php` does the same from the CLI on a server
+   where the console is unreachable: `php tools/gateway_doctor.php B7A81366`.
+3. **An un-migrated install showed a reference it never recorded.** With `upgrade_v72.sql`
+   unapplied, `gateway_diag_record()` returned early — the customer read an id that existed
+   nowhere. It now writes a `gateway_diag[<ref>] …` line to the error log (never a credential)
+   so the id is still findable by `grep`.
+
+### The probe had a check that could not fail
+
+`gateway_diag_probe()` charged in the **outlet** currency directly, so it reported `ok` while
+every real package order — denominated in the **site** currency (`currency_code()`) — was
+refused by `package_payment_start()` with `unsupported_currency` before it reached the gateway.
+The probe now has an explicit `currency` stage that compares the two and fails the verdict, and
+`admin/gateways.php` shows a proactive mismatch banner (the settings look complete, the gateway
+is reachable, yet no payment can start). `tools/gateway_doctor.php` prints the same comparison.
+This is the leading production candidate for `B7A81366`: it is silent, it survives a "is the
+gateway configured?" check, and it refuses 100% of package purchases.
+
+**Do not claim a real payment succeeded without a documented live test.** The fixture
+(`tests/fixtures/ngenius_server.php`) proves the client speaks the N-Genius schema; it does not
+prove a merchant account works. Verify on the server with `tools/gateway_doctor.php --live`
+(creates an *unpaid* order; nothing is charged) and a real hosted-page payment.

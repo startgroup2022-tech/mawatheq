@@ -94,7 +94,20 @@ $statusLabel = $gateway->isEnabled() ? ($env === 'live' ? '🟢 مفعّلة (إ
     if ($ngEnabled && !$ngHasOutlet) $ngMissing[] = is_rtl() ? 'رقم المنفذ (Outlet Ref)' : 'Outlet Ref';
     if ($ngEnabled && !$ngHasKey) $ngMissing[] = is_rtl() ? 'مفتاح الحساب (API Key)' : 'API Key';
     if ($ngEnabled && !$ngHasWebhook) $ngMissing[] = is_rtl() ? 'السر المشترك للويب هوك (Webhook Secret)' : 'Webhook Secret';
+    // A currency mismatch is the quietest way for every package/consultation payment to fail:
+    // the settings look complete, the gateway is reachable, yet package_payment_start() refuses
+    // the order before it is ever sent. Surface it here instead of only in the failure log.
+    $ngSiteCurrency = strtoupper(currency_code());
+    $ngOutletCurrency = ngenius_currency($nconfig);
+    $ngCurrencyMismatch = $ngEnabled && !ngenius_supports_currency($nconfig, $ngSiteCurrency);
   ?>
+  <?php if ($ngCurrencyMismatch): ?>
+    <div class="form-alert error">
+      <?= is_rtl()
+        ? '⚠️ عملة تسوية البوابة (' . htmlspecialchars($ngOutletCurrency) . ') لا تطابق عملة الموقع (' . htmlspecialchars($ngSiteCurrency) . '). سيُرفض بدء الدفع لشراء الباقات والاستشارات قبل أن يصل إلى البوابة. اضبط «عملة التسوية لدى البوابة» من الإعدادات ← الدفع لتطابق عملة حساب التاجر، أو غيّر عملة الموقع.'
+        : '⚠️ The gateway settlement currency (' . htmlspecialchars($ngOutletCurrency) . ') does not match the site currency (' . htmlspecialchars($ngSiteCurrency) . '). Package and consultation payments will be refused before they reach the gateway. Set "Gateway settlement currency" in Settings → Payments to match the merchant account, or change the site currency.' ?>
+    </div>
+  <?php endif; ?>
   <?php if ($ngMissing): ?>
     <div class="form-alert error">
       <?= is_rtl()
@@ -353,6 +366,62 @@ $statusLabel = $gateway->isEnabled() ? ($env === 'live' ? '🟢 مفعّلة (إ
       <span id="ngeniusProbeResult" style="font-size:.85rem"></span>
     </div>
     <div id="ngeniusProbeStages" style="margin-top:10px"></div>
+
+    <?php
+    // The customer is told to quote the reference, so the console must accept it back.
+    // A plain-text search over the last N rows cannot find an older attempt; this looks the
+    // exact id up in the database.
+    $refQuery = strtoupper(trim((string)($_GET['ref'] ?? '')));
+    $refRows = [];
+    $refSearched = false;
+    if ($refQuery !== '' && function_exists('gateway_diag_find')) {
+        $refSearched = true;
+        $refRows = gateway_diag_find($pdo, $refQuery);
+    }
+    ?>
+    <form method="get" class="dash-card" style="margin-top:14px;padding:14px 18px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+      <div class="field" style="margin:0;min-width:220px">
+        <label for="diagRef"><?= is_rtl() ? 'البحث بالرقم المرجعي' : 'Look up a reference' ?></label>
+        <input type="text" id="diagRef" name="ref" value="<?= htmlspecialchars($refQuery) ?>" maxlength="8" placeholder="<?= is_rtl() ? 'مثال: B7A81366' : 'e.g. B7A81366' ?>" autocomplete="off" style="text-transform:uppercase">
+      </div>
+      <input type="hidden" name="tenant" value="<?= htmlspecialchars((string)$scopeRaw) ?>">
+      <button class="btn btn-primary" type="submit"><?= is_rtl() ? 'بحث' : 'Search' ?></button>
+      <?php if ($refSearched): ?><a class="btn btn-outline" href="?tenant=<?= urlencode((string)$scopeRaw) ?>"><?= is_rtl() ? 'إلغاء' : 'Clear' ?></a><?php endif; ?>
+    </form>
+    <?php if ($refSearched): ?>
+      <?php if (!$refRows): ?>
+        <div class="form-alert error" style="margin-top:10px">
+          <?= is_rtl()
+            ? 'لا يوجد سجلّ بهذا الرقم المرجعي في قاعدة البيانات. تأكد من الرقم، أو طبّق الترقية upgrade_v72.sql إن لم تكن مطبّقة بعد.'
+            : 'No diagnostics row has this reference. Check the number, or apply upgrade_v72.sql if it is not applied yet.' ?>
+        </div>
+      <?php else: ?>
+        <div class="table-wrap" style="overflow-x:auto;margin-top:10px">
+          <table class="admin-table">
+            <thead><tr>
+              <th><?= is_rtl() ? 'المرجع' : 'Ref' ?></th>
+              <th><?= is_rtl() ? 'العملية' : 'Operation' ?></th>
+              <th><?= is_rtl() ? 'المرحلة' : 'Stage' ?></th>
+              <th><?= is_rtl() ? 'السبب' : 'Reason' ?></th>
+              <th><?= is_rtl() ? 'التفاصيل' : 'Detail' ?></th>
+              <th><?= is_rtl() ? 'التوقيت' : 'Time' ?></th>
+            </tr></thead>
+            <tbody>
+              <?php foreach ($refRows as $r): $reason = gateway_diag_reason((string)($r['error_code'] ?? '')); ?>
+                <tr>
+                  <td><code><?= htmlspecialchars((string)$r['correlation_id']) ?></code></td>
+                  <td><?= htmlspecialchars((string)$r['operation']) ?></td>
+                  <td><?= htmlspecialchars((string)$r['stage']) ?></td>
+                  <td><?= htmlspecialchars((string)($r['error_code'] ?? '—')) ?></td>
+                  <td style="max-width:420px;word-break:break-word"><?= htmlspecialchars($reason[is_rtl() ? 'ar' : 'en']) ?><br><small style="color:var(--text-muted)"><?= htmlspecialchars((string)($r['detail'] ?? '')) ?></small></td>
+                  <td style="white-space:nowrap"><?= htmlspecialchars((string)$r['created_at']) ?></td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        </div>
+      <?php endif; ?>
+    <?php endif; ?>
 
     <h4 style="margin:18px 0 6px;font-size:.95rem"><?= is_rtl() ? 'آخر محاولات الدفع' : 'Recent payment attempts' ?></h4>
     <?php
