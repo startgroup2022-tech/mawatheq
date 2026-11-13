@@ -373,9 +373,10 @@ class _AccountScreenState extends State<AccountScreen> {
         const SizedBox(height: 22),
 
         // Client-only engagement destinations. A lawyer has no favorites, no
-        // availability alerts and no consultations to rate, so the whole block is
-        // absent for them rather than shown empty.
-        if (!user.isLawyer) ...[
+        // availability alerts and no consultations to rate, and a guest has no
+        // account to attach them to, so the block appears for a signed-in client
+        // only rather than being shown empty or offering a tap that cannot work.
+        if (user.isClient) ...[
           SectionHeader(title: 'نشاطي'),
           _SettingTile(
             icon: Icons.favorite_border,
