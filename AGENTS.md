@@ -4145,14 +4145,17 @@ visitor who has no account to favourite with. The "نشاطي" block was gated t
 (a) offered taps that could not work and (b) pushed the settings section below the default
 800x600 widget-test viewport, breaking `exec40_theme_chooser_test`. It is now `user.isClient`.
 
-### Flutter SDK drift: 10 pre-existing failures, all in `RelayoutWhenSystemFontsChangeMixin`
+### Flutter SDK drift is the cause of the "10 failing tests" — pin 3.47.7
 
-The full `flutter test` suite reports 348 passed / 10 failed in this sandbox, and **all ten
-fail identically at the baseline commit `e939924` (Execution 71) with no Exec 72 change
-applied**. The cause is the sandbox now running **Flutter 3.50.0** while the project was
-verified on 3.47.7: the framework leaves a transient `SystemFonts` callback after the widget
-tree is disposed ("An animation is still running even after the widget tree was disposed").
-Do not chase these as regressions — diff against a `git worktree` of the parent commit first.
+A sandbox reset re-installed **Flutter 3.50.0**, but the project is verified on **3.47.7**.
+On 3.50.0 the full `flutter test` suite reports 10 failures, all from the framework leaving a
+transient `SystemFonts` callback after the widget tree is disposed ("An animation is still
+running even after the widget tree was disposed"), and `flutter build apk` fails outright with
+"Your project's Gradle version (8.14.3) is lower than Flutter's minimum supported version of
+9.3.1". Switching the SDK to 3.47.7 (`cd /workspace/flutter_sdk && git fetch --depth=1 origin
+refs/tags/3.47.7:refs/tags/3.47.7 && git checkout 3.47.7`) restores **358/358 passing** and the
+APK/AAB build. The Gradle 9 / AGP 9 migration stays deferred. Check `flutter --version` before
+any test or build — 3.50.0 is a trap, not a target.
 
 ### Playwright: 152 phantom failures after a sandbox reset
 
