@@ -4121,3 +4121,49 @@ Do not reintroduce a literal `'SA'` in a write path — change the constant.
   the migration normalises a legacy row. `tests/e2e/exec60-lawyer-form-filters.spec.js` was updated:
   the country select now offers exactly `['SA']` instead of repopulating on a country change.
 
+
+## Execution 72 — customer engagement (favorites, verified ratings, availability alerts, consultation modes)
+
+`database/upgrade_v76.sql` adds seven customer-facing tables plus a `consultation_mode`
+enum on `consultations`. The engine is `includes/customer_features.php`; the surfaces are
+`favorites.php`, `notification-settings.php`, `lawyer-profile.php`,
+`lawyer/contact-requests.php`, `admin/reviews.php`, and six `api/v1/` endpoints.
+
+### A review is bound to the consultation, never to the request
+
+`review_create()` reads the lawyer id from the client's own `consultations` row
+(`review_eligibility()` scopes on `user_id` and requires `status='completed'`), so a client
+cannot attach a review to a lawyer they never consulted, and the `UNIQUE` key on
+`consultation_id` is the last line of defence against a concurrent double-submit. Verified
+reviews only: `lawyers.rating` is a cache recomputed by `review_recompute_lawyer_rating()`
+after every write; the `lawyer_reviews` rows are the truth.
+
+### Gate the account screen's client block on `isClient`, not `!isLawyer`
+
+A guest's `SessionUser.type` is `'guest'`, not `'lawyer'`, so `!isLawyer` renders for a
+visitor who has no account to favourite with. The "نشاطي" block was gated that way and it
+(a) offered taps that could not work and (b) pushed the settings section below the default
+800x600 widget-test viewport, breaking `exec40_theme_chooser_test`. It is now `user.isClient`.
+
+### Flutter SDK drift: 10 pre-existing failures, all in `RelayoutWhenSystemFontsChangeMixin`
+
+The full `flutter test` suite reports 348 passed / 10 failed in this sandbox, and **all ten
+fail identically at the baseline commit `e939924` (Execution 71) with no Exec 72 change
+applied**. The cause is the sandbox now running **Flutter 3.50.0** while the project was
+verified on 3.47.7: the framework leaves a transient `SystemFonts` callback after the widget
+tree is disposed ("An animation is still running even after the widget tree was disposed").
+Do not chase these as regressions — diff against a `git worktree` of the parent commit first.
+
+### Playwright: 152 phantom failures after a sandbox reset
+
+A full `npx playwright test` started while the re-provisioned environment was still settling
+reported 152 failures, **all confined to `mobile-320` (126) and `mobile-375` (26)**; every
+768px+ test passed and each failing spec passed alone. A clean re-run was **786 passed / 12
+skipped / 0 failed**. If a run shows failures clustered in the first two projects, re-run
+before investigating.
+
+### `tests/run_all_tests.sh` needs the `www-data` group and a live environment
+
+Run it as `sg www-data -c 'bash tests/run_all_tests.sh'`. A sandbox reset removes PHP, MariaDB
+and Apache entirely (not just their state); `bash tests/setup_test_env.sh` re-provisions all of
+it, creates `config/secrets.php`, seeds QA data, and brings up both `:8080` and `:12000`.
