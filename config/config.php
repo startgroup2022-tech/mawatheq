@@ -203,3 +203,25 @@ if (is_file(__DIR__ . '/../includes/affiliate_tracking.php')) {
         error_log('Affiliate tracking failed: ' . $affiliateTrackError->getMessage());
     }
 }
+
+/**
+ * Append a content-derived version to a same-origin asset URL.
+ *
+ * Static assets are served with long cache lifetimes, and there is no build step that
+ * renames them. After a stylesheet fix the browser therefore kept serving the old bytes
+ * and the site looked unchanged — the "we deployed but nothing moved" report. The file's
+ * mtime is the version, so any edit changes the URL and the browser fetches it once.
+ *
+ * Fails soft: if the file cannot be stat-ed (a partial upload, a read-permission problem)
+ * the plain path is returned. A missing version only costs a cache revalidation; a fatal
+ * here would cost the page.
+ */
+if (!function_exists('asset_url')) {
+    function asset_url(string $path): string {
+        $path = '/' . ltrim($path, '/');
+        $absolute = __DIR__ . '/..' . $path;
+        $mtime = @filemtime($absolute);
+        if ($mtime === false) return $path;
+        return $path . (str_contains($path, '?') ? '&' : '?') . 'v=' . $mtime;
+    }
+}

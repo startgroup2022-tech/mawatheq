@@ -48,22 +48,34 @@
   function initSiteNav() {
     var btn = $('[data-nav-toggle]'), nav = $('.main-nav');
     if (!btn || !nav) return;
-    var PANEL_BREAKPOINT = 1080;
+    var PANEL_BREAKPOINT = 1140; // must match the @media block in style.css
+
+    // main.js already wires the panel (it must work without this enhancement
+    // layer). Binding the toggle twice would toggle on and straight back off, so
+    // this only adds the scroll spy in that case.
+    if (nav.dataset.navBound === '1') { initNavScrollSpy(nav); return; }
 
     function setOpen(open) {
       nav.classList.toggle('is-open', open);
       btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      doc.body.classList.toggle('nav-open', open);
     }
     btn.setAttribute('aria-expanded', 'false');
     btn.addEventListener('click', function () {
       setOpen(!nav.classList.contains('is-open'));
     });
+    // Claims the toggle so main.js (which wires it unconditionally, because this
+    // enhancement layer is not guaranteed to load) does not bind a second handler.
+    // Two handlers would open the panel and immediately close it again.
+    nav.dataset.navBound = '1';
     doc.addEventListener('keydown', function (e) {
       if (e.key === 'Escape' && nav.classList.contains('is-open')) {
         setOpen(false); btn.focus();
       }
     });
     // Tapping outside the panel dismisses it, which is what a phone user expects.
+    var scrim = $('[data-nav-scrim]');
+    if (scrim) scrim.addEventListener('click', function () { setOpen(false); btn.focus(); });
     doc.addEventListener('click', function (e) {
       if (!nav.classList.contains('is-open')) return;
       if (nav.contains(e.target) || btn.contains(e.target)) return;

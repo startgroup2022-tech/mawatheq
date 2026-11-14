@@ -44,6 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 foreach ($valid as $cid) $ins->execute([$lawyerId, $cid]);
             }
             $pdo->commit();
+            legal_journey_flush_cache();
             log_action($pdo, 'تحديث تخصصات المحامي (' . count($valid) . ')', 'lawyer', $lawyerId);
             $message = is_rtl() ? 'تم حفظ تخصصاتك. ستظهر الآن في نتائج العملاء.' : 'Your specialties are saved. You will now appear in customer results.';
         } catch (Throwable $e) {

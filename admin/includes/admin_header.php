@@ -27,9 +27,13 @@ $adminNavGroups = [
         'consultation-attachments' => ['i' => 'file', 'ar' => 'مرفقات الاستشارات', 'en' => 'Consultation attachments', 'href' => '/admin/consultation-attachments.php'],
         'documents' => ['i' => 'file', 'ar' => 'المستندات', 'en' => 'Documents', 'href' => '/admin/documents.php'],
         'classification' => ['i' => 'scale', 'ar' => 'تصنيفات ناجز', 'en' => 'Najiz classifications', 'href' => '/admin/classification.php'],
+        'reviews' => ['i' => 'check-circle', 'ar' => 'تقييمات المحامين', 'en' => 'Lawyer reviews', 'href' => '/admin/reviews.php'],
     ]],
     ['t' => adm('المالية والتحليلات', 'Finance & insights'), 'items' => [
         'invoices' => ['i' => 'receipt', 'ar' => 'الفواتير والإيرادات', 'en' => 'Invoices & revenue', 'href' => '/admin/invoices.php'],
+        'wallets' => ['i' => 'wallet', 'ar' => 'محافظ المحامين', 'en' => 'Lawyer wallets', 'href' => '/admin/wallets.php'],
+        'wallet-withdrawals' => ['i' => 'receipt', 'ar' => 'طلبات سحب المحامين', 'en' => 'Lawyer withdrawals', 'href' => '/admin/wallet-withdrawals.php'],
+        'wallet-settings' => ['i' => 'settings', 'ar' => 'عمولة المنصة', 'en' => 'Platform commission', 'href' => '/admin/wallet-settings.php'],
         'gateways' => ['i' => 'card', 'ar' => 'بوابات الدفع', 'en' => 'Payment gateways', 'href' => '/admin/gateways.php'],
         'gateway-transactions' => ['i' => 'receipt', 'ar' => 'عمليات الدفع', 'en' => 'Gateway transactions', 'href' => '/admin/gateway-transactions.php'],
         'plans' => ['i' => 'card', 'ar' => 'الباقات', 'en' => 'Plans', 'href' => '/admin/plans.php'],
@@ -53,6 +57,12 @@ $adminNavGroups = [
         'articles' => ['i' => 'book', 'ar' => 'مركز المعرفة', 'en' => 'Articles', 'href' => '/admin/articles.php'],
         'banners' => ['i' => 'image', 'ar' => 'بانرات الصفحة الرئيسية', 'en' => 'Home banners', 'href' => '/admin/banners.php'],
         'laws' => ['i' => 'landmark', 'ar' => 'مكتبة الأنظمة', 'en' => 'Law library', 'href' => '/admin/laws.php'],
+    ]],
+    ['t' => adm('الدعم', 'Support'), 'items' => [
+        'support-tickets' => ['i' => 'inbox', 'ar' => 'تذاكر الدعم', 'en' => 'Support tickets', 'href' => '/admin/support-tickets.php'],
+        'support-appointments' => ['i' => 'calendar', 'ar' => 'مواعيد الدعم', 'en' => 'Support appointments', 'href' => '/admin/support-appointments.php'],
+        'support-settings' => ['i' => 'settings', 'ar' => 'إعدادات الدعم', 'en' => 'Support settings', 'href' => '/admin/support-settings.php'],
+        'account-deletions' => ['i' => 'shield', 'ar' => 'طلبات حذف الحسابات', 'en' => 'Account deletion requests', 'href' => '/admin/account-deletions.php'],
     ]],
     ['t' => adm('النظام', 'System'), 'items' => [
         'integrations' => ['i' => 'external', 'ar' => 'التكاملات الخارجية', 'en' => 'External integrations', 'href' => '/admin/integrations.php'],
@@ -100,10 +110,10 @@ $langToggleUrl = '?' . http_build_query(array_merge($_GET, ['lang' => $admLang =
 <link rel="icon" href="/assets/img/logo.webp">
 <title><?= h($pageTitle ? $pageTitle . ' · ' : '') ?><?= h(adm('لوحة تحكم مواثيق', 'Mawatheq Admin')) ?></title>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/css/style.css">
-<link rel="stylesheet" href="/assets/css/app.css">
-<link rel="stylesheet" href="/assets/css/enterprise.css">
-<link rel="stylesheet" href="/assets/css/dashboard.css">
+<link rel="stylesheet" href="<?= asset_url('/assets/css/style.css') ?>">
+<link rel="stylesheet" href="<?= asset_url('/assets/css/app.css') ?>">
+<link rel="stylesheet" href="<?= asset_url('/assets/css/enterprise.css') ?>">
+<link rel="stylesheet" href="<?= asset_url('/assets/css/dashboard.css') ?>">
 <link rel="stylesheet" href="/admin/assets/admin-ui.css?v=41">
 </head>
 <body class="adm" data-theme="light">

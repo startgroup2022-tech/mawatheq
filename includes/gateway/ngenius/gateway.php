@@ -45,7 +45,7 @@ final class NGeniusGateway implements PaymentGateway {
         $tokenResult = ngenius_get_access_token(
             $this->settings['ngenius_environment'],
             $this->settings['ngenius_api_key'],
-            $this->settings['ngenius_realm_name'] ?: 'ni'
+            $this->settings['ngenius_realm_name'] ?: ''
         );
         if (empty($tokenResult['ok'])) {
             return ['ok' => false, 'reference' => null, 'redirect_url' => null, 'state' => 'FAILED', 'error' => $tokenResult['error'], 'raw' => []];
@@ -77,7 +77,7 @@ final class NGeniusGateway implements PaymentGateway {
         $tokenResult = ngenius_get_access_token(
             $this->settings['ngenius_environment'],
             $this->settings['ngenius_api_key'],
-            $this->settings['ngenius_realm_name'] ?: 'ni'
+            $this->settings['ngenius_realm_name'] ?: ''
         );
         if (empty($tokenResult['ok'])) {
             return ['ok' => false, 'state' => 'PENDING', 'amount' => null, 'currency' => null, 'reference' => $reference, 'error' => $tokenResult['error'], 'raw' => []];
@@ -110,9 +110,50 @@ final class NGeniusGateway implements PaymentGateway {
                 'error' => 'use_ngenius_webhook_endpoint', 'raw' => []];
     }
 
-    public function supportsRefund(): bool { return false; }
+    public function supportsRefund(): bool { return true; }
+
+    /**
+     * Refund a settled order through the outlet's cnp:refund endpoint. The amount is the
+     * gateway's own minor-unit value; a null amount means a full refund of the captured total.
+     */
     public function refundPayment(array $payment, ?float $amount = null): array {
-        return ['ok' => false, 'state' => 'FAILED', 'reference' => null, 'error' => 'refund_not_supported', 'raw' => []];
+        $reference = (string)($payment['reference'] ?? '');
+        if ($reference === '') {
+            return ['ok' => false, 'state' => 'FAILED', 'reference' => null, 'error' => 'missing_reference', 'raw' => []];
+        }
+        $currency = strtoupper((string)($payment['currency'] ?? ngenius_currency($this->settings)));
+        $tokenResult = ngenius_get_access_token(
+            $this->settings['ngenius_environment'],
+            $this->settings['ngenius_api_key'],
+            $this->settings['ngenius_realm_name'] ?: ''
+        );
+        if (empty($tokenResult['ok'])) {
+            return ['ok' => false, 'state' => 'FAILED', 'reference' => $reference, 'error' => $tokenResult['error'], 'raw' => []];
+        }
+        // No amount supplied → refund whatever the gateway confirms was captured.
+        if ($amount === null) {
+            $status = ngenius_get_order_status(
+                $this->settings['ngenius_environment'], $this->settings['ngenius_outlet_ref'],
+                $tokenResult['token'], $reference
+            );
+            if (empty($status['ok']) || $status['amount'] === null) {
+                return ['ok' => false, 'state' => 'FAILED', 'reference' => $reference, 'error' => $status['error'] ?? 'refund_amount_unknown', 'raw' => []];
+            }
+            $amount = (float)$status['amount'];
+            $currency = strtoupper((string)($status['currency'] ?: $currency));
+        }
+        $result = ngenius_refund_order(
+            $this->settings['ngenius_environment'], $this->settings['ngenius_outlet_ref'],
+            $tokenResult['token'], $reference, (float)$amount, $currency
+        );
+        return [
+            'ok' => !empty($result['ok']),
+            'state' => $result['state'] ?? 'FAILED',
+            'reference' => $result['refund_ref'] ?? $reference,
+            'amount' => $result['amount'] ?? $amount,
+            'error' => $result['error'] ?? null,
+            'raw' => [],
+        ];
     }
 
     public function healthCheck(): array {
@@ -122,7 +163,7 @@ final class NGeniusGateway implements PaymentGateway {
         $tokenResult = ngenius_get_access_token(
             $this->settings['ngenius_environment'],
             $this->settings['ngenius_api_key'],
-            $this->settings['ngenius_realm_name'] ?: 'ni'
+            $this->settings['ngenius_realm_name'] ?: ''
         );
         return ['ok' => !empty($tokenResult['ok']), 'connected' => !empty($tokenResult['ok']),
                 'code' => !empty($tokenResult['ok']) ? 'connected' : 'unreachable',

@@ -50,6 +50,7 @@ if (!function_exists('nav_client')) {
                 'title' => $rtl ? 'خدماتي' : 'My services',
                 'items' => [
                     'consultations' => ['icon' => 'calendar', 'label' => $rtl ? 'استشاراتي' : 'My consultations', 'href' => '/consultations.php'],
+                    'favorites'     => ['icon' => 'check-circle', 'label' => $rtl ? 'المحامون المفضّلون' : 'Favourite lawyers', 'href' => '/favorites.php'],
                     'my-cases'      => ['icon' => 'briefcase', 'label' => $rtl ? 'قضاياي' : 'My cases', 'href' => '/my-cases.php'],
                     'case-tasks'    => ['icon' => 'check', 'label' => $rtl ? 'مهامي' : 'My tasks', 'href' => '/case-tasks.php'],
                     'documents'     => ['icon' => 'file', 'label' => $rtl ? 'مستنداتي' : 'My documents', 'href' => '/documents.php'],
@@ -82,6 +83,7 @@ if (!function_exists('nav_client')) {
                 'title' => $rtl ? 'الحساب' : 'Account',
                 'items' => [
                     'profile' => ['icon' => 'user', 'label' => $rtl ? 'الملف الشخصي' : 'Profile', 'href' => '/account.php'],
+                    'notification-settings' => ['icon' => 'bell', 'label' => $rtl ? 'إعدادات الإشعارات' : 'Notification settings', 'href' => '/notification-settings.php'],
                 ],
             ],
         ];
@@ -106,6 +108,7 @@ if (!function_exists('nav_lawyer')) {
                     'cases'         => ['icon' => 'briefcase', 'label' => $rtl ? 'القضايا' : 'Cases', 'href' => '/lawyer/cases.php'],
                     'consultations' => ['icon' => 'calendar', 'label' => $rtl ? 'الاستشارات' : 'Consultations', 'href' => '/lawyer/consultations.php'],
                     'calendar'      => ['icon' => 'clock', 'label' => $rtl ? 'التقويم والجلسات' : 'Calendar & sessions', 'href' => '/lawyer/calendar.php'],
+                    'contact-requests' => ['icon' => 'inbox', 'label' => $rtl ? 'طلبات التواصل' : 'Contact requests', 'href' => '/lawyer/contact-requests.php'],
                     'specialties'   => ['icon' => 'check-circle', 'label' => $rtl ? 'تخصصاتي' : 'My specialties', 'href' => '/lawyer/specialties.php'],
                 ],
             ],
@@ -121,6 +124,7 @@ if (!function_exists('nav_lawyer')) {
                 'title' => $rtl ? 'المالية' : 'Billing',
                 'items' => [
                     'invoices' => ['icon' => 'receipt', 'label' => $rtl ? 'الفواتير والمدفوعات' : 'Invoices & payments', 'href' => '/lawyer/invoices.php'],
+                    'wallet'   => ['icon' => 'wallet', 'label' => $rtl ? 'المحفظة المالية' : 'Wallet', 'href' => '/lawyer/wallet.php'],
                 ],
             ],
         ];
@@ -149,7 +153,8 @@ if (!function_exists('nav_lawyer')) {
         $groups[] = [
             'title' => $rtl ? 'الحساب' : 'Account',
             'items' => [
-                'profile' => ['icon' => 'user', 'label' => $rtl ? 'الملف الشخصي' : 'Profile', 'href' => '/lawyer/profile.php'],
+                'profile'  => ['icon' => 'user', 'label' => $rtl ? 'الملف الشخصي' : 'Profile', 'href' => '/lawyer/profile.php'],
+                'settings' => ['icon' => 'settings', 'label' => $rtl ? 'الإعدادات' : 'Settings', 'href' => '/lawyer/settings.php'],
             ],
         ];
         return ['groups' => $groups, 'active' => $active];

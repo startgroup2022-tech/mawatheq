@@ -17,9 +17,6 @@ require_once __DIR__ . '/includes/journey_ui.php';
 
 $categoryId  = (int)($_GET['category_id'] ?? 0);
 $issueTypeId = (int)($_GET['issue_type_id'] ?? $_GET['najiz_case_type_id'] ?? 0);
-$jurisdiction = trim((string)($_GET['jurisdiction'] ?? ''));
-$maxFee = trim((string)($_GET['max_fee'] ?? ''));
-$q = trim((string)($_GET['q'] ?? ''));
 
 $ready = legal_journey_ready($pdo);
 
@@ -36,12 +33,20 @@ if ($categoryId > 0) {
     }
 }
 
-$lawyers = $category ? legal_journey_lawyers_for_specialty($pdo, $categoryId, [
-    'jurisdiction' => $jurisdiction,
-    'max_fee'      => $maxFee,
-    'q'            => $q,
-]) : [];
-$alternative = ($category && empty($lawyers)) ? legal_journey_no_match_alternative($pdo, $categoryId) : null;
+// The professional filters, normalised from the query string by the one shared
+// normaliser the API also uses, so the two surfaces agree on every filter's meaning.
+$filters = legal_journey_filter_params($_GET);
+$lawyers = $category ? legal_journey_lawyers_for_specialty($pdo, $categoryId, $filters) : [];
+$resultCount = count($lawyers);
+$filtersActive = ($filters['country'] !== '' || $filters['city'] !== '' || $filters['experience'] !== ''
+    || $filters['min_fee'] !== null || $filters['max_fee'] !== null || $filters['available_only'] || $filters['q'] !== '');
+// The alternative suggestions belong to "this specialty has no lawyer at all", not to
+// "your filters excluded everyone" — the two need different copy and different advice.
+$specialtyHasLawyers = $category
+    ? count(legal_journey_lawyers_for_specialty($pdo, $categoryId, [])) > 0
+    : false;
+$alternative = ($category && !$specialtyHasLawyers) ? legal_journey_no_match_alternative($pdo, $categoryId) : null;
+$filterOptions = legal_journey_filter_options($pdo);
 
 // The chosen issue type's customer-facing label, so the summary line reads naturally.
 $issueLabel = null;
@@ -64,7 +69,7 @@ $bookQuery = function (int $lawyerId) use ($categoryId, $issueTypeId): string {
 <div class="app-content">
   <div class="toolbar">
     <div>
-      <h2><?= is_rtl() ? 'المحامون المتاحون' : 'Available lawyers' ?></h2>
+      <h1><?= is_rtl() ? 'المحامون المتاحون' : 'Available lawyers' ?></h1>
       <p><?= is_rtl() ? 'قارن بين المحامين واختر الأنسب لك.' : 'Compare lawyers and pick the one that suits you.' ?></p>
     </div>
   </div>
@@ -96,40 +101,112 @@ $bookQuery = function (int $lawyerId) use ($categoryId, $issueTypeId): string {
       <a href="/consultation-journey.php?category_id=<?= (int)$categoryId ?>" class="btn btn-outline btn-sm"><?= is_rtl() ? 'تعديل الاختيار' : 'Edit choice' ?></a>
     </div>
 
-    <form method="get" class="journey-search">
+    <?php
+    $cityJson = [];
+    foreach ($filterOptions['cities'] as $code => $list) $cityJson[$code] = array_values($list);
+    ?>
+    <script type="application/json" id="mawatheq-city-data"><?= json_encode($cityJson, JSON_UNESCAPED_UNICODE) ?></script>
+
+    <form method="get" class="journey-search" id="journeyFilterForm" data-lawyer-form>
       <input type="hidden" name="category_id" value="<?= (int)$categoryId ?>">
       <input type="hidden" name="issue_type_id" value="<?= (int)$issueTypeId ?>">
+
       <div class="field">
         <label for="q"><?= is_rtl() ? 'ابحث باسم المحامي' : 'Search by lawyer name' ?></label>
-        <input type="search" id="q" name="q" value="<?= htmlspecialchars($q) ?>">
+        <input type="search" id="q" name="q" value="<?= htmlspecialchars((string)($_GET['q'] ?? '')) ?>">
       </div>
-      <div class="field" style="max-width:180px">
-        <label for="max_fee"><?= is_rtl() ? 'أعلى أجر ساعي' : 'Max hourly fee' ?></label>
-        <input type="number" id="max_fee" name="max_fee" min="0" step="1" value="<?= htmlspecialchars($maxFee) ?>">
+
+      <div class="field">
+        <label for="f_country"><?= is_rtl() ? 'الدولة' : 'Country' ?></label>
+        <div class="select-wrap">
+          <select id="f_country" name="country" class="pro-select" data-country-select>
+            <option value=""><?= is_rtl() ? 'كل الدول' : 'All countries' ?></option>
+            <?php foreach ($filterOptions['countries'] as $c): ?>
+              <option value="<?= htmlspecialchars($c['code']) ?>" <?= $filters['country'] === $c['code'] ? 'selected' : '' ?>><?= htmlspecialchars($c['name']) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </div>
       </div>
-      <button class="btn btn-primary" type="submit"><?= is_rtl() ? 'تصفية' : 'Filter' ?></button>
+
+      <div class="field">
+        <label for="f_city"><?= is_rtl() ? 'المدينة' : 'City' ?></label>
+        <?php render_city_select('city', $filters['country'] !== '' ? $filters['country'] : null, $filters['city'] !== '' ? $filters['city'] : null, false, 'f_city'); ?>
+      </div>
+
+      <div class="field">
+        <label for="f_experience"><?= is_rtl() ? 'سنوات الخبرة' : 'Experience' ?></label>
+        <div class="select-wrap">
+          <select id="f_experience" name="experience" class="pro-select">
+            <option value=""><?= is_rtl() ? 'كل مستويات الخبرة' : 'All experience levels' ?></option>
+            <?php foreach ($filterOptions['experience'] as $band): ?>
+              <option value="<?= htmlspecialchars($band['key']) ?>" <?= $filters['experience'] === $band['key'] ? 'selected' : '' ?>><?= htmlspecialchars($band['label']) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+      </div>
+
+      <div class="field" style="max-width:150px">
+        <label for="min_fee"><?= is_rtl() ? 'أقل سعر استشارة' : 'Min consultation price' ?></label>
+        <input type="number" id="min_fee" name="min_fee" min="0" step="<?= currency_step() ?>" dir="ltr" value="<?= $filters['min_fee'] !== null ? htmlspecialchars((string)$filters['min_fee']) : '' ?>">
+      </div>
+      <div class="field" style="max-width:150px">
+        <label for="max_fee"><?= is_rtl() ? 'أعلى سعر استشارة' : 'Max consultation price' ?></label>
+        <input type="number" id="max_fee" name="max_fee" min="0" step="<?= currency_step() ?>" dir="ltr" value="<?= $filters['max_fee'] !== null ? htmlspecialchars((string)$filters['max_fee']) : '' ?>">
+      </div>
+
+      <div class="field journey-avail-field">
+        <label for="f_available"><?= is_rtl() ? 'التوفر' : 'Availability' ?></label>
+        <label class="journey-check">
+          <input type="checkbox" id="f_available" name="available_only" value="1" <?= $filters['available_only'] ? 'checked' : '' ?>>
+          <span><?= is_rtl() ? 'المتاحون بمواعيد فقط' : 'Only with open slots' ?></span>
+        </label>
+      </div>
+
+      <div class="journey-filter-actions">
+        <button class="btn btn-primary" type="submit"><?= is_rtl() ? 'تصفية' : 'Filter' ?></button>
+        <?php if ($filtersActive): ?>
+          <a class="btn btn-outline" href="/consultation-journey-lawyers.php?category_id=<?= (int)$categoryId ?>&issue_type_id=<?= (int)$issueTypeId ?>"><?= is_rtl() ? 'مسح الفلاتر' : 'Clear filters' ?></a>
+        <?php endif; ?>
+      </div>
     </form>
 
+    <div class="journey-result-count" role="status">
+      <?= is_rtl()
+          ? 'عدد المحامين المطابقين: <strong>' . (int)$resultCount . '</strong>'
+          : '<strong>' . (int)$resultCount . '</strong> matching lawyers' ?>
+    </div>
+
     <?php if (empty($lawyers)): ?>
-      <!-- Requirement 11: a clear alternative, never an unrelated lawyer. -->
-      <div class="journey-empty">
-        <div class="ico">📭</div>
-        <h3><?= htmlspecialchars($alternative['reason']) ?></h3>
-        <p><?= htmlspecialchars($alternative['suggest']) ?></p>
-        <a href="/consultation-journey.php" class="btn btn-primary"><?= is_rtl() ? 'اختيار تخصص آخر' : 'Choose another specialty' ?></a>
-      </div>
-      <?php if (!empty($alternative['specialties'])): ?>
-        <h3 style="margin:22px 0 12px"><?= is_rtl() ? 'تخصصات تتوفر بها محامون الآن' : 'Specialties with lawyers available now' ?></h3>
-        <div class="specialty-grid">
-          <?php foreach ($alternative['specialties'] as $s): ?>
-            <a class="specialty-card" href="/consultation-journey.php?category_id=<?= (int)$s['id'] ?>">
-              <span class="ico" aria-hidden="true"><?= journey_icon_svg($s['icon_key']) ?></span>
-              <h3><?= htmlspecialchars($s['name']) ?></h3>
-              <p><?= htmlspecialchars($s['description']) ?></p>
-              <span class="meta"><span class="count"><?= (int)$s['lawyer_count'] ?> <?= is_rtl() ? 'محامٍ' : 'lawyers' ?></span><span>›</span></span>
-            </a>
-          <?php endforeach; ?>
+      <?php if ($specialtyHasLawyers): ?>
+        <!-- The specialty has lawyers, but the filters excluded them all. Say so, and
+             offer the one action that helps: clearing the filters. -->
+        <div class="journey-empty">
+          <div class="ico">🔍</div>
+          <h3><?= is_rtl() ? 'لا يوجد محامٍ يطابق الفلاتر المحددة' : 'No lawyer matches these filters' ?></h3>
+          <p><?= is_rtl() ? 'جرّب توسيع نطاق البحث أو مسح الفلاتر لعرض جميع المحامين المتاحين لهذا التخصص.' : 'Try widening the search or clearing the filters to see all lawyers for this specialty.' ?></p>
+          <a href="/consultation-journey-lawyers.php?category_id=<?= (int)$categoryId ?>&issue_type_id=<?= (int)$issueTypeId ?>" class="btn btn-primary"><?= is_rtl() ? 'مسح الفلاتر' : 'Clear filters' ?></a>
         </div>
+      <?php else: ?>
+        <!-- Requirement 11: a clear alternative, never an unrelated lawyer. -->
+        <div class="journey-empty">
+          <div class="ico">📭</div>
+          <h3><?= htmlspecialchars($alternative['reason']) ?></h3>
+          <p><?= htmlspecialchars($alternative['suggest']) ?></p>
+          <a href="/consultation-journey.php" class="btn btn-primary"><?= is_rtl() ? 'اختيار تخصص آخر' : 'Choose another specialty' ?></a>
+        </div>
+        <?php if (!empty($alternative['specialties'])): ?>
+          <h3 style="margin:22px 0 12px"><?= is_rtl() ? 'تخصصات تتوفر بها محامون الآن' : 'Specialties with lawyers available now' ?></h3>
+          <div class="specialty-grid">
+            <?php foreach ($alternative['specialties'] as $s): ?>
+              <a class="specialty-card" href="/consultation-journey.php?category_id=<?= (int)$s['id'] ?>">
+                <span class="ico" aria-hidden="true"><?= journey_icon_svg($s['icon_key']) ?></span>
+                <h3><?= htmlspecialchars($s['name']) ?></h3>
+                <p><?= htmlspecialchars($s['description']) ?></p>
+                <span class="meta"><span class="count"><?= (int)$s['lawyer_count'] ?> <?= is_rtl() ? 'محامٍ' : 'lawyers' ?></span><span>›</span></span>
+              </a>
+            <?php endforeach; ?>
+          </div>
+        <?php endif; ?>
       <?php endif; ?>
     <?php else: ?>
       <div class="compare-grid">
@@ -140,20 +217,32 @@ $bookQuery = function (int $lawyerId) use ($categoryId, $issueTypeId): string {
               <div class="who">
                 <strong><?= htmlspecialchars($lw['full_name']) ?></strong>
                 <div class="sub">
-                  <?php if (!empty($lw['specialization'])): ?><?= htmlspecialchars($lw['specialization']) ?> · <?php endif; ?>
+                  <?php if (!empty($lw['specialization'])): ?><?= htmlspecialchars(lawyer_specialization_display($lw)) ?> · <?php endif; ?>
                   <?= (int)$lw['years_experience'] ?> <?= is_rtl() ? 'سنة خبرة' : 'yrs experience' ?>
                 </div>
+                <?php if (!empty($lw['location'])): ?>
+                  <div class="sub loc"><span aria-hidden="true">📍</span> <?= htmlspecialchars($lw['location']) ?></div>
+                <?php endif; ?>
               </div>
             </div>
 
             <div class="compare-facts">
               <div class="fact">
-                <div class="k"><?= is_rtl() ? 'الأجر بالساعة' : 'Hourly fee' ?></div>
-                <div class="v ltr"><?= $lw['hourly_rate'] !== null ? htmlspecialchars(currency_number($lw['hourly_rate']) . ' ' . currency_symbol()) : (is_rtl() ? 'حسب الاتفاق' : 'On request') ?></div>
+                <div class="k"><?= is_rtl() ? 'سعر الاستشارة' : 'Consultation price' ?></div>
+                <div class="v ltr"><?php
+                  // The card shows the one authoritative payable amount, with the length it
+                  // prices. Never "per hour": the customer is charged a flat amount for the
+                  // booked consultation (owner decision, Execution 66).
+                  if (!empty($lw['pricing']['has_price'])) {
+                      echo htmlspecialchars(money_text($lw['pricing']['total']));
+                  } else {
+                      echo is_rtl() ? 'حسب الاتفاق' : 'On request';
+                  }
+                ?></div>
               </div>
               <div class="fact">
-                <div class="k"><?= is_rtl() ? 'التقييم' : 'Rating' ?></div>
-                <div class="v">★ <?= $lw['rating'] !== null ? htmlspecialchars(number_format($lw['rating'], 1)) : '—' ?></div>
+                <div class="k"><?= is_rtl() ? 'المدة' : 'Duration' ?></div>
+                <div class="v ltr"><?= (int)($lw['duration_minutes'] ?? 30) ?> <?= is_rtl() ? 'دقيقة' : 'min' ?></div>
               </div>
             </div>
 
@@ -171,7 +260,8 @@ $bookQuery = function (int $lawyerId) use ($categoryId, $issueTypeId): string {
             </div>
 
             <div class="compare-actions">
-              <a href="<?= htmlspecialchars($bookQuery((int)$lw['id'])) ?>" class="btn btn-primary" style="flex:1"><?= is_rtl() ? 'اختيار هذا المحامي' : 'Choose this lawyer' ?></a>
+              <a href="/lawyer-profile.php?id=<?= (int)$lw['id'] ?>" class="btn btn-outline" style="flex:1"><?= is_rtl() ? 'عرض الملف' : 'View profile' ?></a>
+              <a href="<?= htmlspecialchars($bookQuery((int)$lw['id'])) ?>" class="btn btn-primary" style="flex:1"><?= is_rtl() ? 'حجز استشارة' : 'Book consultation' ?></a>
             </div>
           </div>
         <?php endforeach; ?>
@@ -179,4 +269,6 @@ $bookQuery = function (int $lawyerId) use ($categoryId, $issueTypeId): string {
     <?php endif; ?>
   <?php endif; ?>
 </div>
+
+<script src="<?= asset_url('/assets/js/lawyer-form.js') ?>"></script>
 <?php require_once __DIR__ . '/includes/app_footer.php'; ?>

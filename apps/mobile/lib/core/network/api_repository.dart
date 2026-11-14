@@ -1,7 +1,9 @@
 import 'dart:io';
 
+import 'account_models.dart';
 import 'api_client.dart';
 import 'api_exception.dart';
+import 'lawyer_models.dart';
 import 'models.dart';
 
 /// Reads and writes through the platform's existing `/api/v1/` endpoints.
@@ -10,7 +12,12 @@ import 'models.dart';
 /// capability the backend does not already provide — where an endpoint is missing
 /// (drafting, firm HR/CRM, 2FA) the app documents the gap instead of faking it.
 class ApiRepository {
-  ApiRepository({ApiClient? client}) : _client = client ?? ApiClient();
+  ApiRepository({ApiClient? client, String? baseUrl})
+      : _client = client ?? ApiClient(baseUrl: baseUrl) {
+    // Apply the override to an injected client too, so a caller that supplies its
+    // own transport does not silently fall back to the compiled-in default host.
+    if (client != null && baseUrl != null) _client.setBaseUrl(baseUrl);
+  }
 
   final ApiClient _client;
 
@@ -30,6 +37,7 @@ class ApiRepository {
     final json = await _client.post(
       '/auth/login.php',
       auth: false,
+      authAttempt: true,
       body: {
         'email': email,
         'password': password,
@@ -57,6 +65,7 @@ class ApiRepository {
     final json = await _client.post(
       '/auth/lawyer-login.php',
       auth: false,
+      authAttempt: true,
       body: {
         'email': email,
         'password': password,
@@ -66,7 +75,7 @@ class ApiRepository {
     return LoginOutcome(
       verificationRequired: false,
       token: json['token']?.toString(),
-      user: SessionUser.fromJson(json),
+      user: SessionUser.fromJson(json, defaultType: 'lawyer'),
     );
   }
 
@@ -137,6 +146,7 @@ class ApiRepository {
     await _client.post(
       '/auth/reset-password.php',
       auth: false,
+      authAttempt: true,
       body: {
         'token': token,
         'password': password,
@@ -154,6 +164,34 @@ class ApiRepository {
       // Even if the server call fails the local token is cleared by the caller,
       // so the device never keeps a usable token it has asked to discard.
     }
+  }
+
+  /// `POST /api/v1/account/delete.php` — anonymise and deactivate this account.
+  ///
+  /// Google Play requires an in-app deletion route. The server verifies the password
+  /// and refuses while work is in flight; an `ApiException` carries its message so the
+  /// screen can show the blockers rather than a generic failure.
+  Future<void> deleteAccount({
+    required String password,
+    String confirm = 'DELETE',
+  }) async {
+    await _client.post(
+      '/account/delete.php',
+      body: {'password': password, 'confirm': confirm},
+    );
+  }
+
+  /// `GET /api/v1/account/deletion-status.php` — the user's latest deletion request.
+  ///
+  /// Returns null when the account has no request. The in-app deletion is immediate, but
+  /// a user may also have started a request on the public website; this lets the delete
+  /// screen show where that request stands.
+  Future<DeletionRequestStatus?> deletionRequestStatus() async {
+    final json = await _client.get('/account/deletion-status.php');
+    if (json['has_request'] != true) return null;
+    final request = json['request'];
+    if (request is! Map) return null;
+    return DeletionRequestStatus.fromJson(Map<String, dynamic>.from(request));
   }
 
   /// `POST /api/v1/rotate-token.php` — issue a new token for this device.
@@ -235,7 +273,7 @@ class ApiRepository {
   /// `draftToken` is the token the customer's staged recordings/documents were
   /// uploaded against. Passing it binds those files to the consultation the server
   /// creates here; omitting it books exactly as before.
-  Future<int> bookConsultation({
+  Future<BookingResult> bookConsultation({
     required int lawyerId,
     required String consultationType,
     required String date,
@@ -260,7 +298,7 @@ class ApiRepository {
           'draft_token': draftToken,
       },
     );
-    return Json(json).intg('consultation_id');
+    return BookingResult.fromJson(json);
   }
 
   /// Stages one recording/document against a draft token, before the consultation
@@ -359,10 +397,15 @@ class ApiRepository {
 
   /// The approved lawyers who provide one specialty, with a fallback message when
   /// there are none so the customer is never shown a dead end.
+  ///
+  /// [filters] carries the professional booking filters (country, city, experience,
+  /// fee range, availability). They are applied server-side by the same normaliser
+  /// the website uses, so both clients return the same set for the same choices.
   Future<JourneyMatch> journeyLawyers({
     required int categoryId,
     String? jurisdiction,
     String? query,
+    JourneyFilters? filters,
   }) async {
     final json = await _client.get(
       '/journey.php',
@@ -372,18 +415,35 @@ class ApiRepository {
         'category_id': categoryId,
         if (jurisdiction != null && jurisdiction.isNotEmpty) 'jurisdiction': jurisdiction,
         if (query != null && query.isNotEmpty) 'q': query,
+        ...?filters?.toQuery(),
       },
     );
     return JourneyMatch.fromJson(json);
   }
 
+  /// The filter vocabulary (countries, cities per country, experience bands) the
+  /// journey filter sheet renders. Public, like the rest of the journey.
+  Future<JourneyFilterOptions> journeyFilters() async {
+    final json = await _client.get(
+      '/journey.php',
+      auth: false,
+      query: {'action': 'filters'},
+    );
+    return JourneyFilterOptions.fromJson(json);
+  }
+
   // ------------------------------------------------------------ lawyers
 
   /// Public directory — no token required.
+  ///
+  /// [extraQuery] carries the professional filters (country, city, experience,
+  /// min_fee, max_fee, available_only) exactly as `JourneyFilters.toQuery()` produces
+  /// them, so the same filter set reaches the same server-side search the website uses.
   Future<List<LawyerProfile>> lawyers({
     String? jurisdiction,
     String? specialization,
     String? query,
+    Map<String, dynamic>? extraQuery,
   }) async {
     final json = await _client.get(
       '/lawyers.php',
@@ -392,6 +452,7 @@ class ApiRepository {
         if (jurisdiction != null && jurisdiction.isNotEmpty) 'jurisdiction': jurisdiction,
         if (specialization != null && specialization.isNotEmpty) 'specialization': specialization,
         if (query != null && query.isNotEmpty) 'q': query,
+        ...?extraQuery,
       },
     );
     return json['lawyers'] is List
@@ -417,6 +478,20 @@ class ApiRepository {
         : <String>[];
   }
 
+  /// The real per-day availability map for one month, so the app can draw a calendar
+  /// that reflects the lawyer's actual open slots rather than a guess.
+  Future<MonthAvailability> monthAvailability({
+    required int lawyerId,
+    required String month,
+  }) async {
+    final json = await _client.get(
+      '/available-slots.php',
+      auth: false,
+      query: {'lawyer_id': lawyerId, 'month': month},
+    );
+    return MonthAvailability.fromJson(json);
+  }
+
   // ----------------------------------------------------------- calendar
 
   Future<List<CalendarEvent>> calendar() async {
@@ -431,6 +506,161 @@ class ApiRepository {
   }
 
   // ----------------------------------------------------------- invoices
+
+  /// `GET /api/v1/transactions.php` — the merged transaction history.
+  ///
+  /// One request for the whole list; the filters are applied server-side so the
+  /// count and the rows always agree.
+  Future<TransactionPage> transactions({
+    String type = 'all',
+    String status = 'all',
+    String? from,
+    String? to,
+  }) async {
+    final json = await _client.get('/transactions.php', query: {
+      'type': type,
+      'status': status,
+      if (from != null && from.isNotEmpty) 'from': from,
+      if (to != null && to.isNotEmpty) 'to': to,
+    });
+    return TransactionPage(
+      transactions: Json(json)
+          .list('transactions')
+          .map((e) => Transaction.fromJson(e.asMap))
+          .toList(),
+      summary: TransactionSummary.fromJson(
+        Json(json).object('summary')?.asMap ?? const {},
+      ),
+    );
+  }
+
+  /// `GET /api/v1/invoice.php?id=N` — one invoice with its items and payments.
+  Future<InvoiceDetail> invoiceDetail(int id, {bool isLawyerView = false}) async {
+    final json = await _client.get('/invoice.php', query: {'id': id});
+    final items = Json(json).list('items').map((e) => e.asMap).toList();
+    final payments = Json(json).list('payments').map((e) => e.asMap).toList();
+    return InvoiceDetail.fromJson(
+      Json(json).object('invoice')?.asMap ?? const {},
+      items: items,
+      payments: payments,
+      receiptUrl: Json(json).str('receipt_url'),
+      isLawyerView: isLawyerView,
+    );
+  }
+
+  // -------------------------------------------------------------- support
+
+  /// `GET /api/v1/support.php?action=settings` — public channel configuration.
+  Future<SupportSettings> supportSettings() async {
+    final json = await _client.get('/support.php', query: {'action': 'settings'});
+    return SupportSettings.fromJson(json);
+  }
+
+  /// `GET /api/v1/support.php?action=categories`
+  Future<List<SupportCategory>> supportCategories() async {
+    final json = await _client.get('/support.php', query: {'action': 'categories'});
+    return Json(json)
+        .list('categories')
+        .map((e) => SupportCategory.fromJson(e.asMap))
+        .toList();
+  }
+
+  /// `GET /api/v1/support.php?action=tickets`
+  Future<List<SupportTicket>> supportTickets() async {
+    final json = await _client.get('/support.php', query: {'action': 'tickets'});
+    return Json(json)
+        .list('tickets')
+        .map((e) => SupportTicket.fromJson(e.asMap))
+        .toList();
+  }
+
+  /// `GET /api/v1/support.php?action=ticket&id=N`
+  Future<SupportTicketDetail> supportTicket(int id) async {
+    final json = await _client.get('/support.php', query: {'action': 'ticket', 'id': id});
+    final root = Json(json);
+    return SupportTicketDetail(
+      ticket: SupportTicket.fromJson(root.object('ticket')?.asMap ?? const {}),
+      messages: root.list('messages').map((e) => SupportMessage.fromJson(e.asMap)).toList(),
+      attachments:
+          root.list('attachments').map((e) => SupportAttachment.fromJson(e.asMap)).toList(),
+    );
+  }
+
+  /// `POST /api/v1/support.php` `action=create-ticket`
+  Future<Map<String, dynamic>> createSupportTicket({
+    required String subject,
+    required String body,
+    int categoryId = 0,
+  }) async {
+    return _client.post('/support.php', body: {
+      'action': 'create-ticket',
+      'subject': subject,
+      'body': body,
+      'category_id': categoryId,
+    });
+  }
+
+  /// `POST /api/v1/support.php` `action=reply-ticket`
+  Future<void> replySupportTicket({required int id, required String body}) =>
+      _client.post('/support.php', body: {'action': 'reply-ticket', 'id': id, 'body': body});
+
+  /// `POST /api/v1/support.php` `action=close-ticket` / `reopen-ticket`
+  Future<void> setSupportTicketStatus({required int id, required bool close}) =>
+      _client.post('/support.php',
+          body: {'action': close ? 'close-ticket' : 'reopen-ticket', 'id': id});
+
+  /// `GET /api/v1/support.php?action=slots`
+  Future<List<SupportSlot>> supportSlots() async {
+    final json = await _client.get('/support.php', query: {'action': 'slots'});
+    return Json(json).list('slots').map((e) => SupportSlot.fromJson(e.asMap)).toList();
+  }
+
+  /// `GET /api/v1/support.php?action=appointments`
+  Future<List<SupportAppointment>> supportAppointments() async {
+    final json = await _client.get('/support.php', query: {'action': 'appointments'});
+    return Json(json)
+        .list('appointments')
+        .map((e) => SupportAppointment.fromJson(e.asMap))
+        .toList();
+  }
+
+  /// `POST /api/v1/support.php` `action=book-appointment`
+  Future<Map<String, dynamic>> bookSupportAppointment({
+    required int slotId,
+    required String subject,
+    String note = '',
+  }) =>
+      _client.post('/support.php', body: {
+        'action': 'book-appointment',
+        'slot_id': slotId,
+        'subject': subject,
+        'note': note,
+      });
+
+  /// `POST /api/v1/support.php` `action=cancel-appointment`
+  Future<void> cancelSupportAppointment(int id) =>
+      _client.post('/support.php', body: {'action': 'cancel-appointment', 'id': id});
+
+  // -------------------------------------------------------------- privacy
+
+  /// `GET /api/v1/privacy.php?action=info` — public policy links and deletion terms.
+  Future<PrivacyInfo> privacyInfo() async {
+    final json = await _client.get('/privacy.php', query: {'action': 'info'});
+    return PrivacyInfo.fromJson(json);
+  }
+
+  /// `GET /api/v1/privacy.php?action=consents`
+  Future<List<ConsentPreference>> consentPreferences() async {
+    final json = await _client.get('/privacy.php', query: {'action': 'consents'});
+    return Json(json)
+        .list('consents')
+        .map((e) => ConsentPreference.fromJson(e.asMap))
+        .toList();
+  }
+
+  /// `POST /api/v1/privacy.php` `action=set-consent`
+  Future<void> setConsent({required String key, required bool granted}) =>
+      _client.post('/privacy.php', body: {'action': 'set-consent', 'key': key, 'granted': granted});
 
   Future<List<Invoice>> invoices() async {
     final json = await _client.get('/invoices.php');
@@ -537,6 +767,424 @@ class ApiRepository {
             .map((e) => HomeBanner.fromJson(Map<String, dynamic>.from(e)))
             .toList()
         : <HomeBanner>[];
+  }
+
+  // -------------------------------------------------------- lawyer surface
+
+  /// `GET /api/v1/lawyer-dashboard.php` — the lawyer's own figures.
+  Future<LawyerDashboard> lawyerDashboard() async {
+    final json = await _client.get('/lawyer-dashboard.php');
+    return LawyerDashboard.fromJson(json);
+  }
+
+  // -------------------------------------------------------- lawyer profile
+
+  /// `GET /api/v1/lawyer-profile.php?action=profile`
+  Future<LawyerProfileDetail> lawyerProfile() async {
+    final json = await _client.get('/lawyer-profile.php', query: {'action': 'profile'});
+    return LawyerProfileDetail.fromJson(json);
+  }
+
+  /// `GET /api/v1/lawyer-profile.php?action=settings`
+  Future<LawyerSettings> lawyerSettings() async {
+    final json = await _client.get('/lawyer-profile.php', query: {'action': 'settings'});
+    return LawyerSettings.fromJson(json);
+  }
+
+  /// `GET /api/v1/lawyer-profile.php?action=specialties`
+  Future<List<SpecialtyOption>> specialtyCatalogue() async {
+    final json = await _client.get('/lawyer-profile.php', query: {'action': 'specialties'});
+    return ((json['specialties'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => SpecialtyOption.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  /// `POST /api/v1/lawyer-profile.php` action=save-profile
+  Future<void> saveLawyerProfile(Map<String, dynamic> fields) async {
+    await _client.post('/lawyer-profile.php', body: {'action': 'save-profile', ...fields});
+  }
+
+  /// `POST /api/v1/lawyer-profile.php` action=save-specialties
+  Future<void> saveSpecialties(List<int> categoryIds) async {
+    await _client.post('/lawyer-profile.php', body: {
+      'action': 'save-specialties',
+      'category_ids': categoryIds,
+    });
+  }
+
+  /// `POST /api/v1/lawyer-profile.php` action=save-availability
+  Future<void> saveAvailability(List<Map<String, dynamic>> slots) async {
+    await _client.post('/lawyer-profile.php', body: {
+      'action': 'save-availability',
+      'slots': slots,
+    });
+  }
+
+  /// `POST /api/v1/lawyer-profile.php` action=save-settings
+  Future<void> saveLawyerSettings({
+    required bool inApp,
+    required bool email,
+    bool? profileVisible,
+  }) async {
+    await _client.post('/lawyer-profile.php', body: {
+      'action': 'save-settings',
+      'in_app': inApp,
+      'email': email,
+      if (profileVisible != null) 'profile_visible': profileVisible,
+    });
+  }
+
+  /// `POST /api/v1/lawyer-profile.php` action=change-password
+  Future<void> changeLawyerPassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    await _client.post('/lawyer-profile.php', body: {
+      'action': 'change-password',
+      'current_password': currentPassword,
+      'new_password': newPassword,
+    });
+  }
+
+  /// `POST /api/v1/lawyer-profile.php` action=sign-out-all
+  Future<void> signOutAllDevices() async {
+    await _client.post('/lawyer-profile.php', body: {'action': 'sign-out-all'});
+  }
+
+  /// `POST /api/v1/consultations.php` with an `action` — confirm, complete or
+  /// cancel a booking. The server scopes it to the lawyer's tenant.
+  Future<void> changeConsultationStatus({
+    required int consultationId,
+    required String status,
+  }) async {
+    await _client.post('/consultations.php', body: {
+      'action': 'change-status',
+      'consultation_id': consultationId,
+      'status': status,
+    });
+  }
+
+  // --------------------------------------------------------------- wallet
+
+  /// `GET /api/v1/wallet.php?action=summary`
+  Future<WalletSummary> walletSummary() async {
+    final json = await _client.get('/wallet.php', query: {'action': 'summary'});
+    return WalletSummary.fromJson(json);
+  }
+
+  /// `GET /api/v1/wallet.php?action=statement`
+  Future<WalletStatement> walletStatement({String? from, String? to}) async {
+    final json = await _client.get('/wallet.php', query: {
+      'action': 'statement',
+      if (from != null) 'from': from,
+      if (to != null) 'to': to,
+    });
+    return WalletStatement.fromJson(json);
+  }
+
+  /// `GET /api/v1/wallet.php?action=transactions`
+  Future<List<WalletTransaction>> walletTransactions({int limit = 50, int offset = 0}) async {
+    final json = await _client.get('/wallet.php', query: {
+      'action': 'transactions',
+      'limit': '$limit',
+      'offset': '$offset',
+    });
+    return ((json['transactions'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => WalletTransaction.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  /// `GET /api/v1/wallet.php?action=withdrawals`
+  Future<List<WalletWithdrawal>> walletWithdrawals() async {
+    final json = await _client.get('/wallet.php', query: {'action': 'withdrawals'});
+    return ((json['withdrawals'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => WalletWithdrawal.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  /// `POST /api/v1/wallet.php` action=request-withdrawal
+  Future<void> requestWithdrawal({required String amount, String? method, String? note}) async {
+    await _client.post('/wallet.php', body: {
+      'action': 'request-withdrawal',
+      'amount': amount,
+      if (method != null) 'method': method,
+      if (note != null) 'note': note,
+    });
+  }
+
+  /// `POST /api/v1/wallet.php` action=save-payout
+  Future<void> savePayoutDetails({
+    required String method,
+    required Map<String, String> details,
+    String? holder,
+  }) async {
+    await _client.post('/wallet.php', body: {
+      'action': 'save-payout',
+      'method': method,
+      if (holder != null) 'holder': holder,
+      'details': details,
+    });
+  }
+
+  // ---------------------------------------------------------------- calls
+
+  /// `GET /api/v1/calls.php?action=state&consultation_id=N`
+  Future<CallState> callState(int consultationId) async {
+    final json = await _client.get('/calls.php', query: {
+      'action': 'state',
+      'consultation_id': '$consultationId',
+    });
+    return CallState.fromJson(json);
+  }
+
+  /// `POST /api/v1/calls.php` action=start — begin (or rejoin) a call.
+  Future<CallJoinInfo> startCall({required int consultationId, required String callType}) async {
+    final json = await _client.post('/calls.php', body: {
+      'action': 'start',
+      'consultation_id': consultationId,
+      'call_type': callType,
+    });
+    return CallJoinInfo.fromJson(json);
+  }
+
+  /// `GET /api/v1/calls.php?action=token&call_id=N`
+  Future<CallJoinInfo> callToken(int callId) async {
+    final json = await _client.get('/calls.php', query: {'action': 'token', 'call_id': '$callId'});
+    return CallJoinInfo.fromJson(json);
+  }
+
+  /// `POST /api/v1/calls.php` action=accept
+  Future<CallSession> acceptCall(int callId) async {
+    final json = await _client.post('/calls.php', body: {'action': 'accept', 'call_id': callId});
+    return CallSession.fromJson(Map<String, dynamic>.from(json['call'] as Map));
+  }
+
+  /// `POST /api/v1/calls.php` action=reject
+  Future<void> rejectCall(int callId) async {
+    await _client.post('/calls.php', body: {'action': 'reject', 'call_id': callId});
+  }
+
+  /// `POST /api/v1/calls.php` action=end
+  Future<void> endCall(int callId, {String reason = 'hangup'}) async {
+    await _client.post('/calls.php', body: {'action': 'end', 'call_id': callId, 'reason': reason});
+  }
+
+  /// `POST /api/v1/calls.php` action=joined
+  Future<void> callJoined(int callId, String token) async {
+    await _client.post('/calls.php', body: {'action': 'joined', 'call_id': callId, 'token': token});
+  }
+
+  /// `POST /api/v1/calls.php` action=signal — relay one SDP/ICE payload.
+  Future<int> sendCallSignal({
+    required int callId,
+    required String token,
+    required String kind,
+    dynamic data,
+  }) async {
+    final json = await _client.post('/calls.php', body: {
+      'action': 'signal',
+      'call_id': callId,
+      'token': token,
+      'payload': {'kind': kind, 'data': data},
+    });
+    return json['signal_id'] is num ? (json['signal_id'] as num).toInt() : 0;
+  }
+
+  /// `GET /api/v1/calls.php?action=poll` — drain the other party's signals.
+  Future<List<CallSignal>> pollCallSignals({
+    required int callId,
+    required String token,
+    required int afterId,
+  }) async {
+    final json = await _client.get('/calls.php', query: {
+      'action': 'poll',
+      'call_id': '$callId',
+      'token': token,
+      'after_id': '$afterId',
+    });
+    return ((json['signals'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => CallSignal.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  /// `GET /api/v1/calls.php?action=incoming` — a ringing call for me, if any.
+  Future<CallSession?> incomingCall() async {
+    final json = await _client.get('/calls.php', query: {'action': 'incoming'});
+    final call = json['call'];
+    if (call is! Map) return null;
+    return CallSession.fromJson(Map<String, dynamic>.from(call));
+  }
+
+  /// `GET /api/v1/calls.php?action=history`
+  Future<List<CallSession>> callHistory() async {
+    final json = await _client.get('/calls.php', query: {'action': 'history'});
+    return ((json['calls'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => CallSession.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  /// `GET /api/v1/calls.php?action=get&call_id=N`
+  Future<CallSession> callDetail(int callId) async {
+    final json = await _client.get('/calls.php', query: {'action': 'get', 'call_id': '$callId'});
+    return CallSession.fromJson(Map<String, dynamic>.from(json['call'] as Map));
+  }
+
+  // -------------------------------------------- Execution 72 client features
+
+  /// `GET /api/v1/favorites.php` — the client's saved lawyers, newest first.
+  Future<List<LawyerProfile>> favorites() async {
+    final json = await _client.get('/favorites.php');
+    return _lawyerList(json['lawyers']);
+  }
+
+  /// `GET /api/v1/favorites.php?ids=1` — just the ids, for heart-state on cards.
+  Future<Set<int>> favoriteIds() async {
+    final json = await _client.get('/favorites.php', query: {'ids': '1'});
+    return ((json['ids'] as List?) ?? const [])
+        .whereType<num>()
+        .map((e) => e.toInt())
+        .toSet();
+  }
+
+  /// `POST /api/v1/favorites.php` — toggle/add/remove. Returns the resulting state.
+  Future<bool> toggleFavorite(int lawyerId, {String action = 'toggle'}) async {
+    final json = await _client.post(
+      '/favorites.php',
+      body: {'lawyer_id': lawyerId, 'action': action},
+    );
+    return json['favorited'] == true;
+  }
+
+  /// `GET /api/v1/availability-alerts.php` — the client's "notify me" subscriptions.
+  Future<List<AvailabilityAlert>> availabilityAlerts() async {
+    final json = await _client.get('/availability-alerts.php');
+    return ((json['alerts'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => AvailabilityAlert.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  /// `POST /api/v1/availability-alerts.php` — subscribe or cancel.
+  Future<String> setAvailabilityAlert(int lawyerId, {bool subscribe = true}) async {
+    final json = await _client.post(
+      '/availability-alerts.php',
+      body: {'lawyer_id': lawyerId, 'action': subscribe ? 'subscribe' : 'cancel'},
+    );
+    return json['status']?.toString() ?? '';
+  }
+
+  /// `GET /api/v1/lawyer-reviews.php?lawyer_id=N` — public, no token required.
+  Future<LawyerReviewSummary> lawyerReviews(int lawyerId, {int limit = 20}) async {
+    final json = await _client.get(
+      '/lawyer-reviews.php',
+      auth: false,
+      query: {'lawyer_id': lawyerId, 'limit': '$limit'},
+    );
+    return LawyerReviewSummary.fromJson(json);
+  }
+
+  /// `GET /api/v1/lawyer-reviews.php?reviewable=1` — completed consultations the
+  /// client can still rate.
+  Future<List<ReviewableConsultation>> reviewableConsultations() async {
+    final json = await _client.get('/lawyer-reviews.php', query: {'reviewable': '1'});
+    return ((json['consultations'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => ReviewableConsultation.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  /// `POST /api/v1/lawyer-reviews.php` — submit a verified rating.
+  Future<Map<String, dynamic>> submitReview({
+    required int consultationId,
+    required int rating,
+    String? comment,
+  }) async {
+    return _client.post(
+      '/lawyer-reviews.php',
+      body: {
+        'consultation_id': consultationId,
+        'rating': rating,
+        if (comment != null && comment.isNotEmpty) 'comment': comment,
+      },
+    );
+  }
+
+  /// `POST /api/v1/lawyer-reviews.php` — report an abusive review for moderation.
+  Future<void> reportReview(int reviewId) async {
+    await _client.post('/lawyer-reviews.php', body: {'report_id': reviewId});
+  }
+
+  /// `POST /api/v1/contact-requests.php` — send a contact request to a lawyer.
+  Future<int> sendContactRequest({
+    required int lawyerId,
+    String? subject,
+    required String message,
+  }) async {
+    final json = await _client.post(
+      '/contact-requests.php',
+      body: {
+        'lawyer_id': lawyerId,
+        if (subject != null && subject.isNotEmpty) 'subject': subject,
+        'message': message,
+      },
+    );
+    return (json['id'] as num?)?.toInt() ?? 0;
+  }
+
+  /// `GET /api/v1/notification-preferences.php` — the channel catalogue + state.
+  Future<List<NotificationChannel>> notificationPreferences() async {
+    final json = await _client.get('/notification-preferences.php');
+    return _channelList(json['channels']);
+  }
+
+  /// `POST /api/v1/notification-preferences.php` — set one channel.
+  Future<List<NotificationChannel>> setNotificationPreference({
+    required String channel,
+    required bool enabled,
+  }) async {
+    final json = await _client.post(
+      '/notification-preferences.php',
+      body: {'channel': channel, 'enabled': enabled},
+    );
+    return _channelList(json['channels']);
+  }
+
+  /// `POST /api/v1/device-token.php` — register or unregister this device's push token.
+  Future<int> registerDeviceToken(String token, {String platform = 'android'}) async {
+    final json = await _client.post(
+      '/device-token.php',
+      body: {'token': token, 'platform': platform, 'action': 'register'},
+    );
+    return (json['devices'] as num?)?.toInt() ?? 0;
+  }
+
+  Future<int> unregisterDeviceToken(String token) async {
+    final json = await _client.post(
+      '/device-token.php',
+      body: {'token': token, 'action': 'unregister'},
+    );
+    return (json['devices'] as num?)?.toInt() ?? 0;
+  }
+
+  List<LawyerProfile> _lawyerList(dynamic raw) {
+    if (raw is! List) return const <LawyerProfile>[];
+    return raw
+        .whereType<Map>()
+        .map((e) => LawyerProfile.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  List<NotificationChannel> _channelList(dynamic raw) {
+    if (raw is! List) return const <NotificationChannel>[];
+    return raw
+        .whereType<Map>()
+        .map((e) => NotificationChannel.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
   }
 }
 

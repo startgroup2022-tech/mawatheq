@@ -5,6 +5,7 @@ require_once __DIR__ . '/includes/lawyer_guard.php';
 require_once __DIR__ . '/../includes/phone.php';
 require_once __DIR__ . '/../includes/audit_log.php';
 require_once __DIR__ . '/../includes/tenant.php';
+require_once __DIR__ . '/../includes/consultation_payment.php';
 $lawyerId = $_SESSION['lawyer_id'];
 $firmId = tenant_write_firm_id($pdo);
 
@@ -14,9 +15,32 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action'] ?? '')==='change_st
     $status=$_POST['status'] ?? ''; $id=(int)($_POST['consultation_id'] ?? 0);
     $scope = tenant_owner_where($pdo, 'consultations');
     if (in_array($status, $allowed,true) && $id>0) {
+        // A priced consultation must be paid before it can be confirmed. Read the row
+        // through the tenant scope first, so a guessed id cannot reveal or change another
+        // firm's booking, and so the payment state is the one that actually belongs to it.
+        $existing = $pdo->prepare('SELECT price, payment_status FROM consultations WHERE id=? AND ' . $scope['sql']);
+        $existing->execute(array_merge([$id], $scope['params']));
+        $row = $existing->fetch();
+        if ($row && $status === 'confirmed' && consultation_payment_blocks_confirmation($row)) {
+            // Refuse the confirmation instead of turning an unpaid booking into a confirmed
+            // one. The booking stays pending until the gateway verifies the payment.
+            header('Location: /lawyer/consultations.php?payment_required=1'); exit;
+        }
         $upd = $pdo->prepare('UPDATE consultations SET status=? WHERE id=? AND ' . $scope['sql']);
         $upd->execute(array_merge([$status,$id], $scope['params']));
-        if ($upd->rowCount()) log_action($pdo,'تغيير حالة استشارة المحامي إلى '.$status,'consultation',$id);
+        if ($upd->rowCount()) {
+            log_action($pdo,'تغيير حالة استشارة المحامي إلى '.$status,'consultation',$id);
+            // Cancelling a booking frees its slot, so the customers waiting on «أبلغني عند
+            // توفّر موعد» for this lawyer are told now rather than at the next cron sweep.
+            if ($status === 'cancelled') {
+                try {
+                    require_once __DIR__ . '/../includes/customer_features.php';
+                    availability_alerts_dispatch($pdo, (int)$lawyerId);
+                } catch (Throwable $e) {
+                    error_log('availability alert on cancel: ' . $e->getMessage());
+                }
+            }
+        }
     }
     header('Location: /lawyer/consultations.php'); exit;
 }
@@ -42,6 +66,9 @@ $rows = $rows->fetchAll();
 ?>
 <div class="app-content">
   <div class="toolbar"><h2><?= is_rtl() ? 'استشاراتي' : 'My consultations' ?></h2></div>
+  <?php if (isset($_GET['payment_required'])): ?>
+    <div class="form-alert warning"><?= is_rtl() ? 'لا يمكن تأكيد استشارة مدفوعة قبل إتمام الدفع. سيُؤكَّد الموعد تلقائياً بعد نجاح الدفع.' : 'A paid consultation cannot be confirmed before payment is completed. The appointment is confirmed automatically once payment succeeds.' ?></div>
+  <?php endif; ?>
   <div class="table-wrap">
     <table class="admin-table">
       <thead><tr><th><?= is_rtl() ? 'العميل' : 'Client' ?></th><th><?= is_rtl() ? 'الموعد' : 'Date' ?></th><th><?= is_rtl() ? 'النوع' : 'Type' ?></th><th><?= is_rtl() ? 'الموضوع' : 'Topic' ?></th><th><?= is_rtl() ? 'التصنيف القانوني' : 'Legal classification' ?></th><th><?= is_rtl() ? 'الحالة' : 'Status' ?></th><th></th></tr></thead>
@@ -60,9 +87,16 @@ $rows = $rows->fetchAll();
               <span style="color:var(--text-muted)"><?= is_rtl() ? 'غير مصنّف' : 'Unclassified' ?></span>
             <?php endif; ?>
           </td>
-          <td><span class="status-pill status-<?= $r['status'] ?>"><?= htmlspecialchars($r['status']) ?></span></td>
           <td>
-            <?php if ($r['status'] === 'pending'): ?><form method="post" style="display:inline"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="change_status"><input type="hidden" name="consultation_id" value="<?= (int)$r['id'] ?>"><input type="hidden" name="status" value="confirmed"><button class="icon-btn" type="submit"><?= is_rtl() ? 'تأكيد' : 'Confirm' ?></button></form><?php endif; ?>
+            <span class="status-pill status-<?= $r['status'] ?>"><?= htmlspecialchars($r['status']) ?></span>
+            <?php if (($r['payment_status'] ?? 'unpaid') !== 'unpaid'): ?>
+              <br><span class="badge <?= $r['payment_status'] === 'paid' ? 'badge-success' : 'badge-neutral' ?>" style="margin-top:4px"><?= $r['payment_status'] === 'paid' ? (is_rtl() ? 'مدفوعة' : 'Paid') : (is_rtl() ? 'الدفع معلّق' : 'Payment pending') ?></span>
+            <?php endif; ?>
+          </td>
+          <td>
+            <?php if ($r['status'] === 'pending' && consultation_payment_blocks_confirmation($r)): ?>
+              <span class="muted-sm" style="color:var(--text-muted)"><?= is_rtl() ? 'بانتظار الدفع' : 'Awaiting payment' ?></span>
+            <?php elseif ($r['status'] === 'pending'): ?><form method="post" style="display:inline"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="change_status"><input type="hidden" name="consultation_id" value="<?= (int)$r['id'] ?>"><input type="hidden" name="status" value="confirmed"><button class="icon-btn" type="submit"><?= is_rtl() ? 'تأكيد' : 'Confirm' ?></button></form><?php endif; ?>
             <?php if ($r['status'] === 'confirmed'): ?><form method="post" style="display:inline"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="change_status"><input type="hidden" name="consultation_id" value="<?= (int)$r['id'] ?>"><input type="hidden" name="status" value="completed"><button class="icon-btn" type="submit"><?= is_rtl() ? 'إتمام' : 'Complete' ?></button></form><?php endif; ?>
             <?php if (in_array($r['status'], ['pending','confirmed'])): ?><a class="icon-btn" href="/lawyer/consultation-room.php?id=<?= $r['id'] ?>" style="color:var(--teal);font-weight:700"><?= is_rtl() ? 'دخول' : 'Join' ?></a><?php endif; ?>
             <?php if (!in_array($r['status'], ['completed','cancelled'],true)): ?><form method="post" style="display:inline"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="change_status"><input type="hidden" name="consultation_id" value="<?= (int)$r['id'] ?>"><input type="hidden" name="status" value="cancelled"><button class="icon-btn danger" type="submit"><?= is_rtl() ? 'إلغاء' : 'Cancel' ?></button></form><?php endif; ?>

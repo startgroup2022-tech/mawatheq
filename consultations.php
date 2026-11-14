@@ -1,77 +1,206 @@
 <?php
+/**
+ * استشاراتي + دليل المحامين — the client's consultations page.
+ *
+ * Two jobs on one page: the client's own bookings (with pay / join actions) and the
+ * professional lawyer directory they book from.
+ *
+ * The directory filters are the SAME set the mobile app and the journey use — search,
+ * specialty, country, city (dependent on country), experience band, fee range and real
+ * availability — and they run through `legal_journey_directory_search()`, the one shared
+ * implementation, so the website and the app cannot return different lawyers for the
+ * same filters. Every filter is applied server-side with bound parameters, and a lawyer
+ * with no open slot is removed rather than shown with an empty availability line.
+ */
 $activePage = 'consultations';
 require_once __DIR__ . '/includes/app_header.php';
-require_once __DIR__ . '/includes/jurisdiction.php';
-
-$filterJurisdiction = $_GET['jurisdiction'] ?? '';
-$filterSpecialization = $_GET['specialization'] ?? '';
-
-$sql = "SELECT * FROM lawyers WHERE status='approved'";
-$params = [];
-if ($filterJurisdiction) { $sql .= " AND jurisdiction = ?"; $params[] = $filterJurisdiction; }
-if ($filterSpecialization) { $sql .= " AND specialization = ?"; $params[] = $filterSpecialization; }
-$sql .= " ORDER BY rating DESC";
-$stmt = $pdo->prepare($sql);
-$stmt->execute($params);
-$lawyers = $stmt->fetchAll();
-
+require_once __DIR__ . '/includes/legal_journey.php';
+require_once __DIR__ . '/includes/journey_ui.php';
+require_once __DIR__ . '/includes/currency.php';
+require_once __DIR__ . '/includes/consultation_payment.php';
 require_once __DIR__ . '/includes/specialization_field.php';
+require_once __DIR__ . '/includes/customer_features.php';
+
+$rtl = is_rtl();
+
+// The professional filters, normalised by the shared normaliser the API and journey use.
+$filters = legal_journey_filter_params($_GET);
+$lawyers = legal_journey_directory_search($pdo, $_GET);
+$resultCount = count($lawyers);
+$filtersActive = $filters['jurisdiction'] !== '' || $filters['specialization'] !== ''
+    || $filters['country'] !== '' || $filters['city'] !== ''
+    || $filters['experience'] !== '' || $filters['min_fee'] !== null
+    || $filters['max_fee'] !== null || $filters['available_only'] || $filters['q'] !== ''
+    || $filters['language'] !== '' || $filters['mode'] !== '' || $filters['date'] !== '';
+$filterOptions = legal_journey_filter_options($pdo);
+// The customer's saved lawyers, so each card can paint its heart without a query per row.
+$favoriteIds = array_fill_keys(favorite_ids_for_client($pdo, (int)$_SESSION['user_id']), true);
 
 $myBookings = $pdo->prepare("SELECT c.*, l.full_name AS lawyer_name FROM consultations c JOIN lawyers l ON l.id=c.lawyer_id WHERE c.user_id=? ORDER BY c.scheduled_at DESC");
 $myBookings->execute([$_SESSION['user_id']]);
 $myBookings = $myBookings->fetchAll();
+
+$extraPageAssets = ['<link rel="stylesheet" href="/assets/css/journey.css">'];
 ?>
 <div class="app-content">
-  <h2><?= t('feat4_title') ?></h2>
+  <h1><?= t('feat4_title') ?></h1>
   <p style="margin-bottom:20px"><?= t('feat4_body') ?></p>
 
+  <?php if (isset($_GET['payment_error'])): ?>
+    <div class="form-alert error"><?= is_rtl() ? 'تعذّر بدء الدفع الإلكتروني حالياً. لم يتم خصم أي مبلغ. حاول مجدداً لاحقاً.' : 'Online payment could not be started. No amount was charged. Please try again later.' ?><?php $ref = preg_replace('/[^A-Fa-f0-9]/', '', (string)($_GET['ref'] ?? '')); if ($ref !== '') echo ' ' . (is_rtl() ? 'الرقم المرجعي:' : 'Reference:') . ' ' . htmlspecialchars(strtoupper(substr($ref, 0, 8))); ?></div>
+  <?php endif; ?>
+
   <?php if ($myBookings): ?>
-  <h3 style="margin-bottom:12px"><?= is_rtl() ? 'حجوزاتي' : 'My bookings' ?></h3>
+  <h2 style="margin-bottom:12px"><?= is_rtl() ? 'حجوزاتي' : 'My bookings' ?></h2>
   <?php foreach ($myBookings as $b): ?>
-    <div class="dash-card" style="display:flex;justify-content:space-between;align-items:center">
+    <?php $needsPayment = consultation_payment_required($b) && ($b['payment_status'] ?? 'unpaid') !== 'paid'; ?>
+    <div class="dash-card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
       <div>
         <strong><?= htmlspecialchars($b['lawyer_name']) ?></strong>
         <div style="font-size:.82rem;color:var(--text-muted)"><?= date('Y-m-d H:i', strtotime($b['scheduled_at'])) ?> — <?= htmlspecialchars($b['consultation_type']) ?></div>
+        <?php if (consultation_payment_required($b)): ?>
+          <div style="font-size:.82rem;margin-top:4px">
+            <span class="badge <?= ($b['payment_status'] ?? 'unpaid') === 'paid' ? 'badge-success' : 'badge-neutral' ?>">
+              <?= ($b['payment_status'] ?? 'unpaid') === 'paid' ? (is_rtl() ? 'مدفوعة' : 'Paid') : (is_rtl() ? 'بانتظار الدفع' : 'Payment due') ?>
+            </span>
+            <span style="color:var(--text-muted)"><?= money((float)$b['price']) ?></span>
+          </div>
+        <?php endif; ?>
       </div>
       <div style="display:flex;align-items:center;gap:10px">
-        <span class="status-pill status-<?= $b['status'] ?>"><?= htmlspecialchars($b['status']) ?></span>
-        <?php if (in_array($b['status'], ['pending','confirmed'])): ?>
-          <a href="/consultation-room.php?id=<?= $b['id'] ?>" class="btn btn-primary btn-sm"><?= is_rtl() ? 'الدخول للاستشارة' : 'Join' ?></a>
+        <span class="status-pill status-<?= htmlspecialchars($b['status']) ?>"><?= htmlspecialchars($b['status']) ?></span>
+        <?php if ($needsPayment): ?>
+          <form method="post" action="/consultation-pay.php" style="display:inline">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
+            <input type="hidden" name="consultation_id" value="<?= (int)$b['id'] ?>">
+            <button class="btn btn-primary btn-sm" type="submit"><?= is_rtl() ? 'ادفع الآن' : 'Pay now' ?></button>
+          </form>
+        <?php elseif (in_array($b['status'], ['pending','confirmed'], true)): ?>
+          <a href="/consultation-room.php?id=<?= (int)$b['id'] ?>" class="btn btn-primary btn-sm"><?= is_rtl() ? 'الدخول للاستشارة' : 'Join' ?></a>
         <?php endif; ?>
       </div>
     </div>
-  <?php endforeach; endif; ?>
+  <?php endforeach; ?>
+  <?php endif; ?>
 
-  <h3 style="margin:24px 0 12px"><?= is_rtl() ? 'نخبة المحامين' : 'Top lawyers' ?></h3>
-  <form method="get" class="dash-card" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
-    <div class="field" style="margin:0;min-width:180px">
-      <label style="font-size:.8rem"><?= is_rtl() ? 'الدولة' : 'Country' ?></label>
-      <?php render_jurisdiction_select('jurisdiction', $filterJurisdiction, true); ?>
+  <h2 style="margin:24px 0 12px"><?= is_rtl() ? 'ابحث عن محامٍ' : 'Find a lawyer' ?></h2>
+
+  <?php
+  $cityJson = [];
+  foreach ($filterOptions['cities'] as $code => $list) $cityJson[$code] = array_values($list);
+  ?>
+  <script type="application/json" id="mawatheq-city-data"><?= json_encode($cityJson, JSON_UNESCAPED_UNICODE) ?></script>
+
+  <form method="get" class="journey-search" data-lawyer-form>
+    <div class="field">
+      <label for="q"><?= is_rtl() ? 'ابحث باسم المحامي' : 'Search by lawyer name' ?></label>
+      <input type="search" id="q" name="q" value="<?= htmlspecialchars($filters['q']) ?>">
     </div>
-    <div class="field" style="margin:0;min-width:200px">
-      <label style="font-size:.8rem"><?= is_rtl() ? 'التخصص' : 'Specialization' ?></label>
-      <div class="select-wrap"><select name="specialization" class="pro-select">
+
+    <div class="field">
+      <label for="f_specialization"><?= is_rtl() ? 'التخصص' : 'Specialization' ?></label>
+      <div class="select-wrap"><select id="f_specialization" name="specialization" class="pro-select">
         <option value=""><?= is_rtl() ? 'كل التخصصات' : 'All specializations' ?></option>
         <?php foreach (specialization_options() as $opt): ?>
-          <option value="<?= htmlspecialchars($opt) ?>" <?= $filterSpecialization === $opt ? 'selected' : '' ?>><?= htmlspecialchars($opt) ?></option>
+          <option value="<?= htmlspecialchars($opt) ?>" <?= $filters['specialization'] === $opt ? 'selected' : '' ?>><?= htmlspecialchars($opt) ?></option>
         <?php endforeach; ?>
       </select></div>
     </div>
-    <button class="btn btn-primary btn-sm" type="submit"><?= is_rtl() ? 'تصفية' : 'Filter' ?></button>
-    <?php if ($filterJurisdiction || $filterSpecialization): ?><a href="/consultations.php" class="btn btn-outline btn-sm"><?= is_rtl() ? 'إعادة تعيين' : 'Reset' ?></a><?php endif; ?>
-  </form>
-  <?php if (empty($lawyers)): ?>
-    <p style="color:var(--text-muted)"><?= is_rtl() ? 'لا يوجد محامون يطابقون هذا البحث.' : 'No lawyers match this search.' ?></p>
-  <?php endif; ?>
-  <?php foreach ($lawyers as $lw): ?>
-    <div class="lawyer-card">
-      <div class="lawyer-avatar"><?= mb_substr($lw['full_name'],0,1) ?></div>
-      <div style="flex:1">
-        <strong><?= htmlspecialchars($lw['full_name']) ?></strong>
-        <div style="font-size:.85rem;color:var(--text-muted)"><?= htmlspecialchars($lw['specialization'] ?? '') ?> · ⭐ <?= $lw['rating'] ?> · <?= $lw['years_experience'] ?> <?= is_rtl() ? 'سنة خبرة' : 'yrs exp.' ?> · 🌍 <?= htmlspecialchars($lw['jurisdiction'] ?? 'السعودية') ?></div>
-      </div>
-      <a href="/booking.php?lawyer_id=<?= $lw['id'] ?>" class="btn btn-primary"><?= t('hero_cta_book') ?></a>
+
+    <div class="field">
+      <label for="f_country"><?= is_rtl() ? 'الدولة' : 'Country' ?></label>
+      <div class="select-wrap"><select id="f_country" name="country" class="pro-select" data-country-select>
+        <option value=""><?= is_rtl() ? 'كل الدول' : 'All countries' ?></option>
+        <?php foreach ($filterOptions['countries'] as $c): ?>
+          <option value="<?= htmlspecialchars($c['code']) ?>" <?= $filters['country'] === $c['code'] ? 'selected' : '' ?>><?= htmlspecialchars($c['name']) ?></option>
+        <?php endforeach; ?>
+      </select></div>
     </div>
-  <?php endforeach; ?>
+
+    <div class="field">
+      <label for="f_city"><?= is_rtl() ? 'المدينة' : 'City' ?></label>
+      <?php render_city_select('city', $filters['country'] !== '' ? $filters['country'] : null, $filters['city'] !== '' ? $filters['city'] : null, false, 'f_city'); ?>
+    </div>
+
+    <div class="field">
+      <label for="f_experience"><?= is_rtl() ? 'سنوات الخبرة' : 'Experience' ?></label>
+      <div class="select-wrap"><select id="f_experience" name="experience" class="pro-select">
+        <option value=""><?= is_rtl() ? 'كل مستويات الخبرة' : 'All experience levels' ?></option>
+        <?php foreach ($filterOptions['experience'] as $band): ?>
+          <option value="<?= htmlspecialchars($band['key']) ?>" <?= $filters['experience'] === $band['key'] ? 'selected' : '' ?>><?= htmlspecialchars($band['label']) ?></option>
+        <?php endforeach; ?>
+      </select></div>
+    </div>
+
+    <div class="field">
+      <label for="min_fee"><?= is_rtl() ? 'أقل سعر استشارة' : 'Min consultation price' ?></label>
+      <input type="number" step="<?= currency_step() ?>" min="0" id="min_fee" name="min_fee" value="<?= $filters['min_fee'] !== null ? htmlspecialchars((string)$filters['min_fee']) : '' ?>" class="ltr">
+    </div>
+    <div class="field">
+      <label for="max_fee"><?= is_rtl() ? 'أعلى سعر استشارة' : 'Max consultation price' ?></label>
+      <input type="number" step="<?= currency_step() ?>" min="0" id="max_fee" name="max_fee" value="<?= $filters['max_fee'] !== null ? htmlspecialchars((string)$filters['max_fee']) : '' ?>" class="ltr">
+    </div>
+
+    <div class="field">
+      <label for="f_language"><?= is_rtl() ? 'لغة الاستشارة' : 'Consultation language' ?></label>
+      <div class="select-wrap"><select id="f_language" name="language" class="pro-select">
+        <option value=""><?= is_rtl() ? 'أي لغة' : 'Any language' ?></option>
+        <?php foreach ($filterOptions['languages'] as $lang): ?>
+          <option value="<?= htmlspecialchars($lang['key']) ?>" <?= $filters['language'] === $lang['key'] ? 'selected' : '' ?>><?= htmlspecialchars($lang['label']) ?></option>
+        <?php endforeach; ?>
+      </select></div>
+    </div>
+
+    <div class="field">
+      <label for="f_mode"><?= is_rtl() ? 'طريقة الاستشارة' : 'Consultation mode' ?></label>
+      <div class="select-wrap"><select id="f_mode" name="mode" class="pro-select">
+        <option value=""><?= is_rtl() ? 'الكل' : 'Any' ?></option>
+        <?php foreach ($filterOptions['modes'] as $mode): ?>
+          <option value="<?= htmlspecialchars($mode['key']) ?>" <?= $filters['mode'] === $mode['key'] ? 'selected' : '' ?>><?= htmlspecialchars($mode['label']) ?></option>
+        <?php endforeach; ?>
+      </select></div>
+    </div>
+
+    <div class="field">
+      <label for="f_date"><?= is_rtl() ? 'متاح في تاريخ' : 'Available on date' ?></label>
+      <input type="date" id="f_date" name="date" class="ltr" min="<?= date('Y-m-d') ?>" value="<?= htmlspecialchars($filters['date']) ?>">
+    </div>
+
+    <div class="field" style="align-self:end">
+      <label class="check-row" for="f_available" style="display:flex;align-items:center;gap:8px;min-height:44px">
+        <input type="checkbox" id="f_available" name="available_only" value="1" <?= $filters['available_only'] ? 'checked' : '' ?>>
+        <span><?= is_rtl() ? 'المتاحون بمواعيد فقط' : 'Only with open slots' ?></span>
+      </label>
+    </div>
+
+    <div class="journey-filter-actions">
+      <button class="btn btn-primary" type="submit"><?= is_rtl() ? 'تصفية' : 'Filter' ?></button>
+      <?php if ($filtersActive): ?>
+        <a class="btn btn-outline" href="/consultations.php"><?= is_rtl() ? 'مسح الفلاتر' : 'Clear filters' ?></a>
+      <?php endif; ?>
+    </div>
+  </form>
+
+  <div class="journey-result-count" role="status">
+    <?= is_rtl()
+        ? 'عدد المحامين المطابقين: <strong>' . (int)$resultCount . '</strong>'
+        : '<strong>' . (int)$resultCount . '</strong> matching lawyers' ?>
+  </div>
+
+  <?php if (empty($lawyers)): ?>
+    <div class="journey-empty">
+      <div class="ico">🔍</div>
+      <h3><?= is_rtl() ? 'لا يوجد محامٍ يطابق البحث' : 'No lawyer matches this search' ?></h3>
+      <p><?= is_rtl() ? 'جرّب توسيع نطاق البحث أو مسح الفلاتر لعرض جميع المحامين.' : 'Try widening the search or clearing the filters to see all lawyers.' ?></p>
+      <a href="/consultations.php" class="btn btn-primary"><?= is_rtl() ? 'مسح الفلاتر' : 'Clear filters' ?></a>
+    </div>
+  <?php else: ?>
+    <div class="compare-grid">
+      <?php foreach ($lawyers as $lw): ?>
+        <?= journey_lawyer_card($lw, $favoriteIds) ?>
+      <?php endforeach; ?>
+    </div>
+  <?php endif; ?>
 </div>
+<script src="<?= asset_url('/assets/js/lawyer-form.js') ?>"></script>
 <?php require_once __DIR__ . '/includes/app_footer.php'; ?>

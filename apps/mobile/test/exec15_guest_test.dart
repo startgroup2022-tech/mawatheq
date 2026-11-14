@@ -62,6 +62,11 @@ class _MemoryTokenStore implements TokenStore {
   @override
   Future<String?> readDeviceLabel() async => null;
   @override
+  Future<void> saveBiometricEnabled(bool enabled) async {}
+  @override
+  Future<bool> readBiometricEnabled() async => false;
+
+  @override
   Future<void> clear() async {
     token = null;
     type = null;
@@ -165,7 +170,8 @@ const _lawyersJson = [
     'full_name': 'سارة العتيبي',
     'specialization': 'الأحوال الشخصية',
     'jurisdiction': 'الرياض',
-    'rating': '4.800',
+    'fee_display': '350 ر.س',
+    'duration_minutes': 30,
     'hourly_rate': '350.000',
   },
   {
@@ -173,7 +179,8 @@ const _lawyersJson = [
     'full_name': 'خالد المطيري',
     'specialization': 'القضايا التجارية',
     'jurisdiction': 'جدة',
-    'rating': '0',
+    'fee_display': null,
+    'duration_minutes': 30,
     'hourly_rate': '0',
   },
 ];
@@ -376,8 +383,11 @@ void main() {
       expect(find.text('لفترة محدودة'), findsOneWidget);
     });
 
-    testWidgets('no banners means no slider at all, not an empty frame',
+    testWidgets('no operator banners still shows the built-in slider',
         (tester) async {
+      // The home must never lose its slider. On a fresh install `home_banners` is
+      // empty, so the built-in Mawatheq slides carry it instead of the top of the
+      // screen collapsing to a bare pair of action cards.
       final transport = _FakeTransport((uri) async {
         if (uri.path.endsWith('/banners.php')) {
           return (200, {'ok': true, 'banners': []});
@@ -397,8 +407,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.byType(BannerCarousel), findsNothing);
-      expect(find.byType(PageView), findsNothing);
+      expect(find.byType(BannerCarousel), findsOneWidget);
+      expect(find.byType(PageView), findsOneWidget);
+      // The first built-in slide is on screen.
+      expect(find.text('استشارتك القانونية بخطوات بسيطة'), findsOneWidget);
       // The rest of the home screen still renders.
       expect(find.text('اختر تخصصك القانوني'), findsOneWidget);
     });
@@ -446,9 +458,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // One failing section must not take the page down with it.
+      // One failing section must not take the page down with it. A failed banner
+      // request falls back to the built-in slides, so the slider is still there and
+      // the specialties still render.
       expect(find.text('الأحوال الشخصية'), findsOneWidget);
-      expect(find.byType(BannerCarousel), findsNothing);
+      expect(find.byType(BannerCarousel), findsOneWidget);
+      expect(find.text('استشارتك القانونية بخطوات بسيطة'), findsOneWidget);
     });
 
     testWidgets('shows no private data — no case, document or user content',
@@ -615,9 +630,8 @@ void main() {
 
       expect(find.text('سارة العتيبي'), findsOneWidget);
       expect(find.text('الأحوال الشخصية'), findsOneWidget);
-      expect(find.text('350 ر.س/ساعة'), findsOneWidget);
+      expect(find.text('350 ر.س / 30 دقيقة'), findsOneWidget);
       expect(find.text('2 محامياً متاحاً'), findsOneWidget);
-      // A lawyer with no rating shows no stars rather than a fabricated zero.
       expect(find.text('خالد المطيري'), findsOneWidget);
     });
 
@@ -672,7 +686,7 @@ void main() {
 
   // ------------------------------------------------------- login transitions
 
-  group('Login transition preserves the destination', () {
+  group('Login always lands on Home', () {
     test('consume() returns the destination exactly once', () {
       final guest = GuestSession()..remember(ProtectedDestination.documents);
       expect(guest.consume(), ProtectedDestination.documents);
@@ -680,7 +694,7 @@ void main() {
       expect(guest.hasPendingIntent, isFalse);
     });
 
-    testWidgets('after sign-in the app opens the remembered destination',
+    testWidgets('sign-in lands on Home even when a destination was remembered',
         (tester) async {
       final transport = _FakeTransport((uri) async {
         if (uri.path.endsWith('/auth/login.php')) {
@@ -722,11 +736,14 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
-      // The shell opened on the Documents tab (index 3) rather than the dashboard.
+      // Home is where every sign-in lands, regardless of what the guest was
+      // stopped at. Landing on the remembered Documents tab is the defect the
+      // brief names: a successful login must never open Consultations (or any
+      // other service) instead of Home.
       expect(find.byType(HomeShell), findsOneWidget);
       final shell = tester.widget<HomeShell>(find.byType(HomeShell));
-      expect(shell.initialIndex, 3);
-      // The intent was consumed, so it cannot be replayed.
+      expect(shell.initialIndex, 0);
+      // The intent was cleared, so a later navigation cannot replay it.
       expect(guest.hasPendingIntent, isFalse);
     });
 

@@ -25,6 +25,14 @@
          and degrades to an in-app note when it is refused. On older releases the
          permission does not exist and the declaration is ignored. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Biometric sign-in. USE_BIOMETRIC is the API 28+ permission; USE_FINGERPRINT is
+         kept for API 23–27 devices. The app never forces biometrics: the feature is
+         opt-in from Account → Security, and a device without an enrolled biometric or
+         without the hardware simply does not show the option. The biometric only unlocks
+         a locally stored token — it is not an alternative credential on the server, so a
+         device that cannot do biometrics is never locked out of the account. -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
+    <uses-permission android:name="android.permission.USE_FINGERPRINT"/>
     <!-- Exact alarms are needed for a reminder to fire at the appointment time rather than
          whenever the OS next batches background work. Declared so the scheduler can use
          them; if the platform refuses, the reminder falls back to an inexact window. -->

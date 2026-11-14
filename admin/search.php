@@ -4,12 +4,13 @@ require_once __DIR__ . '/../lang/strings.php';
 require_once __DIR__ . '/includes/admin_guard.php';
 $activeAdmin = 'dashboard'; $pageTitle = '';
 require_once __DIR__ . '/includes/admin_header.php';
+require_once __DIR__ . '/../includes/specialization_field.php';
 $q = trim((string)($_GET['q'] ?? '')); $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $q) . '%';
 $run = function (string $sql, int $n) use ($pdo, $like): array { try { $s = $pdo->prepare($sql); $s->execute(array_fill(0, $n, $like)); return $s->fetchAll(); } catch (Throwable $e) { return []; } };
 $res = ['clients' => [], 'lawyers' => [], 'cases' => [], 'invoices' => [], 'leads' => [], 'opps' => []];
 if (mb_strlen($q, 'UTF-8') >= 2) {
     $res['clients'] = $run('SELECT id,full_name,email,phone FROM users WHERE full_name LIKE ? OR email LIKE ? OR phone LIKE ? OR company_name LIKE ? LIMIT 8', 4);
-    $res['lawyers'] = $run('SELECT id,full_name,specialization,status FROM lawyers WHERE full_name LIKE ? OR specialization LIKE ? LIMIT 8', 2);
+    $res['lawyers'] = $run('SELECT id,full_name,specialization,specializations,status FROM lawyers WHERE full_name LIKE ? OR specialization LIKE ? OR specializations LIKE ? LIMIT 8', 3);
     $res['cases'] = $run('SELECT c.id,c.title,c.status,c.user_id,u.full_name uname FROM cases c JOIN users u ON u.id=c.user_id WHERE c.title LIKE ? OR u.full_name LIKE ? LIMIT 8', 2);
     $res['invoices'] = $run('SELECT i.id,i.description,i.amount,i.status,i.user_id FROM invoices i WHERE i.description LIKE ? LIMIT 8', 1);
     $res['leads'] = $run('SELECT id,full_name,email,status FROM contact_leads WHERE full_name LIKE ? OR email LIKE ? OR phone LIKE ? LIMIT 8', 3);
@@ -18,7 +19,7 @@ if (mb_strlen($q, 'UTF-8') >= 2) {
 $n = array_sum(array_map('count', $res));
 $sections = [
     'clients' => [adm('العملاء', 'Clients'), 'users', fn($r) => ['/admin/client-detail.php?id=' . $r['id'], $r['full_name'], $r['email']]],
-    'lawyers' => [adm('المحامون', 'Lawyers'), 'scale', fn($r) => ['/admin/lawyers.php', $r['full_name'], $r['specialization'] . ' · ' . $r['status']]],
+    'lawyers' => [adm('المحامون', 'Lawyers'), 'scale', fn($r) => ['/admin/lawyers.php', $r['full_name'], lawyer_specialization_display($r) . ' · ' . $r['status']]],
     'cases' => [adm('القضايا', 'Cases'), 'briefcase', fn($r) => ['/admin/client-detail.php?id=' . $r['user_id'] . '#cases', $r['title'], $r['uname'] . ' · ' . $r['status']]],
     'invoices' => [adm('الفواتير', 'Invoices'), 'receipt', fn($r) => ['/admin/client-detail.php?id=' . $r['user_id'] . '#billing', $r['description'], money_text($r['amount']) . ' · ' . $r['status']]],
     'leads' => [adm('الطلبات الواردة', 'Leads'), 'inbox', fn($r) => ['/admin/leads.php', $r['full_name'], $r['email'] . ' · ' . $r['status']]],

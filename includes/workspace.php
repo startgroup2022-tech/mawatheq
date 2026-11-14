@@ -85,10 +85,10 @@ if (!function_exists('ws_ai_service_cards')) {
 
             if ($state === 'limit_reached') {
                 $actionLabel = $rtl ? 'تواصل لترقية الباقة' : 'Contact to upgrade';
-                $actionHref = '/contact.php?topic=plan';
+                $actionHref = '/packages.php';
             } elseif ($state === 'locked') {
                 $actionLabel = $rtl ? 'اطلب تفعيل الباقة' : 'Request a plan';
-                $actionHref = '/contact.php?topic=plan';
+                $actionHref = '/packages.php';
             } else {
                 $actionLabel = $rtl ? 'ابدأ الآن' : 'Start now';
                 $actionHref = $svc['href'];

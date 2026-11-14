@@ -8,13 +8,19 @@ if (isset($_GET['lang']) && in_array($_GET['lang'], ['ar','en'])) {
 }
 $lang = current_lang();
 $dir  = is_rtl() ? 'rtl' : 'ltr';
+// A page may set $pageTitle before including this header. When it does, the browser
+// title and the Open Graph title reflect the page instead of the site tagline, which
+// matters for a page Google Play links to directly (the account-deletion page). The
+// default is unchanged for every page that does not set it.
+$pageTitle = isset($pageTitle) ? trim((string)$pageTitle) : '';
+$headTitle = $pageTitle !== '' ? ($pageTitle . ' | ' . SITE_NAME_AR) : (SITE_NAME_AR . ' | ' . t('l2_hero_badge'));
 ?>
 <!DOCTYPE html>
 <html lang="<?= $lang ?>" dir="<?= $dir ?>">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title><?= SITE_NAME_AR ?> | <?= t('l2_hero_badge') ?></title>
+<title><?= htmlspecialchars($headTitle, ENT_QUOTES, 'UTF-8') ?></title>
 <meta name="description" content="<?= t('l2_hero_sub') ?>">
 <meta name="theme-color" content="#1E3A5F">
 <link rel="canonical" href="<?= rtrim(SITE_URL, '/') ?>/">
@@ -24,22 +30,22 @@ $dir  = is_rtl() ? 'rtl' : 'ltr';
 <!-- Open Graph / social -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="<?= SITE_NAME_AR ?>">
-<meta property="og:title" content="<?= SITE_NAME_AR ?> — <?= t('l2_hero_badge') ?>">
+<meta property="og:title" content="<?= htmlspecialchars($headTitle, ENT_QUOTES, 'UTF-8') ?>">
 <meta property="og:description" content="<?= t('l2_hero_sub') ?>">
 <meta property="og:url" content="<?= rtrim(SITE_URL, '/') ?>/">
 <meta property="og:image" content="<?= SITE_URL ?>/assets/img/logo.webp">
 <meta property="og:locale" content="<?= $lang === 'ar' ? 'ar_SA' : 'en_US' ?>">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="<?= SITE_NAME_AR ?> — <?= t('l2_hero_badge') ?>">
+<meta name="twitter:title" content="<?= htmlspecialchars($headTitle, ENT_QUOTES, 'UTF-8') ?>">
 <meta name="twitter:description" content="<?= t('l2_hero_sub') ?>">
 <meta name="twitter:image" content="<?= SITE_URL ?>/assets/img/logo.webp">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/css/style.css">
-<link rel="stylesheet" href="/assets/css/enterprise.css">
-<link rel="stylesheet" href="/assets/css/landing.css">
+<link rel="stylesheet" href="<?= asset_url('/assets/css/style.css') ?>">
+<link rel="stylesheet" href="<?= asset_url('/assets/css/enterprise.css') ?>">
+<link rel="stylesheet" href="<?= asset_url('/assets/css/landing.css') ?>">
 <?php
 // Page-specific stylesheets. A page sets $pageStyles before including this header, so the
 // link lands in <head> rather than being emitted mid-body. Public pages that carry their own
@@ -78,7 +84,8 @@ foreach (($pageStyles ?? []) as $pageStyle) {
     </a>
     <button type="button" class="nav-toggle" data-nav-toggle aria-controls="mainNav"
             aria-expanded="false" aria-label="<?= is_rtl() ? 'فتح القائمة' : 'Open menu' ?>">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      <svg class="nav-toggle-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      <svg class="nav-toggle-close" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
     </button>
     <nav class="main-nav" id="mainNav" data-nav-spy aria-label="<?= is_rtl() ? 'القائمة الرئيسية' : 'Main navigation' ?>">
       <a href="/#platform"><?= t('nav_platform') ?></a>
@@ -99,3 +106,9 @@ foreach (($pageStyles ?? []) as $pageStyle) {
     </div>
   </div>
 </header>
+<?php /* Outside <header>: `backdrop-filter` on the header makes it the containing
+   block for fixed children, so a scrim inside it would size itself to the bar
+   instead of the viewport. It sits below the header's z-index so the bar and the
+   open panel stay visible and tappable while the page behind is dimmed. */ ?>
+<button type="button" class="nav-scrim" data-nav-scrim tabindex="-1" aria-hidden="true"
+        aria-label="<?= is_rtl() ? 'إغلاق القائمة' : 'Close menu' ?>"></button>

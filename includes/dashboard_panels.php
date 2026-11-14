@@ -234,7 +234,8 @@ if (!function_exists('dash_panel_client_lawyers')) {
      */
     function dash_panel_client_lawyers(PDO $pdo, int $userId, int $limit = 4): array
     {
-        $sql = "SELECT l.id, l.full_name AS name, l.specialization, l.photo_path,
+        require_once __DIR__ . '/specialization_field.php';
+        $sql = "SELECT l.id, l.full_name AS name, l.specialization, l.specializations, l.photo_path,
                        (SELECT COUNT(*) FROM cases c2
                          WHERE c2.lawyer_id = l.id AND c2.user_id = ? AND c2.status IN ('open','in_review')) AS active_cases,
                        (SELECT COUNT(*) FROM consultations co2
@@ -256,7 +257,7 @@ if (!function_exists('dash_panel_client_lawyers')) {
             $out[] = [
                 'id'             => (int)$r['id'],
                 'name'           => (string)$r['name'],
-                'specialization' => (string)($r['specialization'] ?? ''),
+                'specialization' => lawyer_specialization_display($r),
                 'photo'          => !empty($r['photo_path']) ? (string)$r['photo_path'] : null,
                 'active_cases'   => (int)$r['active_cases'],
                 'upcoming'       => (int)$r['upcoming'],

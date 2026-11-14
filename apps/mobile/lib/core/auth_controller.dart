@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import 'config/app_config.dart';
 import 'network/api_exception.dart';
 import 'network/api_repository.dart';
 import 'network/models.dart';
@@ -96,7 +97,11 @@ class AuthController extends ChangeNotifier {
       return;
     }
     try {
-      _user = await _repo.me();
+      // Bounded separately from the per-request timeout: this call gates the
+      // splash, so a stalled network must not hold the user on a logo. A timeout
+      // lands in the catch below, which keeps the token — the session is
+      // unverified, not revoked.
+      _user = await _repo.me().timeout(AppConfig.startupTimeout);
       _status = AuthStatus.signedIn;
       _sessionExpired = false;
     } on ApiException catch (e) {
@@ -106,8 +111,9 @@ class AuthController extends ChangeNotifier {
       }
       _status = AuthStatus.signedOut;
     } catch (_) {
-      // Offline: keep the token, but do not pretend to be signed in. This is a
-      // reachability problem, not an expired session, so the flag stays down.
+      // Offline or timed out: keep the token, but do not pretend to be signed in.
+      // This is a reachability problem, not an expired session, so the flag stays
+      // down and the stored token survives for the next launch.
       _status = AuthStatus.signedOut;
     }
     notifyListeners();

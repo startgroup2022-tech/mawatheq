@@ -14,6 +14,7 @@ $pageTitle = is_rtl() ? 'بوابات الدفع — SADAD' : 'Payment gateways 
 require_once __DIR__ . '/includes/admin_header.php';
 require_once __DIR__ . '/../includes/gateway/bootstrap.php';
 require_once __DIR__ . '/includes/gateway_ui.php';
+require_once __DIR__ . '/../includes/gateway_diagnostics.php';
 
 $scopeRaw = $_GET['tenant'] ?? $_POST['tenant_scope'] ?? 'platform';
 [$tenantType, $tenantId] = gateway_ui_tenant_scope($scopeRaw, $pdo);
@@ -50,6 +51,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'sadad
 }
 
 $config = sadad_settings($pdo, $tenantType, $tenantId);
+// Read the N-Genius configuration up front: the "half-configured N-Genius" banner below
+// reads it, and the health table further down renders it. Reading it only inside the table
+// left the banner comparing against an undefined $nconfig, so the warning it exists to show
+// never appeared.
+$nconfig = ngenius_settings($pdo);
 $gateway = new SadadGateway($config);
 $missing = sadad_missing_keys($config);
 $connected = !empty($config['sadad_last_connection_ok']) ? (int)$config['sadad_last_connection_ok'] === 1 : null;
@@ -74,6 +80,41 @@ $statusLabel = $gateway->isEnabled() ? ($env === 'live' ? '🟢 مفعّلة (إ
   <?php if ($envCleared): ?><div class="form-alert error"><?= is_rtl() ? 'تم تبديل البيئة بدون إدخال مفاتيح جديدة، لذلك أُفرغت المفاتيح المحفوظة لتفادي استخدام مفاتيح Sandbox على Live (أو العكس). أدخل مفاتيح البيئة الجديدة ثم احفظ.' : 'The environment was switched without new credentials, so the stored keys were cleared to prevent using Sandbox keys on Live (or vice versa). Enter the new environment\'s credentials and save.' ?></div><?php endif; ?>
   <?php if ($error): ?><div class="form-alert error"><?= htmlspecialchars($error) ?></div><?php endif; ?>
   <?php if ($envWarning): ?><div class="form-alert error"><?= is_rtl() ? '⚠️ أنت الآن على بيئة الإنتاج (Live). عمليات الدفع القادمة قد تكون حقيقية.' : '⚠️ You are now on Live. Upcoming payments may be real.' ?></div><?php endif; ?>
+  <?php
+    // A half-configured N-Genius is the most common cause of "could not start the payment":
+    // a customer can reach the hosted page, pay, and the webhook that activates the plan is
+    // then rejected for a missing secret. Say so here rather than letting it surface as a
+    // failed activation later.
+    $ngEnv = ($nconfig['ngenius_environment'] ?? 'sandbox') === 'production' ? 'production' : 'sandbox';
+    $ngEnabled = ($nconfig['ngenius_enabled'] ?? '0') === '1';
+    $ngHasOutlet = trim((string)($nconfig['ngenius_outlet_ref'] ?? '')) !== '';
+    $ngHasKey = trim((string)($nconfig['ngenius_api_key'] ?? '')) !== '';
+    $ngHasWebhook = trim((string)($nconfig['ngenius_webhook_secret'] ?? '')) !== '';
+    $ngMissing = [];
+    if ($ngEnabled && !$ngHasOutlet) $ngMissing[] = is_rtl() ? 'رقم المنفذ (Outlet Ref)' : 'Outlet Ref';
+    if ($ngEnabled && !$ngHasKey) $ngMissing[] = is_rtl() ? 'مفتاح الحساب (API Key)' : 'API Key';
+    if ($ngEnabled && !$ngHasWebhook) $ngMissing[] = is_rtl() ? 'السر المشترك للويب هوك (Webhook Secret)' : 'Webhook Secret';
+    // A currency mismatch is the quietest way for every package/consultation payment to fail:
+    // the settings look complete, the gateway is reachable, yet package_payment_start() refuses
+    // the order before it is ever sent. Surface it here instead of only in the failure log.
+    $ngSiteCurrency = strtoupper(currency_code());
+    $ngOutletCurrency = ngenius_currency($nconfig);
+    $ngCurrencyMismatch = $ngEnabled && !ngenius_supports_currency($nconfig, $ngSiteCurrency);
+  ?>
+  <?php if ($ngCurrencyMismatch): ?>
+    <div class="form-alert error">
+      <?= is_rtl()
+        ? '⚠️ عملة تسوية البوابة (' . htmlspecialchars($ngOutletCurrency) . ') لا تطابق عملة الموقع (' . htmlspecialchars($ngSiteCurrency) . '). سيُرفض بدء الدفع لشراء الباقات والاستشارات قبل أن يصل إلى البوابة. اضبط «عملة التسوية لدى البوابة» من الإعدادات ← الدفع لتطابق عملة حساب التاجر، أو غيّر عملة الموقع.'
+        : '⚠️ The gateway settlement currency (' . htmlspecialchars($ngOutletCurrency) . ') does not match the site currency (' . htmlspecialchars($ngSiteCurrency) . '). Package and consultation payments will be refused before they reach the gateway. Set "Gateway settlement currency" in Settings → Payments to match the merchant account, or change the site currency.' ?>
+    </div>
+  <?php endif; ?>
+  <?php if ($ngMissing): ?>
+    <div class="form-alert error">
+      <?= is_rtl()
+        ? '⚠️ بوابة N-Genius مفعّلة لكن إعدادها غير مكتمل. الحقول الناقصة: ' . htmlspecialchars(implode('، ', $ngMissing)) . '. بدون «السر المشترك للويب هوك» لن تُفعّل الباقة/الاستشارة تلقائياً بعد الدفع (سيرفض الخادم إشعار البوابة). أكمل الإعداد من صفحة الإعدادات ← الدفع.'
+        : '⚠️ N-Genius is enabled but not fully configured. Missing: ' . htmlspecialchars(implode(', ', $ngMissing)) . '. Without the Webhook Secret the package/consultation will not activate automatically after payment (the server rejects the gateway notification). Complete it in Settings → Payments.' ?>
+    </div>
+  <?php endif; ?>
 
   <form method="get" class="dash-card" style="padding:14px 18px">
     <div class="field" style="max-width:420px;margin:0">
@@ -288,7 +329,6 @@ $statusLabel = $gateway->isEnabled() ? ($env === 'live' ? '🟢 مفعّلة (إ
       <thead><tr><th>Gateway</th><th><?= is_rtl() ? 'الاعتماد' : 'Credentials' ?></th><th><?= is_rtl() ? 'البيئة' : 'Environment' ?></th><th><?= is_rtl() ? 'الاتصال' : 'Connectivity' ?></th><th><?= is_rtl() ? 'الويب هوك' : 'Webhook' ?></th><th><?= is_rtl() ? 'العملة' : 'Currency' ?></th></tr></thead>
       <tbody>
         <?php
-        $nconfig = ngenius_settings($pdo);
         $nConfigured = !empty($nconfig['ngenius_outlet_ref']) && !empty($nconfig['ngenius_api_key']);
         $nWebhook = !empty($nconfig['ngenius_webhook_secret']);
         $sWebhook = $secretConfigured['sadad_webhook_secret'];
@@ -311,6 +351,114 @@ $statusLabel = $gateway->isEnabled() ? ($env === 'live' ? '🟢 مفعّلة (إ
         </tr>
       </tbody>
     </table>
+  </div>
+
+  <div class="dash-card" style="margin-top:16px">
+    <h3 style="margin-bottom:6px"><?= is_rtl() ? 'تشخيص بوابة N-Genius' : 'N-Genius diagnostics' ?></h3>
+    <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:10px">
+      <?= is_rtl()
+        ? 'عندما يفشل الدفع تظهر للعميل رسالة عامة واحدة. هذا الفحص يحدّد المرحلة التي توقّف عندها الطلب: الإعدادات، أو رمز الدخول، أو إنشاء الطلب — ويعرض الرقم المرجعي لمطابقته مع بلاغ العميل. لا يُخصم أي مبلغ.'
+        : 'When a payment fails the customer sees one generic message. This probe names the stage that stopped it — configuration, access token, or order creation — and shows the correlation id to match a support ticket. No amount is charged.' ?>
+    </p>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button class="btn btn-outline" type="button" onclick="ngeniusProbe(1)"><?= is_rtl() ? 'فحص الإعدادات والرمز' : 'Check config & token' ?></button>
+      <button class="btn btn-outline" type="button" onclick="ngeniusProbe(0)"><?= is_rtl() ? 'فحص كامل (ينشئ طلباً غير مدفوع)' : 'Full probe (creates an unpaid order)' ?></button>
+      <span id="ngeniusProbeResult" style="font-size:.85rem"></span>
+    </div>
+    <div id="ngeniusProbeStages" style="margin-top:10px"></div>
+
+    <?php
+    // The customer is told to quote the reference, so the console must accept it back.
+    // A plain-text search over the last N rows cannot find an older attempt; this looks the
+    // exact id up in the database.
+    $refQuery = strtoupper(trim((string)($_GET['ref'] ?? '')));
+    $refRows = [];
+    $refSearched = false;
+    if ($refQuery !== '' && function_exists('gateway_diag_find')) {
+        $refSearched = true;
+        $refRows = gateway_diag_find($pdo, $refQuery);
+    }
+    ?>
+    <form method="get" class="dash-card" style="margin-top:14px;padding:14px 18px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+      <div class="field" style="margin:0;min-width:220px">
+        <label for="diagRef"><?= is_rtl() ? 'البحث بالرقم المرجعي' : 'Look up a reference' ?></label>
+        <input type="text" id="diagRef" name="ref" value="<?= htmlspecialchars($refQuery) ?>" maxlength="8" placeholder="<?= is_rtl() ? 'مثال: B7A81366' : 'e.g. B7A81366' ?>" autocomplete="off" style="text-transform:uppercase">
+      </div>
+      <input type="hidden" name="tenant" value="<?= htmlspecialchars((string)$scopeRaw) ?>">
+      <button class="btn btn-primary" type="submit"><?= is_rtl() ? 'بحث' : 'Search' ?></button>
+      <?php if ($refSearched): ?><a class="btn btn-outline" href="?tenant=<?= urlencode((string)$scopeRaw) ?>"><?= is_rtl() ? 'إلغاء' : 'Clear' ?></a><?php endif; ?>
+    </form>
+    <?php if ($refSearched): ?>
+      <?php if (!$refRows): ?>
+        <div class="form-alert error" style="margin-top:10px">
+          <?= is_rtl()
+            ? 'لا يوجد سجلّ بهذا الرقم المرجعي في قاعدة البيانات. تأكد من الرقم، أو طبّق الترقية upgrade_v72.sql إن لم تكن مطبّقة بعد.'
+            : 'No diagnostics row has this reference. Check the number, or apply upgrade_v72.sql if it is not applied yet.' ?>
+        </div>
+      <?php else: ?>
+        <div class="table-wrap" style="overflow-x:auto;margin-top:10px">
+          <table class="admin-table">
+            <thead><tr>
+              <th><?= is_rtl() ? 'المرجع' : 'Ref' ?></th>
+              <th><?= is_rtl() ? 'العملية' : 'Operation' ?></th>
+              <th><?= is_rtl() ? 'المرحلة' : 'Stage' ?></th>
+              <th><?= is_rtl() ? 'السبب' : 'Reason' ?></th>
+              <th><?= is_rtl() ? 'التفاصيل' : 'Detail' ?></th>
+              <th><?= is_rtl() ? 'التوقيت' : 'Time' ?></th>
+            </tr></thead>
+            <tbody>
+              <?php foreach ($refRows as $r): $reason = gateway_diag_reason((string)($r['error_code'] ?? '')); ?>
+                <tr>
+                  <td><code><?= htmlspecialchars((string)$r['correlation_id']) ?></code></td>
+                  <td><?= htmlspecialchars((string)$r['operation']) ?></td>
+                  <td><?= htmlspecialchars((string)$r['stage']) ?></td>
+                  <td><?= htmlspecialchars((string)($r['error_code'] ?? '—')) ?></td>
+                  <td style="max-width:420px;word-break:break-word"><?= htmlspecialchars($reason[is_rtl() ? 'ar' : 'en']) ?><br><small style="color:var(--text-muted)"><?= htmlspecialchars((string)($r['detail'] ?? '')) ?></small></td>
+                  <td style="white-space:nowrap"><?= htmlspecialchars((string)$r['created_at']) ?></td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        </div>
+      <?php endif; ?>
+    <?php endif; ?>
+
+    <h4 style="margin:18px 0 6px;font-size:.95rem"><?= is_rtl() ? 'آخر محاولات الدفع' : 'Recent payment attempts' ?></h4>
+    <?php
+    $diagRows = function_exists('gateway_diag_recent') ? gateway_diag_recent($pdo, 25) : [];
+    if (!gateway_diag_schema_ready($pdo)):
+    ?>
+      <p style="font-size:.85rem;color:var(--text-muted)"><?= is_rtl() ? 'طبّق الترقية upgrade_v72.sql لعرض سجلّ التشخيص.' : 'Apply upgrade_v72.sql to enable the diagnostics log.' ?></p>
+    <?php elseif (!$diagRows): ?>
+      <p style="font-size:.85rem;color:var(--text-muted)"><?= is_rtl() ? 'لا توجد محاولات مسجّلة بعد.' : 'No attempts recorded yet.' ?></p>
+    <?php else: ?>
+      <div class="table-wrap" style="overflow-x:auto">
+        <table class="admin-table">
+          <thead><tr>
+            <th><?= is_rtl() ? 'المرجع' : 'Ref' ?></th>
+            <th><?= is_rtl() ? 'العملية' : 'Operation' ?></th>
+            <th><?= is_rtl() ? 'المرحلة' : 'Stage' ?></th>
+            <th>HTTP</th>
+            <th><?= is_rtl() ? 'السبب' : 'Reason' ?></th>
+            <th><?= is_rtl() ? 'التفاصيل' : 'Detail' ?></th>
+            <th><?= is_rtl() ? 'التوقيت' : 'Time' ?></th>
+          </tr></thead>
+          <tbody>
+            <?php foreach ($diagRows as $r): ?>
+              <tr>
+                <td><code><?= htmlspecialchars((string)$r['correlation_id']) ?></code></td>
+                <td><?= htmlspecialchars((string)$r['operation']) ?></td>
+                <td><?= htmlspecialchars((string)$r['stage']) ?></td>
+                <td><?= $r['http_status'] !== null ? (int)$r['http_status'] : '—' ?></td>
+                <td><?= htmlspecialchars((string)($r['error_code'] ?? '—')) ?></td>
+                <td style="max-width:320px;word-break:break-word"><?= htmlspecialchars((string)($r['detail'] ?? '')) ?></td>
+                <td style="white-space:nowrap"><?= htmlspecialchars((string)$r['created_at']) ?></td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+    <?php endif; ?>
   </div>
 </div>
 
@@ -361,6 +509,24 @@ async function sadadTestPayment(){
     out.style.color = data.ok ? 'var(--success)' : 'var(--danger)';
     out.textContent = (data.ok ? '✓ ' : '✗ ') + (data.message || '');
   } catch(e){ out.style.color = 'var(--danger)'; out.textContent = '✗ تعذّر تنفيذ الاختبار.'; }
+}
+async function ngeniusProbe(dryRun){
+  var out = document.getElementById('ngeniusProbeResult');
+  var stagesEl = document.getElementById('ngeniusProbeStages');
+  out.style.color = 'var(--muted)'; out.textContent = 'جارٍ الفحص...'; stagesEl.innerHTML = '';
+  var body = new URLSearchParams({ csrf_token: '<?= htmlspecialchars(csrf_token()) ?>', dry_run: dryRun ? '1' : '0' });
+  try {
+    var res = await fetch('/admin/ngenius-test.php', { method:'POST', body: body });
+    var data = await res.json();
+    out.style.color = data.ok ? 'var(--success)' : 'var(--danger)';
+    out.textContent = (data.ok ? '✓ ' : '✗ ') + (data.message || '') + ' — ' + '<?= is_rtl() ? "المرجع" : "ref" ?>: ' + (data.correlation_id || '');
+    var html = '<table class="admin-table"><thead><tr><th><?= is_rtl() ? "المرحلة" : "Stage" ?></th><th><?= is_rtl() ? "النتيجة" : "Result" ?></th><th>HTTP</th><th><?= is_rtl() ? "التفاصيل" : "Detail" ?></th></tr></thead><tbody>';
+    (data.stages || []).forEach(function(s){
+      html += '<tr><td>' + s.stage + '</td><td>' + (s.ok ? '✓' : '✗') + '</td><td>' + (s.http === null || s.http === undefined ? '—' : s.http) + '</td><td style="word-break:break-word">' + (s.detail || '') + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    stagesEl.innerHTML = html;
+  } catch(e){ out.style.color = 'var(--danger)'; out.textContent = '✗ تعذّر تنفيذ الفحص.'; }
 }
 </script>
 <?php require_once __DIR__ . '/includes/admin_footer.php'; ?>

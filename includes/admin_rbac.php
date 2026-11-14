@@ -39,6 +39,12 @@ function admin_route_roles(): array {
         'settings.php' => ['super_admin'],
         'plans.php' => ['super_admin'],
         'invoices.php' => ['super_admin'],
+        // Lawyer wallets. Balances and commission are money: reading the list is a
+        // support task, but moving money (approving a payout, changing a rate) is
+        // super_admin only. A route absent from this map defaults to super_admin.
+        'wallets.php' => ['super_admin', 'support'],
+        'wallet-withdrawals.php' => ['super_admin'],
+        'wallet-settings.php' => ['super_admin'],
         'reports.php' => ['super_admin', 'editor'],
         'audit-log.php' => ['super_admin'],
         'two-factor.php' => ['super_admin', 'editor', 'support'],
@@ -49,9 +55,23 @@ function admin_route_roles(): array {
         'gateway-transactions.php' => ['super_admin'],
         'gateway-transaction.php' => ['super_admin'],
         'sadad-test.php' => ['super_admin'],
+        'ngenius-test.php' => ['super_admin'],
         'crm.php' => ['super_admin', 'support'],
+        // Lawyer ratings. Reading the moderation queue is a support task; hiding or
+        // restoring a published review is a trust decision, so it is super_admin only.
+        'reviews.php' => ['super_admin', 'support'],
+        // Support centre. Reading and answering tickets is a support task, so the
+        // support role gets it; changing the channel configuration is super_admin only.
+        'support-tickets.php' => ['super_admin', 'support'],
+        'support-ticket.php' => ['super_admin', 'support'],
+        'support-appointments.php' => ['super_admin', 'support'],
+        'support-settings.php' => ['super_admin'],
         'calendar.php' => ['super_admin', 'editor', 'support'],
         'notifications.php' => ['super_admin', 'editor', 'support'],
+        // Account-deletion requests (Execution 73). Reading the queue and executing a
+        // verified request is a support/data-protection task, so `support` gets it; the
+        // route is still POST-only for any state change and CSRF-checked.
+        'account-deletions.php' => ['super_admin', 'support'],
         'search.php' => ['super_admin', 'support'],
         // Affiliate programme. Commission and payout data is money, so the consoles
         // that can move it are super_admin only; reading the affiliate list is a

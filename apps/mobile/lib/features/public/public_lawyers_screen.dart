@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/auth_controller.dart';
 import '../../core/guest_session.dart';
 import '../../core/locale_controller.dart';
 import '../../core/network/api_exception.dart';
@@ -10,6 +11,10 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../shared/widgets/auth_gate.dart';
 import '../../shared/widgets/brand_widgets.dart';
+import '../../shared/widgets/lawyer_card.dart';
+import '../assistant/assistant_screen.dart';
+import '../consultations/journey_screen.dart';
+import 'public_info_screen.dart';
 
 /// The public directory of approved lawyers, from `GET /api/v1/lawyers.php`.
 ///
@@ -42,10 +47,90 @@ class _PublicLawyersScreenState extends State<PublicLawyersScreen> {
   String? _error;
   String _query = '';
 
+  /// The professional filters, applied server-side so the directory and the app's
+  /// journey return the same lawyers for the same choices. The options vocabulary
+  /// (countries, dependent cities, experience bands, specializations) comes from the
+  /// server too, so the app can never offer a value the backend would ignore.
+  JourneyFilters _filters = const JourneyFilters();
+  JourneyFilterOptions _filterOptions = const JourneyFilterOptions();
+
+  /// The client's saved lawyer ids, so a heart is filled on the right cards. Empty
+  /// for a guest, who has no favorites and sees no heart at all.
+  Set<int> _favoriteIds = const {};
+
   @override
   void initState() {
     super.initState();
+    _loadFilterOptions();
     _load();
+    _loadFavorites();
+  }
+
+  Future<void> _loadFavorites() async {
+    // Tolerant read: a widget test mounts this screen without an AuthController.
+    // No provider means "not signed in", so the heart is simply absent.
+    final auth = context.read<AuthController?>();
+    if (auth == null || !auth.isSignedIn) return;
+    try {
+      final ids = await _repo.favoriteIds();
+      if (!mounted) return;
+      setState(() => _favoriteIds = ids);
+    } on ApiException {
+      // Favorites are a convenience layer; a failure must not break the directory.
+    }
+  }
+
+  Future<void> _toggleFavorite(LawyerProfile lawyer) async {
+    final auth = context.read<AuthController?>();
+    if (auth == null || !auth.isSignedIn) {
+      await requireAccount(
+        context,
+        ProtectedDestination.consultations,
+        message: context.read<LocaleController>().isRtl
+            ? 'أنشئ حساباً لحفظ المحامين في مفضّلتك.'
+            : 'Create an account to save lawyers to your favorites.',
+      );
+      return;
+    }
+    final wasFavorite = _favoriteIds.contains(lawyer.id);
+    // Optimistic flip, restored on failure so the heart never disagrees with the server.
+    setState(() {
+      final next = Set<int>.from(_favoriteIds);
+      if (wasFavorite) {
+        next.remove(lawyer.id);
+      } else {
+        next.add(lawyer.id);
+      }
+      _favoriteIds = next;
+    });
+    try {
+      await _repo.toggleFavorite(lawyer.id, action: wasFavorite ? 'remove' : 'add');
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        final next = Set<int>.from(_favoriteIds);
+        if (wasFavorite) {
+          next.add(lawyer.id);
+        } else {
+          next.remove(lawyer.id);
+        }
+        _favoriteIds = next;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذّر تحديث المفضّلة. حاول مرة أخرى.')),
+      );
+    }
+  }
+
+  Future<void> _loadFilterOptions() async {
+    try {
+      final options = await _repo.journeyFilters();
+      if (!mounted) return;
+      setState(() => _filterOptions = options);
+    } on ApiException {
+      // The filter sheet degrades to whatever vocabulary it already has rather than
+      // turning the directory into an error screen.
+    }
   }
 
   Future<void> _load() async {
@@ -54,7 +139,14 @@ class _PublicLawyersScreenState extends State<PublicLawyersScreen> {
       _error = null;
     });
     try {
-      final list = await _repo.lawyers();
+      // The structured filters (specialization, country, city, experience, fee,
+      // availability) run server-side — only the backend can apply an availability or
+      // fee-band filter correctly. The free-text name box stays local so typing is
+      // instant and matches the hint (name, specialty or city).
+      final list = await _repo.lawyers(
+        specialization: _filters.specialization,
+        extraQuery: _filters.toQuery(),
+      );
       if (!mounted) return;
       setState(() {
         _all = list;
@@ -75,15 +167,39 @@ class _PublicLawyersScreenState extends State<PublicLawyersScreen> {
     }
   }
 
-  /// Filtered locally over the already-fetched directory. The endpoint also accepts
-  /// `q`, but filtering here keeps typing instant and avoids a request per keystroke.
+  Future<void> _openFilters() async {
+    final result = await showModalBottomSheet<JourneyFilters>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: context.tokens.surface,
+      builder: (_) => JourneyFilterSheet(
+        initial: _filters,
+        options: _filterOptions,
+      ),
+    );
+    if (result == null) return;
+    setState(() => _filters = result);
+    await _load();
+  }
+
+  void _clearFilters() {
+    setState(() => _filters = const JourneyFilters());
+    _load();
+  }
+
+  /// The name box updates the local search immediately; no request is fired.
+  void _onSearchChanged(String value) => setState(() => _query = value);
+
+  /// The name search is applied locally over the already-fetched directory, so typing
+  /// is instant and a keystroke does not fire a request. The structured filters are
+  /// applied server-side in `_load()`.
   List<LawyerProfile> get _visible {
     final needle = _query.trim();
     if (needle.isEmpty) return _all;
     return _all
         .where((l) =>
             l.name.contains(needle) ||
-            l.specialization.contains(needle) ||
+            l.specializationLabel.contains(needle) ||
             l.jurisdiction.contains(needle))
         .toList();
   }
@@ -118,57 +234,70 @@ class _PublicLawyersScreenState extends State<PublicLawyersScreen> {
 
   Widget _body(bool rtl) {
     final visible = _visible;
+    final filtersActive = !_filters.isEmpty;
 
     return RefreshIndicator(
       onRefresh: _load,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
+      child: Column(
         children: [
-          TextField(
-            onChanged: (v) => setState(() => _query = v),
-            decoration: InputDecoration(
-              hintText: rtl
-                  ? 'ابحث بالاسم أو التخصص أو المدينة'
-                  : 'Search by name, specialty or city',
-              prefixIcon: const Icon(Icons.search),
-              filled: true,
-              fillColor: context.tokens.surface,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(AppRadius.lg),
-                borderSide: BorderSide(color: context.tokens.border),
-              ),
+          JourneyFilterBar(
+            active: filtersActive,
+            count: visible.length,
+            onOpen: _openFilters,
+            onClear: filtersActive ? _clearFilters : null,
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
+              children: [
+                TextField(
+                  onChanged: _onSearchChanged,
+                  decoration: InputDecoration(
+                    hintText: rtl
+                        ? 'ابحث بالاسم أو التخصص أو المدينة'
+                        : 'Search by name, specialty or city',
+                    prefixIcon: const Icon(Icons.search),
+                    filled: true,
+                    fillColor: context.tokens.surface,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(AppRadius.lg),
+                      borderSide: BorderSide(color: context.tokens.border),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                if (_all.isEmpty)
+                  NoLawyerState(
+                    onAskAssistant: _openAssistant,
+                    onContact: _openContact,
+                    message: filtersActive
+                        ? (rtl
+                            ? 'لا يوجد محامٍ يطابق الفلاتر المحددة'
+                            : 'No lawyer matches these filters')
+                        : (rtl ? 'لا يوجد محامي متاح' : 'No lawyers available'),
+                  )
+                else ...[
+                  Text(
+                    rtl
+                        ? '${visible.length} محامياً متاحاً'
+                        : '${visible.length} lawyers available',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 10),
+                  for (final lawyer in visible) ...[
+                    LawyerCard(
+                      lawyer: lawyer,
+                      rtl: rtl,
+                      isFavorite: _favoriteIds.contains(lawyer.id),
+                      onToggleFavorite: () => _toggleFavorite(lawyer),
+                      onBook: () => _book(lawyer),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                ],
+              ],
             ),
           ),
-          const SizedBox(height: 16),
-          if (_all.isEmpty)
-            EmptyState(
-              icon: Icons.gavel_outlined,
-              title: rtl ? 'لا يوجد محامون متاحون' : 'No lawyers available yet',
-              message: rtl
-                  ? 'سيظهر المحامون المعتمدون هنا فور اعتمادهم.'
-                  : 'Approved lawyers appear here once they are listed.',
-            )
-          else if (visible.isEmpty)
-            EmptyState(
-              icon: Icons.search_off,
-              title: rtl ? 'لا نتائج مطابقة' : 'No matches',
-              message: rtl
-                  ? 'جرّب كلمة أخرى، أو امسح البحث لعرض كل المحامين.'
-                  : 'Try another term, or clear the search to see everyone.',
-            )
-          else ...[
-            Text(
-              rtl
-                  ? '${visible.length} محامياً متاحاً'
-                  : '${visible.length} lawyers available',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 10),
-            for (final lawyer in visible) ...[
-              _LawyerCard(lawyer: lawyer, rtl: rtl, onBook: () => _book(lawyer)),
-              const SizedBox(height: 10),
-            ],
-          ],
         ],
       ),
     );
@@ -185,118 +314,19 @@ class _PublicLawyersScreenState extends State<PublicLawyersScreen> {
           : 'Create an account to book a consultation with ${lawyer.name}.',
     );
   }
-}
 
-class _LawyerCard extends StatelessWidget {
-  const _LawyerCard({
-    required this.lawyer,
-    required this.rtl,
-    required this.onBook,
-  });
+  /// The two routes out of the empty directory, matching the journey's no-lawyer
+  /// state so a customer sees one consistent offer wherever they hit the state.
+  void _openAssistant() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const AssistantScreen()),
+    );
+  }
 
-  final LawyerProfile lawyer;
-  final bool rtl;
-  final VoidCallback onBook;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: context.tokens.surface,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: context.tokens.border),
-        boxShadow: AppShadow.xs,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const CircleAvatar(
-                radius: 24,
-                backgroundColor: AppColors.navy,
-                child: Icon(Icons.person, color: Colors.white),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      lawyer.name,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: context.tokens.heading,
-                        fontSize: 15,
-                      ),
-                    ),
-                    if (lawyer.specialization.isNotEmpty) ...[
-                      const SizedBox(height: 3),
-                      Text(
-                        lawyer.specialization,
-                        style: TextStyle(
-                            color: context.tokens.textMuted, fontSize: 13),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              if (lawyer.rating > 0)
-                Row(
-                  children: [
-                    const Icon(Icons.star, size: 15, color: AppColors.gold),
-                    const SizedBox(width: 3),
-                    Text(
-                      lawyer.rating.toStringAsFixed(1),
-                      style: TextStyle(
-                          color: context.tokens.textMuted,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600),
-                    ),
-                  ],
-                ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              if (lawyer.jurisdiction.isNotEmpty) ...[
-                Icon(Icons.place_outlined,
-                    size: 15, color: context.tokens.textSubtle),
-                const SizedBox(width: 4),
-                Flexible(
-                  child: Text(
-                    lawyer.jurisdiction,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        color: context.tokens.textSubtle, fontSize: 12),
-                  ),
-                ),
-                const SizedBox(width: 12),
-              ],
-              if (lawyer.hourlyRate > 0) ...[
-                Icon(Icons.payments_outlined,
-                    size: 15, color: context.tokens.textSubtle),
-                const SizedBox(width: 4),
-                Text(
-                  rtl
-                      ? '${lawyer.hourlyRate.toStringAsFixed(0)} ر.س/ساعة'
-                      : 'SAR ${lawyer.hourlyRate.toStringAsFixed(0)}/hr',
-                  style: TextStyle(
-                      color: context.tokens.textSubtle, fontSize: 12),
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 12),
-          SecondaryButton(
-            label: rtl ? 'احجز استشارة' : 'Book a consultation',
-            icon: Icons.event_available_outlined,
-            expand: true,
-            onPressed: onBook,
-          ),
-        ],
+  void _openContact() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const PublicInfoScreen(section: InfoSection.contact),
       ),
     );
   }
