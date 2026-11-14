@@ -8,13 +8,19 @@ if (isset($_GET['lang']) && in_array($_GET['lang'], ['ar','en'])) {
 }
 $lang = current_lang();
 $dir  = is_rtl() ? 'rtl' : 'ltr';
+// A page may set $pageTitle before including this header. When it does, the browser
+// title and the Open Graph title reflect the page instead of the site tagline, which
+// matters for a page Google Play links to directly (the account-deletion page). The
+// default is unchanged for every page that does not set it.
+$pageTitle = isset($pageTitle) ? trim((string)$pageTitle) : '';
+$headTitle = $pageTitle !== '' ? ($pageTitle . ' | ' . SITE_NAME_AR) : (SITE_NAME_AR . ' | ' . t('l2_hero_badge'));
 ?>
 <!DOCTYPE html>
 <html lang="<?= $lang ?>" dir="<?= $dir ?>">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title><?= SITE_NAME_AR ?> | <?= t('l2_hero_badge') ?></title>
+<title><?= htmlspecialchars($headTitle, ENT_QUOTES, 'UTF-8') ?></title>
 <meta name="description" content="<?= t('l2_hero_sub') ?>">
 <meta name="theme-color" content="#1E3A5F">
 <link rel="canonical" href="<?= rtrim(SITE_URL, '/') ?>/">
@@ -24,13 +30,13 @@ $dir  = is_rtl() ? 'rtl' : 'ltr';
 <!-- Open Graph / social -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="<?= SITE_NAME_AR ?>">
-<meta property="og:title" content="<?= SITE_NAME_AR ?> — <?= t('l2_hero_badge') ?>">
+<meta property="og:title" content="<?= htmlspecialchars($headTitle, ENT_QUOTES, 'UTF-8') ?>">
 <meta property="og:description" content="<?= t('l2_hero_sub') ?>">
 <meta property="og:url" content="<?= rtrim(SITE_URL, '/') ?>/">
 <meta property="og:image" content="<?= SITE_URL ?>/assets/img/logo.webp">
 <meta property="og:locale" content="<?= $lang === 'ar' ? 'ar_SA' : 'en_US' ?>">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="<?= SITE_NAME_AR ?> — <?= t('l2_hero_badge') ?>">
+<meta name="twitter:title" content="<?= htmlspecialchars($headTitle, ENT_QUOTES, 'UTF-8') ?>">
 <meta name="twitter:description" content="<?= t('l2_hero_sub') ?>">
 <meta name="twitter:image" content="<?= SITE_URL ?>/assets/img/logo.webp">
 

@@ -62,6 +62,7 @@ $adminNavGroups = [
         'support-tickets' => ['i' => 'inbox', 'ar' => 'تذاكر الدعم', 'en' => 'Support tickets', 'href' => '/admin/support-tickets.php'],
         'support-appointments' => ['i' => 'calendar', 'ar' => 'مواعيد الدعم', 'en' => 'Support appointments', 'href' => '/admin/support-appointments.php'],
         'support-settings' => ['i' => 'settings', 'ar' => 'إعدادات الدعم', 'en' => 'Support settings', 'href' => '/admin/support-settings.php'],
+        'account-deletions' => ['i' => 'shield', 'ar' => 'طلبات حذف الحسابات', 'en' => 'Account deletion requests', 'href' => '/admin/account-deletions.php'],
     ]],
     ['t' => adm('النظام', 'System'), 'items' => [
         'integrations' => ['i' => 'external', 'ar' => 'التكاملات الخارجية', 'en' => 'External integrations', 'href' => '/admin/integrations.php'],

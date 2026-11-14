@@ -56,7 +56,7 @@ Options -Indexes
     # the homepage's body and looked healthy while never being reachable. The rewrite
     # targets the .php file directly and keeps the trailing slash, so one canonical URL
     # serves the content.
-    RewriteRule ^(privacy|delete-account)/?$ $1.php [L,NC]
+    RewriteRule ^(privacy|delete-account|account-deletion)/?$ $1.php [L,NC]
 </IfModule>
 
 # توجيه أخطاء 404 (اختياري - أنشئ الملف عند الحاجة)

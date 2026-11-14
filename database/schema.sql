@@ -2268,3 +2268,51 @@ CREATE TABLE IF NOT EXISTS legacy_chat_migration_log (
     detail VARCHAR(500) DEFAULT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- Execution 73 — account deletion requests (Google Play Data safety).
+-- Folded from database/upgrade_v77.sql so a clean install has the tables the
+-- public /account-deletion page and the admin console depend on.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `account_deletion_requests` (
+  `id` INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `reference` VARCHAR(16) NOT NULL,
+  `account_type` ENUM('client','lawyer') NOT NULL DEFAULT 'client',
+  `account_id` INT(10) UNSIGNED NULL DEFAULT NULL,
+  `identifier` VARCHAR(190) NOT NULL,
+  `identifier_hash` CHAR(64) NOT NULL,
+  `identifier_kind` ENUM('email','phone') NOT NULL DEFAULT 'email',
+  `notify_email` VARCHAR(190) NULL DEFAULT NULL,
+  `status` ENUM('pending','processing','completed','rejected','cancelled') NOT NULL DEFAULT 'pending',
+  `verification_status` ENUM('unverified','verified') NOT NULL DEFAULT 'unverified',
+  `verification_channel` ENUM('email','phone','manual') NOT NULL DEFAULT 'email',
+  `verify_token_hash` CHAR(64) NULL DEFAULT NULL,
+  `verify_expires` DATETIME NULL DEFAULT NULL,
+  `verified_at` DATETIME NULL DEFAULT NULL,
+  `reason` VARCHAR(255) NULL DEFAULT NULL,
+  `ip_hash` CHAR(64) NULL DEFAULT NULL,
+  `user_agent` VARCHAR(255) NULL DEFAULT NULL,
+  `retention_summary` TEXT NULL DEFAULT NULL,
+  `completion_note` VARCHAR(255) NULL DEFAULT NULL,
+  `requested_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `processed_at` DATETIME NULL DEFAULT NULL,
+  `processed_by_admin_id` INT(10) UNSIGNED NULL DEFAULT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_adr_reference` (`reference`),
+  KEY `idx_adr_identifier_hash` (`identifier_hash`),
+  KEY `idx_adr_status` (`status`),
+  KEY `idx_adr_requested_at` (`requested_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `account_deletion_events` (
+  `id` INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `request_id` INT(10) UNSIGNED NOT NULL,
+  `event` VARCHAR(40) NOT NULL,
+  `detail` VARCHAR(500) NULL DEFAULT NULL,
+  `actor` VARCHAR(40) NOT NULL DEFAULT 'system',
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_ade_request` (`request_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

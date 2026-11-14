@@ -181,6 +181,19 @@ class ApiRepository {
     );
   }
 
+  /// `GET /api/v1/account/deletion-status.php` — the user's latest deletion request.
+  ///
+  /// Returns null when the account has no request. The in-app deletion is immediate, but
+  /// a user may also have started a request on the public website; this lets the delete
+  /// screen show where that request stands.
+  Future<DeletionRequestStatus?> deletionRequestStatus() async {
+    final json = await _client.get('/account/deletion-status.php');
+    if (json['has_request'] != true) return null;
+    final request = json['request'];
+    if (request is! Map) return null;
+    return DeletionRequestStatus.fromJson(Map<String, dynamic>.from(request));
+  }
+
   /// `POST /api/v1/rotate-token.php` — issue a new token for this device.
   Future<String?> rotateToken(String deviceLabel) async {
     final json = await _client.post(

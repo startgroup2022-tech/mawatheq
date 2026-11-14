@@ -20,6 +20,7 @@ import '../home/home_shell.dart';
 import '../notifications_settings/notification_settings_screen.dart';
 import '../public/pricing_screen.dart';
 import '../reviews/reviews_screen.dart';
+import 'delete_account_screen.dart';
 import 'invoice_detail_screen.dart';
 import 'privacy_screen.dart';
 import 'support_center_screen.dart';
@@ -138,78 +139,6 @@ class _AccountScreenState extends State<AccountScreen> {
       // Invoices are optional on this screen; a failure here must not blank it.
       if (mounted) setState(() => _loadingInvoices = false);
     }
-  }
-
-  /// Google Play requires an in-app route to delete an account.
-  ///
-  /// The password is collected here and verified by the server; a token alone must
-  /// never be enough to destroy an account. A refusal that names blockers (an open
-  /// case, an upcoming consultation) is shown verbatim, because "delete failed" with
-  /// no reason is what makes a customer contact support instead.
-  Future<void> _deleteAccount() async {
-    final password = await _askPassword();
-    if (password == null || password.isEmpty || !mounted) return;
-
-    final confirmed = await ConfirmationDialog.show(
-      context,
-      title: 'حذف الحساب',
-      message:
-          'سيتم إلغاء تفعيل حسابك وإزالة بياناتك الشخصية وإبطال جميع أجهزة الدخول. '
-          'لا يمكن التراجع عن هذا الإجراء.',
-      confirmLabel: 'حذف نهائي',
-      destructive: true,
-    );
-    if (!confirmed || !mounted) return;
-
-    try {
-      await _repo.deleteAccount(password: password);
-      if (!mounted) return;
-      await context.read<AuthController>().signOut();
-      if (!mounted) return;
-      context.read<AuthController>().enterGuest();
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const HomeShell()),
-        (route) => false,
-      );
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم حذف الحساب.')),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString())),
-      );
-    }
-  }
-
-  /// A single-field password prompt. Returns null when dismissed.
-  Future<String?> _askPassword() {
-    final controller = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('تأكيد كلمة المرور'),
-        content: TextField(
-          controller: controller,
-          obscureText: true,
-          autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'كلمة المرور',
-            hintText: 'أدخل كلمة المرور لحذف الحساب',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('إلغاء'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(controller.text),
-            child: const Text('متابعة'),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -486,11 +415,16 @@ class _AccountScreenState extends State<AccountScreen> {
           onTap: _openRateApp,
         ),
         // Google Play requires an in-app account-deletion route; privacy.php on the
-        // website promises one. It is the last tile, away from the everyday actions.
+        // website promises one. It is the last tile, away from the everyday actions, and
+        // opens the dedicated screen that explains the consequences before deleting.
         _SettingTile(
           icon: Icons.delete_outline,
           label: 'حذف الحساب',
-          onTap: _deleteAccount,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => DeleteAccountScreen(repository: widget.repository),
+            ),
+          ),
         ),
         const SizedBox(height: 22),
 

@@ -136,6 +136,28 @@ function account_delete(PDO $pdo, string $accountType, int $accountId, string $p
     $blockers = account_deletion_blockers($pdo, $accountType, $accountId);
     if ($blockers) return ['ok' => false, 'error' => 'has_open_work', 'blockers' => $blockers];
 
+    return account_deletion_anonymize($pdo, $accountType, $accountId);
+}
+
+/**
+ * The single anonymisation routine, shared by the password-checked interactive path
+ * (`account_delete()`) and the verified-request path (`account_deletion_execute()`).
+ *
+ * It re-checks the "no work in flight" gate and returns the blockers so either caller
+ * can name them. Ownership proof differs between the two callers — the interactive
+ * path requires the account's own password, the request path requires the emailed
+ * single-use link — but the erasure itself must not differ, so it lives here once.
+ *
+ * @return array{ok:bool, error:?string, blockers?:array}
+ */
+function account_deletion_anonymize(PDO $pdo, string $accountType, int $accountId): array
+{
+    $cfg = account_deletion_config($accountType);
+    $table = $cfg['table'];
+
+    $blockers = account_deletion_blockers($pdo, $accountType, $accountId);
+    if ($blockers) return ['ok' => false, 'error' => 'has_open_work', 'blockers' => $blockers];
+
     // A tombstone that is unique per account and can never collide with a real address,
     // so the UNIQUE(email) index still admits a fresh registration by the same person.
     $tombstone = 'deleted+' . $accountId . '-' . bin2hex(random_bytes(4)) . '@deleted.invalid';

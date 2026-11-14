@@ -4212,3 +4212,86 @@ gateway configured?" check, and it refuses 100% of package purchases.
 (`tests/fixtures/ngenius_server.php`) proves the client speaks the N-Genius schema; it does not
 prove a merchant account works. Verify on the server with `tools/gateway_doctor.php --live`
 (creates an *unpaid* order; nothing is charged) and a real hosted-page payment.
+
+## Execution 73 — public account deletion (Google Play Data safety)
+
+### The requirement is a *public, no-login* URL, and it is a distinct thing from the in-app route
+
+Google Play rejects the Data safety form when the account-deletion link is invalid. The link
+must answer **200 to a logged-out visitor** and must offer deletion on that page. The repo
+already had `delete-account.php`, but it is **login-gated**, so it is not a valid Data safety
+URL. The public route is `/account-deletion` (served by `account-deletion.php`, added to the
+`.htaccess` clean-URL rewrite alongside `privacy`/`delete-account`).
+
+Put this URL in Play Console → Data safety → account deletion. Nothing here deploys to
+production; the owner does that.
+
+### Two deletion proofs, one erasure routine
+
+There are now two ways to reach the same anonymisation, and the *proof of ownership* is what
+differs, not the erasure:
+
+| Path | Proof | Entry point |
+|---|---|---|
+| Signed in (web / mobile / API) | the account's own **password** | `account_delete()` |
+| Public request page | the **emailed single-use link** | `account_deletion_execute()` → `account_delete_forced()` |
+
+Both call `account_deletion_anonymize()` in `includes/account_deletion.php` — the erasure
+(anonymise + deactivate + revoke every API token + keep invoices) lives in **one** place, so the
+four surfaces cannot drift. `account_delete_forced()` deliberately has no password argument;
+keeping the two entry points named differently makes the different proof visible at the call
+site.
+
+### The public form must not enumerate accounts
+
+`account_deletion_request_start()` returns the **same shape** whether or not the identifier
+matches an account, and it emails the verification link to the address **on the matched
+account** — never to what the visitor typed. The identifier is stored only as a SHA-256 hash
+(`identifier_hash`), so a support session or a DB dump cannot read which address was entered.
+An unknown address still gets a tracking number and a generic "if the account exists…" message.
+
+### Verification is single-use and time-limited, and an unverified request is never executable
+
+The emailed token is 64-hex, stored as a SHA-256 hash, 1-hour TTL, cleared on first use (the
+`UPDATE` is conditional on the hash still being present, so a replay cannot match).
+`account_deletion_execute()` refuses anything not `verification_status='verified'` with
+`not_verified`. The admin console disables the execute button until verified for the same
+reason.
+
+### `upgrade_v77.sql` is mandatory for this feature
+
+`account_deletion_requests` + `account_deletion_events` are created by `upgrade_v77.sql` and
+folded into `database/schema.sql` (a clean install must have them). Without the migration the
+public page still renders (it guards on `account_deletion_requests_ready()`) but the request
+form and the console say "not enabled" — do not read that as the page being broken. The same
+guard makes `api/v1/account/deletion-status.php` return `has_request:false` rather than 500 on
+an unmigrated host.
+
+### `includes/header.php` honours `$pageTitle`
+
+A public page may set `$pageTitle` before including `includes/header.php`; the browser title,
+`og:title` and `twitter:title` then name the page instead of the site tagline. Every page that
+does not set it is unchanged. The value is `htmlspecialchars`-escaped; do not build the title
+from request input.
+
+### The mobile app has a dedicated delete screen
+
+`apps/mobile/lib/features/account/delete_account_screen.dart` is the in-app route Google Play
+requires. It explains what is erased vs retained, performs the deletion (password-gated), and
+shows the status of any request the user started on the website via
+`GET /api/v1/account/deletion-status.php` (which returns only the reference, status and a
+`verified` flag — never the identifier or `account_id`). `AccountScreen`'s delete tile now
+pushes this screen instead of deleting inline.
+
+### Tests
+
+- `tests/exec73_account_deletion_requests_test.php` — 42 checks: hashing, lookup, the no-leak
+  shape, single-use/expired tokens, the verification gate, execution (anonymise + keep invoice
+  + revoke tokens), rejection, and that the original address can register again afterwards.
+- `tests/exec73_account_deletion_http_probe.php` — 30 checks over real HTTP: the public page is
+  200 with no session and does not redirect, both languages, a real request through the form,
+  CSRF refusal, and the admin console listing + executing. **It creates its own `super_admin`**
+  — depending on the seeded admin's password made the console assertions skip in the batch run
+  while passing standalone (the documented seed password is not always what the DB holds).
+- `apps/mobile/test/exec73_account_deletion_test.dart` — 3 widget tests.
+- `tests/e2e/exec73-account-deletion.spec.js` — 42 browser tests (7 × 6 viewports).

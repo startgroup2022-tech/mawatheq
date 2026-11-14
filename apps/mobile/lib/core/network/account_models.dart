@@ -504,3 +504,42 @@ class PrivacyInfo {
     );
   }
 }
+
+/// The user's latest account-deletion request, as reported by
+/// `GET /api/v1/account/deletion-status.php`.
+///
+/// Only public-safe fields are carried: the tracking reference, the processing status,
+/// whether ownership was verified, and when the request was made. The registered
+/// identifier is deliberately absent — a shared device must not be able to read the
+/// account's address out of this response.
+class DeletionRequestStatus {
+  const DeletionRequestStatus({
+    required this.reference,
+    required this.status,
+    required this.statusAr,
+    required this.statusEn,
+    required this.verified,
+    required this.requestedAt,
+  });
+
+  final String reference;
+  final String status;
+  final String statusAr;
+  final String statusEn;
+  final bool verified;
+  final String requestedAt;
+
+  String label(bool rtl) => rtl ? statusAr : statusEn;
+
+  factory DeletionRequestStatus.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return DeletionRequestStatus(
+      reference: j.str('reference'),
+      status: j.str('status'),
+      statusAr: j.str('status_ar'),
+      statusEn: j.str('status_en'),
+      verified: j.boolean('verified'),
+      requestedAt: j.str('requested_at'),
+    );
+  }
+}

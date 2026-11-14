@@ -68,6 +68,10 @@ function admin_route_roles(): array {
         'support-settings.php' => ['super_admin'],
         'calendar.php' => ['super_admin', 'editor', 'support'],
         'notifications.php' => ['super_admin', 'editor', 'support'],
+        // Account-deletion requests (Execution 73). Reading the queue and executing a
+        // verified request is a support/data-protection task, so `support` gets it; the
+        // route is still POST-only for any state change and CSRF-checked.
+        'account-deletions.php' => ['super_admin', 'support'],
         'search.php' => ['super_admin', 'support'],
         // Affiliate programme. Commission and payout data is money, so the consoles
         // that can move it are super_admin only; reading the affiliate list is a

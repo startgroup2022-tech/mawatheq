@@ -208,6 +208,12 @@ X-Mawatheq-Signature: sha256=<hex>
 `GET /api/v1/privacy.php?action=info` (عام) → روابط السياسة والشروط وما يُحذف وما يبقى.
 `GET ?action=consents` / `POST action=set-consent { key, granted }` — المفاتيح المسموحة: `analytics`, `product_updates`, `ai_processing`. غياب الموافقة يعني «غير موافق»، وليس «موافق افتراضياً».
 
+### حذف الحساب (يحتاج توكن)
+`POST /api/v1/account/delete.php { password, confirm:"DELETE" }` — يحذف الحساب فوراً (إخفاء البيانات الشخصية وإلغاء التفعيل وإبطال كل الرموز)، ويرفض إن كانت هناك أعمال قائمة ويعيد سببها.
+`GET /api/v1/account/deletion-status.php` → `{ ok, has_request, request: { reference, status, status_ar, status_en, verified, requested_at } | null }` — آخر طلب حذف بدأه صاحب الحساب من الموقع العام. لا يعيد المعرّف ولا `account_id`، فلا يقرأ جهاز مشترك عنوان الحساب من الردّ.
+
+**حذف الحساب من دون تسجيل دخول:** صفحة عامة `/account-deletion` (ومرادفها `/account-deletion.php`) تعمل للزائر بلا تسجيل دخول، وتُنشئ طلباً مرقّماً `DEL-…` مع رابط تأكيد على البريد المسجّل. هذا هو الرابط المطلوب في نموذج Data safety في Google Play. يتابع الفريق الطلبات من `/admin/account-deletions.php`، ولا يُنفَّذ أي حذف قبل تأكيد الملكية.
+
 ## الأخطاء
 
 كل الأخطاء بصيغة: `{ "ok": false, "error": "..." }` مع كود HTTP مناسب (400/401/403/404/405/409).
