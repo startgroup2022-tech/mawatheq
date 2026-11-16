@@ -21,7 +21,7 @@ $totalUnpaid = 0;
 foreach ($invoices as $inv) { if ($inv['status'] !== 'paid' && $inv['status'] !== 'cancelled') $totalUnpaid += finance_invoice_balance($inv); }
 ?>
 <div class="app-content">
-  <h2><?= is_rtl() ? 'فواتيري' : 'My Invoices' ?></h2>
+  <h1><?= is_rtl() ? 'فواتيري' : 'My Invoices' ?></h1>
 
   <?php if ($totalUnpaid > 0): ?>
     <div class="form-alert error" style="font-weight:600">

@@ -21,6 +21,7 @@ import 'package:mawatheq_mobile/core/guest_session.dart';
 import 'package:mawatheq_mobile/core/locale_controller.dart';
 import 'package:mawatheq_mobile/core/network/api_client.dart';
 import 'package:mawatheq_mobile/core/network/api_repository.dart';
+import 'package:mawatheq_mobile/core/security/biometric_service.dart';
 import 'package:mawatheq_mobile/core/storage/token_storage.dart';
 import 'package:mawatheq_mobile/core/theme/app_theme.dart';
 import 'package:mawatheq_mobile/core/theme/theme_controller.dart';
@@ -88,6 +89,25 @@ ApiRepository _repo(_Transport t) =>
 AuthController _auth(ApiRepository repo) =>
     AuthController(repository: repo, tokens: _Tokens());
 
+/// A device whose biometric capability the test controls.
+///
+/// The real [LocalAuthBiometricService] talks to a platform channel that is absent
+/// in a test process. A device that reports "available" is what makes the
+/// biometric gate observable, so the tests drive it explicitly.
+class _Biometrics implements BiometricService {
+  _Biometrics({this.available = false, this.result = true});
+  final bool available;
+  final bool result;
+  int prompts = 0;
+  @override
+  Future<bool> isAvailable() async => available;
+  @override
+  Future<bool> authenticate({required String reason}) async {
+    prompts++;
+    return result;
+  }
+}
+
 Widget _wrap(ApiRepository repo, AuthController auth, Widget child) {
   return MultiProvider(
     providers: [
@@ -133,7 +153,7 @@ void main() {
     );
     final repo = _repo(t);
     await tester.pumpWidget(
-      _wrap(repo, _auth(repo), DeleteAccountScreen(repository: repo)),
+      _wrap(repo, _auth(repo), DeleteAccountScreen(repository: repo, biometrics: _Biometrics())),
     );
     await _settle(tester);
 
@@ -168,7 +188,7 @@ void main() {
     );
     final repo = _repo(t);
     await tester.pumpWidget(
-      _wrap(repo, _auth(repo), DeleteAccountScreen(repository: repo)),
+      _wrap(repo, _auth(repo), DeleteAccountScreen(repository: repo, biometrics: _Biometrics())),
     );
     await _settle(tester);
 
@@ -195,7 +215,7 @@ void main() {
     });
     final repo = _repo(t);
     await tester.pumpWidget(
-      _wrap(repo, _auth(repo), DeleteAccountScreen(repository: repo)),
+      _wrap(repo, _auth(repo), DeleteAccountScreen(repository: repo, biometrics: _Biometrics())),
     );
     await _settle(tester);
 
@@ -210,5 +230,41 @@ void main() {
 
     final text = _allText(tester);
     expect(text, contains('لا يمكن حذف الحساب لوجود استشارة قادمة.'));
+  });
+
+  testWidgets('a cancelled biometric prompt blocks the irreversible deletion', (
+    tester,
+  ) async {
+    _phoneSurface(tester);
+    var posts = 0;
+    final t = _Transport((uri, req) async {
+      if (req.method == 'POST') {
+        posts++;
+        return (200, {'ok': true});
+      }
+      return (200, {'ok': true, 'has_request': false, 'request': null});
+    });
+    final repo = _repo(t);
+    final biometrics = _Biometrics(available: true, result: false);
+    await tester.pumpWidget(
+      _wrap(
+        repo,
+        _auth(repo),
+        DeleteAccountScreen(repository: repo, biometrics: biometrics),
+      ),
+    );
+    await _settle(tester);
+
+    await tester.tap(find.text('طلب حذف حسابي'));
+    await tester.pumpAndSettle(const Duration(milliseconds: 200));
+    await tester.enterText(find.byType(TextField).first, 'secret');
+    await tester.tap(find.text('متابعة'));
+    await tester.pumpAndSettle(const Duration(milliseconds: 200));
+    await _settle(tester);
+
+    // The prompt was shown, the user refused, and nothing was sent to the server.
+    expect(biometrics.prompts, 1);
+    expect(posts, 0, reason: 'a refused biometric must not delete the account');
+    expect(find.text('حذف نهائي'), findsNothing);
   });
 }

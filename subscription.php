@@ -37,7 +37,8 @@ $statusLabels = [
 
   <?= ui_page_head(
       $rtl ? 'الباقة والاستخدام' : 'Plan & usage',
-      $rtl ? 'تعرّف على باقتك الحالية، واستهلاكك لهذا الشهر، وقارن بين الباقات المتاحة.' : 'See your current plan, this month’s usage, and compare the available plans.'
+      $rtl ? 'تعرّف على باقتك الحالية، واستهلاكك لهذا الشهر، وقارن بين الباقات المتاحة.' : 'See your current plan, this month’s usage, and compare the available plans.',
+      [], 'h1'
   ) ?>
 
   <div class="grid-2">

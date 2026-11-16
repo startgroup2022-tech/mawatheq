@@ -178,6 +178,45 @@ function gateway_diag_failure(PDO $pdo, string $operation, string $stage, string
     return ['error' => $errorCode, 'correlation_id' => $corr];
 }
 
+/**
+ * Turn a structured failure code into the sentence the customer reads.
+ *
+ * The distinction that matters: a *permanent* fault (currency mismatch, gateway off,
+ * missing migration, zero amount) is not fixed by pressing Pay again, so the message
+ * must not invite a retry loop — it points at support instead. A *transient* fault
+ * (token/order stage) may clear on its own, so a retry is offered.
+ *
+ * The correlation id is always appended when present, so every message is traceable.
+ */
+function gateway_diag_customer_message(string $errorCode, string $corr = '', bool $rtl = true): string {
+    $permanent = [
+        'unsupported_currency' => $rtl
+            ? 'الدفع الإلكتروني غير متاح حالياً لهذه العملة. لم يتم خصم أي مبلغ. تواصل معنا لإتمام الاشتراك.'
+            : 'Online payment is not available for this currency right now. No amount was charged. Contact us to complete your subscription.',
+        'no_enabled_gateway' => $rtl
+            ? 'الدفع الإلكتروني غير مفعّل حالياً. لم يتم خصم أي مبلغ. تواصل معنا لإتمام الاشتراك.'
+            : 'Online payment is not enabled right now. No amount was charged. Contact us to complete your subscription.',
+        'gateway_disabled' => $rtl
+            ? 'الدفع الإلكتروني غير مفعّل حالياً. لم يتم خصم أي مبلغ. تواصل معنا لإتمام الاشتراك.'
+            : 'Online payment is not enabled right now. No amount was charged. Contact us to complete your subscription.',
+        'migration_required' => $rtl
+            ? 'الدفع الإلكتروني غير متاح حالياً. لم يتم خصم أي مبلغ. تواصل معنا.'
+            : 'Online payment is not available right now. No amount was charged. Contact us.',
+        'zero_amount' => $rtl
+            ? 'تعذّر بدء عملية الدفع: مبلغ الطلب غير صالح. لم يتم خصم أي مبلغ. تواصل معنا.'
+            : 'Payment could not start: the order amount is not valid. No amount was charged. Contact us.',
+    ];
+    $transient = $rtl
+        ? 'تعذّر بدء عملية الدفع الإلكتروني حالياً. لم يتم خصم أي مبلغ. يمكنك المحاولة مجدداً أو التواصل معنا.'
+        : 'Online payment could not be started right now. No amount was charged. You can retry or contact us.';
+
+    $msg = $permanent[$errorCode] ?? $transient;
+    if ($corr !== '') {
+        $msg .= ' ' . ($rtl ? 'الرقم المرجعي:' : 'Reference:') . ' ' . $corr;
+    }
+    return $msg;
+}
+
 /** Recent diagnostics rows for the admin console, newest first. */
 function gateway_diag_recent(PDO $pdo, int $limit = 50): array {
     if (!gateway_diag_schema_ready($pdo)) return [];

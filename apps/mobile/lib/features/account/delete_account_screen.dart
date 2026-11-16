@@ -6,6 +6,7 @@ import '../../core/locale_controller.dart';
 import '../../core/network/account_models.dart';
 import '../../core/network/api_exception.dart';
 import '../../core/network/api_repository.dart';
+import '../../core/security/biometric_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../shared/widgets/brand_widgets.dart';
@@ -24,9 +25,14 @@ import '../home/home_shell.dart';
 /// A refusal that names blockers (an open case, an upcoming consultation) is shown
 /// verbatim: "delete failed" with no reason is what makes a customer contact support.
 class DeleteAccountScreen extends StatefulWidget {
-  const DeleteAccountScreen({super.key, this.repository});
+  const DeleteAccountScreen({super.key, this.repository, this.biometrics});
 
   final ApiRepository? repository;
+
+  /// Device biometric capability. Injectable so a widget test can answer "the
+  /// confirmation step is skipped on a device without biometrics" without a
+  /// device, matching the pattern used by the account screen.
+  final BiometricService? biometrics;
 
   @override
   State<DeleteAccountScreen> createState() => _DeleteAccountScreenState();
@@ -34,6 +40,8 @@ class DeleteAccountScreen extends StatefulWidget {
 
 class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
   late final ApiRepository _repo = widget.repository ?? ApiRepository();
+  late final BiometricService _biometrics =
+      widget.biometrics ?? LocalAuthBiometricService();
 
   DeletionRequestStatus? _request;
   bool _loadingStatus = true;
@@ -64,6 +72,21 @@ class _DeleteAccountScreenState extends State<DeleteAccountScreen> {
   Future<void> _deleteNow(bool rtl) async {
     final password = await _askPassword(rtl);
     if (password == null || password.isEmpty || !mounted) return;
+
+    // Irreversible action: require the device biometric as a second, in-the-moment
+    // confirmation when the device can do it. The password proves intent, but a
+    // device left unlocked in someone else's hands would otherwise let them type it
+    // if they knew it; a fingerprint that is present right now does not travel with
+    // the device. On a device without biometrics this step is skipped rather than
+    // blocking the deletion (Google Play requires the route to actually work).
+    if (await _biometrics.isAvailable()) {
+      if (!mounted) return;
+      final ok = await _biometrics.authenticate(
+        reason: rtl ? 'تأكيد حذف الحساب' : 'Confirm deleting your account',
+      );
+      if (!ok || !mounted) return;
+    }
+    if (!mounted) return;
 
     final confirmed = await ConfirmationDialog.show(
       context,

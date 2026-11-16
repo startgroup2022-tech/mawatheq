@@ -12,7 +12,7 @@ $userCases->execute([$_SESSION['user_id']]);
 $userCases = $userCases->fetchAll();
 ?>
 <div class="app-content">
-  <h2><?= t('feat2_title') ?></h2>
+  <h1><?= t('feat2_title') ?></h1>
   <p style="margin-bottom:20px"><?= t('feat2_body') ?></p>
   <?php if (($_GET['error'] ?? '') === 'ai_consent'): ?><div class="form-alert error"><?= is_rtl()?'يجب الموافقة على إرسال المستند لمزود AI لتحليله.':'Consent to AI processing is required to analyze a document.' ?></div><?php endif; ?>
 
@@ -23,9 +23,9 @@ $userCases = $userCases->fetchAll();
       <p style="margin:6px 0 0"><?= is_rtl() ? 'PDF أو صورة — حتى ' . MAX_UPLOAD_SIZE_MB . ' ميجابايت' : 'PDF or image — up to ' . MAX_UPLOAD_SIZE_MB . 'MB' ?></p>
     </label>
     <input type="file" name="document" id="fileInput" accept=".pdf,.png,.jpg,.jpeg" style="display:none">
-        <div class="field" style="max-width:420px;margin:12px auto;text-align:start"><label><?= is_rtl()?'نوع التحليل':'Analysis type' ?></label><select name="document_type" class="pro-select"><option value="general"><?= is_rtl()?'مستند عام':'General document' ?></option><option value="contract"><?= is_rtl()?'تحليل عقد تفصيلي':'Detailed contract analysis' ?></option></select></div>
+        <div class="field" style="max-width:420px;margin:12px auto;text-align:start"><label for="documentType"><?= is_rtl()?'نوع التحليل':'Analysis type' ?></label><select name="document_type" id="documentType" class="pro-select"><option value="general"><?= is_rtl()?'مستند عام':'General document' ?></option><option value="contract"><?= is_rtl()?'تحليل عقد تفصيلي':'Detailed contract analysis' ?></option></select></div>
           <?php if ($userCases): ?>
-          <div class="field" style="max-width:420px;margin:12px auto;text-align:start"><label><?= is_rtl()?'القضية المرتبطة (اختياري)':'Related case (optional)' ?></label><select name="case_id" class="pro-select"><option value=""><?= is_rtl()?'بدون قضية محددة':'No specific case' ?></option><?php foreach ($userCases as $uc): ?><option value="<?= (int)$uc['id'] ?>"><?= htmlspecialchars($uc['title']) ?></option><?php endforeach; ?></select></div>
+          <div class="field" style="max-width:420px;margin:12px auto;text-align:start"><label for="relatedCase"><?= is_rtl()?'القضية المرتبطة (اختياري)':'Related case (optional)' ?></label><select name="case_id" id="relatedCase" class="pro-select"><option value=""><?= is_rtl()?'بدون قضية محددة':'No specific case' ?></option><?php foreach ($userCases as $uc): ?><option value="<?= (int)$uc['id'] ?>"><?= htmlspecialchars($uc['title']) ?></option><?php endforeach; ?></select></div>
           <?php endif; ?>
     <p id="selectedFileName" style="font-size:.82rem;color:var(--text-muted)"></p>
     <label class="field-hint" style="display:block;margin:12px"><input type="checkbox" name="ai_consent" value="1" required> <?= is_rtl() ? 'أوافق على إرسال المستند إلى مزود الذكاء الاصطناعي المهيأ لتحليله.' : 'I agree to send this document to the configured AI provider for analysis.' ?></label>

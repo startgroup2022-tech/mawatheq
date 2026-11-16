@@ -19,7 +19,7 @@ $messages->execute([$convId]);
 $messages = $messages->fetchAll();
 ?>
 <div class="app-content">
-  <h2><?= t('feat1_title') ?></h2>
+  <h1><?= t('feat1_title') ?></h1>
   <p style="margin-bottom:12px"><?= t('feat1_body') ?></p>
   <p class="field-hint"><?= is_rtl() ? 'عند تفعيل مزود AI، يُرسل سؤالك إليه لمعالجته. لا تكتب معلومات حساسة لا تريد مشاركتها.' : 'When an AI provider is enabled, your question is sent to it for processing. Do not enter sensitive details you do not wish to share.' ?></p>
   <div class="form-alert" style="background:#FFF8E6;color:#8A6D1D;font-size:.82rem;margin-bottom:20px">
@@ -54,7 +54,7 @@ $messages = $messages->fetchAll();
     </div>
     <form class="chat-input-row" id="chatForm" method="post" action="/api/ai_chat.php"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
       <input type="hidden" name="conversation_id" value="<?= $convId ?>">
-      <input type="text" name="message" id="chatInput" placeholder="<?= is_rtl() ? 'اكتب سؤالك القانوني هنا...' : 'Type your legal question...' ?>" autocomplete="off" required>
+      <input type="text" name="message" id="chatInput" aria-label="<?= is_rtl() ? 'اكتب سؤالك القانوني' : 'Type your legal question' ?>" placeholder="<?= is_rtl() ? 'اكتب سؤالك القانوني هنا...' : 'Type your legal question...' ?>" autocomplete="off" required>
       <button type="submit">➤</button>
     </form>
   </div>

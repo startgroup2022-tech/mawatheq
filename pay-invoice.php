@@ -39,6 +39,14 @@ if (!$invoice) {
             $pageError = is_rtl()
                 ? 'الدفع الإلكتروني غير متاح لهذه العملة. تواصل مع المحامي لطرق دفع بديلة.'
                 : 'Online payment is not available for this invoice currency. Contact the lawyer for alternative payment methods.';
+        } elseif (function_exists('gateway_diag_customer_message')) {
+            // A permanent fault (currency mismatch, gateway off) must not invite a retry
+            // loop, so the sentence is chosen by the structured failure code.
+            $pageError = gateway_diag_customer_message(
+                (string)($started['error'] ?? ''),
+                (string)($started['correlation_id'] ?? ''),
+                is_rtl()
+            );
         } else {
             $pageError = is_rtl() ? 'تعذّر بدء عملية الدفع. حاول لاحقاً أو تواصل مع المحامي.' : 'Could not start the payment. Try again later or contact the lawyer.';
             $corr = (string)($started['correlation_id'] ?? '');

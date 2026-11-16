@@ -10,12 +10,27 @@ const SURFACES = [
   ['/register.php', 'registration', null],
   ['/lawyer/dashboard.php', 'lawyer dashboard', ACCOUNTS.lawyer],
   ['/dashboard.php', 'client dashboard', ACCOUNTS.client],
+  // Customer account pages added in Execution 76: each must expose exactly one <h1>.
+  ['/packages.php', 'client packages', ACCOUNTS.client],
+  ['/subscription.php', 'client subscription', ACCOUNTS.client],
+  ['/invoices.php', 'client invoices', ACCOUNTS.client],
+  ['/my-cases.php', 'client cases', ACCOUNTS.client],
+  ['/documents.php', 'client documents', ACCOUNTS.client],
+  ['/notification-settings.php', 'client notifications', ACCOUNTS.client],
+  ['/ai-assistant.php', 'client assistant', ACCOUNTS.client],
 ];
 
 // Path -> the login page that must be used before visiting it.
 const LOGIN_FOR = {
   '/lawyer/dashboard.php': '/lawyer-login.php',
   '/dashboard.php': '/login.php',
+  '/packages.php': '/login.php',
+  '/subscription.php': '/login.php',
+  '/invoices.php': '/login.php',
+  '/my-cases.php': '/login.php',
+  '/documents.php': '/login.php',
+  '/notification-settings.php': '/login.php',
+  '/ai-assistant.php': '/login.php',
 };
 
 test.describe('accessibility & i18n', () => {

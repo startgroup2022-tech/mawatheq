@@ -97,7 +97,25 @@ if (!$lawyer && ($firmInfo || $firmSlug !== '')) {
     require __DIR__ . '/includes/app_footer.php';
     exit;
 }
-if (!$lawyer) { echo '<div class="app-content"><p>' . (is_rtl() ? 'المحامي غير موجود.' : 'Lawyer not found.') . '</p></div>'; require __DIR__.'/includes/app_footer.php'; exit; }
+if (!$lawyer) {
+    // Render through the shell (header + footer). The footer calls nav_render_bottom(),
+    // which lives in nav.php — a file app_header.php loads. Emitting the footer without
+    // the header first is a fatal "Call to undefined function" and the page answered 500
+    // with a body that merely looked like a plain "lawyer not found" message.
+    require_once __DIR__ . '/includes/app_header.php';
+    ?>
+    <div class="app-content">
+      <div class="dash-card" style="text-align:center;padding:40px 24px">
+        <div style="font-size:2.2rem;margin-bottom:8px">🔎</div>
+        <h3 style="margin:0 0 6px"><?= is_rtl() ? 'المحامي غير متاح للحجز' : 'This lawyer is not available for booking' ?></h3>
+        <p><?= is_rtl() ? 'قد يكون الرابط قديماً أو أن المحامي لم يُعتمد بعد. اختر محامياً آخر من قائمة المحامين المعتمدين.' : 'The link may be out of date, or the lawyer is not approved yet. Choose another approved lawyer.' ?></p>
+        <a href="/consultations.php" class="btn btn-primary" style="margin-top:14px"><?= is_rtl() ? 'عرض المحامين' : 'View lawyers' ?></a>
+      </div>
+    </div>
+    <?php
+    require __DIR__ . '/includes/app_footer.php';
+    exit;
+}
 
 $availCount = $pdo->prepare('SELECT COUNT(*) c FROM lawyer_availability WHERE lawyer_id=?');
 $availCount->execute([$lawyerId]);
@@ -263,11 +281,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // could not start. This is NOT a confirmed booking — the customer must be
                     // told the appointment is unconfirmed and given a way to pay, or they will
                     // believe the consultation is booked (the defect this execution fixes).
-                    $error = is_rtl()
-                        ? 'تم حفظ طلب الحجز، لكن تعذّر بدء الدفع الإلكتروني، لذلك لم يتم تأكيد الموعد بعد. يمكنك إكمال الدفع من صفحة الاستشارات.'
-                        : 'Your booking request was saved, but online payment could not start, so the appointment is not confirmed yet. You can complete payment from your consultations page.';
-                    $corr = (string)($started['correlation_id'] ?? '');
-                    if ($corr !== '') $error .= ' ' . (is_rtl() ? 'الرقم المرجعي:' : 'Reference:') . ' ' . $corr;
+                    // The tail sentence is chosen by the failure code so a permanent fault
+                    // (currency mismatch, gateway off) points at support instead of a retry.
+                    $prefix = is_rtl()
+                        ? 'تم حفظ طلب الحجز، لكن تعذّر بدء الدفع الإلكتروني، لذلك لم يتم تأكيد الموعد بعد.'
+                        : 'Your booking request was saved, but online payment could not start, so the appointment is not confirmed yet.';
+                    if (function_exists('gateway_diag_customer_message')) {
+                        $error = $prefix . ' ' . gateway_diag_customer_message(
+                            (string)($started['error'] ?? ''),
+                            (string)($started['correlation_id'] ?? ''),
+                            is_rtl()
+                        );
+                    } else {
+                        $error = $prefix . ' ' . (is_rtl()
+                            ? 'يمكنك إكمال الدفع من صفحة الاستشارات.'
+                            : 'You can complete payment from your consultations page.');
+                        $corr = (string)($started['correlation_id'] ?? '');
+                        if ($corr !== '') $error .= ' ' . (is_rtl() ? 'الرقم المرجعي:' : 'Reference:') . ' ' . $corr;
+                    }
                 }
             }
         }

@@ -51,7 +51,8 @@ $classLabel = static function (string $c) use ($rtl): string {
 
   <?= ui_page_head(
       $rtl ? 'الباقات والاشتراك' : 'Packages & subscription',
-      $rtl ? 'اختر الباقة المناسبة لك. تُفعّل الباقة تلقائياً بعد تأكيد الدفع من البوابة.' : 'Choose the package that fits you. A package activates automatically once the gateway confirms payment.'
+      $rtl ? 'اختر الباقة المناسبة لك. تُفعّل الباقة تلقائياً بعد تأكيد الدفع من البوابة.' : 'Choose the package that fits you. A package activates automatically once the gateway confirms payment.',
+      [], 'h1'
   ) ?>
 
   <?php if ($currentPlan): ?>
