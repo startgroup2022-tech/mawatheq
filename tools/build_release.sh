@@ -125,14 +125,17 @@ printf '  removed %s root-level .md file(s) from the site package\n' "$removed_d
     || fail "database/upgrade_v56.sql is missing from the migration package"
 [ -f "$STAGE/migrations/database/upgrade_v57.sql" ] \
     || fail "database/upgrade_v57.sql is missing from the migration package"
-# upgrade_v78.sql is the last migration in the chain. It adds the legal-library tables
-# the public /legal-library*.php pages and api/v1/legal-library.php depend on
-# (Execution 74). Assert the current head, not a remembered one — this assertion moves
-# with each execution, and a stale expectation fails the next build for the wrong reason.
+# upgrade_v79.sql is the last migration in the chain. It downgrades the two Ministry
+# of Justice library sources to link_only, clears any stored body/hosted_path, and
+# adds legal_library_sources.sync_cursor for the resumable walk (Execution 68).
+# Assert the current head, not a remembered one — this assertion moves with each
+# execution, and a stale expectation fails the next build for the wrong reason.
 [ -f "$STAGE/migrations/database/upgrade_v77.sql" ] \
     || fail "database/upgrade_v77.sql is missing from the migration package"
 [ -f "$STAGE/migrations/database/upgrade_v78.sql" ] \
     || fail "database/upgrade_v78.sql is missing from the migration package"
+[ -f "$STAGE/migrations/database/upgrade_v79.sql" ] \
+    || fail "database/upgrade_v79.sql is missing from the migration package"
 
 # --- modes and timestamps --------------------------------------------------
 step "normalizing file modes and timestamps"
