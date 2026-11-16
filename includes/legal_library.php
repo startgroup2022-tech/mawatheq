@@ -32,6 +32,25 @@
 require_once __DIR__ . '/../config/config.php';
 
 /* ---------------------------------------------------------------------------
+ * Redistribution policy
+ * ------------------------------------------------------------------------ */
+
+/**
+ * Whether the library may store a source's full text or file.
+ *
+ * Storing full text is a *redistribution* decision, not a technical one: a page
+ * being reachable by anyone is not a licence to re-publish it. So capture is OFF
+ * by default and turns on only when the operator explicitly sets
+ * MAWATHEQ_LL_CAPTURE_BODY=1 after confirming that source's terms permit
+ * re-hosting. While it is off, every item keeps its metadata and its official
+ * link, and the reader is always sent to the authority that published it — which
+ * is the maximum a "link_only" source allows.
+ */
+function legal_library_capture_body(): bool {
+    return getenv('MAWATHEQ_LL_CAPTURE_BODY') === '1';
+}
+
+/* ---------------------------------------------------------------------------
  * HTTP
  * ------------------------------------------------------------------------ */
 
@@ -81,6 +100,34 @@ function legal_library_http(string $method, string $url, ?array $jsonPayload = n
         'json' => is_array($decoded) ? $decoded : null,
         'error' => $code >= 200 && $code < 300 ? null : ('HTTP ' . $code),
     ];
+}
+
+/**
+ * Fetch a JSON page, retrying on a non-JSON body.
+ *
+ * The MOJ gateway sits behind a WAF that answers a rate-limited request with
+ * HTTP 200 and an HTML "Request Rejected" page instead of a 429. A 200 whose body
+ * is not JSON therefore means "slow down", not "no data", and is retried with
+ * exponential backoff rather than being treated as the end of the collection.
+ *
+ * @return array{ok:bool, code:int, json:?array, error:?string, blocked:bool}
+ */
+function legal_library_http_json(string $method, string $url, ?array $jsonPayload = null, array $headers = [], int $timeout = 30, int $tries = 4): array {
+    $last = ['ok' => false, 'code' => 0, 'json' => null, 'error' => 'لم تُجرَ محاولة', 'blocked' => false];
+    for ($attempt = 0; $attempt < max(1, $tries); $attempt++) {
+        $r = legal_library_http($method, $url, $jsonPayload, $headers, $timeout);
+        $last = ['ok' => $r['ok'], 'code' => $r['code'], 'json' => $r['json'], 'error' => $r['error'], 'blocked' => false];
+        if ($r['ok'] && $r['json'] !== null) {
+            return $last;
+        }
+        // A 2xx with a non-JSON body is the WAF. Back off and try again.
+        $blocked = $r['ok'] && $r['json'] === null;
+        $last['blocked'] = $blocked;
+        if ($attempt < $tries - 1) {
+            usleep($blocked ? (800000 * ($attempt + 1)) : 500000);
+        }
+    }
+    return $last;
 }
 
 /* ---------------------------------------------------------------------------
@@ -202,6 +249,14 @@ function legal_library_upsert_item(PDO $pdo, array $it): string {
     $st->execute([$it['source_key'], $it['external_id']]);
     $existing = $st->fetchColumn();
 
+    // Full text / hosted file is stored only when the operator has confirmed the
+    // source permits re-hosting (see legal_library_capture_body()). Otherwise the
+    // row keeps its metadata and its official link, and the reader is sent there.
+    if (!legal_library_capture_body()) {
+        $it['body'] = null;
+        $it['hosted_path'] = null;
+    }
+
     $vals = [];
     foreach ($cols as $c) {
         $vals[$c] = $it[$c] ?? null;
@@ -267,7 +322,11 @@ function legal_library_sync(PDO $pdo, string $sourceKey, array $opts = []): arra
     $error = null;
     try {
         switch ($sourceKey) {
-            case 'moj_decisions':   $counts = legal_library_import_moj_decisions($pdo, $source, $opts); break;
+            case 'moj_decisions':
+                $counts = !empty($opts['windowed'])
+                    ? legal_library_import_moj_decisions_windowed($pdo, $source, $opts)
+                    : legal_library_import_moj_decisions($pdo, $source, $opts);
+                break;
             case 'moj_legislation': $counts = legal_library_import_moj_legislation($pdo, $source, $opts); break;
             case 'mashortich_books':$counts = legal_library_import_mashortich($pdo, $source, $opts); break;
             default:
@@ -346,7 +405,7 @@ function legal_library_import_moj_decisions(PDO $pdo, array $source, array $opts
     $detailCap = max(0, (int)($opts['detail_cap'] ?? 25));
     $headers = ['Origin: https://laws.moj.gov.sa', 'Referer: https://laws.moj.gov.sa/'];
     $url = 'https://laws-gateway.moj.gov.sa/apis/legislations/v1/Judgements/judgements-list';
-    $counts = ['seen' => 0, 'new' => 0, 'updated' => 0, 'skipped' => 0];
+    $counts = ['seen' => 0, 'new' => 0, 'updated' => 0, 'skipped' => 0, 'pages_fetched' => 0, 'blocked' => 0];
     $detailsFetched = 0;
 
     for ($p = 1; $p <= $pages; $p++) {
@@ -355,31 +414,172 @@ function legal_library_import_moj_decisions(PDO $pdo, array $source, array $opts
             'cityId' => null, 'viewType' => 'grid', 'courtTypes' => 0, 'courtId' => null,
             'term' => null, 'dateFrom' => '', 'dateTo' => '', 'sortingBy' => 2, 'identityNumber' => '',
         ];
-        $resp = legal_library_http('POST', $url, $payload, $headers, 30);
-        if (!$resp['ok'] || !is_array($resp['json']['model']['judgementsCollection'] ?? null)) {
-            // A single page failing should not discard the pages already imported.
-            if ($p === 1) throw new RuntimeException('تعذّر جلب الأحكام: ' . ($resp['error'] ?? 'استجابة غير متوقعة'));
+        $resp = legal_library_http_json('POST', $url, $payload, $headers, 30);
+        if (!is_array($resp['json']['model']['judgementsCollection'] ?? null)) {
+            // A page the gateway refused (WAF) must not discard the pages already
+            // imported; record it and stop rather than throwing away good rows.
+            if ($p === 1 && empty($resp['blocked'])) {
+                throw new RuntimeException('تعذّر جلب الأحكام: ' . ($resp['error'] ?? 'استجابة غير متوقعة'));
+            }
+            if (!empty($resp['blocked'])) $counts['blocked']++;
             break;
         }
+        $counts['pages_fetched']++;
         $rows = $resp['json']['model']['judgementsCollection'];
         foreach ($rows as $row) {
             if (empty($row['id'])) { $counts['skipped']++; continue; }
             $counts['seen']++;
             $detail = null;
             if ($withDetails && $detailsFetched < $detailCap) {
-                $d = legal_library_http('GET',
+                $d = legal_library_http_json('GET',
                     'https://laws-gateway.moj.gov.sa/apis/legislations/v1/Judgements/get-details?id=' . rawurlencode((string)$row['id']) . '&lang=ar&IdentityNumber=',
                     null, $headers, 25);
-                if ($d['ok'] && is_array($d['json']['model'] ?? null)) {
+                if (is_array($d['json']['model'] ?? null)) {
                     $detail = $d['json']['model'];
                     $detailsFetched++;
                 }
+                usleep(300000);
             }
             $res = legal_library_upsert_item($pdo, legal_library_map_moj_judgement($row, $source, $detail));
             $counts[$res]++;
         }
         // Be a good citizen: the gateway rate-limits, so pause between pages.
-        if ($p < $pages) usleep(400000);
+        if ($p < $pages) usleep((int)(($opts["pause_ms"] ?? 2000) * 1000));
+    }
+    return $counts;
+}
+
+/* ---------------------------------------------------------------------------
+ * Resumable catalogue walk (MOJ decisions)
+ * ------------------------------------------------------------------------- */
+
+/** The current Hijri year (Umm al-Qura civil approximation, deterministic). */
+function legal_library_hijri_now_year(): int {
+    // A pure-PHP tabular conversion, so the partition walker does not depend on the
+    // intl extension being installed (a fresh cPanel host often lacks it). Accurate
+    // to within a day, which is all a month-partition boundary needs.
+    $d = (int)date('j'); $m = (int)date('n'); $y = (int)date('Y');
+    $a = intdiv(14 - $m, 12);
+    $yy = $y + 4800 - $a;
+    $mm = $m + 12 * $a - 3;
+    $jdn = $d + intdiv(153 * $mm + 2, 5) + 365 * $yy + intdiv($yy, 4) - intdiv($yy, 100) + intdiv($yy, 400) - 32045;
+    $hijri = (int)floor(($jdn - 1948439) * 30 / 10631) + 1;
+    return ($hijri > 1300 && $hijri < 1600) ? $hijri : 1447;
+}
+
+/**
+ * The Hijri month windows the decisions catalogue is walked through, newest first.
+ *
+ * A whole-year window is thousands of pages, so the catalogue is partitioned by
+ * Hijri month: each window is small enough that a single cron run can make progress
+ * inside it and the cursor can be saved without the list shifting under us (a plain
+ * page cursor drifts as new decisions are published; a dated window does not).
+ */
+function legal_library_decisions_partitions(int $yearsBack = 8): array {
+    $now = legal_library_hijri_now_year();
+    $out = [];
+    for ($y = $now; $y >= $now - $yearsBack; $y--) {
+        for ($m = 1; $m <= 12; $m++) {
+            $out[] = ['year' => $y, 'month' => $m];
+        }
+    }
+    return $out;
+}
+
+/** Parse the saved cursor "YYYY:MM:PAGE" into [year, month, page]. */
+function legal_library_cursor_parse(?string $c): array {
+    if ($c && preg_match('/^(\d{4}):(\d{1,2}):(\d{1,5})$/', $c, $m)) {
+        return [(int)$m[1], (int)$m[2], max(1, (int)$m[3])];
+    }
+    return [0, 0, 1];
+}
+
+function legal_library_save_cursor(PDO $pdo, string $sourceKey, ?string $cursor): void {
+    $pdo->prepare('UPDATE legal_library_sources SET sync_cursor = ? WHERE source_key = ?')->execute([$cursor, $sourceKey]);
+}
+
+/**
+ * Walk a bounded slice of the decisions catalogue and save where it stopped.
+ *
+ * `$opts['max_pages']` caps how many gateway pages this run fetches, so a cron run
+ * stays inside the gateway's rate limit and the web request stays short. The cursor
+ * on `legal_library_sources.sync_cursor` makes the next run resume at the same
+ * month/page. When the last window is reached the cursor resets to the start, so
+ * the next cycle re-walks for updates (the upsert keeps that idempotent).
+ */
+function legal_library_import_moj_decisions_windowed(PDO $pdo, array $source, array $opts = []): array {
+    $headers = ['Origin: https://laws.moj.gov.sa', 'Referer: https://laws.moj.gov.sa/'];
+    $url = 'https://laws-gateway.moj.gov.sa/apis/legislations/v1/Judgements/judgements-list';
+    $pageSize = min(50, max(1, (int)($opts['page_size'] ?? 50)));
+    $budget = max(1, (int)($opts['max_pages'] ?? 12));
+    $pause = (int)(($opts['pause_ms'] ?? 5000) * 1000);
+    $withDetails = (bool)($opts['with_details'] ?? false);
+    $detailCap = max(0, (int)($opts['detail_cap'] ?? 0));
+    $detailsFetched = 0;
+
+    $parts = legal_library_decisions_partitions((int)($opts['years_back'] ?? 8));
+    [$curY, $curM, $curP] = legal_library_cursor_parse($source['sync_cursor'] ?? null);
+
+    $start = 0;
+    if ($curY > 0) {
+        foreach ($parts as $i => $p) {
+            if ($p['year'] === $curY && $p['month'] === $curM) { $start = $i; break; }
+        }
+    } else {
+        $curP = 1;
+    }
+
+    $counts = ['seen' => 0, 'new' => 0, 'updated' => 0, 'skipped' => 0, 'pages_fetched' => 0, 'blocked' => 0, 'partitions_done' => 0, 'wrapped' => 0];
+    $budgetLeft = $budget;
+    $i = $start;
+    $page = $curP;
+
+    while ($i < count($parts) && $budgetLeft > 0) {
+        $p = $parts[$i];
+        $payload = [
+            'pageNumber' => $page, 'pageSize' => $pageSize, 'judgmentNo' => '', 'decisionNo' => '',
+            'cityId' => null, 'viewType' => 'grid', 'courtTypes' => 0, 'courtId' => null,
+            'term' => null,
+            'dateFrom' => sprintf('%04d-%02d-01', $p['year'], $p['month']),
+            'dateTo'   => sprintf('%04d-%02d-30', $p['year'], $p['month']),
+            'sortingBy' => 2, 'identityNumber' => '',
+        ];
+        $resp = legal_library_http_json('POST', $url, $payload, $headers, 30);
+        $budgetLeft--;
+        if (!is_array($resp['json']['model']['judgementsCollection'] ?? null)) {
+            if (!empty($resp['blocked'])) $counts['blocked']++;
+            break; // keep the cursor where it is; the next run resumes here
+        }
+        $counts['pages_fetched']++;
+        $model = $resp['json']['model'];
+        foreach ($model['judgementsCollection'] as $row) {
+            if (empty($row['id'])) { $counts['skipped']++; continue; }
+            $counts['seen']++;
+            $detail = null;
+            if ($withDetails && $detailsFetched < $detailCap) {
+                $d = legal_library_http_json('GET',
+                    'https://laws-gateway.moj.gov.sa/apis/legislations/v1/Judgements/get-details?id=' . rawurlencode((string)$row['id']) . '&lang=ar&IdentityNumber=',
+                    null, $headers, 25);
+                if (is_array($d['json']['model'] ?? null)) { $detail = $d['json']['model']; $detailsFetched++; }
+                usleep(300000);
+            }
+            $counts[legal_library_upsert_item($pdo, legal_library_map_moj_judgement($row, $source, $detail))]++;
+        }
+        $totalPages = max(1, (int)($model['totalPages'] ?? 1));
+        if ($page >= $totalPages) {
+            $counts['partitions_done']++;
+            $i++;
+            $page = 1;
+        } else {
+            $page++;
+        }
+        legal_library_save_cursor($pdo, $source['source_key'], sprintf('%04d:%02d:%d', $p['year'], $p['month'], $page));
+        if ($budgetLeft > 0 && $i < count($parts)) usleep($pause);
+    }
+
+    if ($i >= count($parts)) {
+        legal_library_save_cursor($pdo, $source['source_key'], null);
+        $counts['wrapped'] = 1;
     }
     return $counts;
 }
@@ -429,7 +629,7 @@ function legal_library_import_moj_legislation(PDO $pdo, array $source, array $op
     $pageSize = min(50, max(1, (int)($opts['page_size'] ?? 20)));
     $headers = ['Origin: https://laws.moj.gov.sa', 'Referer: https://laws.moj.gov.sa/'];
     $url = 'https://laws-gateway.moj.gov.sa/apis/legislations/v1/statute/section-search';
-    $counts = ['seen' => 0, 'new' => 0, 'updated' => 0, 'skipped' => 0];
+    $counts = ['seen' => 0, 'new' => 0, 'updated' => 0, 'skipped' => 0, 'pages_fetched' => 0, 'blocked' => 0];
 
     for ($p = 1; $p <= $pages; $p++) {
         $payload = [
@@ -439,18 +639,20 @@ function legal_library_import_moj_legislation(PDO $pdo, array $source, array $op
             'statutePublishDateFrom' => null, 'statutePublishDateTo' => null, 'statuteType' => null,
             'isSearch' => false, 'identityNumber' => '',
         ];
-        $resp = legal_library_http('POST', $url, $payload, $headers, 30);
-        if (!$resp['ok'] || !is_array($resp['json']['model']['collection'] ?? null)) {
-            if ($p === 1) throw new RuntimeException('تعذّر جلب الأنظمة: ' . ($resp['error'] ?? 'استجابة غير متوقعة'));
+        $resp = legal_library_http_json('POST', $url, $payload, $headers, 30);
+        if (!is_array($resp['json']['model']['collection'] ?? null)) {
+            if ($p === 1 && empty($resp['blocked'])) throw new RuntimeException('تعذّر جلب الأنظمة: ' . ($resp['error'] ?? 'استجابة غير متوقعة'));
+            if (!empty($resp['blocked'])) $counts['blocked']++;
             break;
         }
+        $counts['pages_fetched']++;
         foreach ($resp['json']['model']['collection'] as $row) {
             $counts['seen']++;
             $item = legal_library_map_moj_statute($row, $source);
             if ($item['external_id'] === '') { $counts['skipped']++; continue; }
             $counts[legal_library_upsert_item($pdo, $item)]++;
         }
-        if ($p < $pages) usleep(400000);
+        if ($p < $pages) usleep((int)(($opts["pause_ms"] ?? 2000) * 1000));
     }
     return $counts;
 }

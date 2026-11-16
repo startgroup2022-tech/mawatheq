@@ -22,11 +22,14 @@
   require_once __DIR__ . '/../config/config.php';
   require_once __DIR__ . '/../includes/legal_library.php';
 
-  $opts = ['pages' => 5, 'page_size' => 25, 'with_details' => false];
+  $opts = ['pages' => 5, 'page_size' => 25, 'with_details' => false, 'windowed' => true, 'max_pages' => 12, 'pause_ms' => 5000];
   $only = null;
   foreach (array_slice($argv ?? [], 1) as $arg) {
       if (str_starts_with($arg, '--source='))      $only = substr($arg, 9);
       elseif (str_starts_with($arg, '--pages='))   $opts['pages'] = max(1, (int)substr($arg, 8));
+      elseif (str_starts_with($arg, '--max-pages=')) $opts['max_pages'] = max(1, (int)substr($arg, 12));
+      elseif (str_starts_with($arg, '--pause-ms='))  $opts['pause_ms'] = max(0, (int)substr($arg, 11));
+      elseif ($arg === '--full')                   $opts['windowed'] = false;
       elseif ($arg === '--details')                $opts['with_details'] = true;
   }
 

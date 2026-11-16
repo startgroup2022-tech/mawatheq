@@ -40,7 +40,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($action === 'sync') {
         $src = legal_library_source($sourceKey);
         if ($src) {
-            $opts = ['pages' => 2, 'page_size' => 20, 'with_details' => false];
+            // A short bounded slice: the windowed walker advances the decisions cursor
+            // a few pages and resumes next time, so the button never risks a web timeout.
+            $opts = ['pages' => 2, 'page_size' => 20, 'with_details' => false, 'windowed' => true, 'max_pages' => 3, 'pause_ms' => 3000];
             if ($sourceKey === 'mashortich_books') $opts = [];
             $res = legal_library_sync($pdo, $sourceKey, $opts);
             log_action($pdo, 'legal_library_sync', 'legal_library_sources', $sourceKey,

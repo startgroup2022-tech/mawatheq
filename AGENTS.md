@@ -4415,3 +4415,56 @@ free-plan activation creates an `active` subscription, the paid order's `amount`
 it, and skips it otherwise (so the Google Play account-deletion route still works on a device
 without biometrics). `BiometricService` is abstract with a `LocalAuthBiometricService`
 implementation; the test injects a fake so the flow runs without a platform channel.
+
+## Execution 68 — legal-library redistribution policy and a resumable catalogue walk (v79)
+
+### "Publicly readable" is not "licensed to re-publish"
+
+`upgrade_v74.sql`/`v78.sql` classified the two Ministry of Justice sources as `hosted`, which made
+Mawatheq store the ruling/statute text and serve it from its own domain. The MOJ portal does publish
+judgments for public reading, but no explicit re-use licence could be confirmed, and the two are not
+the same thing. `upgrade_v79.sql` downgrades `moj_decisions` and `moj_legislation` to `link_only`
+and clears any `body`/`hosted_path` already stored; the catalogue keeps the metadata and the
+official link, and the reader is sent to the Ministry of Justice record. The seed in `schema.sql`
+and `v78.sql` is changed to match, so a fresh install starts honest.
+
+The decision is enforced in **one** place, `legal_library_public_item()`, and made opt-in at the
+importer: `legal_library_capture_body()` returns true only when `MAWATHEQ_LL_CAPTURE_BODY=1`, and
+`legal_library_upsert_item()` blanks `body` and `hosted_path` while it is off. So an operator who
+has confirmed a source's terms in writing can raise it back to `hosted`, set the env var, and the
+next sync stores the text again — nothing in the code hard-codes the current choice.
+
+`tests/exec68_legal_library_policy_test.php` (24 checks) pins capture-off, capture-on, the
+downgrade render path, and that `upgrade_v79.sql` guards the new column on `information_schema`
+and uses no positional `AFTER` (the Execution 29 lesson).
+
+### The gateway rate-limits a burst, so the catalogue is walked, not swept
+
+`laws-gateway.moj.gov.sa` answers a short burst and then serves an HTML "Request Rejected" page
+(HTTP 200, so a naive status check sees success). It clears after a cooldown; a 5s pause between
+pages keeps every page a 200. So the full ~55k catalogue is **not** fetchable in one run — measured
+limits: ~20 requests per cooldown, ~25 pages before the wall.
+
+The decisions importer therefore has two modes. `legal_library_import_moj_decisions()` fetches
+`pages` from page 1 (newest) — fine for a one-off, useless for coverage. The windowed walker
+`legal_library_import_moj_decisions_windowed()` partitions the catalogue by **Hijri month** and
+resumes from `legal_library_sources.sync_cursor` (`YYYY:MM:PAGE`), fetching at most
+`max_pages` per run. A dated window does not drift as new decisions are published, which a plain
+page cursor would. `cron/legal-library-sync.php` uses the windowed walker by default
+(`--max-pages`, `--pause-ms`; `--full` reverts to the page-1 sweep). When the last window is
+reached the cursor resets and the next cycle re-walks for updates; the upsert keeps that idempotent.
+
+`legal_library_hijri_now_year()` converts the Gregorian date arithmetically rather than via
+`IntlDateFormatter`, because a fresh cPanel host often has no `intl` extension — with `intl`
+missing, a `class_exists` guard silently falls back to a hardcoded year and the partitions start
+in the wrong month.
+
+### The Board of Grievances sources stay disabled, and why
+
+`bog_open_data` (`www.bog.gov.sa`) is unreachable from this network — the TCP connection to
+`66.9.137.142:443` never completes (http `000`), so no endpoint can be written from evidence.
+`bog_almusaid` (`almusaid.bog.gov.sa`) is a live Angular app whose `assets/config.json` points at
+`almusaid-api.bog.gov.sa`, but that API host answers `503` to every path and the app is gated behind
+an SSO `login-callback` flow. Both remain `redistribution = 'unknown'`, `is_enabled = 0` with no
+importer: registering a source is not the same as being allowed to import it, and an endpoint
+written from a guess would be worse than none. Their notes in the seed say exactly this.
