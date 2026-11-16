@@ -4358,3 +4358,60 @@ an explicit state rather than being silently absent, so an operator can tell "di
 - `tests/e2e/exec74-legal-library.spec.js` — 8 tests × 6 viewports = 48.
 - Flutter app version bumped to `1.8.6+24`; `AppConfig.appVersion` must match `pubspec.yaml`
   (`exec52_app_version_test.dart` enforces it).
+
+## Execution 76 — honest payment failures, DB-backed packages, booking 500, a11y
+
+### The customer-facing payment sentence is chosen by the failure code, not by the page
+
+`gateway_diag_customer_message($code, $corr, $rtl)` in `includes/gateway_diagnostics.php`
+turns a structured failure code into the one sentence the customer reads. The distinction it
+encodes is the fix: a **permanent** fault (`unsupported_currency`, `no_enabled_gateway`,
+`gateway_disabled`, `migration_required`, `zero_amount`) is not fixed by pressing Pay again, so
+its message says *no amount was charged* and points at support — it must **not** offer
+"المحاولة مجدداً". A **transient** fault (`token_failed`, `order_failed`, anything unmapped)
+still offers a retry. The correlation id is appended whenever it is present. All three payment
+entry points (`checkout.php`, `pay-invoice.php`, `booking.php`) route through it; do not inline
+a generic sentence again — the whole point is that the customer can tell "try again" from "this
+will never work, call us".
+
+Verified over real HTTP with the gateway off (the production state):
+`create=302 -> /checkout.php?order_id=N`, then `pay=200` with `no_charge=1 reference=1
+retry=0 support=1`. `tools/gateway_doctor.php` names the blocking cause
+(`gateway enabled: no`, `outlet reference set: no`).
+
+### `booking.php` rendered 500 for a missing lawyer — footer without header
+
+The "lawyer not found" branch emitted `includes/app_footer.php` **without** including
+`includes/app_header.php` first. The footer calls `nav_render_bottom()` (defined in `nav.php`,
+which the header loads), so the branch raised a fatal "Call to undefined function" and the page
+answered 500. Any early-exit branch that prints the footer must render through the shell. This
+is the same class as the AGENTS "POST-redirect pages must handle POST before rendering the
+shell" rule — the shell's parts are not independently includable.
+
+### Customer pages must expose exactly one `<h1>`
+
+`invoices.php`, `my-cases.php`, `packages.php`, `subscription.php`, `documents.php` and
+`ai-assistant.php` were shipping `<h2>`-only or bare headings. `tests/e2e/accessibility.spec.js`
+now sweeps the seven customer account pages (packages, subscription, invoices, cases, documents,
+notifications, assistant) in addition to the original seven surfaces, across six viewports —
+264 checks. `ui_page_head()` defaults to `h2`; pass `[], 'h1'` on a page's primary heading. The
+notifications page is `notification-settings.php` (there is no `/notifications.php`).
+
+Two unlabelled controls were also fixed: the chat input in `ai-assistant.php` needed an
+`aria-label`, and the two `<select>`s in `documents.php` needed `for`/`id` pairs.
+
+### Packages are DB-backed end to end, and `exec76` proves it over HTTP
+
+`index.php`, `pricing.php`, `packages.php` and `subscription.php` read `plans` + `plan_features`;
+`checkout.php` reads the amount from `plans` and never trusts a browser-supplied price. The free
+plan activates a subscription with no gateway; a paid plan creates a `pending` `package_orders`
+row. `tests/exec76_payment_booking_regression_test.php` (46 checks) asserts all of it over HTTP:
+free-plan activation creates an `active` subscription, the paid order's `amount` equals
+`plans.price_monthly`, and the order stays `pending`.
+
+### Mobile: account deletion asks for the device biometric
+
+`delete_account_screen.dart` requests a biometric second confirmation when the device supports
+it, and skips it otherwise (so the Google Play account-deletion route still works on a device
+without biometrics). `BiometricService` is abstract with a `LocalAuthBiometricService`
+implementation; the test injects a fake so the flow runs without a platform channel.
