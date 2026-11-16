@@ -423,8 +423,13 @@ check('available_only removes lawyers with no published slots', count($avail) ==
 
 // Now give the Jeddah lawyer a real weekly schedule and re-check: they become the only
 // available match, and their card carries a real slot, not an invented one.
-$pdo->prepare("INSERT INTO lawyer_availability (lawyer_id, day_of_week, start_time, end_time, slot_minutes) VALUES (?, 1, '09:00:00', '11:00:00', 30)")
-    ->execute([$lwJeddah]);
+// Schedule it for TOMORROW's weekday, not a fixed day: get_available_slots() drops the
+// slots already past when the date is today, so a fixed day_of_week makes the result
+// depend on what time the suite runs. Tomorrow is always inside the 7-day scan window
+// and is never treated as "today".
+$availDay = (int) date('w', strtotime('tomorrow'));
+$pdo->prepare("INSERT INTO lawyer_availability (lawyer_id, day_of_week, start_time, end_time, slot_minutes) VALUES (?, ?, '09:00:00', '11:00:00', 30)")
+    ->execute([$lwJeddah, $availDay]);
 $availNow = legal_journey_lawyers_for_specialty($pdo, $catId, ['available_only' => true]);
 $availIds = array_column($availNow, 'id');
 check('available_only keeps the lawyer who published hours', in_array($lwJeddah, $availIds));
