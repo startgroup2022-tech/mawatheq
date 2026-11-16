@@ -18,6 +18,7 @@ import '../../shared/widgets/home_slides.dart';
 import '../assistant/assistant_screen.dart';
 import '../consultations/consultations_screen.dart';
 import '../consultations/journey_screen.dart';
+import '../library/library_screen.dart';
 import '../notifications/notifications_screen.dart';
 
 /// The home screen, identical for a guest and a signed-in customer.
@@ -339,6 +340,13 @@ class _HomeTabState extends State<HomeTab> {
         );
       case _ServiceAction.lawyers:
         _openLawyers();
+      case _ServiceAction.library:
+        // Public legal content: openable by a guest, no sign-in prompt.
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => LegalLibraryScreen(repository: widget.repository),
+          ),
+        );
       case _ServiceAction.cases:
         if (!signedIn) {
           requireAccount(context, ProtectedDestination.cases);
@@ -593,6 +601,7 @@ class _SpecialtyCard extends StatelessWidget {
 enum _ServiceAction {
   consultations,
   lawyers,
+  library,
   cases,
   documents,
   notifications,
@@ -627,6 +636,12 @@ class _ServicesSection extends StatelessWidget {
         'دليل المحامين',
         'Lawyer directory',
         _ServiceAction.lawyers,
+      ),
+      (
+        Icons.menu_book_outlined,
+        'المكتبة القانونية والقضائية',
+        'Legal & judicial library',
+        _ServiceAction.library,
       ),
       (
         Icons.auto_awesome_outlined,
@@ -715,8 +730,13 @@ class _ServicesSection extends StatelessWidget {
                             ),
                           ),
                         ),
+                      // A lock marks what needs an account, so the visitor knows
+                      // before tapping rather than being surprised by a prompt. The
+                      // library is public content, so it never shows one.
                       Icon(
-                        signedIn ? Icons.chevron_left : Icons.lock_outline,
+                        (signedIn || s.$4 == _ServiceAction.library)
+                            ? Icons.chevron_left
+                            : Icons.lock_outline,
                         size: signedIn ? 18 : 16,
                         color: context.tokens.textSubtle,
                       ),

@@ -692,6 +692,290 @@ class HomeBanner {
   }
 }
 
+/// A source in the legal & judicial library (`GET /api/v1/legal-library.php?action=home`).
+///
+/// `redistribution` is the load-bearing field: `hosted` means the platform may store
+/// and show the text; `link_only` means only metadata and the official URL are kept.
+/// The app never assembles a download of a `link_only` item itself — it opens the
+/// server-provided `download_url`.
+class LegalLibrarySource {
+  const LegalLibrarySource({
+    required this.key,
+    required this.nameAr,
+    required this.nameEn,
+    this.publisherAr = '',
+    this.publisherEn = '',
+    this.itemCount = 0,
+    this.redistribution = 'link_only',
+  });
+
+  final String key;
+  final String nameAr;
+  final String nameEn;
+  final String publisherAr;
+  final String publisherEn;
+  final int itemCount;
+  final String redistribution;
+
+  bool get isHosted => redistribution == 'hosted';
+
+  String name(bool isRtl) => isRtl ? nameAr : (nameEn.isEmpty ? nameAr : nameEn);
+  String publisher(bool isRtl) =>
+      isRtl ? publisherAr : (publisherEn.isEmpty ? publisherAr : publisherEn);
+
+  factory LegalLibrarySource.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return LegalLibrarySource(
+      key: j.str('key', fallback: j.str('source_key')),
+      nameAr: j.str('name_ar'),
+      nameEn: j.str('name_en'),
+      publisherAr: j.str('publisher_ar'),
+      publisherEn: j.str('publisher_en'),
+      itemCount: j.intg('item_count'),
+      redistribution: j.str('redistribution', fallback: 'link_only'),
+    );
+  }
+}
+
+/// One item from the library (`action=search` / `action=item`).
+class LegalLibraryItem {
+  const LegalLibraryItem({
+    required this.id,
+    required this.type,
+    required this.typeLabel,
+    required this.title,
+    this.summary = '',
+    this.courtName = '',
+    this.city = '',
+    this.caseNumber = '',
+    this.decisionNumber = '',
+    this.hijriYear,
+    this.gregorianYear,
+    this.decisionDate = '',
+    this.category = '',
+    this.sourceKey = '',
+    this.sourceName = '',
+    this.publisher = '',
+    this.sourceUrl,
+    this.fileUrl,
+    this.fileType = '',
+    this.fileSizeKb,
+    this.canReadHere = false,
+    this.canDownload = false,
+    this.downloadUrl,
+    this.downloadIsExternal = false,
+    this.redistribution = 'link_only',
+    this.body,
+    this.isFavorite = false,
+  });
+
+  final int id;
+  final String type;
+  final String typeLabel;
+  final String title;
+  final String summary;
+  final String courtName;
+  final String city;
+  final String caseNumber;
+  final String decisionNumber;
+  final int? hijriYear;
+  final int? gregorianYear;
+  final String decisionDate;
+  final String category;
+  final String sourceKey;
+  final String sourceName;
+  final String publisher;
+  final String? sourceUrl;
+  final String? fileUrl;
+  final String fileType;
+  final int? fileSizeKb;
+  final bool canReadHere;
+  final bool canDownload;
+  final String? downloadUrl;
+  final bool downloadIsExternal;
+  final String redistribution;
+
+  /// Present only for a hosted source and only on the item action.
+  final String? body;
+  final bool isFavorite;
+
+  factory LegalLibraryItem.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    int? nullableInt(String key) {
+      final v = map[key];
+      if (v == null) return null;
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      return int.tryParse(v.toString());
+    }
+
+    final body = j.str('body');
+    final downloadUrl = j.str('download_url');
+    final sourceUrl = j.str('source_url');
+    final fileUrl = j.str('file_url');
+    return LegalLibraryItem(
+      id: j.intg('id'),
+      type: j.str('type', fallback: j.str('item_type')),
+      typeLabel: j.str('type_label'),
+      title: j.str('title'),
+      summary: j.str('summary'),
+      courtName: j.str('court_name'),
+      city: j.str('city'),
+      caseNumber: j.str('case_number'),
+      decisionNumber: j.str('decision_number'),
+      hijriYear: nullableInt('hijri_year'),
+      gregorianYear: nullableInt('gregorian_year'),
+      decisionDate: j.str('decision_date'),
+      category: j.str('category'),
+      sourceKey: j.str('source_key'),
+      sourceName: j.str('source_name'),
+      publisher: j.str('publisher'),
+      sourceUrl: sourceUrl.isEmpty ? null : sourceUrl,
+      fileUrl: fileUrl.isEmpty ? null : fileUrl,
+      fileType: j.str('file_type'),
+      fileSizeKb: nullableInt('file_size_kb'),
+      canReadHere: j.boolean('can_read_here'),
+      canDownload: j.boolean('can_download'),
+      downloadUrl: downloadUrl.isEmpty ? null : downloadUrl,
+      downloadIsExternal: j.boolean('download_is_external'),
+      redistribution: j.str('redistribution', fallback: 'link_only'),
+      body: body.isEmpty ? null : body,
+      isFavorite: j.boolean('is_favorite'),
+    );
+  }
+}
+
+/// The library hub payload (`action=home`).
+class LegalLibraryHome {
+  const LegalLibraryHome({
+    required this.total,
+    required this.enabledSources,
+    required this.sources,
+    required this.types,
+    required this.latest,
+  });
+
+  final int total;
+  final int enabledSources;
+  final List<LegalLibrarySource> sources;
+  final List<LegalLibraryType> types;
+  final List<LegalLibraryItem> latest;
+
+  factory LegalLibraryHome.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return LegalLibraryHome(
+      total: j.intg('total'),
+      enabledSources: j.intg('enabled_sources'),
+      sources: j
+          .list('sources')
+          .map((e) => LegalLibrarySource.fromJson(e.raw))
+          .toList(),
+      types: j.list('types').map((e) => LegalLibraryType.fromJson(e.raw)).toList(),
+      latest: j
+          .list('latest')
+          .map((e) => LegalLibraryItem.fromJson({
+                'id': e.raw['id'],
+                'title': e.raw['title'],
+                'type': '',
+                'type_label': '',
+              }))
+          .toList(),
+    );
+  }
+}
+
+/// A content type with its count (`action=home` → `types`).
+class LegalLibraryType {
+  const LegalLibraryType({
+    required this.key,
+    required this.nameAr,
+    required this.nameEn,
+    this.count = 0,
+  });
+
+  final String key;
+  final String nameAr;
+  final String nameEn;
+  final int count;
+
+  String name(bool isRtl) => isRtl ? nameAr : (nameEn.isEmpty ? nameAr : nameEn);
+
+  factory LegalLibraryType.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return LegalLibraryType(
+      key: j.str('key'),
+      nameAr: j.str('name_ar'),
+      nameEn: j.str('name_en'),
+      count: j.intg('count'),
+    );
+  }
+}
+
+/// A page of search results (`action=search`).
+class LegalLibraryPage {
+  const LegalLibraryPage({
+    required this.total,
+    required this.page,
+    required this.pages,
+    required this.perPage,
+    required this.items,
+  });
+
+  final int total;
+  final int page;
+  final int pages;
+  final int perPage;
+  final List<LegalLibraryItem> items;
+
+  factory LegalLibraryPage.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return LegalLibraryPage(
+      total: j.intg('total'),
+      page: j.intg('page', fallback: 1),
+      pages: j.intg('pages'),
+      perPage: j.intg('per_page', fallback: 20),
+      items: j
+          .list('items')
+          .map((e) => LegalLibraryItem.fromJson(e.raw))
+          .toList(),
+    );
+  }
+}
+
+/// The filter vocabulary, from the data actually imported (`action=facets`).
+class LegalLibraryFacets {
+  const LegalLibraryFacets({
+    this.sources = const [],
+    this.courts = const [],
+    this.cities = const [],
+    this.years = const [],
+    this.categories = const [],
+    this.types = const [],
+  });
+
+  final List<LegalLibrarySource> sources;
+  final List<String> courts;
+  final List<String> cities;
+  final List<int> years;
+  final List<String> categories;
+  final List<String> types;
+
+  factory LegalLibraryFacets.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return LegalLibraryFacets(
+      sources: j.list('sources').map((e) => LegalLibrarySource.fromJson(e.raw)).toList(),
+      courts: j.strList('courts'),
+      cities: j.strList('cities'),
+      years: (map['years'] as List? ?? const [])
+          .map((e) => e is int ? e : int.tryParse('$e') ?? 0)
+          .where((e) => e > 0)
+          .toList(),
+      categories: j.strList('categories'),
+      types: j.strList('types'),
+    );
+  }
+}
+
 /// The real assistant availability from `GET /api/v1/ai-status.php`.
 ///
 /// Used instead of a permanently green indicator: the home screen reflects what

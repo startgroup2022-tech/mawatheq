@@ -4295,3 +4295,66 @@ pushes this screen instead of deleting inline.
   while passing standalone (the documented seed password is not always what the DB holds).
 - `apps/mobile/test/exec73_account_deletion_test.dart` — 3 widget tests.
 - `tests/e2e/exec73-account-deletion.spec.js` — 42 browser tests (7 × 6 viewports).
+
+## Execution 74 — the legal & judicial library
+
+### `redistribution` is the load-bearing column, and one function enforces it
+
+`legal_library_sources.redistribution` is `link_only` | `hosted` | `unknown`, and it decides
+what may leave the platform. The rule lives in **one** function,
+`legal_library_public_item()` (`includes/legal_library.php`), which every reader passes
+through — the public pages, `api/v1/legal-library.php`, and the admin preview. It returns the
+`body` **only** for a `hosted` source, and it produces a `/legal-library-file.php` download URL
+only for `hosted`; a `link_only` source yields its official `file_url` with
+`download_is_external = true`.
+
+Never re-derive this in a page. A second `if ($redistribution === 'hosted')` in a template is
+exactly how a source's terms get violated. The regression test seeds a `link_only` row whose
+`body` column **holds text** and asserts the API returns `body: null` — the point being that
+the column can contain a value the reader must still not see.
+
+### The file route refuses everything except a hosted row with a real file
+
+`legal-library-file.php` mirrors `download-document.php`: it reads only an integer id, requires
+`redistribution = 'hosted'` **and** a non-empty `hosted_path`, resolves the path with
+`realpath()` and requires it under `LEGAL_LIBRARY_DIR` with a 40-hex filename and a known
+extension (`pdf`/`txt`), and 404s otherwise. The extension allow-list is explicit, not "anything
+that is not executable". A `link_only` id 404s by design.
+
+### The hub and search pages need their own stylesheet, and it was missing
+
+`legal-library.php` and `legal-library-search.php` render `.ll-*` classes from
+`assets/css/legal-library.css`. Both pages were shipped **without** loading it, so they rendered
+unstyled while every HTTP check still passed (a status code cannot see a missing `<link>`).
+Fixed by setting `$pageStyles = ['/assets/css/legal-library.css']` **before**
+`require_once includes/header.php`; `exec74_legal_library_test.php` now asserts the `<link>`
+is present on both pages. This is the same class of defect as a 200-with-blank-body: the
+regression check has to look at the bytes, not the status.
+
+### The migration is idempotent because `external_id` is unique
+
+`legal_library_items` has `UNIQUE(source_id, external_id)`, and `legal_library_upsert_item()`
+updates in place. Verified by running `cron/legal-library-sync.php` twice: the second run
+reported `updated` and inserted nothing new. Do not add an importer that inserts without the
+unique key — a re-sync would duplicate the whole catalogue.
+
+### Two sources are seeded disabled, and that is honest
+
+`bog_open_data` and `bog_almusaid` are created with `is_enabled = 0` and `redistribution =
+'unknown'` because the Court of Grievances endpoints are not reachable from the sandbox (one
+is network-blocked, the other needs SSO). They stay visible in `admin/legal-library.php` with
+an explicit state rather than being silently absent, so an operator can tell "disabled" from
+"sync failed". Do not enable them without a real probe.
+
+### Test conventions
+
+- `tests/exec74_legal_library_test.php` — 48 checks, seeds its own source + items under a random
+  suffix and deletes them in cleanup. It also writes a real 40-hex `hosted_path` file so the
+  download route is exercised on its **success** path, not only its refusals, and removes it in
+  cleanup. `legal_library_items.source_url` is `NOT NULL DEFAULT ''`, so a seed row must pass
+  `''` (not `null`) for it.
+- `apps/mobile/test/exec74_legal_library_test.dart` — 10 tests (3 model-parse, 3 repository,
+  4 widget) against a fake transport that returns the endpoint's real shapes.
+- `tests/e2e/exec74-legal-library.spec.js` — 8 tests × 6 viewports = 48.
+- Flutter app version bumped to `1.8.6+24`; `AppConfig.appVersion` must match `pubspec.yaml`
+  (`exec52_app_version_test.dart` enforces it).

@@ -57,6 +57,7 @@ $adminNavGroups = [
         'articles' => ['i' => 'book', 'ar' => 'مركز المعرفة', 'en' => 'Articles', 'href' => '/admin/articles.php'],
         'banners' => ['i' => 'image', 'ar' => 'بانرات الصفحة الرئيسية', 'en' => 'Home banners', 'href' => '/admin/banners.php'],
         'laws' => ['i' => 'landmark', 'ar' => 'مكتبة الأنظمة', 'en' => 'Law library', 'href' => '/admin/laws.php'],
+        'legal-library' => ['i' => 'book', 'ar' => 'المكتبة القانونية والقضائية', 'en' => 'Legal library', 'href' => '/admin/legal-library.php'],
     ]],
     ['t' => adm('الدعم', 'Support'), 'items' => [
         'support-tickets' => ['i' => 'inbox', 'ar' => 'تذاكر الدعم', 'en' => 'Support tickets', 'href' => '/admin/support-tickets.php'],

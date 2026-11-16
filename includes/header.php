@@ -94,6 +94,7 @@ foreach (($pageStyles ?? []) as $pageStyle) {
       <a href="/#legal-ai"><?= t('nav_legal_ai') ?></a>
       <a href="/#mobile"><?= t('nav_mobile') ?></a>
       <a href="/#how"><?= t('nav_how') ?></a>
+      <a href="/legal-library.php"><?= is_rtl() ? 'المكتبة القانونية' : 'Legal library' ?></a>
       <a href="/#pricing"><?= t('nav_pricing') ?></a>
       <a href="/#faq"><?= t('nav_faq') ?></a>
     </nav>

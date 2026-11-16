@@ -71,6 +71,7 @@ if (!function_exists('nav_client')) {
                 'title' => $rtl ? 'المعرفة' : 'Knowledge',
                 'items' => [
                     'laws' => ['icon' => 'book', 'label' => $rtl ? 'مكتبة الأنظمة' : 'Laws library', 'href' => '/laws.php'],
+                    'legal-library' => ['icon' => 'landmark', 'label' => $rtl ? 'المكتبة القانونية والقضائية' : 'Legal & judicial library', 'href' => '/legal-library.php'],
                 ],
             ],
             [
@@ -110,6 +111,7 @@ if (!function_exists('nav_lawyer')) {
                     'calendar'      => ['icon' => 'clock', 'label' => $rtl ? 'التقويم والجلسات' : 'Calendar & sessions', 'href' => '/lawyer/calendar.php'],
                     'contact-requests' => ['icon' => 'inbox', 'label' => $rtl ? 'طلبات التواصل' : 'Contact requests', 'href' => '/lawyer/contact-requests.php'],
                     'specialties'   => ['icon' => 'check-circle', 'label' => $rtl ? 'تخصصاتي' : 'My specialties', 'href' => '/lawyer/specialties.php'],
+                    'legal-library' => ['icon' => 'landmark', 'label' => $rtl ? 'المكتبة القانونية والقضائية' : 'Legal & judicial library', 'href' => '/legal-library.php'],
                 ],
             ],
             [

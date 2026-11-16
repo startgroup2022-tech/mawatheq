@@ -432,6 +432,83 @@ class ApiRepository {
     return JourneyFilterOptions.fromJson(json);
   }
 
+  // ------------------------------------------------------ legal library
+
+  /// `GET /api/v1/legal-library.php?action=home` — public.
+  Future<LegalLibraryHome> legalLibraryHome() async {
+    final json = await _client.get(
+      '/legal-library.php',
+      auth: false,
+      query: {'action': 'home'},
+    );
+    return LegalLibraryHome.fromJson(json);
+  }
+
+  /// `GET /api/v1/legal-library.php?action=search` — public.
+  ///
+  /// [filters] keys map 1:1 to the endpoint's query parameters (q, type, source,
+  /// court, city, category, file_type, year). Empty values are dropped.
+  Future<LegalLibraryPage> legalLibrarySearch({
+    Map<String, String> filters = const {},
+    int page = 1,
+    int perPage = 20,
+  }) async {
+    final query = <String, dynamic>{'action': 'search', 'page': page, 'per_page': perPage};
+    filters.forEach((k, v) {
+      if (v.trim().isNotEmpty) query[k] = v.trim();
+    });
+    final json = await _client.get('/legal-library.php', auth: false, query: query);
+    return LegalLibraryPage.fromJson(json);
+  }
+
+  /// `GET /api/v1/legal-library.php?action=item&id=N` — public.
+  ///
+  /// The returned item carries `body` only when the source permits reading it in
+  /// the platform; a `link_only` source returns metadata and its official URL.
+  Future<LegalLibraryItem> legalLibraryItem(int id) async {
+    final json = await _client.get(
+      '/legal-library.php',
+      auth: false,
+      query: {'action': 'item', 'id': id},
+    );
+    final item = json['item'];
+    if (item is Map) return LegalLibraryItem.fromJson(Map<String, dynamic>.from(item));
+    return const LegalLibraryItem(id: 0, type: '', typeLabel: '', title: '');
+  }
+
+  /// `GET /api/v1/legal-library.php?action=facets` — public.
+  Future<LegalLibraryFacets> legalLibraryFacets() async {
+    final json = await _client.get(
+      '/legal-library.php',
+      auth: false,
+      query: {'action': 'facets'},
+    );
+    return LegalLibraryFacets.fromJson(json);
+  }
+
+  /// `GET /api/v1/legal-library.php?action=favorites` — needs a token.
+  Future<List<LegalLibraryItem>> legalLibraryFavorites() async {
+    final json = await _client.get(
+      '/legal-library.php',
+      query: {'action': 'favorites'},
+    );
+    return (json['items'] as List? ?? const [])
+        .whereType<Map>()
+        .map((e) => LegalLibraryItem.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  /// `POST /api/v1/legal-library.php { action: 'favorite', item_id }` — needs a token.
+  ///
+  /// Returns the new saved state, so the UI reflects the server rather than a guess.
+  Future<bool> legalLibraryToggleFavorite(int itemId) async {
+    final json = await _client.post(
+      '/legal-library.php?action=favorite',
+      body: {'action': 'favorite', 'item_id': itemId},
+    );
+    return json['saved'] == true;
+  }
+
   // ------------------------------------------------------------ lawyers
 
   /// Public directory — no token required.

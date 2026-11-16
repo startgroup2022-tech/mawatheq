@@ -65,6 +65,17 @@ $topbarInitial = $userName !== '' ? mb_substr($userName, 0, 1, 'UTF-8') : '؟';
 <link rel="stylesheet" href="<?= asset_url('/assets/css/app.css') ?>">
 <link rel="stylesheet" href="<?= asset_url('/assets/css/enterprise.css') ?>">
 <link rel="stylesheet" href="<?= asset_url('/assets/css/dashboard.css') ?>">
+<?php
+// Page-specific stylesheets. A page sets $pageStyles before including this header.
+// Only same-origin asset paths are emitted, so a variable cannot inject an off-site
+// stylesheet or break out of the attribute (same rule as the public header).
+foreach (($pageStyles ?? []) as $pageStyle) {
+    $href = is_string($pageStyle) ? $pageStyle : (string)($pageStyle['href'] ?? '');
+    if ($href === '') continue;
+    if (!preg_match('#^/assets/[A-Za-z0-9._/-]+\.css$#', $href)) continue;
+    echo '<link rel="stylesheet" href="' . htmlspecialchars($href, ENT_QUOTES) . '">' . "\n";
+}
+?>
 </head>
 <body class="app-body">
 <a class="skip-link" href="#main-content"><?= is_rtl() ? 'تخطَّ إلى المحتوى' : 'Skip to content' ?></a>

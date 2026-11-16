@@ -40,6 +40,10 @@ define('MAX_UPLOAD_SIZE_MB', 15);
 define('UPLOAD_DIR', __DIR__ . '/../uploads/documents/');
 define('EVIDENCE_UPLOAD_DIR', __DIR__ . '/../uploads/evidence/');
 define('LAWYER_PHOTO_DIR', __DIR__ . '/../uploads/lawyer-photos/');
+// Legal-library hosted files (Execution 74). Only used for a source whose
+// redistribution decision is `hosted`; a `link_only` source never writes here and
+// its download button points at the official URL instead.
+define('LEGAL_LIBRARY_DIR', __DIR__ . '/../uploads/legal-library/');
 
 error_reporting(E_ALL);
 ini_set('display_errors', '0');

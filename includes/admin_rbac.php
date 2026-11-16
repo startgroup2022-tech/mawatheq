@@ -30,6 +30,10 @@ function admin_route_roles(): array {
         'articles.php' => ['super_admin', 'editor'], 
         'banners.php' => ['super_admin', 'editor'],
         'laws.php' => ['super_admin', 'editor'],
+        // Legal & judicial library (Execution 74). Reading the catalogue and running
+        // a sync is an editor task; the source redistribution policy is set by the
+        // migration, not by this console, so `editor` is safe here.
+        'legal-library.php' => ['super_admin', 'editor'],
         'classification.php' => ['super_admin', 'editor'],
         'ai-knowledge.php' => ['super_admin', 'editor'],
         'ai-orchestration.php' => ['super_admin'],
