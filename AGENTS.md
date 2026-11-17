@@ -4582,3 +4582,62 @@ A rejected credential or outlet cannot be fixed by pressing Pay again, so offeri
 dead end; a transport failure (no HTTP response) stays transient. `exec64` section 5 drives a
 rejected outlet through the real curl path and asserts the diagnostic row records `outletNotAvailable`,
 not `order_failed`.
+
+## Execution 68 — running the real MOJ import (library content)
+
+The library ships **empty** and stays empty until an operator runs the real import. On the
+preview database it is populated from the live Ministry of Justice gateway, never a demo seeder.
+
+### Two switches gate whether text is stored at all
+
+`legal_library_capture_body()` returns true only when `MAWATHEQ_LL_CAPTURE_BODY=1`, **and**
+`legal_library_public_item()` exposes a body only when the source row's `redistribution` is
+`hosted`. Both must hold, or you get metadata-only rows and the reader shows a link, not text.
+`moj_decisions` ships as `link_only`; setting it to `hosted` is an operator licensing decision
+(the MOJ portal publishes the rulings for public reading). Set it only where you mean to:
+
+```bash
+sudo mariadb mawatheq_test -e "UPDATE legal_library_sources SET redistribution='hosted' WHERE source_key='moj_decisions';"
+MAWATHEQ_LL_CAPTURE_BODY=1 php cron/legal-library-sync.php --source=moj_decisions --max-pages=40 --enrich=20
+```
+
+The catalogue walk is windowed by month partition and resumable via `sync_cursor`; the detail
+fetch (which is what stores `body`) is capped by `--enrich=N` and rate-limited by the WAF, so a
+full-catalogue run is many passes. `legal_library_enrich_moj_details(..., ['refetch' => true])`
+re-fetches items that were imported before capture was on.
+
+### The source publishes one ruling field, not three
+
+The MOJ `get-details` response carries the entire decision in `judgmentTextofRulling`
+(observed 3 KB–46 KB). `judgmentFacts` / `judgmentReasons` / `judgmentRuling` are **empty for
+these judgements** — facts and reasons are inside the ruling text, not separate fields. So
+`judgment_facts` / `judgment_reasons` columns being NULL is the source's shape, not a mapper
+bug. Do not synthesise them. `judgmentNarrationList` is likewise an empty array.
+
+### Real titles are the court's own, and `title_is_derived` marks the exceptions
+
+A real judgement's title is `القضية رقم <number> لعام <year>هـ` with `title_is_derived = 0`.
+A row whose title is a placeholder (`--` upstream) is derived from its number and flagged
+`title_is_derived = 1`. Keep the flag when filtering "real" rows.
+
+### Removing demo rows: there are none to remove, and that is checkable
+
+`tests/exec74_legal_library_test.php` inserts fixture rows (`exec74_hosted`, `exec68_src`) into
+`legal_library_items` and rolls back, so it leaves no residue. The library UI never invents
+rows — `legal_library_public_item()` renders only what the source tables hold. Verify emptiness
+by row count, not by looking: `SELECT source_key, COUNT(*) FROM legal_library_items GROUP BY
+source_key;`. On a real import the only key present is `moj_decisions`.
+
+### The Arabic typeface is Cairo + IBM Plex Sans Arabic — there is no Tajawal
+
+`includes/header.php` loads Cairo (headings, `--serif`) and IBM Plex Sans Arabic (body,
+`--body-font`) from Google Fonts. `grep -r Tajawal` across the tree returns nothing. If a brief
+asks for Tajawal, that is a font *change*, not a bug to fix.
+
+### Screenshots for review
+
+`tools/exec68_library_shots.js` renders the hub, search and a detail page at 1440×900 and
+390×844 @2x into `docs/screenshots/exec68/`. Run it with the site on `127.0.0.1:12000`:
+`node tools/exec68_library_shots.js /tmp/out`. Compress before committing (`pngquant
+--quality=65-90`) — full-page Arabic PNGs are multi-MB each and a 10 MB commit is not
+reviewable.
