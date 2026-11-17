@@ -1,44 +1,19 @@
-[
-  {
-    "file": "/tmp/exec68_shots/library-hub-desktop.png",
-    "vp": "desktop",
-    "name": "hub",
-    "h1": "المكتبة القانونية والقضائية",
-    "size": 441945
-  },
-  {
-    "file": "/tmp/exec68_shots/library-search-desktop.png",
-    "vp": "desktop",
-    "name": "search",
-    "h1": "البحث في المكتبة القانونية",
-    "size": 730989
-  },
-  {
-    "file": "/tmp/exec68_shots/library-detail-desktop.png",
-    "vp": "desktop",
-    "name": "detail",
-    "h1": "القضية رقم 4772839287 لعام 1448هـ",
-    "size": 1625617
-  },
-  {
-    "file": "/tmp/exec68_shots/library-hub-mobile.png",
-    "vp": "mobile",
-    "name": "hub",
-    "h1": "المكتبة القانونية والقضائية",
-    "size": 926604
-  },
-  {
-    "file": "/tmp/exec68_shots/library-search-mobile.png",
-    "vp": "mobile",
-    "name": "search",
-    "h1": "البحث في المكتبة القانونية",
-    "size": 1766162
-  },
-  {
-    "file": "/tmp/exec68_shots/library-detail-mobile.png",
-    "vp": "mobile",
-    "name": "detail",
-    "h1": "القضية رقم 4772839287 لعام 1448هـ",
-    "size": 5351797
-  }
-]
+{
+  "captured_from": "preview DB mawatheq_test, real MOJ import (cron/legal-library-sync.php --source=moj_decisions)",
+  "items_total": 188,
+  "items_with_full_text": 161,
+  "detail_item_id": 8,
+  "detail_decision_number": "4830153001",
+  "detail_court": "المحكمة التجارية",
+  "detail_hijri_date": "1448-02-17",
+  "viewports": { "desktop": "1440x900", "mobile": "390x844 @2x" },
+  "font": "Cairo (headings) + IBM Plex Sans Arabic (body) — no Tajawal in the project",
+  "files": [
+    "library-hub-desktop.png",
+    "library-hub-mobile.png",
+    "library-search-desktop.png",
+    "library-search-mobile.png",
+    "library-detail-desktop.png",
+    "library-detail-mobile.png"
+  ]
+}
