@@ -296,9 +296,14 @@ function legal_library_set_source_enabled(PDO $pdo, string $key, bool $enabled):
  */
 function legal_library_set_source_redistribution(PDO $pdo, string $key, string $redist): bool {
     if (!in_array($redist, ['link_only', 'hosted', 'unknown'], true)) return false;
-    $st = $pdo->prepare('UPDATE legal_library_sources SET redistribution = ? WHERE source_key = ?');
-    $st->execute([$redist, $key]);
-    if ($st->rowCount() === 0) return false;
+    // Confirm the source exists first. `rowCount()` cannot answer this: MySQL reports 0
+    // changed rows when the value is already the target, so selecting the policy a source
+    // already has would otherwise be reported as "invalid policy" — the operator presses
+    // the same choice twice and is told it failed.
+    $exists = $pdo->prepare('SELECT id FROM legal_library_sources WHERE source_key = ?');
+    $exists->execute([$key]);
+    if ($exists->fetchColumn() === false) return false;
+    $pdo->prepare('UPDATE legal_library_sources SET redistribution = ? WHERE source_key = ?')->execute([$redist, $key]);
     $pdo->prepare('UPDATE legal_library_items SET redistribution = ? WHERE source_key = ?')->execute([$redist, $key]);
     return true;
 }

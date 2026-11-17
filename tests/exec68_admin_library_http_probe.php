@@ -56,10 +56,21 @@ preg_match('/name="csrf_token"\s+value="([^"]+)"/', $page, $c);
 $csrf = $c[1] ?? '';
 check('a CSRF token is available on the page', $csrf !== '');
 
+// Read the value the console currently shows so the probe can restore it. An operator
+// legitimately sets moj_decisions to `hosted` to run a real import; a probe that left it
+// on `link_only` would silently hide the full text it had stored. The current value is
+// read from the rendered selector, not the database, because the probe's own config may
+// point at a different database than the server under test.
+$original = null;
+if (preg_match('/<select id="rd-moj_decisions"[^>]*>(.*?)<\/select>/s', $page, $sm)
+    && preg_match('/<option value="([^"]+)"\s+selected/', $sm[1], $om)) {
+    $original = $om[1];
+}
+check('the current redistribution is readable from the console', in_array($original, ['hosted', 'link_only', 'unknown'], true));
+
 // Flip moj_decisions to hosted, then back — both must answer without a 500.
 // The success notice is asserted in the response rather than read back from a
-// database connection: the probe's own config may point at a different database
-// than the server under test, so a DB read would test the wrong store.
+// database connection, for the reason above.
 foreach (['hosted', 'link_only'] as $target) {
     [$code, $body] = req($base . '/admin/legal-library.php', [
         'csrf_token' => $csrf, 'action' => 'redistribution', 'source_key' => 'moj_decisions', 'redistribution' => $target,
@@ -68,6 +79,14 @@ foreach (['hosted', 'link_only'] as $target) {
     check("setting redistribution=$target has no TypeError in the body", stripos($body, 'TypeError') === false);
     check("setting redistribution=$target reports the policy it saved",
         strpos($body, 'تم تحديث سياسة النشر') !== false || stripos($body, 'Redistribution policy set to') !== false);
+}
+
+// Restore whatever the operator had configured before the probe ran.
+if ($original !== null) {
+    [$code, $body] = req($base . '/admin/legal-library.php', [
+        'csrf_token' => $csrf, 'action' => 'redistribution', 'source_key' => 'moj_decisions', 'redistribution' => $original,
+    ]);
+    check("the original redistribution ($original) is restored", $code === 200);
 }
 
 echo "\n$checks checks, $failures failure(s)\n";
