@@ -34,7 +34,7 @@ function check(string $label, bool $condition): void {
 /* --------------------------------------------------- 1. the message helper ---- */
 echo "\n== 1. a permanent fault does not invite a retry ==\n";
 
-$permanent = ['unsupported_currency', 'no_enabled_gateway', 'gateway_disabled', 'migration_required', 'zero_amount'];
+$permanent = ['unsupported_currency', 'no_enabled_gateway', 'gateway_disabled', 'migration_required', 'zero_amount', 'badTokenRequest', 'realmNameNotAvailable', 'outletNotAvailable'];
 foreach ($permanent as $code) {
     $msg = gateway_diag_customer_message($code, 'ABCD1234', true);
     check("$code: says no amount was charged", strpos($msg, 'لم يتم خصم') !== false);
@@ -60,6 +60,16 @@ echo "\n== 2. every payment entry page routes through the helper ==\n";
 foreach (['checkout.php', 'pay-invoice.php', 'booking.php'] as $file) {
     $src = file_get_contents(__DIR__ . '/../' . $file);
     check("$file references gateway_diag_customer_message()", strpos($src, 'gateway_diag_customer_message') !== false);
+}
+
+/* ------------------------------- 2b. a rejected credential is permanent ---- */
+echo "\n== 2b. the gateway's own error code is classified ==\n";
+// The token helper must carry the gateway's own reason so a rejected credential can be
+// classified as a permanent fault. The code itself is asserted against the fixture in
+// exec64; here the classification of the known reasons is pinned.
+foreach (['badTokenRequest', 'realmNameNotAvailable'] as $code) {
+    $msg = gateway_diag_customer_message($code, 'ABCD1234', true);
+    check("$code: classified as permanent (no retry offered)", strpos($msg, 'المحاولة مجدداً') === false);
 }
 
 /* ------------------------------------------ 3. the booking page answers 200 ---- */

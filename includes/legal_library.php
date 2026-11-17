@@ -284,6 +284,25 @@ function legal_library_set_source_enabled(PDO $pdo, string $key, bool $enabled):
     return $st->rowCount() > 0;
 }
 
+/**
+ * Set a source's redistribution decision. This is the operator's licensing call:
+ * `link_only` keeps metadata and the official link, `hosted` allows the source's
+ * own text to be stored and read inside Mawatheq, `unknown` parks the source
+ * pending a terms review. Only these three values are accepted — anything else is
+ * refused rather than written, so a malformed request cannot invent a policy.
+ *
+ * Existing items are re-stamped so the change takes effect immediately for rows
+ * already imported (the read gate checks the item's own `redistribution`).
+ */
+function legal_library_set_source_redistribution(PDO $pdo, string $key, string $redist): bool {
+    if (!in_array($redist, ['link_only', 'hosted', 'unknown'], true)) return false;
+    $st = $pdo->prepare('UPDATE legal_library_sources SET redistribution = ? WHERE source_key = ?');
+    $st->execute([$redist, $key]);
+    if ($st->rowCount() === 0) return false;
+    $pdo->prepare('UPDATE legal_library_items SET redistribution = ? WHERE source_key = ?')->execute([$redist, $key]);
+    return true;
+}
+
 /* ---------------------------------------------------------------------------
  * Upsert + runs
  * ------------------------------------------------------------------------- */
@@ -644,13 +663,20 @@ function legal_library_import_moj_decisions(PDO $pdo, array $source, array $opts
 function legal_library_enrich_moj_details(PDO $pdo, array $source, array $opts = []): array {
     $limit  = max(1, (int)($opts['limit'] ?? 10));
     $pauseMs = (int)($opts['pause_ms'] ?? 4000);
+    // A source switched to `hosted` may already hold rows that were fetched while it
+    // was `link_only`, so their detail timestamp is set but the text was never kept.
+    // `refetch` re-visits those rows so the newly permitted text is captured.
+    $refetch = !empty($opts['refetch']);
     $headers = ['Origin: https://laws.moj.gov.sa', 'Referer: https://laws.moj.gov.sa/'];
     $counts = ['seen' => 0, 'enriched' => 0, 'blocked' => 0, 'failed' => 0];
 
+    $where = $refetch
+        ? "source_key = ? AND (detail_fetched_at IS NULL OR (body IS NULL AND judgment_ruling IS NULL))"
+        : "source_key = ? AND detail_fetched_at IS NULL";
     $st = $pdo->prepare(
         "SELECT id, external_id, decision_number, court_name, city, hijri_year, decision_date, source_url
            FROM legal_library_items
-          WHERE source_key = ? AND detail_fetched_at IS NULL
+          WHERE $where
           ORDER BY decision_date DESC, id DESC
           LIMIT " . (int)$limit
     );

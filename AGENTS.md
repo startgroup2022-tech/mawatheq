@@ -4522,3 +4522,63 @@ so re-running is always safe and always resumes.
 It means "this row's title is an honest description built from the official fields". It is `0` for a
 row whose title came from the source's own `title` or `decisionTitle`, which is why a row titled
 `القضية رقم … لعام …هـ` carries `title_is_derived = 0` — that is the source's field, not our prose.
+
+## Execution 68 — library redistribution control, blank-200 admin actions, N-Genius fault class
+
+### The legal-library admin actions rendered a blank 200 (fixed)
+
+`admin/legal-library.php` called `log_action($pdo, '...', 'legal_library_sources', $sourceKey, $extra)`
+— five arguments with a **string** source key. `log_action()` is
+`(PDO, string, ?string, ?int)`, so PHP raised a `TypeError` on the string id, which is fatal. The
+page had already printed `<head>` + sidebar + topbar (no output buffering), so the response was
+**HTTP 200 with a blank content area** — the exact "renders empty but 200" trap in the Gotchas
+section. The toggle/sync/enrich buttons *looked* inert; the underlying write had already happened,
+so the operator could not tell a success from a failure.
+
+The four call sites now pass the source's **numeric** `id` as `target_id` and keep the human detail
+(the source key, the new value, the counts) inside the `action` text. `tests/exec68_admin_library_http_probe.php`
+drives the real page over HTTP and fails on a blank body, a `TypeError`, or a missing success notice.
+**Rule: `log_action()`'s 4th argument is an int id. Put the human-readable detail in the action
+string, never in a 5th argument** — a TypeError there is invisible (200 + blank), not a stack trace.
+
+### Redistribution is a two-part switch; the admin half was missing
+
+`legal_library_capture_body()` (env `MAWATHEQ_LL_CAPTURE_BODY=1`) has always gated whether full text
+is stored, and `legal_library_public_item()` only exposes sections for a `hosted` source. The seed
+ships MOJ as `link_only` and the console had **no way to change it**, so an operator who confirmed
+the MOJ terms in writing still could not turn on text. `legal_library_set_source_redistribution()`
++ a selector in `/admin/legal-library.php` now provide that half (audited). The two halves stay
+deliberately separate — the admin choice records the licensing decision, the env flag is the
+operator's confirmation on the server — and the console shows a warning when a source is `hosted`
+while the env flag is off, so the choice is never silently inert.
+
+### `legal_library_enrich_moj_details(..., ['refetch' => true])`
+
+A source switched to `hosted` already holds rows whose `detail_fetched_at` is set but whose text was
+blanked while it was `link_only`. Plain enrichment skips them (`WHERE detail_fetched_at IS NULL`), so
+they would stay text-less forever. `refetch` widens the predicate to re-visit rows with no body. The
+admin "Enrich text" button passes `refetch` when the source is `hosted`.
+
+### Ten MOJ rows legitimately have no text
+
+A live `get-details` call for those decisions returns `title` = `--` and every `judgment*` field
+`NULL`. The portal itself publishes no ruling text for them, so the library shows metadata + the
+official link. This is the source's own state, not a parser gap — do not "fix" it by inventing text.
+
+### N-Genius: a rejected credential or outlet is a permanent fault
+
+The customer message the owner saw — «تعذّر بدء عملية الدفع الإلكتروني حالياً. لم يتم خصم أي مبلغ.
+يمكنك المحاولة مجدداً…» — is the **transient default** of `gateway_diag_customer_message()`, i.e.
+the failure code was unmapped. Two places produced that:
+
+- The **token** stage collapsed every rejection to `token_failed`. `ngenius_get_access_token()` now
+  carries the gateway's own `errors[0].errorCode` as `code`, and both orchestrators pass it through,
+  so `badTokenRequest` / `realmNameNotAvailable` classify as **permanent** ("contact us", no retry).
+- The **order** stage collapsed every rejection to `order_failed`. `ngenius_create_order()` now
+  returns the gateway's own `code` too (falling back to `http_<status>`), and both orchestrators
+  forward it, so `outletNotAvailable` (a fixed configuration value) is permanent as well.
+
+A rejected credential or outlet cannot be fixed by pressing Pay again, so offering a retry was a
+dead end; a transport failure (no HTTP response) stays transient. `exec64` section 5 drives a
+rejected outlet through the real curl path and asserts the diagnostic row records `outletNotAvailable`,
+not `order_failed`.

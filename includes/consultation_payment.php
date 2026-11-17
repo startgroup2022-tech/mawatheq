@@ -102,7 +102,9 @@ function consultation_payment_start(PDO $pdo, array $consultation, array $option
         $settings['ngenius_environment'], $settings['ngenius_api_key'], $settings['ngenius_realm_name'] ?? ''
     );
     if (empty($tokenResult['ok'])) {
-        return gateway_diag_failure($pdo, 'consultation_payment', 'token', 'token_failed', (string)($tokenResult['error'] ?? ''), $env);
+        $code = (string)($tokenResult['code'] ?? '');
+        if ($code === '' || strpos($code, 'http_') === 0 || $code === 'connection_failed') $code = 'token_failed';
+        return gateway_diag_failure($pdo, 'consultation_payment', 'token', $code, (string)($tokenResult['error'] ?? ''), $env);
     }
 
     $order = ngenius_create_order(
@@ -137,7 +139,11 @@ function consultation_payment_start(PDO $pdo, array $consultation, array $option
     if (empty($order['ok'])) {
         $pdo->prepare("UPDATE consultations SET payment_status='failed' WHERE id=?")
             ->execute([$consultationId]);
-        $fail = gateway_diag_failure($pdo, 'consultation_payment', 'order', 'order_failed', (string)($order['error'] ?? ''), $env);
+        // Keep the gateway's own reason when it gave one, so a configuration fault is not
+        // reported to the customer as a retryable one. A bare HTTP status stays generic.
+        $code = (string)($order['code'] ?? '');
+        if ($code === '' || strpos($code, 'http_') === 0) $code = 'order_failed';
+        $fail = gateway_diag_failure($pdo, 'consultation_payment', 'order', $code, (string)($order['error'] ?? ''), $env);
         return ['ok' => false, 'error' => $fail['error'], 'correlation_id' => $fail['correlation_id'], 'gateway' => 'ngenius'];
     }
 

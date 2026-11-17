@@ -233,9 +233,20 @@
     });
   }
 
+  /* ------------------------------------------------------ autosubmit selects -- */
+  /* A <select data-autosubmit> submits its form on change. Used by the admin
+   * console's inline policy pickers; CSP forbids an inline onchange handler. */
+  function initAutoSubmit() {
+    $$('select[data-autosubmit]').forEach(function (sel) {
+      sel.addEventListener('change', function () {
+        if (sel.form) sel.form.submit();
+      });
+    });
+  }
+
   function boot() {
     initMobileNav(); initSiteNav(); initModals(); initDropdowns();
-    initFormLoading(); initTableSort(); initUploads();
+    initFormLoading(); initTableSort(); initUploads(); initAutoSubmit();
   }
   if (doc.readyState === 'loading') doc.addEventListener('DOMContentLoaded', boot); else boot();
 })();

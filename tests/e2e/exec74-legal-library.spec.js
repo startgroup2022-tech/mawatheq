@@ -24,7 +24,12 @@ test.describe('legal & judicial library (public)', () => {
     const response = await page.goto('/legal-library-search.php');
     expect(response.status()).toBeLessThan(400);
     await expectNoPhpError(page);
-    await expect(page.locator('form')).toHaveCount(1);
+    // The page carries three GET forms — the keyword search, the filter sidebar and the
+    // sort selector — so a bare `form` count would pin the layout rather than the behaviour.
+    // Assert the search form itself and that the filter controls are reachable.
+    await expect(page.locator('form').filter({ has: page.locator('input[name="q"]') })).toHaveCount(1);
+    await expect(page.locator('input[name="q"]')).toHaveCount(1);
+    await expect(page.locator('aside#llFilters select').first()).toBeAttached();
     await expectNoHorizontalOverflow(page);
   });
 

@@ -22,6 +22,14 @@ require_once __DIR__ . '/includes/admin_header.php';
 $notice = null;
 $noticeType = 'success';
 
+// Redistribution labels, defined before the POST handler so it can name the policy it
+// just recorded in its confirmation notice.
+$redistLabelsAll = [
+    'hosted'    => is_rtl() ? 'يُخزَّن النص ويُقرأ هنا' : 'Text stored & read here',
+    'link_only' => is_rtl() ? 'بيانات وصفية ورابط رسمي فقط' : 'Metadata + official link only',
+    'unknown'   => is_rtl() ? 'بانتظار مراجعة الشروط' : 'Pending terms review',
+];
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_is_valid($_POST['csrf_token'] ?? '')) { http_response_code(403); exit('Invalid CSRF token'); }
     $action = (string)($_POST['action'] ?? '');
@@ -32,10 +40,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($src) {
             $new = !((int)$src['is_enabled'] === 1);
             legal_library_set_source_enabled($pdo, $sourceKey, $new);
-            log_action($pdo, 'legal_library_source_toggle', 'legal_library_sources', $sourceKey, $new ? 'enabled' : 'disabled');
+            log_action($pdo, 'legal_library_source_toggle: ' . $sourceKey . ' → ' . ($new ? 'enabled' : 'disabled'), 'legal_library_sources', (int)$src['id']);
             $notice = $new
                 ? (is_rtl() ? 'تم تفعيل المصدر.' : 'Source enabled.')
                 : (is_rtl() ? 'تم تعطيل المصدر.' : 'Source disabled.');
+        }
+    } elseif ($action === 'redistribution') {
+        // The operator's licensing decision for this source. `hosted` permits storing
+        // and reading the source's own text; `link_only` keeps metadata + the official
+        // link. Recorded in the audit log because it changes what the site republishes.
+        $newRedist = (string)($_POST['redistribution'] ?? '');
+        $src = legal_library_source($sourceKey);
+        if ($src && legal_library_set_source_redistribution($pdo, $sourceKey, $newRedist)) {
+            log_action($pdo, 'legal_library_source_redistribution: ' . $sourceKey . ' → ' . $newRedist, 'legal_library_sources', (int)$src['id']);
+            $notice = is_rtl()
+                ? sprintf('تم تحديث سياسة النشر إلى: %s.', $redistLabelsAll[$newRedist] ?? $newRedist)
+                : sprintf('Redistribution policy set to: %s.', $redistLabelsAll[$newRedist] ?? $newRedist);
+        } else {
+            $noticeType = 'error';
+            $notice = is_rtl() ? 'سياسة نشر غير صحيحة.' : 'Invalid redistribution policy.';
         }
     } elseif ($action === 'sync') {
         $src = legal_library_source($sourceKey);
@@ -45,8 +68,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $opts = ['pages' => 2, 'page_size' => 20, 'with_details' => false, 'windowed' => true, 'max_pages' => 3, 'pause_ms' => 3000];
             if ($sourceKey === 'mashortich_books') $opts = [];
             $res = legal_library_sync($pdo, $sourceKey, $opts);
-            log_action($pdo, 'legal_library_sync', 'legal_library_sources', $sourceKey,
-                json_encode(['status' => $res['status'], 'new' => $res['new'] ?? 0, 'updated' => $res['updated'] ?? 0], JSON_UNESCAPED_UNICODE));
+            log_action($pdo, 'legal_library_sync: ' . $sourceKey . ' → '
+                . json_encode(['status' => $res['status'], 'new' => $res['new'] ?? 0, 'updated' => $res['updated'] ?? 0], JSON_UNESCAPED_UNICODE),
+                'legal_library_sources', (int)$src['id']);
             if (($res['status'] ?? 'error') === 'error') {
                 $noticeType = 'error';
                 $notice = (is_rtl() ? 'فشلت المزامنة: ' : 'Sync failed: ') . ($res['error'] ?? '');
@@ -60,11 +84,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Fetch the real detail (title + text) for a bounded batch of catalogue rows
         // that do not have one yet. The list endpoint carries no title, so this is what
         // makes the imported rows readable instead of a bare number-and-court list.
+        // When the source is `hosted`, rows that were fetched while it was `link_only`
+        // (detail timestamp set, no stored text) are re-visited so the now-permitted
+        // text is captured.
         $src = legal_library_source('moj_decisions');
         if ($src) {
-            $r = legal_library_enrich_moj_details($pdo, $src, ['limit' => 8, 'pause_ms' => 3500]);
-            log_action($pdo, 'legal_library_enrich', 'legal_library_sources', 'moj_decisions',
-                json_encode($r, JSON_UNESCAPED_UNICODE));
+            $r = legal_library_enrich_moj_details($pdo, $src, ['limit' => 8, 'pause_ms' => 3500, 'refetch' => $src['redistribution'] === 'hosted']);
+            log_action($pdo, 'legal_library_enrich: moj_decisions → ' . json_encode($r, JSON_UNESCAPED_UNICODE),
+                'legal_library_sources', (int)$src['id']);
             if ($r['enriched'] === 0 && $r['blocked'] > 0) {
                 $noticeType = 'error';
                 $notice = is_rtl()
@@ -100,11 +127,9 @@ $statusLabels = [
     'partial' => is_rtl() ? 'جزئي' : 'Partial',
     'error'   => is_rtl() ? 'فشل' : 'Error',
 ];
-$redistLabels = [
-    'hosted'    => is_rtl() ? 'يُخزَّن النص ويُقرأ هنا' : 'Text stored & read here',
-    'link_only' => is_rtl() ? 'بيانات وصفية ورابط رسمي فقط' : 'Metadata + official link only',
-    'unknown'   => is_rtl() ? 'بانتظار مراجعة الشروط' : 'Pending terms review',
-];
+$redistLabels = $redistLabelsAll;
+$captureOn = legal_library_capture_body();
+$hostedButInert = !$captureOn && (bool)array_filter($sources, fn($s) => $s['redistribution'] === 'hosted');
 $csrf = csrf_token();
 ?>
 <div class="app-content">
@@ -114,6 +139,14 @@ $csrf = csrf_token();
     : 'The library aggregates legal content from official open sources. Each source\'s redistribution decision governs what is stored: full text from sources that publish it for public reading, or metadata and the official link only. No file is copied into Mawatheq without that permission.' ?></p>
 
   <?php if ($notice): ?><div class="form-alert <?= $noticeType === 'error' ? 'error' : 'success' ?>"><?= htmlspecialchars($notice) ?></div><?php endif; ?>
+
+  <?php if ($hostedButInert): ?>
+    <div class="form-alert warning" style="background:#FFF8E6;border-color:#F0DDA8;color:#7A5409">
+      <?= is_rtl()
+        ? 'يوجد مصدر مضبوط على «يُخزَّن النص ويُقرأ هنا» بينما مفتاح الالتقاط معطّل على الخادم، لذا لن يُخزَّن النص فعلياً. أضف MAWATHEQ_LL_CAPTURE_BODY=1 إلى بيئة الموقع (أو متغيّر بيئة cron) ثم أعد الإثراء.'
+        : 'A source is set to “Text stored & read here” but the server capture flag is off, so no text will actually be stored. Add MAWATHEQ_LL_CAPTURE_BODY=1 to the site environment (or the cron environment) and re-run enrichment.' ?>
+    </div>
+  <?php endif; ?>
 
   <div class="stat-grid" style="margin-bottom:18px">
     <div class="dash-card stat-card"><div class="stat-value"><?= number_format($totalItems) ?></div><div class="stat-label"><?= is_rtl() ? 'إجمالي العناصر' : 'Total items' ?></div></div>
@@ -172,6 +205,18 @@ $csrf = csrf_token();
                 <?php if ($s['source_key'] === 'moj_decisions'): ?>
                   <button class="btn btn-outline btn-sm" name="action" value="enrich" type="submit" title="<?= is_rtl() ? 'جلب العنوان والنص الحقيقي لدفعة من العناصر' : 'Fetch the real title/text for a batch of items' ?>"><?= is_rtl() ? 'إثراء النصوص' : 'Enrich text' ?></button>
                 <?php endif; ?>
+              </form>
+              <form method="post" style="display:inline;margin-top:4px">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
+                <input type="hidden" name="source_key" value="<?= htmlspecialchars((string)$s['source_key']) ?>">
+                <input type="hidden" name="action" value="redistribution">
+                <label class="muted-sm" for="rd-<?= htmlspecialchars((string)$s['source_key']) ?>" style="display:block"><?= is_rtl() ? 'سياسة النشر' : 'Redistribution' ?></label>
+                <select id="rd-<?= htmlspecialchars((string)$s['source_key']) ?>" name="redistribution" data-autosubmit style="max-width:220px">
+                  <?php foreach ($redistLabelsAll as $rk => $rl): ?>
+                    <option value="<?= htmlspecialchars($rk) ?>"<?= $s['redistribution'] === $rk ? ' selected' : '' ?>><?= htmlspecialchars($rl) ?></option>
+                  <?php endforeach; ?>
+                </select>
+                <noscript><button class="btn btn-outline btn-sm" type="submit"><?= is_rtl() ? 'حفظ' : 'Save' ?></button></noscript>
               </form>
             </td>
           </tr>

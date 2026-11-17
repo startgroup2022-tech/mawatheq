@@ -102,6 +102,12 @@ function gateway_diag_reason(string $code): array {
                                    'en' => 'The gateway rejected the access-token request — check the API key and the environment (sandbox/live).'],
         'order_failed'         => ['ar' => 'قبلت البوابة المصادقة لكنها رفضت إنشاء الطلب — راجع رقم المنفذ والعملة والمبلغ.',
                                    'en' => 'Authentication succeeded but the gateway rejected the order — check the outlet ref, currency and amount.'],
+        'badTokenRequest'      => ['ar' => 'رفضت البوابة مفتاح الحساب (Service Account API Key) — تحقق من صحته ومن أنه من نفس البيئة.',
+                                   'en' => 'The gateway rejected the Service Account API Key — check the key and that it belongs to this environment.'],
+        'realmNameNotAvailable' => ['ar' => 'رفضت البوابة قيمة realmName — لا تُرسل realmName، فهي تُستخرج من مفتاح الحساب.',
+                                   'en' => 'The gateway rejected the realmName — do not send it; it is derived from the API key.'],
+        'outletNotAvailable'   => ['ar' => 'رفضت البوابة رقم المنفذ (Outlet Reference) — تحقق من أنه صحيح ومن نفس البيئة.',
+                                   'en' => 'The gateway rejected the outlet reference — check it is correct and belongs to this environment.'],
     ];
     return $map[$code] ?? ['ar' => 'سبب غير مصنّف (' . $code . ').', 'en' => 'Unclassified reason (' . $code . ').'];
 }
@@ -205,6 +211,19 @@ function gateway_diag_customer_message(string $errorCode, string $corr = '', boo
         'zero_amount' => $rtl
             ? 'تعذّر بدء عملية الدفع: مبلغ الطلب غير صالح. لم يتم خصم أي مبلغ. تواصل معنا.'
             : 'Payment could not start: the order amount is not valid. No amount was charged. Contact us.',
+        // The gateway rejected our credentials outright. Retrying from the customer's side
+        // can never fix it, so this is permanent: it must not offer a retry loop.
+        'badTokenRequest' => $rtl
+            ? 'الدفع الإلكتروني غير متاح حالياً بسبب خلل في إعداد البوابة. لم يتم خصم أي مبلغ. تواصل معنا لإتمام الاشتراك.'
+            : 'Online payment is unavailable right now due to a gateway configuration fault. No amount was charged. Contact us to complete your subscription.',
+        'realmNameNotAvailable' => $rtl
+            ? 'الدفع الإلكتروني غير متاح حالياً بسبب خلل في إعداد البوابة. لم يتم خصم أي مبلغ. تواصل معنا لإتمام الاشتراك.'
+            : 'Online payment is unavailable right now due to a gateway configuration fault. No amount was charged. Contact us to complete your subscription.',
+        // The outlet reference is a fixed configuration value; a rejection of it is permanent
+        // until an operator corrects it, so it must not offer the customer a retry.
+        'outletNotAvailable' => $rtl
+            ? 'الدفع الإلكتروني غير متاح حالياً بسبب خلل في إعداد البوابة. لم يتم خصم أي مبلغ. تواصل معنا لإتمام الاشتراك.'
+            : 'Online payment is unavailable right now due to a gateway configuration fault. No amount was charged. Contact us to complete your subscription.',
     ];
     $transient = $rtl
         ? 'تعذّر بدء عملية الدفع الإلكتروني حالياً. لم يتم خصم أي مبلغ. يمكنك المحاولة مجدداً أو التواصل معنا.'

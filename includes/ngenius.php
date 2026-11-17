@@ -89,7 +89,8 @@ function ngenius_get_access_token(string $environment, string $apiKey, string $r
     curl_close($ch);
 
     if ($response === false) {
-        return ['ok' => false, 'token' => null, 'error' => 'تعذّر الاتصال ببوابة الدفع: ' . $curlError];
+        return ['ok' => false, 'token' => null, 'code' => 'connection_failed',
+            'error' => 'تعذّر الاتصال ببوابة الدفع: ' . $curlError];
     }
     $data = json_decode($response, true);
     if ($httpCode !== 200 || empty($data['access_token'])) {
@@ -105,6 +106,11 @@ function ngenius_get_access_token(string $environment, string $apiKey, string $r
         error_log('ngenius token failed: HTTP ' . $httpCode . ' detail=' . (string)$detail
             . ' env=' . $environment . ' body=' . substr((string)$response, 0, 300));
         return ['ok' => false, 'token' => null,
+            // `code` carries the gateway's own reason (badTokenRequest, realmNameNotAvailable,
+            // ...) so the caller can classify a rejected credential as a PERMANENT fault and
+            // stop offering the customer a retry that can never succeed. A transport failure
+            // (no HTTP response) is transient and keeps its own code.
+            'code' => $detail !== null ? (string)$detail : ('http_' . $httpCode),
             'error' => 'فشل الحصول على رمز دخول من بوابة الدفع (HTTP ' . $httpCode . ').'
                 . ($detail ? ' [' . $detail . ']' : '') . $hint];
     }
@@ -219,7 +225,11 @@ function ngenius_create_order(
             ?? ('فشل إنشاء طلب الدفع (HTTP ' . $httpCode . ').');
         error_log('ngenius create order failed: HTTP ' . $httpCode . ' detail=' . (string)$detail
             . ' env=' . $environment . ' outlet=' . $outletRef . ' body=' . substr((string)$response, 0, 300));
-        return ['ok' => false, 'order_reference' => null, 'payment_url' => null, 'error' => $msg];
+        // `code` carries the gateway's own reason so the caller can classify a configuration
+        // fault (a wrong outlet, an unsupported currency) as PERMANENT instead of telling the
+        // customer to retry. Falls back to the HTTP status when the gateway named no code.
+        return ['ok' => false, 'order_reference' => null, 'payment_url' => null,
+            'code' => $detail !== null ? (string)$detail : ('http_' . $httpCode), 'error' => $msg];
     }
     return ['ok' => true, 'order_reference' => $data['reference'], 'payment_url' => $paymentHref, 'error' => null];
 }

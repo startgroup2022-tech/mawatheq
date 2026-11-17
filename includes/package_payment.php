@@ -153,7 +153,13 @@ function package_payment_start(PDO $pdo, array $order, array $options = []): arr
     $tokenResult = ngenius_get_access_token(
         $settings['ngenius_environment'], $settings['ngenius_api_key'], $settings['ngenius_realm_name'] ?? ''
     );
-    if (empty($tokenResult['ok'])) return gateway_diag_failure($pdo, 'package_payment', 'token', 'token_failed', (string)($tokenResult['error'] ?? ''), $env);
+    if (empty($tokenResult['ok'])) {
+        // Carry the gateway's own reason (badTokenRequest, realmNameNotAvailable, ...) when it
+        // gave one, so the customer message can classify a rejected credential as permanent.
+        $code = (string)($tokenResult['code'] ?? '');
+        if ($code === '' || strpos($code, 'http_') === 0 || $code === 'connection_failed') $code = 'token_failed';
+        return gateway_diag_failure($pdo, 'package_payment', 'token', $code, (string)($tokenResult['error'] ?? ''), $env);
+    }
 
     $gatewayOrder = ngenius_create_order(
         $settings['ngenius_environment'],
@@ -184,7 +190,12 @@ function package_payment_start(PDO $pdo, array $order, array $options = []): arr
 
     if (empty($gatewayOrder['ok'])) {
         $pdo->prepare("UPDATE package_orders SET status='failed' WHERE id=? AND status='pending'")->execute([$orderId]);
-        $fail = gateway_diag_failure($pdo, 'package_payment', 'order', 'order_failed', (string)($gatewayOrder['error'] ?? ''), $env);
+        // Keep the gateway's own reason when it gave one (a wrong outlet, an unsupported
+        // currency), so the customer is not told to retry a fault that cannot clear. A bare
+        // HTTP status or no code at all stays the generic transient `order_failed`.
+        $code = (string)($gatewayOrder['code'] ?? '');
+        if ($code === '' || strpos($code, 'http_') === 0) $code = 'order_failed';
+        $fail = gateway_diag_failure($pdo, 'package_payment', 'order', $code, (string)($gatewayOrder['error'] ?? ''), $env);
         return ['ok' => false, 'error' => $fail['error'], 'correlation_id' => $fail['correlation_id'], 'gateway' => 'ngenius'];
     }
 
