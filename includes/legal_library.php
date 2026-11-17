@@ -1031,11 +1031,20 @@ function legal_library_search(array $f = [], int $page = 1, int $perPage = 20): 
         // "احمد"/"أحمد" match), then on the raw text as a fallback. The stored
         // original is never modified; normalisation only ever narrows the query to
         // the extra `*_norm` columns. Both terms are parameterised.
+        //
+        // The full ruling text (`body`) is matched too — the search box promises
+        // "the title, the text and the number", and a legal library whose imported
+        // judgments cannot be searched by their own wording is not usable. Body is
+        // matched ONLY for rows the read gate would expose (`redistribution = hosted`);
+        // a `link_only` source's stored prose must not be inferable through a search
+        // hit, exactly as `legal_library_public_item()` refuses to return it. Body has
+        // no normalised column, so it is matched on the raw term.
         $qNorm = legal_library_normalize_ar($q);
-        $where[] = '(i.title_norm LIKE ? OR i.summary_norm LIKE ? OR i.title LIKE ? OR i.summary LIKE ?)';
+        $where[] = '(i.title_norm LIKE ? OR i.summary_norm LIKE ? OR i.title LIKE ? OR i.summary LIKE ?'
+                 . " OR (i.redistribution = 'hosted' AND i.body LIKE ?))";
         $like = '%' . $qNorm . '%';
         $likeRaw = '%' . $q . '%';
-        array_push($params, $like, $like, $likeRaw, $likeRaw);
+        array_push($params, $like, $like, $likeRaw, $likeRaw, $likeRaw);
     }
     foreach (['source_key' => 'i.source_key', 'item_type' => 'i.item_type', 'category' => 'i.category',
               'court_name' => 'i.court_name', 'city' => 'i.city', 'file_type' => 'i.file_type'] as $key => $col) {

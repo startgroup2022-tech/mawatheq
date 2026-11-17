@@ -197,6 +197,16 @@ $res6 = legal_library_search(['q' => $suffix], 1, 20);
 $ids6 = array_map(fn($r) => (int)$r['id'], $res6['items']);
 check('an unpublished item is excluded from search', !in_array($hiddenId, $ids6, true));
 
+// The full ruling text is searchable, but ONLY for rows the read gate exposes. The
+// link_only fixture above carries the body text "THIS MUST NEVER BE EXPOSED"; a search
+// for it must return nothing, or a link_only source's stored prose would leak through a
+// search hit even though legal_library_public_item() refuses to return it.
+$resBodyHosted = legal_library_search(['q' => $suffix], 1, 20); // suffix is in the hosted body
+check('the hosted row is found by text that lives only in its body', in_array($hostedId, array_map(fn($r) => (int)$r['id'], $resBodyHosted['items']), true));
+$resLeak = legal_library_search(['q' => 'NEVER BE EXPOSED'], 1, 20);
+$leakIds = array_map(fn($r) => (int)$r['id'], $resLeak['items']);
+check('a link_only body is NOT findable through search', !in_array($linkId, $leakIds, true));
+
 /* ================================================================ SECTION 3 */
 
 section('3. Public web pages over HTTP');
