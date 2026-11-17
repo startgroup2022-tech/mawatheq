@@ -154,13 +154,33 @@ check('v79 uses no positional AFTER clause', !preg_match('/\bAFTER\s+`?\w+`?/i',
 /* ============================================================ SECTION 5 */
 section('5. The shipped seed classifies MOJ honestly');
 
-$seeded = $pdo->query("SELECT source_key, redistribution FROM legal_library_sources WHERE source_key IN ('moj_decisions','moj_legislation','mashortich_books')")->fetchAll(PDO::FETCH_KEY_PAIR);
-check('moj_decisions ships as link_only', ($seeded['moj_decisions'] ?? null) === 'link_only');
-check('moj_legislation ships as link_only', ($seeded['moj_legislation'] ?? null) === 'link_only');
-check('mashortich_books ships as link_only', ($seeded['mashortich_books'] ?? null) === 'link_only');
+/*
+ * This asserts the SHIPPED seed (the SQL files a fresh install loads), not the live
+ * row. An operator legitimately flips a source to `hosted` to run a real import with
+ * MAWATHEQ_LL_CAPTURE_BODY=1 — that is the documented, intended action, not drift —
+ * so a test that reads the live row fails on a correctly configured database. The
+ * invariant that must never move is what a *fresh* install classifies the source as.
+ */
+function shipped_seed_redistribution(string $sql, string $sourceKey): ?string {
+    $needle = "('" . $sourceKey . "'";
+    $pos = strpos($sql, $needle);
+    if ($pos === false) { return null; }
+    $row = substr($sql, $pos, 1600); // one seed tuple, comfortably
+    if (preg_match("/'(link_only|hosted|unknown)'/", $row, $m)) { return $m[1]; }
+    return null;
+}
 $schema = file_get_contents(__DIR__ . '/../database/schema.sql');
-check('schema.sql agrees with the v78 seed', substr_count($schema, "'judgment', 'link_only'") >= 1 && substr_count($schema, "'legislation', 'link_only'") >= 1);
+$v78 = file_get_contents(__DIR__ . '/../database/upgrade_v78.sql');
+foreach (['moj_decisions', 'moj_legislation', 'mashortich_books'] as $key) {
+    check("schema.sql seeds $key as link_only", shipped_seed_redistribution($schema, $key) === 'link_only');
+    check("upgrade_v78.sql seeds $key as link_only", shipped_seed_redistribution($v78, $key) === 'link_only');
+}
 check('schema.sql declares the sync_cursor column', str_contains($schema, '`sync_cursor`'));
+
+// The live row may legitimately differ (operator enabled capture for a real import);
+// what must hold is that the live value is one of the three known states.
+$live = $pdo->query("SELECT redistribution FROM legal_library_sources WHERE source_key='moj_decisions'")->fetchColumn();
+check('the live moj_decisions redistribution is a known state', in_array($live, ['link_only', 'hosted', 'unknown'], true));
 
 /* ============================================================ CLEANUP */
 section('Cleanup');
