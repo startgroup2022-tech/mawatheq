@@ -107,6 +107,8 @@ class _LegalLibraryItemScreenState extends State<LegalLibraryItemScreen> {
       type: item.type,
       typeLabel: item.typeLabel,
       title: item.title,
+      decisionTitle: item.decisionTitle,
+      titleIsDerived: item.titleIsDerived,
       summary: item.summary,
       courtName: item.courtName,
       city: item.city,
@@ -129,6 +131,7 @@ class _LegalLibraryItemScreenState extends State<LegalLibraryItemScreen> {
       downloadIsExternal: item.downloadIsExternal,
       redistribution: item.redistribution,
       body: item.body,
+      sections: item.sections,
       isFavorite: saved,
     );
   }
@@ -206,6 +209,11 @@ class _LegalLibraryItemScreenState extends State<LegalLibraryItemScreen> {
           item.title,
           style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, height: 1.6),
         ),
+        if (item.decisionTitle.isNotEmpty && item.decisionTitle != item.title) ...[
+          const SizedBox(height: 6),
+          Text(item.decisionTitle,
+              style: TextStyle(color: context.tokens.textMuted, fontSize: 13, height: 1.6)),
+        ],
         const SizedBox(height: AppSpacing.s4),
         Card(
           color: context.tokens.surface,
@@ -215,9 +223,9 @@ class _LegalLibraryItemScreenState extends State<LegalLibraryItemScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (item.courtName.isNotEmpty)
-                  LibraryMetaRow(label: rtl ? 'المحكمة' : 'Court', value: item.courtName),
+                  LibraryMetaRow(label: rtl ? 'الجهة القضائية' : 'Court', value: item.courtName),
                 if (item.city.isNotEmpty)
-                  LibraryMetaRow(label: rtl ? 'المدينة' : 'City', value: item.city),
+                  LibraryMetaRow(label: rtl ? 'المنطقة' : 'Region', value: item.city),
                 if (item.decisionNumber.isNotEmpty)
                   LibraryMetaRow(label: rtl ? 'رقم الحكم' : 'Decision no.', value: item.decisionNumber),
                 if (item.caseNumber.isNotEmpty)
@@ -229,8 +237,10 @@ class _LegalLibraryItemScreenState extends State<LegalLibraryItemScreen> {
                     label: rtl ? 'السنة الهجرية' : 'Hijri year',
                     value: '${item.hijriYear}${item.gregorianYear != null ? " (${item.gregorianYear}م)" : ""}',
                   ),
+                if (item.category.isNotEmpty)
+                  LibraryMetaRow(label: rtl ? 'التصنيف' : 'Category', value: item.category),
                 if (item.publisher.isNotEmpty)
-                  LibraryMetaRow(label: rtl ? 'الجهة' : 'Publisher', value: item.publisher),
+                  LibraryMetaRow(label: rtl ? 'الناشر' : 'Publisher', value: item.publisher),
                 if (item.fileType.isNotEmpty)
                   LibraryMetaRow(
                     label: rtl ? 'الملف' : 'File',
@@ -267,34 +277,95 @@ class _LegalLibraryItemScreenState extends State<LegalLibraryItemScreen> {
           ],
         ),
         const SizedBox(height: AppSpacing.s4),
-        if (item.body != null && item.body!.isNotEmpty) ...[
-          Divider(color: context.tokens.border),
-          const SizedBox(height: AppSpacing.s2),
-          _bodyText(item.body!),
-        ] else if (item.redistribution == 'link_only')
-          Container(
-            padding: const EdgeInsets.all(AppSpacing.s3),
-            decoration: BoxDecoration(
-              color: context.tokens.warningBg,
-              borderRadius: BorderRadius.circular(AppRadius.md),
-              border: Border.all(color: context.tokens.warningBorder),
-            ),
-            child: Text(
-              rtl
-                  ? 'هذا المصدر لا يسمح بنسخ الملف داخل مواثيق. يمكنك تنزيله أو قراءته من الرابط الرسمي.'
-                  : 'This source does not permit copying the file into Mawatheq. Use the official link to read or download it.',
-              style: TextStyle(color: context.tokens.warningFg, height: 1.7, fontSize: 13),
-            ),
-          )
-        else if (item.type == 'judgment')
-          Text(
-            rtl
-                ? 'نص الحكم الكامل متاح عبر الصفحة الرسمية لوزارة العدل.'
-                : 'The full ruling text is available on the Ministry of Justice official page.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
+        // Structured sections first (facts/reasons/ruling), then any body text not
+        // already covered by the ruling section. Nothing is generated — each block is
+        // the source's own text.
+        ..._contentBlocks(item, rtl),
       ],
     );
+  }
+
+  List<Widget> _contentBlocks(LegalLibraryItem item, bool rtl) {
+    final out = <Widget>[];
+    final sections = item.sections;
+    final ruling = sections?.ruling;
+    final body = item.body;
+
+    if (ruling != null && ruling.isNotEmpty) {
+      out.add(LibrarySectionBlock(
+        title: rtl ? 'منطوق الحكم' : 'Ruling',
+        body: ruling,
+        icon: Icons.gavel_outlined,
+      ));
+    }
+    if (sections?.facts != null && sections!.facts!.isNotEmpty) {
+      out.add(LibrarySectionBlock(
+        title: rtl ? 'الوقائع' : 'Facts',
+        body: sections.facts!,
+        icon: Icons.description_outlined,
+      ));
+    }
+    if (sections?.reasons != null && sections!.reasons!.isNotEmpty) {
+      out.add(LibrarySectionBlock(
+        title: rtl ? 'الأسباب' : 'Reasons',
+        body: sections.reasons!,
+        icon: Icons.list_alt_outlined,
+      ));
+    }
+    if (sections?.narration != null && sections!.narration!.isNotEmpty) {
+      out.add(LibrarySectionBlock(
+        title: rtl ? 'الوقائع والسرد' : 'Narration',
+        body: sections.narration!,
+        icon: Icons.article_outlined,
+      ));
+    }
+
+    // Body text is shown when it is not identical to the ruling block above.
+    if (body != null && body.isNotEmpty && body.trim() != (ruling ?? '').trim()) {
+      out.add(LibrarySectionBlock(
+        title: rtl ? 'نص الحكم' : 'Ruling text',
+        body: _plainText(body),
+      ));
+    }
+
+    if (out.isNotEmpty) return out;
+
+    // No readable text: explain why, honestly, based on the redistribution rule.
+    if (item.redistribution == 'link_only') {
+      return [
+        Container(
+          padding: const EdgeInsets.all(AppSpacing.s3),
+          decoration: BoxDecoration(
+            color: context.tokens.warningBg,
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            border: Border.all(color: context.tokens.warningBorder),
+          ),
+          child: Text(
+            rtl
+                ? 'هذا المصدر يُعرض بالبيانات والرابط الرسمي فقط، ولا يُنسخ نصه أو ملفه داخل مواثيق التزاماً بسياسة إعادة النشر. استخدم «الصفحة الرسمية» لقراءة النص الكامل لدى الجهة المصدِرة.'
+                : 'This source is shown as metadata plus its official link; its text or file is not copied into Mawatheq, in line with the redistribution policy. Use “Official page” to read the full text at the issuing authority.',
+            style: TextStyle(color: context.tokens.warningFg, height: 1.7, fontSize: 13),
+          ),
+        ),
+      ];
+    }
+    return [
+      Text(
+        rtl
+            ? 'نص هذا العنصر غير متاح للعرض المباشر. استخدم الصفحة الرسمية لعرضه.'
+            : 'This item has no inline text. Use the official page to view it.',
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+    ];
+  }
+
+  /// The stored text may arrive as the portal's HTML with `<br>` breaks. Render it
+  /// as plain text: it is third-party, so it is shown as text, never as markup.
+  String _plainText(String body) {
+    return body
+        .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
+        .replaceAll(RegExp(r'<[^>]+>'), '')
+        .trim();
   }
 
   Widget _chip(BuildContext context, String text, Color color) {
@@ -308,29 +379,6 @@ class _LegalLibraryItemScreenState extends State<LegalLibraryItemScreen> {
         text,
         style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color),
       ),
-    );
-  }
-
-  /// The stored body arrives as the portal's HTML with `<br>` breaks. Render it as
-  /// plain paragraphs: the text is third-party, so it is shown as text, never as
-  /// trusted markup.
-  Widget _bodyText(String body) {
-    final plain = body
-        .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
-        .replaceAll(RegExp(r'<[^>]+>'), '');
-    final paragraphs = plain
-        .split(RegExp(r'\n+'))
-        .map((p) => p.trim())
-        .where((p) => p.isNotEmpty);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (final p in paragraphs)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Text(p, style: const TextStyle(height: 2.0, fontSize: 15)),
-          ),
-      ],
     );
   }
 }

@@ -288,21 +288,19 @@ class _FilterSheet extends StatefulWidget {
 class _FilterSheetState extends State<_FilterSheet> {
   late final Map<String, String> _draft = Map<String, String>.from(widget.current);
 
-  Widget _dropdown(String key, String label, List<String> values) {
+  Widget _dropdownPairs(String key, String label, List<(String, String)> values) {
     if (values.isEmpty) return const SizedBox.shrink();
     final current = _draft[key];
+    final valid = values.any((v) => v.$1 == current);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: DropdownButtonFormField<String>(
-        initialValue: (current != null && values.contains(current)) ? current : null,
+        initialValue: valid ? current : null,
         isExpanded: true,
-        decoration: InputDecoration(
-          labelText: label,
-          border: const OutlineInputBorder(),
-        ),
+        decoration: InputDecoration(labelText: label, border: const OutlineInputBorder()),
         items: [
-          DropdownMenuItem(value: '', child: Text(label.isEmpty ? 'الكل' : 'الكل')),
-          for (final v in values) DropdownMenuItem(value: v, child: Text(v)),
+          const DropdownMenuItem(value: '', child: Text('الكل')),
+          for (final v in values) DropdownMenuItem(value: v.$1, child: Text(v.$2)),
         ],
         onChanged: (v) => setState(() {
           if (v == null || v.isEmpty) {
@@ -314,6 +312,9 @@ class _FilterSheetState extends State<_FilterSheet> {
       ),
     );
   }
+
+  Widget _dropdown(String key, String label, List<String> values) =>
+      _dropdownPairs(key, label, [for (final v in values) (v, v)]);
 
   @override
   Widget build(BuildContext context) {
@@ -329,13 +330,37 @@ class _FilterSheetState extends State<_FilterSheet> {
               Text(rtl ? 'تصفية النتائج' : 'Filter results',
                   style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: AppSpacing.s4),
-              _dropdown('source', rtl ? 'المصدر' : 'Source',
-                  [for (final s in widget.facets.sources) s.key]),
-              _dropdown('type', rtl ? 'النوع' : 'Type', widget.facets.types),
+              _dropdownPairs('source', rtl ? 'المصدر' : 'Source',
+                  [for (final s in widget.facets.sources) (s.key, s.name(rtl))]),
+              _dropdownPairs('type', rtl ? 'النوع' : 'Type',
+                  [for (final t in widget.facets.types) (t, LegalLibraryType.labelFor(t, rtl))]),
               _dropdown('court', rtl ? 'المحكمة' : 'Court', widget.facets.courts),
               _dropdown('city', rtl ? 'المدينة' : 'City', widget.facets.cities),
               _dropdown('year', rtl ? 'السنة الهجرية' : 'Hijri year',
                   [for (final y in widget.facets.years) '$y']),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: DropdownButtonFormField<String>(
+                  initialValue: _draft['sort'] ?? 'newest',
+                  isExpanded: true,
+                  decoration: InputDecoration(
+                    labelText: rtl ? 'الترتيب' : 'Sort',
+                    border: const OutlineInputBorder(),
+                  ),
+                  items: [
+                    DropdownMenuItem(value: 'newest', child: Text(rtl ? 'الأحدث' : 'Newest')),
+                    DropdownMenuItem(value: 'oldest', child: Text(rtl ? 'الأقدم' : 'Oldest')),
+                    DropdownMenuItem(value: 'court', child: Text(rtl ? 'حسب الجهة' : 'By court')),
+                  ],
+                  onChanged: (v) => setState(() {
+                    if (v == null || v == 'newest') {
+                      _draft.remove('sort');
+                    } else {
+                      _draft['sort'] = v;
+                    }
+                  }),
+                ),
+              ),
               Row(
                 children: [
                   Expanded(

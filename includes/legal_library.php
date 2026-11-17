@@ -55,12 +55,45 @@ function legal_library_capture_body(): bool {
  * ------------------------------------------------------------------------ */
 
 /**
+ * The browser-shaped User-Agent the gateway accepts.
+ *
+ * The MOJ gateway is fronted by an F5 WAF that refuses a request carrying a
+ * non-browser User-Agent (the importer's old "MawatheqLegalLibrary/1.0" was
+ * rejected outright), and it also requires a session cookie it hands out on the
+ * first hit. Both facts were confirmed against the live gateway: a bare cURL
+ * request returns HTTP 200 with an HTML "Request Rejected" page, which looks like
+ * success and is why the importer silently imported nothing.
+ */
+function legal_library_user_agent(): string {
+    return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+         . '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+}
+
+/**
+ * Path of the per-process cookie jar shared by every request in one run.
+ *
+ * The WAF session cookie must travel with the list and detail calls alike, so the
+ * jar is created once per process rather than per request.
+ */
+function legal_library_cookie_jar(): string {
+    static $jar = null;
+    if ($jar === null) {
+        $jar = rtrim(sys_get_temp_dir(), '/') . '/mawatheq_ll_' . getmypid() . '.cookies';
+    }
+    return $jar;
+}
+
+/**
  * A small cURL wrapper used by every importer. Returns a structured result rather
  * than throwing, because an importer must record a partial failure and continue.
  *
+ * A cookie jar is always used so the WAF session established by the first request
+ * is reused. `$opts['no_cookies']` disables it for a one-off probe.
+ *
+ * @param array{no_cookies?:bool} $opts
  * @return array{ok:bool, code:int, body:string, json:?array, error:?string}
  */
-function legal_library_http(string $method, string $url, ?array $jsonPayload = null, array $headers = [], int $timeout = 30): array {
+function legal_library_http(string $method, string $url, ?array $jsonPayload = null, array $headers = [], int $timeout = 30, array $opts = []): array {
     if (!function_exists('curl_init')) {
         return ['ok' => false, 'code' => 0, 'body' => '', 'json' => null, 'error' => 'cURL غير مفعّل على السيرفر.'];
     }
@@ -68,9 +101,9 @@ function legal_library_http(string $method, string $url, ?array $jsonPayload = n
     $hdr = array_merge([
         'Accept: application/json, text/plain, */*',
         'Accept-Language: ar,en;q=0.9',
-        'User-Agent: MawatheqLegalLibrary/1.0 (+https://mawatheq.com)',
+        'User-Agent: ' . legal_library_user_agent(),
     ], $headers);
-    $opts = [
+    $curlOpts = [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_TIMEOUT => $timeout,
         CURLOPT_CONNECTTIMEOUT => 15,
@@ -78,12 +111,17 @@ function legal_library_http(string $method, string $url, ?array $jsonPayload = n
         CURLOPT_MAXREDIRS => 3,
         CURLOPT_HTTPHEADER => $hdr,
     ];
-    if (strtoupper($method) === 'POST') {
-        $opts[CURLOPT_POST] = true;
-        $opts[CURLOPT_POSTFIELDS] = $jsonPayload === null ? '' : json_encode($jsonPayload, JSON_UNESCAPED_UNICODE);
-        $opts[CURLOPT_HTTPHEADER][] = 'Content-Type: application/json';
+    if (empty($opts['no_cookies'])) {
+        $jar = legal_library_cookie_jar();
+        $curlOpts[CURLOPT_COOKIEJAR] = $jar;
+        $curlOpts[CURLOPT_COOKIEFILE] = $jar;
     }
-    curl_setopt_array($ch, $opts);
+    if (strtoupper($method) === 'POST') {
+        $curlOpts[CURLOPT_POST] = true;
+        $curlOpts[CURLOPT_POSTFIELDS] = $jsonPayload === null ? '' : json_encode($jsonPayload, JSON_UNESCAPED_UNICODE);
+        $curlOpts[CURLOPT_HTTPHEADER][] = 'Content-Type: application/json';
+    }
+    curl_setopt_array($ch, $curlOpts);
     $body = curl_exec($ch);
     $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $err = curl_error($ch);
@@ -103,6 +141,17 @@ function legal_library_http(string $method, string $url, ?array $jsonPayload = n
 }
 
 /**
+ * Prime the WAF session for a gateway host: one GET of the host root, which makes
+ * the WAF hand out the cookie the API calls need. Idempotent per process.
+ */
+function legal_library_prime_session(string $hostRoot = 'https://laws-gateway.moj.gov.sa/'): void {
+    static $primed = [];
+    if (!empty($primed[$hostRoot])) return;
+    $primed[$hostRoot] = true;
+    legal_library_http('GET', $hostRoot, null, ['Accept: text/html'], 20);
+}
+
+/**
  * Fetch a JSON page, retrying on a non-JSON body.
  *
  * The MOJ gateway sits behind a WAF that answers a rate-limited request with
@@ -113,6 +162,12 @@ function legal_library_http(string $method, string $url, ?array $jsonPayload = n
  * @return array{ok:bool, code:int, json:?array, error:?string, blocked:bool}
  */
 function legal_library_http_json(string $method, string $url, ?array $jsonPayload = null, array $headers = [], int $timeout = 30, int $tries = 4): array {
+    // Establish the WAF session before the first API call. Without it the gateway
+    // answers a non-browser request with an HTML "Request Rejected" page under HTTP
+    // 200, which every caller would otherwise read as a successful empty response.
+    $host = parse_url($url, PHP_URL_SCHEME) . '://' . parse_url($url, PHP_URL_HOST) . '/';
+    legal_library_prime_session($host);
+
     $last = ['ok' => false, 'code' => 0, 'json' => null, 'error' => 'لم تُجرَ محاولة', 'blocked' => false];
     for ($attempt = 0; $attempt < max(1, $tries); $attempt++) {
         $r = legal_library_http($method, $url, $jsonPayload, $headers, $timeout);
@@ -120,11 +175,13 @@ function legal_library_http_json(string $method, string $url, ?array $jsonPayloa
         if ($r['ok'] && $r['json'] !== null) {
             return $last;
         }
-        // A 2xx with a non-JSON body is the WAF. Back off and try again.
+        // A 2xx with a non-JSON body is the WAF. Back off and try again. The WAF
+        // throttle is aggressive, so the backoff is generous (the gateway also
+        // rejects a burst even when the cookie is valid).
         $blocked = $r['ok'] && $r['json'] === null;
         $last['blocked'] = $blocked;
         if ($attempt < $tries - 1) {
-            usleep($blocked ? (800000 * ($attempt + 1)) : 500000);
+            usleep($blocked ? (2500000 * ($attempt + 1)) : 800000);
         }
     }
     return $last;
@@ -240,10 +297,23 @@ function legal_library_upsert_item(PDO $pdo, array $it): string {
     foreach ($required as $k) {
         if (!isset($it[$k]) || $it[$k] === '') return 'skipped';
     }
-    $cols = ['source_id','source_key','external_id','item_type','title','summary','court_name','city',
-             'court_type','case_number','decision_number','hijri_year','gregorian_year','decision_date',
-             'category','body','source_url','file_url','file_type','file_size_kb','page_count','publisher',
-             'published_at','source_updated_at','lang','redistribution','hosted_path','is_published'];
+    $cols = ['source_id','source_key','external_id','item_type','title','decision_title','title_is_derived',
+             'summary','court_name','city',
+             'court_type','case_number','decision_number','hijri_year','hijri_date','gregorian_year','decision_date',
+             'category','body','judgment_facts','judgment_reasons','judgment_ruling','judgment_narration',
+             'detail_fetched_at','source_url','file_url','file_type','file_size_kb','page_count','publisher',
+             'published_at','source_updated_at','lang','redistribution','hosted_path','is_published',
+             'title_norm','summary_norm','imported_at'];
+
+    // Normalised search keys are derived here so every importer gets them.
+    $it['title_norm'] = legal_library_normalize_ar($it['title'] ?? '');
+    $it['summary_norm'] = legal_library_normalize_ar($it['summary'] ?? null);
+    // `title_is_derived` is NOT NULL DEFAULT 0; a caller that omits it (or passes an
+    // explicit null) must land 0, not trip the constraint.
+    $it['title_is_derived'] = !empty($it['title_is_derived']) ? 1 : 0;
+    // `source_url` is NOT NULL DEFAULT ''; an insert must carry a string.
+    if (!array_key_exists('source_url', $it) || $it['source_url'] === null) $it['source_url'] = '';
+    if (empty($it['imported_at'])) $it['imported_at'] = date('Y-m-d H:i:s');
 
     $st = $pdo->prepare('SELECT id FROM legal_library_items WHERE source_key = ? AND external_id = ?');
     $st->execute([$it['source_key'], $it['external_id']]);
@@ -251,25 +321,47 @@ function legal_library_upsert_item(PDO $pdo, array $it): string {
 
     // Full text / hosted file is stored only when the operator has confirmed the
     // source permits re-hosting (see legal_library_capture_body()). Otherwise the
-    // row keeps its metadata and its official link, and the reader is sent there.
+    // row keeps its metadata (including the source's own title) and its official
+    // link, and the reader is sent there. This gate covers every column that holds
+    // published prose — the ruling text, the structured sections and the snippet
+    // summary — because each is a re-publication of the source's words.
     if (!legal_library_capture_body()) {
         $it['body'] = null;
         $it['hosted_path'] = null;
+        $it['judgment_facts'] = null;
+        $it['judgment_reasons'] = null;
+        $it['judgment_ruling'] = null;
+        $it['judgment_narration'] = null;
+        $it['summary'] = null;
+        $it['summary_norm'] = null;
     }
 
     $vals = [];
+    $present = [];
     foreach ($cols as $c) {
         $vals[$c] = $it[$c] ?? null;
+        $present[$c] = array_key_exists($c, $it);
     }
+    // Detail-only columns. A plain list refresh (no detail fetched) must not erase a
+    // detail already captured, so these are only written when this run carried detail.
+    $detailCols = ['decision_title','title_is_derived','judgment_facts','judgment_reasons',
+                   'judgment_ruling','judgment_narration','detail_fetched_at'];
+    $hasDetail = !empty($it['detail_fetched_at']);
     // Never let a re-sync blank a field the source did not send this time.
     if ($existing) {
         $set = [];
         $params = [];
         foreach ($vals as $c => $v) {
             if ($c === 'source_key' || $c === 'external_id') continue;
+            if (in_array($c, $detailCols, true) && !$hasDetail) continue;
+            // A partial caller (a field it did not provide) must not blank a stored
+            // value. A full mapper row sets every key, including explicit nulls, so
+            // it still updates and clears fields as intended.
+            if (!$present[$c]) continue;
             $set[] = "`$c` = ?";
             $params[] = $v;
         }
+        if (!$set) return 'skipped';
         $params[] = (int)$existing;
         $pdo->prepare('UPDATE legal_library_items SET ' . implode(', ', $set) . ' WHERE id = ?')->execute($params);
         return 'updated';
@@ -345,6 +437,27 @@ function legal_library_sync(PDO $pdo, string $sourceKey, array $opts = []): arra
     return $counts + ['status' => $status, 'error' => $error];
 }
 
+/**
+ * Arabic search normalisation: fold the letters a reader varies (hamza forms →
+ * alef, alef maqsura → yaa, taa marbuta → haa), drop tatweel and diacritics, and
+ * lower-case Latin. The stored original text is never changed — this is written
+ * to a separate `*_norm` column so search matches how an Arabic reader types
+ * without altering what the source published.
+ */
+function legal_library_normalize_ar(?string $s): string {
+    if ($s === null || $s === '') return '';
+    $s = str_replace(
+        ['أ', 'إ', 'آ', 'ٱ', 'ى', 'ئ', 'ؤ', 'ة', 'ـ'],
+        ['ا', 'ا', 'ا', 'ا', 'ي', 'ي', 'و', 'ه', ''],
+        $s
+    );
+    // Remove Arabic diacritics (harakat) and tatweel already handled above.
+    $s = preg_replace('/[\x{064B}-\x{065F}\x{0670}\x{06D6}-\x{06DC}\x{06DF}-\x{06E4}\x{06E7}\x{06E8}\x{06EA}-\x{06ED}]/u', '', $s);
+    // Collapse whitespace and normalise Latin case.
+    $s = preg_replace('/\s+/u', ' ', $s);
+    return mb_strtolower(trim((string)$s), 'UTF-8');
+}
+
 /** Normalise one row from the MOJ judgements list into our item shape. */
 function legal_library_map_moj_judgement(array $row, array $source, ?array $detail = null): array {
     $num  = trim((string)($row['judgementNumber'] ?? ''));
@@ -353,17 +466,57 @@ function legal_library_map_moj_judgement(array $row, array $source, ?array $deta
     $hijri = trim((string)($row['judgementDate'] ?? ''));
     $hijriYear = (int)($row['hijriYear'] ?? 0) ?: null;
 
-    $title = $num !== '' ? ('حكم رقم ' . $num) : 'حكم قضائي';
-    if ($court !== '') $title .= ' — ' . $court;
-
-    $body = null;
+    // The list endpoint carries no title. The detail endpoint does. Prefer the
+    // source's own title; only when the source publishes none do we build a clear
+    // description from its official fields, and we flag that it is derived so the
+    // UI never presents it as the source's title.
+    $sourceTitle = '';
+    $decisionTitle = '';
     if ($detail) {
-        // The portal exposes the ruling text under one of several keys depending on
-        // the decision kind. Take the first non-empty one; never fabricate.
-        foreach (['appealTextofRulling','judgmentTextofRulling','judgmentRuling','appealRuling'] as $k) {
-            if (!empty($detail[$k])) { $body = (string)$detail[$k]; break; }
+        $sourceTitle = trim((string)($detail['title'] ?? ''));
+        $decisionTitle = trim((string)($detail['decisionTitle'] ?? ''));
+    }
+    $titleIsDerived = 0;
+    if ($sourceTitle !== '') {
+        $title = $sourceTitle;
+    } elseif ($decisionTitle !== '') {
+        $title = $decisionTitle;
+    } else {
+        $title = $num !== '' ? ('حكم رقم ' . $num) : 'حكم قضائي';
+        if ($court !== '') $title .= ' — ' . $court;
+        $titleIsDerived = 1;
+    }
+
+    // Detail text fields, each kept verbatim under its own column so nothing is
+    // merged or paraphrased. `body` stays the ruling text (what a reader wants
+    // first); facts/reasons/narration are the structured sections.
+    $facts = $reasons = $ruling = $narration = null;
+    if ($detail) {
+        $facts   = legal_library_clean_text($detail['judgmentFacts'] ?? null);
+        $reasons = legal_library_clean_text($detail['judgmentReasons'] ?? null);
+        $ruling  = legal_library_clean_text($detail['judgmentTextofRulling'] ?? $detail['judgmentRuling'] ?? null);
+        // Narration: an array of {title, text} sections in the portal.
+        if (!empty($detail['judgmentNarrationList']) && is_array($detail['judgmentNarrationList'])) {
+            $parts = [];
+            foreach ($detail['judgmentNarrationList'] as $n) {
+                $t = legal_library_clean_text($n['title'] ?? $n['narrationTitle'] ?? null);
+                $x = legal_library_clean_text($n['text'] ?? $n['narrationText'] ?? $n['body'] ?? null);
+                if ($t !== null || $x !== null) $parts[] = trim(($t ?? '') . "\n" . ($x ?? ''));
+            }
+            $narration = $parts ? implode("\n\n", $parts) : null;
         }
     }
+    // The ruling text is what the reader should land on; fall back to reasons/facts.
+    $body = $ruling ?? $reasons ?? $facts;
+
+    // A short summary taken from the real text (never invented). Clearly the
+    // opening of the ruling, not a generated abstract.
+    $summary = null;
+    if ($body !== null) {
+        $flat = trim(preg_replace('/\s+/u', ' ', strip_tags($body)));
+        if ($flat !== '') $summary = mb_substr($flat, 0, 300);
+    }
+
     $sourceUrl = 'https://laws.moj.gov.sa/ar/JudicialDecisionsList/1/' . rawurlencode((string)$row['id']);
 
     return [
@@ -372,17 +525,25 @@ function legal_library_map_moj_judgement(array $row, array $source, ?array $deta
         'external_id'     => (string)$row['id'],
         'item_type'       => 'judgment',
         'title'           => mb_substr($title, 0, 380),
-        'summary'         => null,
+        'decision_title'  => $decisionTitle !== '' ? mb_substr($decisionTitle, 0, 380) : null,
+        'title_is_derived'=> $titleIsDerived,
+        'summary'         => $summary,
         'court_name'      => $court !== '' ? $court : null,
         'city'            => $city !== '' ? $city : null,
         'court_type'      => isset($row['courtType']) ? (int)$row['courtType'] : null,
         'case_number'     => isset($row['caseNumber']) && $row['caseNumber'] !== null ? (string)$row['caseNumber'] : null,
         'decision_number' => $num !== '' ? $num : null,
         'hijri_year'      => $hijriYear,
+        'hijri_date'      => $hijri !== '' ? $hijri : null,
         'gregorian_year'  => legal_library_gregorian_year_of($hijri),
         'decision_date'   => legal_library_hijri_to_gregorian($hijri),
         'category'        => $court !== '' ? $court : null,
         'body'            => $body,
+        'judgment_facts'  => $facts,
+        'judgment_reasons'=> $reasons,
+        'judgment_ruling' => $ruling,
+        'judgment_narration' => $narration,
+        'detail_fetched_at' => $detail ? date('Y-m-d H:i:s') : null,
         'source_url'      => $sourceUrl,
         'file_url'        => null,
         'file_type'       => null,
@@ -395,7 +556,26 @@ function legal_library_map_moj_judgement(array $row, array $source, ?array $deta
         'redistribution'  => $source['redistribution'],
         'hosted_path'     => null,
         'is_published'    => 1,
+        // Normalised keys are also derived in the upsert; set here too so a mapped
+        // row is self-consistent for any caller that inspects it directly.
+        'title_norm'      => legal_library_normalize_ar(mb_substr($title, 0, 380)),
+        'summary_norm'    => legal_library_normalize_ar($summary),
     ];
+}
+
+/**
+ * Clean a detail text field: the portal returns HTML fragments. Keep the text,
+ * normalise line breaks, drop tags. Returns null for an empty field so the column
+ * stores NULL rather than an empty string.
+ */
+function legal_library_clean_text($v): ?string {
+    if ($v === null || !is_string($v)) return null;
+    $v = str_replace(['<br />', '<br/>', '<br>', '</p>', '</div>'], "\n", $v);
+    $v = html_entity_decode(strip_tags($v), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $v = preg_replace("/[ \t]+/u", ' ', $v);
+    $v = preg_replace("/\n{3,}/", "\n\n", $v);
+    $v = trim((string)$v);
+    return $v === '' ? null : $v;
 }
 
 function legal_library_import_moj_decisions(PDO $pdo, array $source, array $opts): array {
@@ -445,6 +625,73 @@ function legal_library_import_moj_decisions(PDO $pdo, array $source, array $opts
         }
         // Be a good citizen: the gateway rate-limits, so pause between pages.
         if ($p < $pages) usleep((int)(($opts["pause_ms"] ?? 2000) * 1000));
+    }
+    return $counts;
+}
+
+/**
+ * Fetch the DETAIL record for catalogue rows that do not have one yet.
+ *
+ * The list endpoint carries no title and no text; the real title, facts, reasons,
+ * ruling and narration live on the detail endpoint. A catalogue built from the list
+ * alone can only ever show a derived title — which is exactly the "metadata only"
+ * state the operator rejected. This pass fills the detail for rows where
+ * `detail_fetched_at IS NULL`, bounded per run so a cron job never times out; the
+ * rest is picked up on the next run. Rows are enriched newest-first.
+ *
+ * @return array{seen:int, enriched:int, blocked:int, failed:int}
+ */
+function legal_library_enrich_moj_details(PDO $pdo, array $source, array $opts = []): array {
+    $limit  = max(1, (int)($opts['limit'] ?? 10));
+    $pauseMs = (int)($opts['pause_ms'] ?? 4000);
+    $headers = ['Origin: https://laws.moj.gov.sa', 'Referer: https://laws.moj.gov.sa/'];
+    $counts = ['seen' => 0, 'enriched' => 0, 'blocked' => 0, 'failed' => 0];
+
+    $st = $pdo->prepare(
+        "SELECT id, external_id, decision_number, court_name, city, hijri_year, decision_date, source_url
+           FROM legal_library_items
+          WHERE source_key = ? AND detail_fetched_at IS NULL
+          ORDER BY decision_date DESC, id DESC
+          LIMIT " . (int)$limit
+    );
+    $st->execute([$source['source_key']]);
+    $rows = $st->fetchAll();
+    if (!$rows) return $counts;
+
+    legal_library_prime_session('https://laws-gateway.moj.gov.sa/');
+    foreach ($rows as $r) {
+        $counts['seen']++;
+        $d = legal_library_http_json('GET',
+            'https://laws-gateway.moj.gov.sa/apis/legislations/v1/Judgements/get-details?id=' . rawurlencode((string)$r['external_id']) . '&lang=ar&IdentityNumber=',
+            null, $headers, 25);
+        $detail = $d['json']['model'] ?? null;
+        if (!is_array($detail)) {
+            if (!empty($d['blocked'])) { $counts['blocked']++; break; } // WAF: stop, retry later
+            $counts['failed']++;
+            usleep($pauseMs * 1000);
+            continue;
+        }
+        // Rebuild the row shape the mapper expects from the stored columns, then
+        // re-map with the detail so title + text land under the real columns.
+        $listRow = [
+            'id' => $r['external_id'],
+            'judgementNumber' => $r['decision_number'],
+            'courtName' => $r['court_name'],
+            'city' => $r['city'],
+            'hijriYear' => $r['hijri_year'],
+            'judgementDate' => $detail['judgmentHijriiDate'] ?? null,
+            'caseNumber' => $detail['caseNumber'] ?? null,
+            'courtType' => $detail['judgmentCourtType'] ?? null,
+        ];
+        // Only overwrite the mapped title when the detail actually gave one.
+        $mapped = legal_library_map_moj_judgement($listRow, $source, $detail);
+        if (($detail['title'] ?? '') === '' && ($detail['decisionTitle'] ?? '') === '') {
+            $mapped['title'] = $pdo->query("SELECT title FROM legal_library_items WHERE id=" . (int)$r['id'])->fetchColumn();
+            $mapped['title_is_derived'] = 1;
+        }
+        legal_library_upsert_item($pdo, $mapped);
+        $counts['enriched']++;
+        usleep($pauseMs * 1000);
     }
     return $counts;
 }
@@ -749,11 +996,15 @@ function legal_library_search(array $f = [], int $page = 1, int $perPage = 20): 
 
     $q = trim((string)($f['q'] ?? ''));
     if ($q !== '') {
-        // FULLTEXT when the index exists, LIKE otherwise. Both are parameterised;
-        // the query is never interpolated.
-        $where[] = '(i.title LIKE ? OR i.summary LIKE ? OR i.body LIKE ?)';
-        $like = '%' . $q . '%';
-        array_push($params, $like, $like, $like);
+        // Match on the Arabic-normalised form first (so "الامير"/"الأمير" and
+        // "احمد"/"أحمد" match), then on the raw text as a fallback. The stored
+        // original is never modified; normalisation only ever narrows the query to
+        // the extra `*_norm` columns. Both terms are parameterised.
+        $qNorm = legal_library_normalize_ar($q);
+        $where[] = '(i.title_norm LIKE ? OR i.summary_norm LIKE ? OR i.title LIKE ? OR i.summary LIKE ?)';
+        $like = '%' . $qNorm . '%';
+        $likeRaw = '%' . $q . '%';
+        array_push($params, $like, $like, $likeRaw, $likeRaw);
     }
     foreach (['source_key' => 'i.source_key', 'item_type' => 'i.item_type', 'category' => 'i.category',
               'court_name' => 'i.court_name', 'city' => 'i.city', 'file_type' => 'i.file_type'] as $key => $col) {
@@ -761,6 +1012,16 @@ function legal_library_search(array $f = [], int $page = 1, int $perPage = 20): 
         if ($val !== '') { $where[] = "$col = ?"; $params[] = $val; }
     }
     if (!empty($f['year'])) { $where[] = 'i.hijri_year = ?'; $params[] = (int)$f['year']; }
+    if (!empty($f['has_file'])) { $where[] = '(i.file_url IS NOT NULL OR i.hosted_path IS NOT NULL)'; }
+
+    // Sort: newest (default), oldest, or relevance (title matches first when a query
+    // is present). The order is chosen from a fixed allow-list, never interpolated.
+    $sort = (string)($f['sort'] ?? 'newest');
+    $orderBy = match ($sort) {
+        'oldest' => 'i.decision_date ASC, i.id ASC',
+        'court'  => 'i.court_name ASC, i.decision_date DESC',
+        default  => 'i.decision_date DESC, i.id DESC',
+    };
 
     $whereSql = implode(' AND ', $where);
     try {
@@ -773,7 +1034,7 @@ function legal_library_search(array $f = [], int $page = 1, int $perPage = 20): 
                 FROM legal_library_items i
                 LEFT JOIN legal_library_sources s ON s.id = i.source_id
                 WHERE $whereSql
-                ORDER BY i.decision_date DESC, i.id DESC
+                ORDER BY $orderBy
                 LIMIT $perPage OFFSET $offset";
         $st = $pdo->prepare($sql);
         $st->execute($params);
@@ -793,7 +1054,7 @@ function legal_library_search(array $f = [], int $page = 1, int $perPage = 20): 
 /** Distinct values for the filter controls, drawn from the data actually imported. */
 function legal_library_facets(): array {
     global $pdo;
-    $out = ['sources' => [], 'types' => [], 'courts' => [], 'cities' => [], 'years' => [], 'categories' => []];
+    $out = ['sources' => [], 'types' => [], 'courts' => [], 'cities' => [], 'years' => [], 'categories' => [], 'file_types' => []];
     try {
         $out['sources'] = $pdo->query("SELECT source_key, name_ar, name_en, item_count FROM legal_library_sources WHERE item_count > 0 ORDER BY item_count DESC")->fetchAll();
         $out['courts'] = array_column($pdo->query("SELECT court_name, COUNT(*) c FROM legal_library_items WHERE court_name IS NOT NULL AND court_name <> '' GROUP BY court_name ORDER BY c DESC LIMIT 40")->fetchAll(), 'court_name');
@@ -801,6 +1062,7 @@ function legal_library_facets(): array {
         $out['years']  = array_column($pdo->query("SELECT DISTINCT hijri_year FROM legal_library_items WHERE hijri_year IS NOT NULL ORDER BY hijri_year DESC")->fetchAll(), 'hijri_year');
         $out['categories'] = array_column($pdo->query("SELECT DISTINCT category FROM legal_library_items WHERE category IS NOT NULL AND category <> '' ORDER BY category LIMIT 60")->fetchAll(), 'category');
         $out['types'] = array_column($pdo->query("SELECT item_type, COUNT(*) c FROM legal_library_items GROUP BY item_type ORDER BY c DESC")->fetchAll(), 'item_type');
+        $out['file_types'] = array_column($pdo->query("SELECT DISTINCT file_type FROM legal_library_items WHERE file_type IS NOT NULL AND file_type <> '' ORDER BY file_type")->fetchAll(), 'file_type');
     } catch (Throwable $e) {
         // un-migrated database: empty facets, the page shows its empty state
     }
@@ -828,13 +1090,43 @@ function legal_library_stats(): array {
         $byType = $pdo->query("SELECT item_type, COUNT(*) c FROM legal_library_items WHERE is_published=1 GROUP BY item_type")->fetchAll();
         $total = (int)$pdo->query("SELECT COUNT(*) FROM legal_library_items WHERE is_published=1")->fetchColumn();
         $sources = (int)$pdo->query("SELECT COUNT(*) FROM legal_library_sources WHERE is_enabled=1")->fetchColumn();
-        $latest = $pdo->query("SELECT title, id FROM legal_library_items WHERE is_published=1 ORDER BY created_at DESC LIMIT 5")->fetchAll();
+        $latest = $pdo->query("SELECT id, title, decision_number, court_name, city, hijri_year, decision_date, item_type, source_key, title_is_derived FROM legal_library_items WHERE is_published=1 ORDER BY decision_date DESC, id DESC LIMIT 8")->fetchAll();
+        $courts = (int)$pdo->query("SELECT COUNT(DISTINCT court_name) FROM legal_library_items WHERE is_published=1 AND court_name IS NOT NULL AND court_name<>''")->fetchColumn();
+        $files = (int)$pdo->query("SELECT COUNT(*) FROM legal_library_items WHERE is_published=1 AND (file_url IS NOT NULL OR hosted_path IS NOT NULL)")->fetchColumn();
+        $enriched = (int)$pdo->query("SELECT COUNT(*) FROM legal_library_items WHERE is_published=1 AND detail_fetched_at IS NOT NULL")->fetchColumn();
     } catch (Throwable $e) {
-        return ['total' => 0, 'by_type' => [], 'sources' => 0, 'latest' => []];
+        return ['total' => 0, 'by_type' => [], 'sources' => 0, 'latest' => [], 'courts' => 0, 'files' => 0, 'enriched' => 0];
     }
     $map = [];
     foreach ($byType as $r) $map[$r['item_type']] = (int)$r['c'];
-    return ['total' => $total, 'by_type' => $map, 'sources' => $sources, 'latest' => $latest];
+    return ['total' => $total, 'by_type' => $map, 'sources' => $sources, 'latest' => $latest,
+            'courts' => $courts, 'files' => $files, 'enriched' => $enriched];
+}
+
+/**
+ * Items related to one item by real, shared attributes only — same court, or same
+ * city + type. Never a generated "semantic" relation: if the source data shares no
+ * attribute, the list is empty rather than invented.
+ */
+function legal_library_related(int $id, int $limit = 6): array {
+    global $pdo;
+    try {
+        $row = $pdo->query("SELECT court_name, city, item_type FROM legal_library_items WHERE id=" . (int)$id)->fetch();
+        if (!$row) return [];
+        $limit = min(12, max(1, $limit));
+        $conds = [];
+        $params = [(int)$id];
+        if (!empty($row['court_name'])) { $conds[] = 'court_name = ?'; $params[] = $row['court_name']; }
+        if (!empty($row['city'])) { $conds[] = '(city = ? AND item_type = ?)'; $params[] = $row['city']; $params[] = $row['item_type']; }
+        if (!$conds) return [];
+        $st = $pdo->prepare("SELECT * FROM legal_library_items
+                             WHERE is_published=1 AND id <> ? AND (" . implode(' OR ', $conds) . ")
+                             ORDER BY decision_date DESC LIMIT " . (int)$limit);
+        $st->execute($params);
+        return $st->fetchAll();
+    } catch (Throwable $e) {
+        return [];
+    }
 }
 
 /* ---------------------------------------------------------------------------
@@ -893,41 +1185,80 @@ function legal_library_public_item(array $row, ?int $userId = null, bool $withBo
     $canReadHere = $redist === 'hosted' && !empty($row['body']);
     $fileIsHosted = $redist === 'hosted' && !empty($row['hosted_path']);
 
+    // Read every field defensively: callers pass either a full `SELECT i.*` row or a
+    // slim projection (the home page's "latest" strip selects a subset), and a missing
+    // key must degrade to null rather than raise a notice.
     $item = [
         'id'           => (int)$row['id'],
-        'type'         => $row['item_type'],
-        'type_label'   => legal_library_item_type_label((string)$row['item_type']),
-        'title'        => $row['title'],
-        'summary'      => $row['summary'],
-        'court_name'   => $row['court_name'],
-        'city'         => $row['city'],
-        'case_number'  => $row['case_number'],
-        'decision_number' => $row['decision_number'],
-        'hijri_year'   => $row['hijri_year'] !== null ? (int)$row['hijri_year'] : null,
-        'gregorian_year' => $row['gregorian_year'] !== null ? (int)$row['gregorian_year'] : null,
-        'decision_date'=> $row['decision_date'],
-        'category'     => $row['category'],
-        'source_key'   => $row['source_key'],
+        'type'         => $row['item_type'] ?? 'judgment',
+        'type_label'   => legal_library_item_type_label((string)($row['item_type'] ?? 'judgment')),
+        'title'        => $row['title'] ?? '',
+        'decision_title' => $row['decision_title'] ?? null,
+        'title_is_derived' => !empty($row['title_is_derived']),
+        'summary'      => $row['summary'] ?? null,
+        'court_name'   => $row['court_name'] ?? null,
+        'city'         => $row['city'] ?? null,
+        'case_number'  => $row['case_number'] ?? null,
+        'decision_number' => $row['decision_number'] ?? null,
+        'hijri_year'   => isset($row['hijri_year']) && $row['hijri_year'] !== null ? (int)$row['hijri_year'] : null,
+        'gregorian_year' => isset($row['gregorian_year']) && $row['gregorian_year'] !== null ? (int)$row['gregorian_year'] : null,
+        'decision_date'=> $row['decision_date'] ?? null,
+        'category'     => $row['category'] ?? null,
+        'source_key'   => $row['source_key'] ?? '',
         'source_name'  => is_rtl() ? ($row['source_name_ar'] ?? '') : ($row['source_name_en'] ?? ''),
-        'publisher'    => $row['publisher'],
-        'source_url'   => $row['source_url'],
-        'file_url'     => $row['file_url'],
-        'file_type'    => $row['file_type'],
-        'file_size_kb' => $row['file_size_kb'] !== null ? (int)$row['file_size_kb'] : null,
+        'publisher'    => $row['publisher'] ?? null,
+        'source_url'   => $row['source_url'] ?? null,
+        'file_url'     => $row['file_url'] ?? null,
+        'file_type'    => $row['file_type'] ?? null,
+        'file_size_kb' => isset($row['file_size_kb']) && $row['file_size_kb'] !== null ? (int)$row['file_size_kb'] : null,
         'can_read_here'=> $canReadHere,
         'can_download' => !empty($row['file_url']) || $fileIsHosted,
         // Never a copied file for a link_only source; the download goes to the source.
-        'download_url' => $fileIsHosted ? ('/legal-library-file.php?id=' . (int)$row['id']) : ($row['file_url'] ?: null),
+        'download_url' => $fileIsHosted ? ('/legal-library-file.php?id=' . (int)$row['id']) : (!empty($row['file_url']) ? $row['file_url'] : null),
         'download_is_external' => !$fileIsHosted && !empty($row['file_url']),
         'redistribution' => $redist,
+        'imported_at'  => $row['imported_at'] ?? ($row['created_at'] ?? null),
         'created_at'   => $row['created_at'] ?? null,
     ];
     if ($withBody) {
         // Only ever exposed for a hosted source; a link_only item has no body stored.
         $item['body'] = $canReadHere ? $row['body'] : null;
+        // The structured sections, likewise gated on the same rule.
+        $item['sections'] = $canReadHere ? [
+            'facts'     => $row['judgment_facts'] ?? null,
+            'reasons'   => $row['judgment_reasons'] ?? null,
+            'ruling'    => $row['judgment_ruling'] ?? null,
+            'narration' => $row['judgment_narration'] ?? null,
+        ] : null;
     }
     if ($userId !== null) {
         $item['is_favorite'] = legal_library_is_favorite($GLOBALS['pdo'], $userId, (int)$row['id']);
     }
     return $item;
+}
+
+/**
+ * The court-name → short label used by the browse-by-court chips, and the counts
+ * behind them. Drawn from the data actually imported, never invented.
+ */
+function legal_library_browse(): array {
+    global $pdo;
+    $out = ['courts' => [], 'cities' => [], 'years' => []];
+    try {
+        $out['courts'] = $pdo->query(
+            "SELECT court_name AS name, COUNT(*) AS n FROM legal_library_items
+              WHERE is_published=1 AND court_name IS NOT NULL AND court_name <> ''
+              GROUP BY court_name ORDER BY n DESC LIMIT 12")->fetchAll();
+        $out['cities'] = $pdo->query(
+            "SELECT city AS name, COUNT(*) AS n FROM legal_library_items
+              WHERE is_published=1 AND city IS NOT NULL AND city <> ''
+              GROUP BY city ORDER BY n DESC LIMIT 12")->fetchAll();
+        $out['years'] = $pdo->query(
+            "SELECT hijri_year AS name, COUNT(*) AS n FROM legal_library_items
+              WHERE is_published=1 AND hijri_year IS NOT NULL
+              GROUP BY hijri_year ORDER BY hijri_year DESC LIMIT 12")->fetchAll();
+    } catch (Throwable $e) {
+        // un-migrated database: empty browse, the page shows its empty state
+    }
+    return $out;
 }

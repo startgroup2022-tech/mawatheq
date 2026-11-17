@@ -744,6 +744,8 @@ class LegalLibraryItem {
     required this.type,
     required this.typeLabel,
     required this.title,
+    this.decisionTitle = '',
+    this.titleIsDerived = false,
     this.summary = '',
     this.courtName = '',
     this.city = '',
@@ -766,6 +768,7 @@ class LegalLibraryItem {
     this.downloadIsExternal = false,
     this.redistribution = 'link_only',
     this.body,
+    this.sections,
     this.isFavorite = false,
   });
 
@@ -773,6 +776,8 @@ class LegalLibraryItem {
   final String type;
   final String typeLabel;
   final String title;
+  final String decisionTitle;
+  final bool titleIsDerived;
   final String summary;
   final String courtName;
   final String city;
@@ -797,6 +802,9 @@ class LegalLibraryItem {
 
   /// Present only for a hosted source and only on the item action.
   final String? body;
+
+  /// The structured sections (facts/reasons/ruling/narration), same gate as [body].
+  final LegalLibrarySections? sections;
   final bool isFavorite;
 
   factory LegalLibraryItem.fromJson(Map<String, dynamic> map) {
@@ -813,11 +821,14 @@ class LegalLibraryItem {
     final downloadUrl = j.str('download_url');
     final sourceUrl = j.str('source_url');
     final fileUrl = j.str('file_url');
+    final sectionsRaw = map['sections'];
     return LegalLibraryItem(
       id: j.intg('id'),
       type: j.str('type', fallback: j.str('item_type')),
       typeLabel: j.str('type_label'),
       title: j.str('title'),
+      decisionTitle: j.str('decision_title'),
+      titleIsDerived: j.boolean('title_is_derived'),
       summary: j.str('summary'),
       courtName: j.str('court_name'),
       city: j.str('city'),
@@ -840,8 +851,76 @@ class LegalLibraryItem {
       downloadIsExternal: j.boolean('download_is_external'),
       redistribution: j.str('redistribution', fallback: 'link_only'),
       body: body.isEmpty ? null : body,
+      sections: sectionsRaw is Map
+          ? LegalLibrarySections.fromJson(Map<String, dynamic>.from(sectionsRaw))
+          : null,
       isFavorite: j.boolean('is_favorite'),
     );
+  }
+}
+
+/// The structured judgement sections the source published. Each is optional.
+class LegalLibrarySections {
+  const LegalLibrarySections({this.facts, this.reasons, this.ruling, this.narration});
+
+  final String? facts;
+  final String? reasons;
+  final String? ruling;
+  final String? narration;
+
+  bool get isEmpty =>
+      (facts == null || facts!.isEmpty) &&
+      (reasons == null || reasons!.isEmpty) &&
+      (ruling == null || ruling!.isEmpty) &&
+      (narration == null || narration!.isEmpty);
+
+  factory LegalLibrarySections.fromJson(Map<String, dynamic> map) {
+    String? s(String k) {
+      final v = map[k];
+      return (v is String && v.isNotEmpty) ? v : null;
+    }
+
+    return LegalLibrarySections(
+      facts: s('facts'),
+      reasons: s('reasons'),
+      ruling: s('ruling'),
+      narration: s('narration'),
+    );
+  }
+}
+
+/// One browse bucket (court / region / year) with its count.
+class LegalLibraryBrowseItem {
+  const LegalLibraryBrowseItem({required this.name, required this.count});
+
+  final String name;
+  final int count;
+
+  factory LegalLibraryBrowseItem.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return LegalLibraryBrowseItem(
+      name: j.str('name'),
+      count: j.intg('n'),
+    );
+  }
+}
+
+/// The browse vocabulary from `action=home` → `browse`.
+class LegalLibraryBrowse {
+  const LegalLibraryBrowse({this.courts = const [], this.cities = const [], this.years = const []});
+
+  final List<LegalLibraryBrowseItem> courts;
+  final List<LegalLibraryBrowseItem> cities;
+  final List<LegalLibraryBrowseItem> years;
+
+  factory LegalLibraryBrowse.fromJson(Map<String, dynamic> map) {
+    List<LegalLibraryBrowseItem> parse(String key) => (map[key] is List)
+        ? (map[key] as List)
+            .whereType<Map>()
+            .map((e) => LegalLibraryBrowseItem.fromJson(Map<String, dynamic>.from(e)))
+            .toList()
+        : const [];
+    return LegalLibraryBrowse(courts: parse('courts'), cities: parse('cities'), years: parse('years'));
   }
 }
 
@@ -853,6 +932,9 @@ class LegalLibraryHome {
     required this.sources,
     required this.types,
     required this.latest,
+    this.courts = 0,
+    this.files = 0,
+    this.browse = const LegalLibraryBrowse(),
   });
 
   final int total;
@@ -860,6 +942,9 @@ class LegalLibraryHome {
   final List<LegalLibrarySource> sources;
   final List<LegalLibraryType> types;
   final List<LegalLibraryItem> latest;
+  final int courts;
+  final int files;
+  final LegalLibraryBrowse browse;
 
   factory LegalLibraryHome.fromJson(Map<String, dynamic> map) {
     final j = Json(map);
@@ -871,15 +956,17 @@ class LegalLibraryHome {
           .map((e) => LegalLibrarySource.fromJson(e.raw))
           .toList(),
       types: j.list('types').map((e) => LegalLibraryType.fromJson(e.raw)).toList(),
+      // `latest` now carries the full public item. Older payloads (or the app talking
+      // to an older server) only had {id,title}; the item parser tolerates that.
       latest: j
           .list('latest')
-          .map((e) => LegalLibraryItem.fromJson({
-                'id': e.raw['id'],
-                'title': e.raw['title'],
-                'type': '',
-                'type_label': '',
-              }))
+          .map((e) => LegalLibraryItem.fromJson(Map<String, dynamic>.from(e.raw)))
           .toList(),
+      courts: j.intg('courts'),
+      files: j.intg('files'),
+      browse: map['browse'] is Map
+          ? LegalLibraryBrowse.fromJson(Map<String, dynamic>.from(map['browse']))
+          : const LegalLibraryBrowse(),
     );
   }
 }
@@ -899,6 +986,25 @@ class LegalLibraryType {
   final int count;
 
   String name(bool isRtl) => isRtl ? nameAr : (nameEn.isEmpty ? nameAr : nameEn);
+
+  /// A stable bilingual label for a bare type key (used where only the key is known).
+  static String labelFor(String key, bool isRtl) {
+    const ar = {
+      'judgment': 'حكم قضائي',
+      'legislation': 'نظام / تشريع',
+      'book': 'مجموعة قانونية',
+      'statistics': 'إحصاء',
+      'article': 'مقال',
+    };
+    const en = {
+      'judgment': 'Judgement',
+      'legislation': 'Statute',
+      'book': 'Collection',
+      'statistics': 'Statistics',
+      'article': 'Article',
+    };
+    return (isRtl ? ar : en)[key] ?? key;
+  }
 
   factory LegalLibraryType.fromJson(Map<String, dynamic> map) {
     final j = Json(map);

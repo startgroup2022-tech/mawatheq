@@ -36,92 +36,161 @@ $row = legal_library_item($id);
 if (!$row) {
     http_response_code(404);
     $pageTitle = is_rtl() ? 'العنصر غير موجود' : 'Item not found';
+    $pageStyles = ['/assets/css/legal-library.css'];
     require_once __DIR__ . '/includes/header.php';
-    echo '<section class="section"><div class="container"><div class="ll-empty"><span class="ll-empty-icon">🔍</span>'
-       . (is_rtl() ? 'لم يُعثر على هذا العنصر.' : 'This item could not be found.') . '</div></div></section>';
+    require_once __DIR__ . '/includes/legal_library_ui.php';
+    echo '<div class="ll-page"><section class="section"><div class="container"><div class="ll-empty">'
+       . '<div class="ll-empty-icon">' . ui_icon('search', 'll-ico-lg') . '</div>'
+       . '<h3>' . (is_rtl() ? 'لم يُعثر على هذا العنصر' : 'This item could not be found') . '</h3>'
+       . '<p><a href="/legal-library.php">' . (is_rtl() ? 'العودة إلى المكتبة' : 'Back to the library') . '</a></p>'
+       . '</div></div></section></div>';
     require_once __DIR__ . '/includes/footer.php';
     exit;
 }
 
 $item = legal_library_public_item($row, $userId, true);
+$related = legal_library_related($id, 6);
 $pageTitle = $item['title'];
 $pageStyles = ['/assets/css/legal-library.css'];
 require_once __DIR__ . '/includes/header.php';
+require_once __DIR__ . '/includes/legal_library_ui.php';
+$rtl = is_rtl();
 
-// The body is stored as the portal's HTML (with <br>). Render it as text paragraphs
-// rather than raw HTML: the text comes from a third party, so it is escaped, not trusted.
-$bodyHtml = '';
-if (!empty($item['body'])) {
-    $parts = preg_split('/\n+/', str_replace(['<br />', '<br/>', '<br>'], "\n", (string)$item['body']));
-    foreach ($parts as $p) {
-        $p = trim(strip_tags($p));
-        if ($p !== '') $bodyHtml .= '<p>' . htmlspecialchars($p) . '</p>';
+// The structured sections the source published. Rendered as text (escaped), never as
+// raw HTML — the text comes from a third party.
+$sections = [];
+if (!empty($item['sections'])) {
+    foreach (['facts' => $rtl ? 'الوقائع' : 'Facts', 'reasons' => $rtl ? 'الأسباب' : 'Reasons',
+              'ruling' => $rtl ? 'منطوق الحكم' : 'Ruling', 'narration' => $rtl ? 'الوقائع والسرد' : 'Narration'] as $k => $label) {
+        $val = $item['sections'][$k] ?? null;
+        if (is_string($val) && trim($val) !== '') $sections[$k] = ['label' => $label, 'text' => $val];
     }
 }
+// A body that is the ruling text and not already covered by a section.
+$bodyText = !empty($item['body']) ? (string)$item['body'] : '';
+$bodyCoveredByRuling = isset($sections['ruling']) && trim($sections['ruling']['text']) === trim($bodyText);
 ?>
+<div class="ll-page">
 <section class="section">
   <div class="container">
-    <div class="toolbar" style="margin-bottom:14px">
-      <a href="/legal-library-search.php" class="btn btn-outline btn-sm">← <?= is_rtl() ? 'رجوع للبحث' : 'Back to search' ?></a>
-      <a href="/legal-library.php" class="btn btn-outline btn-sm"><?= is_rtl() ? 'رئيسية المكتبة' : 'Library home' ?></a>
-    </div>
+    <nav class="muted-sm" style="margin-bottom:12px">
+      <a href="/legal-library.php" style="color:var(--ll-teal);text-decoration:none"><?= $rtl ? 'المكتبة القانونية' : 'Legal library' ?></a>
+      <span> / </span>
+      <a href="/legal-library-search.php?type=<?= urlencode((string)$item['type']) ?>" style="color:var(--ll-teal);text-decoration:none"><?= ui_e((string)$item['type_label']) ?></a>
+    </nav>
 
     <div class="ll-reader">
-      <span class="ll-chip type"><?= htmlspecialchars((string)$item['type_label']) ?></span>
-      <?php if ($item['source_name']): ?><span class="ll-chip src"><?= htmlspecialchars((string)$item['source_name']) ?></span><?php endif; ?>
-      <h1 style="margin:12px 0 8px;font-size:1.35rem;line-height:1.7"><?= htmlspecialchars((string)$item['title']) ?></h1>
-
-      <div class="ll-chips" style="margin-bottom:14px">
-        <?php if ($item['court_name']): ?><span class="ll-chip">🏛 <?= htmlspecialchars((string)$item['court_name']) ?></span><?php endif; ?>
-        <?php if ($item['city']): ?><span class="ll-chip">📍 <?= htmlspecialchars((string)$item['city']) ?></span><?php endif; ?>
-        <?php if ($item['decision_number']): ?><span class="ll-chip"><?= is_rtl() ? 'رقم الحكم' : 'Decision no.' ?> <?= htmlspecialchars((string)$item['decision_number']) ?></span><?php endif; ?>
-        <?php if ($item['case_number']): ?><span class="ll-chip"><?= is_rtl() ? 'رقم القضية' : 'Case no.' ?> <?= htmlspecialchars((string)$item['case_number']) ?></span><?php endif; ?>
-        <?php if ($item['decision_date']): ?><span class="ll-chip">🗓 <?= htmlspecialchars((string)$item['decision_date']) ?></span><?php endif; ?>
-        <?php if ($item['hijri_year']): ?><span class="ll-chip"><?= (int)$item['hijri_year'] ?> <?= is_rtl() ? 'هـ' : 'AH' ?></span><?php endif; ?>
-        <?php if ($item['publisher']): ?><span class="ll-chip"><?= htmlspecialchars((string)$item['publisher']) ?></span><?php endif; ?>
-        <?php if ($item['file_type']): ?><span class="ll-chip"><?= htmlspecialchars(strtoupper((string)$item['file_type'])) ?><?= $item['file_size_kb'] ? ' · ' . number_format((int)$item['file_size_kb']) . ' KB' : '' ?></span><?php endif; ?>
+      <div class="ll-reader-top">
+        <?= ll_chip((string)$item['type_label'], 'type') ?>
+        <?php if (!empty($item['source_name'])): ?><?= ll_chip((string)$item['source_name'], 'src', 'building') ?><?php endif; ?>
+        <?php if (!empty($item['title_is_derived'])): ?><?= ll_chip($rtl ? 'وصف من الحقول الرسمية' : 'Described from official fields', 'derived', 'info') ?><?php endif; ?>
+        <?php if (!empty($item['can_read_here'])): ?><?= ll_chip($rtl ? 'النص الكامل متاح للقراءة' : 'Full text readable here', 'type', 'check-circle') ?><?php endif; ?>
       </div>
 
+      <h1><?= ui_e((string)$item['title']) ?></h1>
+
+      <?php if (!empty($item['decision_title']) && $item['decision_title'] !== $item['title']): ?>
+        <p class="muted-sm" style="margin:-4px 0 12px"><?= ui_e((string)$item['decision_title']) ?></p>
+      <?php endif; ?>
+
+      <!-- ------------------------------------------------ meta grid -->
+      <div class="ll-detail-grid">
+        <?php
+        $meta = [];
+        if (!empty($item['court_name'])) $meta[] = [$rtl ? 'الجهة القضائية' : 'Court', $item['court_name'], 'landmark'];
+        if (!empty($item['city'])) $meta[] = [$rtl ? 'المنطقة / المدينة' : 'Region / city', $item['city'], 'map'];
+        if (!empty($item['decision_number'])) $meta[] = [$rtl ? 'رقم الحكم' : 'Ruling number', $item['decision_number'], ''];
+        if (!empty($item['case_number'])) $meta[] = [$rtl ? 'رقم القضية' : 'Case number', $item['case_number'], ''];
+        if (!empty($item['decision_date'])) $meta[] = [$rtl ? 'تاريخ الحكم' : 'Ruling date', $item['decision_date'], 'calendar'];
+        elseif (!empty($item['hijri_year'])) $meta[] = [$rtl ? 'السنة' : 'Year', (int)$item['hijri_year'] . ($rtl ? ' هـ' : ' AH'), 'calendar'];
+        if (!empty($item['category'])) $meta[] = [$rtl ? 'التصنيف' : 'Category', $item['category'], ''];
+        if (!empty($item['publisher'])) $meta[] = [$rtl ? 'الناشر' : 'Publisher', $item['publisher'], ''];
+        if (!empty($item['file_type'])) $meta[] = [$rtl ? 'نوع الملف' : 'File type', strtoupper((string)$item['file_type']) . ($item['file_size_kb'] ? ' · ' . number_format((int)$item['file_size_kb']) . ' KB' : ''), 'file'];
+        foreach ($meta as $m): ?>
+          <div class="dl">
+            <div class="dt"><?= ui_icon($m[2] ?: 'info', 'll-ico ll-ico-sm') ?> <?= ui_e($m[0]) ?></div>
+            <div class="dd"><?= ui_e((string)$m[1]) ?></div>
+          </div>
+        <?php endforeach; ?>
+      </div>
+
+      <!-- -------------------------------------------------- actions -->
       <div class="ll-actions">
-        <?php if ($item['can_read_here']): ?>
-          <span class="ll-chip" style="background:#E8F5F3;color:#0d6b5e">✔ <?= is_rtl() ? 'النص الكامل متاح للقراءة هنا' : 'Full text readable here' ?></span>
-        <?php endif; ?>
         <?php if (!empty($item['download_url'])): ?>
-          <a class="btn btn-primary btn-sm" href="<?= htmlspecialchars((string)$item['download_url']) ?>" <?= $item['download_is_external'] ? 'target="_blank" rel="noopener noreferrer"' : '' ?>>
-            ⬇ <?= $item['download_is_external']
-                ? (is_rtl() ? 'تنزيل من المصدر الرسمي' : 'Download from the official source')
-                : (is_rtl() ? 'تنزيل الملف' : 'Download file') ?>
+          <a class="btn btn-primary btn-sm" href="<?= ui_e((string)$item['download_url']) ?>" <?= $item['download_is_external'] ? 'target="_blank" rel="noopener noreferrer"' : '' ?>>
+            <?= ui_icon($item['download_is_external'] ? 'external' : 'download', 'll-ico ll-ico-sm') ?>
+            <?= $item['download_is_external']
+                ? ($rtl ? 'تنزيل من المصدر الرسمي' : 'Download from the official source')
+                : ($rtl ? 'تنزيل الملف' : 'Download file') ?>
           </a>
         <?php endif; ?>
         <?php if (!empty($item['source_url'])): ?>
-          <a class="btn btn-outline btn-sm" href="<?= htmlspecialchars((string)$item['source_url']) ?>" target="_blank" rel="noopener noreferrer">🔗 <?= is_rtl() ? 'الصفحة الرسمية' : 'Official page' ?></a>
+          <a class="btn btn-outline btn-sm" href="<?= ui_e((string)$item['source_url']) ?>" target="_blank" rel="noopener noreferrer"><?= ui_icon('link', 'll-ico ll-ico-sm') ?> <?= $rtl ? 'الصفحة الرسمية' : 'Official page' ?></a>
         <?php endif; ?>
+        <button type="button" class="btn btn-outline btn-sm" data-ll-print><?= ui_icon('print', 'll-ico ll-ico-sm') ?> <?= $rtl ? 'طباعة' : 'Print' ?></button>
+        <button type="button" class="btn btn-outline btn-sm" data-ll-copy="<?= ui_e(rtrim(SITE_URL, '/') . '/legal-library-item.php?id=' . (int)$item['id']) ?>" data-copied="<?= $rtl ? 'تم نسخ الرابط' : 'Link copied' ?>"><?= ui_icon('copy', 'll-ico ll-ico-sm') ?> <?= $rtl ? 'نسخ الرابط' : 'Copy link' ?></button>
         <?php if ($userId > 0): ?>
           <form method="post" style="display:inline">
-            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
+            <input type="hidden" name="csrf_token" value="<?= ui_e(csrf_token()) ?>">
             <input type="hidden" name="action" value="favorite">
             <button class="btn btn-sm ll-fav-btn <?= !empty($item['is_favorite']) ? 'on' : 'btn-outline' ?>" type="submit">
-              <?= !empty($item['is_favorite']) ? '★ ' . (is_rtl() ? 'محفوظ' : 'Saved') : '☆ ' . (is_rtl() ? 'احفظ في مكتبتي' : 'Save to my library') ?>
+              <?= ui_icon(!empty($item['is_favorite']) ? 'star-filled' : 'star', 'll-ico ll-ico-sm') ?>
+              <?= !empty($item['is_favorite']) ? ($rtl ? 'محفوظ في مكتبتي' : 'Saved in my library') : ($rtl ? 'احفظ في مكتبتي' : 'Save to my library') ?>
             </button>
           </form>
+        <?php else: ?>
+          <a class="btn btn-outline btn-sm" href="/login.php"><?= ui_icon('star', 'll-ico ll-ico-sm') ?> <?= $rtl ? 'سجّل الدخول للحفظ' : 'Sign in to save' ?></a>
         <?php endif; ?>
       </div>
 
-      <?php if ($item['summary']): ?><p class="ll-summary" style="font-size:1rem"><?= htmlspecialchars((string)$item['summary']) ?></p><?php endif; ?>
+      <!-- ------------------------------------------------- content -->
+      <?php if ($sections || ($bodyText !== '' && !$bodyCoveredByRuling)): ?>
+        <div class="ll-reader-layout">
+          <div>
+            <?php if (!empty($item['summary'])): ?>
+              <div class="ll-callout"><?= ui_icon('info', 'll-ico') ?><span><?= ui_e((string)$item['summary']) ?></span></div>
+            <?php endif; ?>
 
-      <?php if ($bodyHtml !== ''): ?>
-        <hr style="border:none;border-top:1px solid var(--line,#E2E8F0);margin:18px 0">
-        <div class="ll-body"><?= $bodyHtml ?></div>
+            <?php if ($bodyText !== '' && !$bodyCoveredByRuling): ?>
+              <h2 class="ll-sec-title" id="ll-sec-text"><?= $rtl ? 'نص الحكم' : 'Ruling text' ?></h2>
+              <div class="ll-prose"><?= ui_e($bodyText) ?></div>
+            <?php endif; ?>
+
+            <?php foreach ($sections as $k => $sec): ?>
+              <h2 class="ll-sec-title" id="ll-sec-<?= ui_e($k) ?>"><?= ui_e($sec['label']) ?></h2>
+              <div class="ll-prose"><?= ui_e($sec['text']) ?></div>
+            <?php endforeach; ?>
+          </div>
+
+          <aside class="ll-toc">
+            <h4><?= $rtl ? 'محتويات الصفحة' : 'On this page' ?></h4>
+            <?php if ($bodyText !== '' && !$bodyCoveredByRuling): ?><a href="#ll-sec-text"><?= $rtl ? 'نص الحكم' : 'Ruling text' ?></a><?php endif; ?>
+            <?php foreach ($sections as $k => $sec): ?>
+              <a href="#ll-sec-<?= ui_e($k) ?>"><?= ui_e($sec['label']) ?></a>
+            <?php endforeach; ?>
+          </aside>
+        </div>
       <?php elseif ($item['redistribution'] === 'link_only'): ?>
-        <div class="ll-banner" style="margin-top:16px"><?= is_rtl()
-          ? 'هذا المصدر لا يسمح بنسخ الملف داخل مواثيق. يمكنك تنزيله أو قراءته من الرابط الرسمي أعلاه.'
-          : 'This source does not permit copying the file into Mawatheq. Use the official link above to read or download it.' ?></div>
-      <?php elseif ($item['item_type'] === 'judgment'): ?>
-        <p class="muted-sm" style="margin-top:16px"><?= is_rtl()
-          ? 'نص الحكم الكامل متاح عبر الصفحة الرسمية لوزارة العدل. اضغط «الصفحة الرسمية» لعرضه.'
-          : 'The full ruling text is available on the Ministry of Justice official page. Press “Official page” to view it.' ?></p>
+        <div class="ll-callout warn">
+          <?= ui_icon('shield', 'll-ico') ?>
+          <span><?= $rtl
+            ? 'هذا المصدر يُعرض بالبيانات والرابط الرسمي فقط، ولا يُنسخ نصه أو ملفه داخل مواثيق التزاماً بسياسة إعادة النشر. استخدم «الصفحة الرسمية» لقراءة النص الكامل لدى الجهة المصدِرة.'
+            : 'This source is shown as metadata plus its official link; its text or file is not copied into Mawatheq, in line with the redistribution policy. Use “Official page” to read the full text at the issuing authority.' ?></span>
+        </div>
       <?php endif; ?>
     </div>
+
+    <!-- ------------------------------------------------- related -->
+    <?php if ($related): ?>
+      <div class="ll-section">
+        <div class="ll-section-head"><h2><?= ui_icon('scale', 'll-ico') ?> <?= $rtl ? 'أحكام ذات صلة' : 'Related rulings' ?></h2></div>
+        <div class="ll-mini-list">
+          <?php foreach ($related as $r): echo ll_mini_card($r); endforeach; ?>
+        </div>
+      </div>
+    <?php endif; ?>
   </div>
 </section>
+</div>
+<script src="/assets/js/legal-library.js" defer></script>
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

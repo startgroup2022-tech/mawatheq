@@ -91,12 +91,16 @@ const _hostedItem = {
   'type': 'judgment',
   'type_label': 'أحكام وقرارات قضائية',
   'title': 'حكم رقم 4471161621 — المحكمة التجارية',
+  'decision_title': 'قرار في دعوى مطالبة مالية',
+  'title_is_derived': false,
   'summary': 'خلاف حول تنفيذ عقد توريد.',
   'court_name': 'المحكمة التجارية بالرياض',
   'city': 'الرياض',
   'decision_number': '4471161621',
   'hijri_year': 1445,
   'gregorian_year': 2024,
+  'decision_date': '2024-05-08',
+  'category': 'تجاري',
   'source_key': 'moj_decisions',
   'source_name': 'القرارات والأحكام القضائية — وزارة العدل',
   'publisher': 'وزارة العدل',
@@ -106,6 +110,11 @@ const _hostedItem = {
   'download_url': '/legal-library-file.php?id=11',
   'download_is_external': false,
   'body': '<p>الوقائع: تقدم المدعي بدعوى…</p><br><p>الأسباب: وحيث إن…</p>',
+  'sections': {
+    'facts': 'تقدم المدعي بدعوى مطالبة مالية.',
+    'reasons': 'وحيث إن العقد صحيح نافذ.',
+    'ruling': 'حكمت المحكمة بإلزام المدعى عليه بالمبلغ.',
+  },
   'is_favorite': false,
 };
 
@@ -154,8 +163,29 @@ Future<(int, Object)> _ok(Uri uri) async {
           {'key': 'book', 'name_ar': 'كتب', 'name_en': 'Books', 'count': 14},
         ],
         'latest': [
-          {'id': 11, 'title': 'حكم رقم 4471161621 — المحكمة التجارية'},
+          {
+            'id': 11,
+            'title': 'حكم رقم 4471161621 — المحكمة التجارية',
+            'type_label': 'أحكام وقرارات قضائية',
+            'source_name': 'القرارات والأحكام القضائية — وزارة العدل',
+            'court_name': 'المحكمة التجارية بالرياض',
+            'decision_number': '4471161621',
+            'hijri_year': 1445,
+          },
         ],
+        'courts': 1,
+        'files': 0,
+        'browse': {
+          'courts': [
+            {'name': 'المحكمة التجارية بالرياض', 'n': 40},
+          ],
+          'cities': [
+            {'name': 'الرياض', 'n': 30},
+          ],
+          'years': [
+            {'name': '1445', 'n': 20},
+          ],
+        },
       });
     case 'search':
       return (200, {
@@ -237,6 +267,21 @@ String _allText(WidgetTester tester) => tester
     .map((t) => t.data ?? '')
     .join(' | ');
 
+/// A lazy `ListView` does not build what is off-screen, so content below the fold is
+/// not in the tree until it is scrolled to. Drag the primary scrollable up in steps
+/// and collect the text seen along the way.
+Future<String> _scrolledText(WidgetTester tester) async {
+  final seen = <String>[_allText(tester)];
+  for (var i = 0; i < 8; i++) {
+    final scrollable = find.byType(Scrollable);
+    if (scrollable.evaluate().isEmpty) break;
+    await tester.drag(scrollable.first, const Offset(0, -600));
+    await tester.pump(const Duration(milliseconds: 120));
+    seen.add(_allText(tester));
+  }
+  return seen.join(' || ');
+}
+
 void main() {
   group('model parsing', () {
     test('a hosted item exposes its body and an internal download', () {
@@ -247,6 +292,14 @@ void main() {
       expect(item.downloadUrl, '/legal-library-file.php?id=11');
       expect(item.hijriYear, 1445);
       expect(item.typeLabel, 'أحكام وقرارات قضائية');
+      // Execution 68: the real title, its derived flag and the structured sections.
+      expect(item.decisionTitle, 'قرار في دعوى مطالبة مالية');
+      expect(item.titleIsDerived, isFalse);
+      expect(item.decisionDate, '2024-05-08');
+      expect(item.sections, isNotNull);
+      expect(item.sections!.ruling, 'حكمت المحكمة بإلزام المدعى عليه بالمبلغ.');
+      expect(item.sections!.facts, isNotNull);
+      expect(item.sections!.isEmpty, isFalse);
     });
 
     test('a link_only item exposes metadata and an external download only', () {
@@ -277,6 +330,15 @@ void main() {
       expect(home.sources.first.isHosted, isTrue);
       expect(home.sources.last.isHosted, isFalse);
       expect(home.types.first.count, 40);
+      // Execution 68: the browse vocabulary and the extra counters.
+      expect(home.courts, 1);
+      expect(home.browse.courts.first.name, 'المحكمة التجارية بالرياض');
+      expect(home.browse.courts.first.count, 40);
+      expect(home.browse.cities.first.name, 'الرياض');
+      expect(home.browse.years.first.name, '1445');
+      // The latest strip now carries full items, not just {id,title}.
+      expect(home.latest.first.title, contains('4471161621'));
+      expect(home.latest.first.courtName, 'المحكمة التجارية بالرياض');
     });
 
     test('search parses the page envelope', () async {
@@ -305,10 +367,13 @@ void main() {
       );
       await _settle(tester);
 
-      final text = _allText(tester);
-      expect(text, contains('المكتبة القانونية والقضائية الذكية'));
+      final text = await _scrolledText(tester);
+      expect(text, contains('المكتبة القانونية والقضائية'));
       expect(text, contains('القرارات والأحكام القضائية — وزارة العدل'));
       expect(text, contains('مكتبة المصدر'));
+      // Execution 68: the hub exposes real browse buckets with their counts.
+      expect(text, contains('تصفّح حسب الجهة القضائية'));
+      expect(text, contains('المحكمة التجارية بالرياض'));
       expect(tester.takeException(), isNull);
     });
 
@@ -336,11 +401,29 @@ void main() {
       );
       await _settle(tester);
 
-      final text = _allText(tester);
+      final text = await _scrolledText(tester);
       expect(text, contains('النص الكامل متاح للقراءة هنا'));
       // The stored HTML is shown as text, with the <br> breaks turned into lines.
       expect(text, contains('الوقائع: تقدم المدعي بدعوى…'));
       expect(text, isNot(contains('<p>')));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('the item page renders the structured sections', (tester) async {
+      _phoneSurface(tester);
+      final t = _Transport(_ok);
+      final repo = _repo(t);
+      await tester.pumpWidget(
+        _wrap(repo, _auth(repo), LegalLibraryItemScreen(itemId: 11, repository: repo)),
+      );
+      await _settle(tester);
+
+      final text = await _scrolledText(tester);
+      // Execution 68: each published section is shown under its own heading.
+      expect(text, contains('منطوق الحكم'));
+      expect(text, contains('حكمت المحكمة بإلزام المدعى عليه بالمبلغ.'));
+      expect(text, contains('الوقائع'));
+      expect(text, contains('الأسباب'));
       expect(tester.takeException(), isNull);
     });
 

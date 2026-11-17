@@ -2374,6 +2374,17 @@ CREATE TABLE IF NOT EXISTS `legal_library_items` (
   `lang` VARCHAR(5) NOT NULL DEFAULT 'ar',
   `redistribution` ENUM('link_only','hosted','unknown') NOT NULL DEFAULT 'link_only',
   `hosted_path` VARCHAR(500) NULL DEFAULT NULL,
+  `decision_title` VARCHAR(400) NULL DEFAULT NULL,
+  `title_is_derived` TINYINT(1) NOT NULL DEFAULT 0,
+  `judgment_facts` LONGTEXT NULL DEFAULT NULL,
+  `judgment_reasons` LONGTEXT NULL DEFAULT NULL,
+  `judgment_ruling` LONGTEXT NULL DEFAULT NULL,
+  `judgment_narration` LONGTEXT NULL DEFAULT NULL,
+  `detail_fetched_at` DATETIME NULL DEFAULT NULL,
+  `imported_at` DATETIME NULL DEFAULT NULL,
+  `hijri_date` VARCHAR(20) NULL DEFAULT NULL,
+  `title_norm` VARCHAR(400) NULL DEFAULT NULL,
+  `summary_norm` TEXT NULL DEFAULT NULL,
   `is_published` TINYINT(1) NOT NULL DEFAULT 1,
   `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -2387,6 +2398,8 @@ CREATE TABLE IF NOT EXISTS `legal_library_items` (
   KEY `idx_lli_date` (`decision_date`),
   KEY `idx_lli_category` (`category`),
   KEY `idx_lli_published` (`is_published`),
+  KEY `idx_ll_title_norm` (`title_norm`),
+  KEY `idx_ll_detail_pending` (`source_key`, `detail_fetched_at`),
   FULLTEXT KEY `ft_lli_text` (`title`, `summary`, `body`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

@@ -56,15 +56,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     : sprintf('Synced: %d new, %d updated, %d skipped.', (int)$res['new'], (int)$res['updated'], (int)$res['skipped']);
             }
         }
+    } elseif ($action === 'enrich') {
+        // Fetch the real detail (title + text) for a bounded batch of catalogue rows
+        // that do not have one yet. The list endpoint carries no title, so this is what
+        // makes the imported rows readable instead of a bare number-and-court list.
+        $src = legal_library_source('moj_decisions');
+        if ($src) {
+            $r = legal_library_enrich_moj_details($pdo, $src, ['limit' => 8, 'pause_ms' => 3500]);
+            log_action($pdo, 'legal_library_enrich', 'legal_library_sources', 'moj_decisions',
+                json_encode($r, JSON_UNESCAPED_UNICODE));
+            if ($r['enriched'] === 0 && $r['blocked'] > 0) {
+                $noticeType = 'error';
+                $notice = is_rtl()
+                    ? 'رفضت البوابة الطلبات مؤقتاً (حماية WAF). أعد المحاولة بعد قليل.'
+                    : 'The gateway is temporarily refusing requests (WAF). Try again shortly.';
+            } else {
+                $notice = is_rtl()
+                    ? sprintf('تم إثراء %d عنصر بالنص والعنوان الحقيقي، وفشل %d.', $r['enriched'], $r['failed'])
+                    : sprintf('Enriched %d items with the real title/text; %d failed.', $r['enriched'], $r['failed']);
+            }
+        }
     }
 }
 
 $sources = legal_library_sources(false);
 $runs = [];
 $totalItems = 0;
+$enrichedItems = 0;
+$pendingDetails = 0;
 try {
     $runs = $pdo->query('SELECT * FROM legal_library_sync_runs ORDER BY id DESC LIMIT 25')->fetchAll();
     $totalItems = (int)$pdo->query('SELECT COUNT(*) FROM legal_library_items')->fetchColumn();
+    // Detail coverage: how many rows already carry the real title/text. A catalogue
+    // that is all "pending" shows only numbers and courts, which is the state the
+    // operator rejected — so this number is surfaced, not hidden.
+    $enrichedItems = (int)$pdo->query('SELECT COUNT(*) FROM legal_library_items WHERE detail_fetched_at IS NOT NULL')->fetchColumn();
+    $pendingDetails = (int)$pdo->query("SELECT COUNT(*) FROM legal_library_items WHERE source_key='moj_decisions' AND detail_fetched_at IS NULL")->fetchColumn();
 } catch (Throwable $e) { $runs = []; }
 
 $statusLabels = [
@@ -90,9 +117,19 @@ $csrf = csrf_token();
 
   <div class="stat-grid" style="margin-bottom:18px">
     <div class="dash-card stat-card"><div class="stat-value"><?= number_format($totalItems) ?></div><div class="stat-label"><?= is_rtl() ? 'إجمالي العناصر' : 'Total items' ?></div></div>
+    <div class="dash-card stat-card"><div class="stat-value"><?= number_format($enrichedItems) ?></div><div class="stat-label"><?= is_rtl() ? 'عناصر بنص وعنوان حقيقي' : 'Items with real title/text' ?></div></div>
+    <div class="dash-card stat-card"><div class="stat-value"><?= number_format($pendingDetails) ?></div><div class="stat-label"><?= is_rtl() ? 'بانتظار الإثراء' : 'Awaiting enrichment' ?></div></div>
     <div class="dash-card stat-card"><div class="stat-value"><?= count($sources) ?></div><div class="stat-label"><?= is_rtl() ? 'المصادر المسجّلة' : 'Registered sources' ?></div></div>
     <div class="dash-card stat-card"><div class="stat-value"><?= count(array_filter($sources, fn($s) => (int)$s['is_enabled'] === 1)) ?></div><div class="stat-label"><?= is_rtl() ? 'المصادر المفعّلة' : 'Enabled sources' ?></div></div>
   </div>
+
+  <?php if ($pendingDetails > 0): ?>
+    <div class="form-alert" style="background:#FFF8E6;border-color:#F0DDA8;color:#7A5409">
+      <?= is_rtl()
+        ? sprintf('يوجد %d عنصر في كتالوج وزارة العدل بانتظار الإثراء (العنوان والنص الحقيقي). شغّل «إثراء النصوص» أو cron/legal-library-sync.php لمعالجتها على دفعات.', $pendingDetails)
+        : sprintf('%d Ministry-of-Justice rows are awaiting enrichment (real title + text). Run “Enrich text” or cron/legal-library-sync.php to process them in batches.', $pendingDetails) ?>
+    </div>
+  <?php endif; ?>
 
   <div class="dash-card" style="margin-bottom:18px">
     <h2 style="margin-top:0"><?= is_rtl() ? 'المصادر' : 'Sources' ?></h2>
@@ -131,6 +168,9 @@ $csrf = csrf_token();
                 <button class="btn btn-outline btn-sm" name="action" value="toggle" type="submit"><?= (int)$s['is_enabled'] ? (is_rtl() ? 'تعطيل' : 'Disable') : (is_rtl() ? 'تفعيل' : 'Enable') ?></button>
                 <?php if (in_array($s['source_key'], ['moj_decisions', 'moj_legislation', 'mashortich_books'], true)): ?>
                   <button class="btn btn-primary btn-sm" name="action" value="sync" type="submit"><?= is_rtl() ? 'مزامنة الآن' : 'Sync now' ?></button>
+                <?php endif; ?>
+                <?php if ($s['source_key'] === 'moj_decisions'): ?>
+                  <button class="btn btn-outline btn-sm" name="action" value="enrich" type="submit" title="<?= is_rtl() ? 'جلب العنوان والنص الحقيقي لدفعة من العناصر' : 'Fetch the real title/text for a batch of items' ?>"><?= is_rtl() ? 'إثراء النصوص' : 'Enrich text' ?></button>
                 <?php endif; ?>
               </form>
             </td>

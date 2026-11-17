@@ -50,13 +50,26 @@ try {
             foreach (legal_library_item_types() as $k => $t) {
                 $types[] = ['key' => $k, 'name_ar' => $t['ar'], 'name_en' => $t['en'], 'count' => (int)($stats['by_type'][$k] ?? 0)];
             }
+            // `latest` keeps its original {id,title} shape (the app's home carousel) and
+            // gains the full public item so a richer client can render a real card
+            // without a second call. Existing clients read the fields they already know.
+            $latest = array_map(function ($r) {
+                $pub = legal_library_public_item($r);
+                $pub['title'] = $r['title'];   // explicit, in case a future change renames it
+                return $pub;
+            }, $stats['latest']);
             api_json([
                 'ok' => true,
                 'total' => (int)$stats['total'],
                 'enabled_sources' => (int)$stats['sources'],
                 'sources' => $out,
                 'types' => $types,
-                'latest' => array_map(fn($r) => ['id' => (int)$r['id'], 'title' => $r['title']], $stats['latest']),
+                'latest' => $latest,
+                // Additive: the browse vocabulary and the extra counters. Older clients
+                // ignore unknown keys, so this stays backward compatible.
+                'courts' => (int)$stats['courts'],
+                'files' => (int)$stats['files'],
+                'browse' => legal_library_browse(),
             ]);
             break;
 
@@ -70,7 +83,9 @@ try {
                 'category'   => trim((string)($_GET['category'] ?? '')),
                 'file_type'  => trim((string)($_GET['file_type'] ?? '')),
                 'year'       => (int)($_GET['year'] ?? 0),
+                'sort'       => trim((string)($_GET['sort'] ?? 'newest')),
             ];
+            if (($_GET['has_file'] ?? '') !== '') $f['has_file'] = 1;
             $page = max(1, (int)($_GET['page'] ?? 1));
             $perPage = (int)($_GET['per_page'] ?? 20);
             $res = legal_library_search($f, $page, $perPage);
@@ -91,7 +106,10 @@ try {
             if (!$row) { api_error('العنصر غير موجود.', 404); }
             // `body` is only ever populated for a hosted source; pass no user so the
             // public action never leaks another account's saved state.
-            api_json(['ok' => true, 'item' => legal_library_public_item($row, null, true)]);
+            $item = legal_library_public_item($row, null, true);
+            // Additive: real related items (same court / city+type), never invented.
+            $item['related'] = array_map(fn($r) => legal_library_public_item($r), legal_library_related($id, 6));
+            api_json(['ok' => true, 'item' => $item]);
             break;
 
         case 'facets':
@@ -104,6 +122,7 @@ try {
                 'years' => array_map('intval', $fc['years']),
                 'categories' => $fc['categories'],
                 'types' => $fc['types'],
+                'file_types' => $fc['file_types'],
             ]);
             break;
 

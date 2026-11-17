@@ -4468,3 +4468,57 @@ in the wrong month.
 an SSO `login-callback` flow. Both remain `redistribution = 'unknown'`, `is_enabled = 0` with no
 importer: registering a source is not the same as being allowed to import it, and an endpoint
 written from a guess would be worse than none. Their notes in the seed say exactly this.
+
+## Execution 68 (content) — the library's real titles, Arabic search, and the partial-upsert trap
+
+`upgrade_v80.sql` adds the judgement detail columns and the Arabic-normalised search keys.
+
+### The MOJ list endpoint has no title; the detail endpoint does
+
+`Judgements/list` carries only `judgementNumber`, `judgementDate`, `courtName`, `city`,
+`hijriYear`. The real title and the facts/reasons/ruling text live on `Judgements/get-details`
+(`...?id=<external_id>&lang=ar&IdentityNumber=`). `legal_library_map_moj_judgement()` prefers the
+source's own `title`, then `decisionTitle`, and only when both are absent builds a clear
+description from the official fields and sets `title_is_derived = 1`. A derived title is a
+labelled fallback, never presented as the source's. `legal_library_enrich_moj_details()` fills the
+detail columns for rows whose `detail_fetched_at IS NULL`; `cron/legal-library-sync.php --enrich=N`
+runs it (default 15 per run) because the list walk alone leaves every title derived.
+
+### `legal_library_upsert_item()` must write only the columns the caller provided
+
+It used to write every known column on any update, so an enrichment pass that set only the title
+**nulled** the previously imported body/facts/reasons — a later improvement erasing an earlier one.
+It now builds `$present[$c] = array_key_exists($c, $it)` and emits `SET` only for present columns.
+Keep that: any new caller that updates a subset depends on it.
+
+### Arabic search is normalised, and the normaliser is stored
+
+`legal_library_normalize_ar()` folds hamza/alef-maqsura/taa-marbuta, drops tatweel and diacritics,
+collapses whitespace and lowercases Latin. `legal_library_upsert_item()` derives `title_norm` /
+`summary_norm` for **every** importer, and `legal_library_search()` matches the normalised **and**
+the raw columns, so `احمد` finds `أحمد`. The v80 backfill uses MariaDB `REPLACE` for the same
+folding, so a re-run does not depend on PHP having run.
+
+### The library pages are a CSP-safe layer, and its files must be mode 644
+
+`includes/legal_library_ui.php` + `assets/css/legal-library.css` + `assets/js/legal-library.js`
+(no inline handlers, no third-party JS). Files written through the editor land `0600`/`0660` —
+Apache then returns **500** with `Failed to open stream: Permission denied` in its log, not a PHP
+error. `chmod 644` every new file before testing over HTTP; a whole-tree `find … -exec chmod 644`
+plus `chmod 755` on directories is the quick fix, and `config/secrets.php` stays `640`
+(`chown user:www-data`). This bit the library pages, `legal-library-files.php` and
+`includes/legal_library_ui.php` in one session.
+
+### The WAF blocks intermittently, and that is not a code failure
+
+`laws-gateway.moj.gov.sa` returns HTTP 200 + an HTML "Request Rejected" page (or HTTP 400) on some
+`get-details` calls. `legal_library_http_json()` primes a browser-like session, backs off
+exponentially, and rejects the HTML body so a blocked call is never read as a successful empty
+response. `legal_library_enrich_moj_details()` **stops** the pass on a block and keeps what it has,
+so re-running is always safe and always resumes.
+
+### `title_is_derived` is a truthful flag, not a placeholder detector
+
+It means "this row's title is an honest description built from the official fields". It is `0` for a
+row whose title came from the source's own `title` or `decisionTitle`, which is why a row titled
+`القضية رقم … لعام …هـ` carries `title_is_derived = 0` — that is the source's field, not our prose.

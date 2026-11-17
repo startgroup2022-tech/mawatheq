@@ -14,6 +14,7 @@ import '../../shared/widgets/brand_widgets.dart';
 import 'library_favorites_screen.dart';
 import 'library_item_screen.dart';
 import 'library_search_screen.dart';
+import 'library_widgets.dart';
 
 /// «المكتبة القانونية والقضائية» — the hub, from
 /// `GET /api/v1/legal-library.php?action=home`.
@@ -132,11 +133,30 @@ class _LegalLibraryScreenState extends State<LegalLibraryScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
         children: [
-          _Hero(total: home.total, sources: home.enabledSources, rtl: rtl),
+          _Hero(
+            total: home.total,
+            sources: home.enabledSources,
+            courts: home.courts,
+            rtl: rtl,
+          ),
           const SizedBox(height: AppSpacing.s4),
           _SearchBox(
             rtl: rtl,
             onSubmit: (q) => _openSearch(filters: {'q': q}),
+          ),
+          const SizedBox(height: AppSpacing.s3),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final t in home.types)
+                if (t.count > 0)
+                  ActionChip(
+                    avatar: const Icon(Icons.gavel_outlined, size: 16),
+                    label: Text('${t.name(rtl)} (${t.count})'),
+                    onPressed: () => _openSearch(filters: {'type': t.key}),
+                  ),
+            ],
           ),
           const SizedBox(height: AppSpacing.s3),
           Align(
@@ -147,52 +167,77 @@ class _LegalLibraryScreenState extends State<LegalLibraryScreen> {
               label: Text(rtl ? 'مكتبتي المحفوظة' : 'My saved items'),
             ),
           ),
-          if (home.sources.isEmpty) ...[
+
+          if (home.total == 0) ...[
             const SizedBox(height: AppSpacing.s4),
             EmptyState(
               icon: Icons.menu_book_outlined,
-              title: rtl ? 'لا يوجد مصدر مفعّل بعد' : 'No source enabled yet',
+              title: rtl ? 'لم تُستورد أي عناصر بعد' : 'No items imported yet',
               message: rtl
-                  ? 'طبّق ترقية قاعدة البيانات upgrade_v78.sql ثم شغّل المزامنة من لوحة التحكم.'
-                  : 'Apply the database migration upgrade_v78.sql, then run a sync from the console.',
+                  ? 'طبّق ترقيات قاعدة البيانات ثم شغّل المزامنة من لوحة التحكم (admin/legal-library.php) لاستيراد الأحكام والأنظمة.'
+                  : 'Apply the database migrations, then run a sync from the console (admin/legal-library.php) to import judgments and statutes.',
             ),
           ] else ...[
-            SectionHeader(title: rtl ? 'المصادر' : 'Sources'),
-            for (final s in home.sources) ...[
-              _SourceCard(
-                source: s,
-                rtl: rtl,
-                onTap: () => _openSearch(filters: {'source': s.key}),
-              ),
-              const SizedBox(height: AppSpacing.s2),
-            ],
-          ],
-          if (home.types.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.s3),
-            SectionHeader(title: rtl ? 'تصفّح حسب النوع' : 'Browse by type'),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final t in home.types)
-                  if (t.count > 0)
-                    ActionChip(
-                      label: Text('${t.name(rtl)} (${t.count})'),
-                      onPressed: () => _openSearch(filters: {'type': t.key}),
+            // Browse rows — real court / region / year buckets with their counts.
+            if (home.browse.courts.isNotEmpty) ...[
+              SectionHeader(title: rtl ? 'تصفّح حسب الجهة القضائية' : 'Browse by court'),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final c in home.browse.courts)
+                    LibraryBrowseChip(
+                      label: c.name,
+                      count: c.count,
+                      icon: Icons.account_balance_outlined,
+                      onTap: () => _openSearch(filters: {'court': c.name}),
                     ),
-              ],
-            ),
-          ],
-          if (home.latest.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.s4),
-            SectionHeader(title: rtl ? 'أحدث الإضافات' : 'Recently added'),
-            for (final it in home.latest)
-              Card(
-                margin: const EdgeInsets.only(bottom: 8),
-                color: context.tokens.surface,
-                child: ListTile(
-                  title: Text(it.title),
-                  trailing: const Icon(Icons.chevron_left, size: 18),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.s4),
+            ],
+            if (home.browse.cities.isNotEmpty) ...[
+              SectionHeader(title: rtl ? 'تصفّح حسب المنطقة' : 'Browse by region'),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final c in home.browse.cities)
+                    LibraryBrowseChip(
+                      label: c.name,
+                      count: c.count,
+                      icon: Icons.place_outlined,
+                      onTap: () => _openSearch(filters: {'city': c.name}),
+                    ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.s4),
+            ],
+            if (home.browse.years.isNotEmpty) ...[
+              SectionHeader(title: rtl ? 'تصفّح حسب السنة الهجرية' : 'Browse by Hijri year'),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final y in home.browse.years)
+                    LibraryBrowseChip(
+                      label: '${y.name} ${rtl ? "هـ" : "AH"}',
+                      count: y.count,
+                      icon: Icons.event_outlined,
+                      onTap: () => _openSearch(filters: {'year': y.name}),
+                    ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.s4),
+            ],
+
+            if (home.latest.isNotEmpty) ...[
+              SectionHeader(title: rtl ? 'أحدث الأحكام والقرارات' : 'Latest rulings'),
+              for (final it in home.latest) ...[
+                LibraryItemCard(
+                  item: it,
+                  rtl: rtl,
+                  showSummary: false,
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => LegalLibraryItemScreen(
@@ -202,7 +247,24 @@ class _LegalLibraryScreenState extends State<LegalLibraryScreen> {
                     ),
                   ),
                 ),
-              ),
+                const SizedBox(height: AppSpacing.s2),
+              ],
+            ],
+
+            const SizedBox(height: AppSpacing.s3),
+            SectionHeader(title: rtl ? 'المصادر الرسمية' : 'Official sources'),
+            if (home.sources.isEmpty)
+              Text(rtl ? 'لا يوجد مصدر مفعّل.' : 'No source enabled.',
+                  style: TextStyle(color: context.tokens.textMuted))
+            else
+              for (final s in home.sources) ...[
+                _SourceCard(
+                  source: s,
+                  rtl: rtl,
+                  onTap: () => _openSearch(filters: {'source': s.key}),
+                ),
+                const SizedBox(height: AppSpacing.s2),
+              ],
           ],
           const SizedBox(height: AppSpacing.s5),
           _Disclaimer(rtl: rtl),
@@ -213,10 +275,16 @@ class _LegalLibraryScreenState extends State<LegalLibraryScreen> {
 }
 
 class _Hero extends StatelessWidget {
-  const _Hero({required this.total, required this.sources, required this.rtl});
+  const _Hero({
+    required this.total,
+    required this.sources,
+    required this.courts,
+    required this.rtl,
+  });
 
   final int total;
   final int sources;
+  final int courts;
   final bool rtl;
 
   @override
@@ -230,8 +298,23 @@ class _Hero extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Row(
+            children: [
+              const Icon(Icons.scale_outlined, size: 18, color: AppColors.cyan),
+              const SizedBox(width: 8),
+              Text(
+                rtl ? 'مصادر قضائية رسمية' : 'Official judicial sources',
+                style: const TextStyle(
+                  color: AppColors.cyan,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
           Text(
-            rtl ? 'المكتبة القانونية والقضائية الذكية' : 'The smart legal & judicial library',
+            rtl ? 'المكتبة القانونية والقضائية' : 'The legal & judicial library',
             style: const TextStyle(
               color: Colors.white,
               fontSize: 18,
@@ -242,8 +325,8 @@ class _Hero extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             rtl
-                ? 'ابحث في الأحكام القضائية والأنظمة والتشريعات من مصادر رسمية ومفتوحة.'
-                : 'Search judicial decisions, statutes and regulations from official open sources.',
+                ? 'ابحث في الأحكام القضائية والأنظمة والتشريعات المنشورة من جهات رسمية ومفتوحة. كل عنصر يحمل عنوانه ومصدره ورابطه الرسمي.'
+                : 'Search judicial decisions, statutes and regulations published by official open sources. Every item carries its title, source and official link.',
             style: const TextStyle(color: Color(0xFFD6E2EE), height: 1.7),
           ),
           const SizedBox(height: AppSpacing.s4),
@@ -251,7 +334,11 @@ class _Hero extends StatelessWidget {
             children: [
               _Stat(value: '$total', label: rtl ? 'عنصر متاح' : 'items'),
               const SizedBox(width: 24),
-              _Stat(value: '$sources', label: rtl ? 'مصادر مفعّلة' : 'sources'),
+              if (courts > 0) ...[
+                _Stat(value: '$courts', label: rtl ? 'جهة قضائية' : 'courts'),
+                const SizedBox(width: 24),
+              ],
+              _Stat(value: '$sources', label: rtl ? 'مصادر' : 'sources'),
             ],
           ),
         ],
