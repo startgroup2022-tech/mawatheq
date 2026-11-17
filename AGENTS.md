@@ -4641,3 +4641,16 @@ asks for Tajawal, that is a font *change*, not a bug to fix.
 `node tools/exec68_library_shots.js /tmp/out`. Compress before committing (`pngquant
 --quality=65-90`) — full-page Arabic PNGs are multi-MB each and a 10 MB commit is not
 reviewable.
+
+### The library search box promises the ruling text, and the query has to deliver it
+
+`legal-library-search.php`'s placeholder says «ابحث في العنوان والنص والرقم» ("search the title,
+the text and the number") and `legal_library_items` carries a `FULLTEXT(title, summary, body)`
+index — but `legal_library_search()` matched only `title_norm`/`summary_norm`/`title`/`summary`.
+The 161 imported rulings were therefore unsearchable by their own wording: a term that appears
+only in `body` (`تعويض`) returned 4 rows instead of 77. The body is now matched too, gated on
+`redistribution = 'hosted'` — the exact condition `legal_library_public_item()` uses — so a
+`link_only` source's stored prose cannot be inferred from a search hit. `exec74` seeds a
+`link_only` row whose body holds `THIS MUST NEVER BE EXPOSED` and asserts a search for it returns
+nothing. When you add a searchable field, add the leak test in the same change: the read gate and
+the search predicate must name the same condition, or one of them silently widens access.
