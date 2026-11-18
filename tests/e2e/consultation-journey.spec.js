@@ -74,7 +74,9 @@ test.describe('consultation journey', () => {
     const compare = page.locator('.compare-card');
     if (await compare.count() > 0) {
       await expect(compare.first()).toBeVisible();
-      await expect(compare.first().locator('.compare-actions a.btn')).toBeVisible();
+      // The card offers two actions; assert the booking one specifically. A bare
+      // `.compare-actions a.btn` matches both and trips Playwright's strict mode.
+      await expect(compare.first().locator('.compare-actions a.btn-primary')).toBeVisible();
     } else {
       // No lawyer for this specialty: the customer gets a clear alternative, not a
       // dead end and not an unrelated lawyer.

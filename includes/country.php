@@ -21,6 +21,23 @@ require_once __DIR__ . '/ui.php';
 const COUNTRY_DEFAULT = 'SA';
 
 /**
+ * The one country a lawyer may practise from.
+ *
+ * The platform onboards lawyers in Saudi Arabia only, so a lawyer's country is not a
+ * choice: the admin form, the lawyer profile and both write APIs store this value and
+ * ignore any other, and a crafted request cannot place a lawyer outside the supported
+ * jurisdiction. `country_options()` still lists the wider region because the affiliate
+ * and directory filters legitimately use it — this constant governs the *lawyer* field
+ * alone, not every country picker on the platform.
+ */
+const LAWYER_COUNTRY_ONLY = 'SA';
+
+/** Whether a lawyer may be filed under this ISO code (Saudi Arabia, and nothing else). */
+function lawyer_country_is_supported(string $code): bool {
+    return strtoupper(trim($code)) === LAWYER_COUNTRY_ONLY;
+}
+
+/**
  * Countries the platform offers, in display order: Saudi Arabia first because it
  * is the default, then the rest of the GCC, then the wider region. Order is
  * presentation only — selection is preserved wherever a country is supported.

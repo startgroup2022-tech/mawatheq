@@ -22,6 +22,9 @@ require_once __DIR__ . '/../../includes/notifications.php';
 require_once __DIR__ . '/../../includes/tenant.php';
 require_once __DIR__ . '/../../includes/consultation_attachments.php';
 require_once __DIR__ . '/../../includes/legal_journey.php';
+require_once __DIR__ . '/../../includes/consultation_payment.php';
+require_once __DIR__ . '/../../includes/booking_slots.php';
+require_once __DIR__ . '/../../includes/consultation_pricing.php';
 
 $auth = api_authenticate($pdo);
 
@@ -56,9 +59,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $in = api_input();
+
+    // ---- Lawyer actions on a consultation they own -------------------------
+    //
+    // The web dashboard lets a lawyer confirm, complete or cancel a booking. The
+    // app must do the same through the API, or the two surfaces diverge. The action
+    // is checked against the lawyer's tenant scope, so a guessed id cannot change
+    // another firm's consultation.
+    $action = (string)($in['action'] ?? '');
+    if ($action !== '') {
+        if ($auth['type'] !== 'lawyer') api_error('only lawyers can change a consultation', 403);
+        $consultationId = (int)($in['consultation_id'] ?? 0);
+        $scope = tenant_owner_where_for_lawyer($pdo, (int)$auth['id'], 'consultations');
+        $find = $pdo->prepare('SELECT * FROM consultations WHERE id=? AND ' . $scope['sql']);
+        $find->execute(array_merge([$consultationId], $scope['params']));
+        $consultation = $find->fetch();
+        if (!$consultation) api_error('consultation not found', 404);
+
+        if ($action === 'change-status') {
+            $status = (string)($in['status'] ?? '');
+            $allowed = ['confirmed', 'completed', 'cancelled'];
+            if (!in_array($status, $allowed, true)) api_error('status must be one of confirmed, completed, cancelled');
+            // A completed consultation cannot be reopened, and a cancelled one cannot be
+            // confirmed again — the same guard the web page applies.
+            if ($consultation['status'] === 'completed') api_error('consultation already completed', 409);
+            if ($consultation['status'] === 'cancelled') api_error('consultation already cancelled', 409);
+            // A priced consultation is confirmed only after the gateway verifies payment —
+            // the same rule the website enforces. Without this an app client could confirm
+            // an unpaid booking by calling the API directly.
+            if ($status === 'confirmed' && consultation_payment_blocks_confirmation($consultation)) {
+                api_error('this consultation must be paid before it can be confirmed', 409);
+            }
+
+            $upd = $pdo->prepare('UPDATE consultations SET status=? WHERE id=? AND ' . $scope['sql']);
+            $upd->execute(array_merge([$status, $consultationId], $scope['params']));
+
+            require_once __DIR__ . '/../../includes/audit_log.php';
+            log_action($pdo, 'تغيير حالة استشارة إلى ' . $status . ' (API)', 'consultation', $consultationId);
+
+            // Tell the client their booking moved. The message names the new state only.
+            $labels = ['confirmed' => 'تم تأكيد موعد استشارتك', 'completed' => 'تم إتمام استشارتك', 'cancelled' => 'تم إلغاء استشارتك'];
+            notify($pdo, 'client', (int)$consultation['user_id'], $labels[$status], $consultation['topic'] ?: null, '/consultations.php');
+
+            $fresh = $pdo->prepare('SELECT * FROM consultations WHERE id=?');
+            $fresh->execute([$consultationId]);
+            api_json(['ok' => true, 'consultation' => $fresh->fetch()]);
+        }
+
+        api_error('unknown action', 400);
+    }
+
     if ($auth['type'] !== 'client') api_error('only clients can book consultations', 403);
 
-    $in = api_input();
     $lawyerId = (int)($in['lawyer_id'] ?? 0);
     $type = in_array($in['consultation_type'] ?? '', ['text','voice','video'], true) ? $in['consultation_type'] : 'text';
     $date = $in['date'] ?? '';
@@ -107,23 +160,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         api_error('a consultation needs a written description or at least one attached recording or document');
     }
 
-    $lawyerStmt = $pdo->prepare("SELECT hourly_rate FROM lawyers WHERE id=? AND status='approved'");
+    $lawyerStmt = $pdo->prepare("SELECT hourly_rate, (SELECT MIN(a.slot_minutes) FROM lawyer_availability a WHERE a.lawyer_id = lawyers.id) AS slot_minutes
+                                 FROM lawyers WHERE id=? AND status='approved'");
     $lawyerStmt->execute([$lawyerId]);
     $lawyer = $lawyerStmt->fetch();
     if (!$lawyer) api_error('lawyer not found', 404);
 
-    $availCount = $pdo->prepare('SELECT COUNT(*) c FROM lawyer_availability WHERE lawyer_id=?');
-    $availCount->execute([$lawyerId]);
-    $hasAvailability = (int)$availCount->fetch()['c'] > 0;
+    $scheduledAt = $date . ' ' . $time . ':00';
 
-    if ($hasAvailability) {
-        $validSlots = get_available_slots($pdo, $lawyerId, $date);
-        if (!in_array($time, $validSlots, true)) {
-            api_error('this time slot is no longer available', 409);
-        }
+    // Authoritative slot check. Stricter than "is it in the free list": it also refuses a
+    // past time and a time outside the lawyer's published hours, so a crafted request cannot
+    // book 03:00 on a Sunday. The same check runs again inside the lock, immediately before
+    // the INSERT, which is what removes the double-booking race.
+    $slotCheck = booking_slot_is_bookable($pdo, $lawyerId, $scheduledAt);
+    if (!$slotCheck['ok']) {
+        if ($slotCheck['error'] === 'in_past') api_error('this time is in the past', 409);
+        api_error('this time slot is no longer available', 409);
     }
 
-    $scheduledAt = $date . ' ' . $time . ':00';
+    // The one authoritative price. The stored price and the gateway amount are the same number.
+    $pricing = consultation_pricing_for_lawyer($pdo, $lawyer);
+    $durationMinutes = (int)$pricing['duration_minutes'];
+    $payable = (float)$pricing['payable'];
 
     // Tag the booking with the lawyer's firm. A firm-scoped lawyer is authorized by
     // consultations.firm_id, and upgrade_v42.sql only backfilled the rows that existed when
@@ -142,16 +200,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     );
 
     try {
-        // The specialty column is written only when upgrade_v63.sql has run, so a client
-        // pointed at a not-yet-migrated server still books successfully.
-        if (legal_journey_specialty_column_ready($pdo)) {
-            $pdo->prepare('INSERT INTO consultations (user_id, lawyer_id, firm_id, consultation_type, scheduled_at, topic, price, idempotency_key, najiz_case_type_id, specialty_category_id) VALUES (?,?,?,?,?,?,?,?,?,?)')
-                ->execute([$auth['id'], $lawyerId, $firmId, $type, $scheduledAt, $topic, $lawyer['hourly_rate'], $idempotencyKey !== '' ? $idempotencyKey : null, $choice['najiz_case_type_id'], $choice['specialty_category_id']]);
-        } else {
-            $pdo->prepare('INSERT INTO consultations (user_id, lawyer_id, firm_id, consultation_type, scheduled_at, topic, price, idempotency_key, najiz_case_type_id) VALUES (?,?,?,?,?,?,?,?,?)')
-                ->execute([$auth['id'], $lawyerId, $firmId, $type, $scheduledAt, $topic, $lawyer['hourly_rate'], $idempotencyKey !== '' ? $idempotencyKey : null, $choice['najiz_case_type_id']]);
+        $specialtyCol = legal_journey_specialty_column_ready($pdo);
+        // The INSERT runs inside the (lawyer, slot) lock, after a second availability check,
+        // so two clients submitting the same slot concurrently cannot both succeed.
+        $created = booking_create_locked($pdo, $lawyerId, $scheduledAt, function () use (
+            $pdo, $auth, $lawyerId, $firmId, $type, $scheduledAt, $durationMinutes, $topic,
+            $payable, $idempotencyKey, $choice, $specialtyCol
+        ) {
+            if ($specialtyCol) {
+                $pdo->prepare('INSERT INTO consultations (user_id, lawyer_id, firm_id, consultation_type, scheduled_at, duration_minutes, topic, price, idempotency_key, najiz_case_type_id, specialty_category_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+                    ->execute([$auth['id'], $lawyerId, $firmId, $type, $scheduledAt, $durationMinutes, $topic, $payable, $idempotencyKey !== '' ? $idempotencyKey : null, $choice['najiz_case_type_id'], $choice['specialty_category_id']]);
+            } else {
+                $pdo->prepare('INSERT INTO consultations (user_id, lawyer_id, firm_id, consultation_type, scheduled_at, duration_minutes, topic, price, idempotency_key, najiz_case_type_id) VALUES (?,?,?,?,?,?,?,?,?,?)')
+                    ->execute([$auth['id'], $lawyerId, $firmId, $type, $scheduledAt, $durationMinutes, $topic, $payable, $idempotencyKey !== '' ? $idempotencyKey : null, $choice['najiz_case_type_id']]);
+            }
+            return (int)$pdo->lastInsertId();
+        });
+        if (!$created['ok']) {
+            // Lost the race for this slot, or the lock timed out under load.
+            api_error($created['error'] === 'slot_taken'
+                ? 'this time slot is no longer available'
+                : 'the booking could not be completed, please try again', 409);
         }
-        $consultationId = (int)$pdo->lastInsertId();
+        $consultationId = (int)$created['id'];
     } catch (PDOException $e) {
         // Two retries raced and the unique key rejected the second. That is exactly the
         // duplicate this key exists to prevent, so the winner's consultation is returned
@@ -181,11 +252,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     notify($pdo, 'lawyer', $lawyerId, 'طلب حجز استشارة جديد', ($topic ?: '') . ' — ' . $scheduledAt, '/lawyer/consultations.php');
 
+    // A priced consultation must be paid before it is confirmed, exactly as on the website.
+    // The app cannot render a hosted payment page itself, so it receives the gateway URL and
+    // opens it; confirmation still happens only on an independently verified capture. A
+    // lawyer with no rate returns no payment_url and keeps the request-and-confirm flow.
+    $paymentUrl = null;
+    $paymentRequired = false;
+    $paymentError = null;
+    $consultationRow = ['id' => $consultationId, 'price' => $payable, 'lawyer_id' => $lawyerId];
+    if (consultation_payment_schema_ready($pdo) && consultation_payment_required($consultationRow)) {
+        $paymentRequired = true;
+        // api_authenticate() returns only the id/type, so the payer email must be read from
+        // the account: the gateway requires emailAddress and an empty one rejects the order.
+        $custStmt = $pdo->prepare('SELECT full_name, email FROM users WHERE id=?');
+        $custStmt->execute([(int)$auth['id']]);
+        $customer = $custStmt->fetch() ?: [];
+        $started = consultation_payment_start($pdo, $consultationRow, [
+            'customer_name' => (string)($customer['full_name'] ?? ''),
+            'customer_email' => (string)($customer['email'] ?? ''),
+            'language' => current_lang(),
+        ]);
+        if (!empty($started['ok'])) {
+            $paymentUrl = $started['redirect_url'];
+        } else {
+            // The booking exists but payment did not start, so it is NOT confirmed. Report
+            // that honestly instead of letting the app show a success screen for a booking
+            // nobody will be able to pay for.
+            $paymentError = (string)($started['error'] ?? 'gateway_error');
+        }
+    }
+
     api_json([
         'ok' => true,
         'consultation_id' => $consultationId,
         'reused' => false,
         'attachments' => $claimed,
+        'payment_required' => $paymentRequired,
+        'payment_url' => $paymentUrl,
+        'payment_error' => $paymentError,
+        'unconfirmed' => $paymentRequired && $paymentUrl === null,
     ], 201);
 }
 

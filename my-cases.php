@@ -43,7 +43,8 @@ if ($cases) {
   ]) ?>
   <?= ui_page_head(
       is_rtl() ? 'قضاياي' : 'My cases',
-      is_rtl() ? 'القضايا المسجّلة لك لدى محاميك، مع حالتها وآخر تحديثاتها.' : 'Cases your lawyer has opened for you, with their status and latest activity.'
+      is_rtl() ? 'القضايا المسجّلة لك لدى محاميك، مع حالتها وآخر تحديثاتها.' : 'Cases your lawyer has opened for you, with their status and latest activity.',
+      [], 'h1'
   ) ?>
 
   <?php if (!$cases): ?>

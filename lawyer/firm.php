@@ -5,6 +5,7 @@ require_once __DIR__ . '/includes/lawyer_guard.php';
 require_once __DIR__ . '/../includes/csrf.php';
 require_once __DIR__ . '/../includes/audit_log.php';
 require_once __DIR__ . '/../includes/tenant.php';
+require_once __DIR__ . '/../includes/specialization_field.php';
 $lawyerId = (int)$_SESSION['lawyer_id'];
 $error = null; $success = null;
 $q = $pdo->prepare('SELECT f.*,m.member_role FROM law_firm_members m JOIN law_firms f ON f.id=m.firm_id WHERE m.lawyer_id=? AND m.status=\'active\' LIMIT 1');
@@ -156,7 +157,7 @@ require_once __DIR__ . '/includes/lawyer_header.php';
 <div class="grid-2"><div class="field"><label><?= is_rtl()?'السجل التجاري':'Commercial register' ?></label><input name="commercial_register" maxlength="80" value="<?= htmlspecialchars($membership['commercial_register'] ?? '') ?>"></div><div class="field"><label><?= is_rtl()?'رقم الترخيص':'License number' ?></label><input name="license_number" maxlength="80" value="<?= htmlspecialchars($membership['license_number'] ?? '') ?>"></div></div>
 <button class="btn btn-primary" type="submit"><?= is_rtl()?'حفظ':'Save' ?></button></form></div><?php endif; ?></div>
 <?php
-$members = $pdo->prepare('SELECT m.id,m.member_role,m.joined_at,m.permissions_json,l.full_name,l.email,l.specialization FROM law_firm_members m JOIN lawyers l ON l.id=m.lawyer_id WHERE m.firm_id=? ORDER BY FIELD(m.member_role,\'owner\',\'partner\',\'lawyer\',\'staff\'),l.full_name');
+$members = $pdo->prepare('SELECT m.id,m.member_role,m.joined_at,m.permissions_json,l.full_name,l.email,l.specialization,l.specializations FROM law_firm_members m JOIN lawyers l ON l.id=m.lawyer_id WHERE m.firm_id=? ORDER BY FIELD(m.member_role,\'owner\',\'partner\',\'lawyer\',\'staff\'),l.full_name');
 $members->execute([(int)$membership['id']]); $members = $members->fetchAll();
 $permCatalog = tenant_permission_catalog();
 $permLabels = [
@@ -177,7 +178,7 @@ $memberPerms = function (array $m): array {
 ?>
 <div class="dash-card"><h3><?= is_rtl()?'أعضاء المكتب':'Firm members' ?></h3><div class="table-wrap"><table class="admin-table"><thead><tr><th><?= is_rtl()?'الاسم':'Name' ?></th><th><?= is_rtl()?'البريد':'Email' ?></th><th><?= is_rtl()?'التخصص':'Specialization' ?></th><th><?= is_rtl()?'الدور':'Role' ?></th><th><?= is_rtl()?'الصلاحيات':'Permissions' ?></th><?php if($isOwner): ?><th></th><?php endif; ?></tr></thead><tbody>
 <?php foreach($members as $member): $mPerms = $memberPerms($member); ?>
-<tr><td><?= htmlspecialchars($member['full_name']) ?></td><td><?= htmlspecialchars($member['email']) ?></td><td><?= htmlspecialchars($member['specialization'] ?? '') ?></td><td><?= htmlspecialchars($member['member_role']) ?></td>
+<tr><td><?= htmlspecialchars($member['full_name']) ?></td><td><?= htmlspecialchars($member['email']) ?></td><td><?= htmlspecialchars(lawyer_specialization_display($member)) ?></td><td><?= htmlspecialchars($member['member_role']) ?></td>
 <td><small style="color:var(--muted)"><?= $member['member_role']==='owner' ? (is_rtl()?'كل الصلاحيات':'All permissions') : count($mPerms) . ' ' . (is_rtl()?'صلاحية':'permissions') ?></small><?php if($isOwner && $member['member_role']!=='owner'): ?> <button type="button" class="icon-btn" onclick="openModal('permModal<?= (int)$member['id'] ?>')"><?= is_rtl()?'تعديل':'Edit' ?></button><?php endif; ?></td>
 <?php if($isOwner): ?><td><?php if($member['member_role']!=='owner'): ?><form method="post"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>"><input type="hidden" name="action" value="remove_member"><input type="hidden" name="member_id" value="<?= (int)$member['id'] ?>"><button class="icon-btn danger" type="submit"><?= is_rtl()?'إزالة':'Remove' ?></button></form><?php endif; ?></td><?php endif; ?></tr>
 <?php endforeach; ?></tbody></table></div>

@@ -205,6 +205,19 @@ function finance_record_payment(PDO $pdo, int $invoiceId, float $amount, array $
             }
         }
 
+        // Lawyer wallet (Execution 56). Same shape as the affiliate hook above and for
+        // the same reason: the wallet observes a confirmed payment, so a wallet problem
+        // must never roll back money the client has already paid. The credit is
+        // idempotent on the payment id, so a retried hook cannot double-credit.
+        if (is_file(__DIR__ . '/wallet.php')) {
+            try {
+                require_once __DIR__ . '/wallet.php';
+                wallet_credit_invoice_payment($pdo, $invoiceId, $paymentId);
+            } catch (Throwable $walletError) {
+                error_log('Wallet payment hook failed: ' . $walletError->getMessage());
+            }
+        }
+
         return ['ok' => true, 'payment_id' => $paymentId, 'status' => $newStatus, 'balance' => $newBalance, 'invoice_id' => $invoiceId];
     } catch (Throwable $e) {
         $undo();

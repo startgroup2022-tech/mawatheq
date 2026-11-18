@@ -19,11 +19,18 @@
 $activeLawyer = 'dashboard';
 require_once __DIR__ . '/includes/lawyer_header.php';
 require_once __DIR__ . '/../includes/profile_completion.php';
+require_once __DIR__ . '/../includes/lawyer_readiness.php';
 require_once __DIR__ . '/../includes/tenant.php';
 require_once __DIR__ . '/../includes/finance.php';
 require_once __DIR__ . '/../includes/ai_provider.php';
 require_once __DIR__ . '/../includes/workspace.php';
 require_once __DIR__ . '/../includes/dashboard_panels.php';
+// The wallet panel reads the ledger, so the dashboard figure is the same number the
+// wallet page shows. Guarded because the wallet tables arrive with upgrade_v66.sql: on a
+// database that has not run it the dashboard must still render, just without the panel.
+if (is_file(__DIR__ . '/../includes/wallet.php')) {
+    require_once __DIR__ . '/../includes/wallet.php';
+}
 
 $rtl = is_rtl();
 $lawyerId = (int)$_SESSION['lawyer_id'];
@@ -33,6 +40,7 @@ $lwStmt = $pdo->prepare('SELECT * FROM lawyers WHERE id=?');
 $lwStmt->execute([$lawyerId]);
 $lwProfile = $lwStmt->fetch() ?: [];
 $completion = lawyer_completion_percent($lwProfile);
+$readiness = lawyer_panel_readiness($pdo, $lwProfile);
 $isFirm = tenant_is_firm($pdo);
 
 $caseScope    = tenant_owner_where($pdo, 'cases');
@@ -87,6 +95,31 @@ $recentCases = $recentCases->fetchAll();
 $topDebtors = finance_client_balances($pdo, $finScope, 5);
 $topDebtors = array_values(array_filter($topDebtors, fn($r) => (float)$r['outstanding'] > 0));
 
+/* ------------------------------------------------------------ Wallet ---- */
+// Read-only view of the ledger, so the dashboard and /lawyer/wallet.php can never
+// disagree about the balance. Wrapped because the wallet tables are optional until
+// upgrade_v66.sql runs, and a missing table must degrade to "no panel", not a 500.
+$walletBalances = null;
+$walletTotals = null;
+$walletPendingWithdrawals = 0;
+$walletCurrency = null;
+if (function_exists('wallet_find')) {
+    try {
+        $walletRow = wallet_find($pdo, $lawyerId);
+        if ($walletRow) {
+            $walletCurrency = (string)$walletRow['currency'];
+            $walletBalances = wallet_balances($pdo, (int)$walletRow['id'], $walletCurrency);
+            $walletTotals = wallet_totals($pdo, (int)$walletRow['id']);
+            $wdStmt = $pdo->prepare("SELECT COUNT(*) FROM wallet_withdrawals WHERE wallet_id=? AND status IN ('pending','approved')");
+            $wdStmt->execute([(int)$walletRow['id']]);
+            $walletPendingWithdrawals = (int)$wdStmt->fetchColumn();
+        }
+    } catch (Throwable $walletError) {
+        error_log('Dashboard wallet panel failed: ' . $walletError->getMessage());
+        $walletBalances = null;
+    }
+}
+
 /* ------------------------------------------------------------ Panels ---- */
 // Shared read models (includes/dashboard_panels.php) — tenant-scoped and reused by
 // the client home, so the two dashboards cannot describe the same data differently.
@@ -117,10 +150,17 @@ if ($todaySessions || $todayConsults) {
                     'meta' => $rtl ? $todaySessions . ' موعد في التقويم و' . $todayConsults . ' استشارة' : $todaySessions . ' calendar item(s) and ' . $todayConsults . ' consultation(s)',
                     'href' => '/lawyer/calendar.php', 'cta' => $rtl ? 'فتح التقويم' : 'Open calendar'];
 }
-if ($completion < 100) {
+  if ($completion < 100) {
     $attention[] = ['sev' => 'info', 'icon' => 'user', 'title' => $rtl ? 'ملفك المهني غير مكتمل' : 'Your professional profile is incomplete',
                     'meta' => $rtl ? 'اكتمال الملف ' . (int)$completion . '% — إكماله يزيد ظهورك للعملاء' : 'Profile is ' . (int)$completion . '% complete — finishing it improves client visibility',
                     'href' => '/lawyer/profile.php', 'cta' => $rtl ? 'أكمل الملف' : 'Complete profile'];
+  }
+  if (!$readiness['ready']) {
+    // Distinct from the completeness card: these are the fields that actually stop a
+    // client booking — without them the lawyer is invisible to the booking flow.
+    $attention[] = ['sev' => 'warning', 'icon' => 'alert', 'title' => $rtl ? 'لوحتك غير جاهزة لاستقبال الحجوزات' : 'Your panel is not ready to take bookings',
+                    'meta' => lawyer_readiness_blocking_label($readiness['blocking']),
+                    'href' => '/lawyer/profile.php', 'cta' => $rtl ? 'استكمل الآن' : 'Finish setup'];
   }
   if ($overdueTasks) {
     $attention[] = ['sev' => 'danger', 'icon' => 'check', 'title' => $rtl ? 'مهام تجاوزت موعدها' : 'Tasks past their due date',
@@ -177,6 +217,10 @@ $hasAnything = $totalCases || $clientCount || $todayEvents || $pendingList || $p
 
   <?php if ($completion < 100): ?>
     <?php render_completion_card($lwProfile); ?>
+  <?php endif; ?>
+
+  <?php if (!$readiness['ready']): ?>
+    <?php render_lawyer_readiness_card($readiness); ?>
   <?php endif; ?>
 
   <?php if (!$hasAnything): ?>
@@ -399,6 +443,24 @@ $hasAnything = $totalCases || $clientCount || $todayEvents || $pendingList || $p
           <span class="kpi-hint"><?= $rtl ? 'من إجمالي' : 'of' ?> <?= money($finSummary['invoiced']) ?></span>
         </span>
       </a>
+      <?php if ($walletBalances !== null): ?>
+      <a class="kpi <?= $walletPendingWithdrawals ? 'kpi-gold' : 'kpi-teal' ?>" href="/lawyer/wallet.php">
+        <span class="kpi-ico"><?= ui_icon('wallet') ?></span>
+        <span class="kpi-body">
+          <span class="kpi-value"><?= wallet_money($walletBalances['available_minor'], $walletCurrency) ?></span>
+          <span class="kpi-label"><?= $rtl ? 'رصيد المحفظة المتاح' : 'Wallet available balance' ?></span>
+          <span class="kpi-hint">
+            <?php if ($walletPendingWithdrawals): ?>
+              <span class="kpi-delta flat"><span class="num-ltr"><?= $walletPendingWithdrawals ?></span></span> <?= $rtl ? 'طلب سحب قيد المعالجة' : 'withdrawal(s) in progress' ?>
+            <?php elseif (($walletTotals['net_earned_minor'] ?? 0) > 0): ?>
+              <?= $rtl ? 'صافي الأرباح' : 'Net earned' ?> <?= wallet_money((int)$walletTotals['net_earned_minor'], $walletCurrency) ?>
+            <?php else: ?>
+              <?= $rtl ? 'لا حركات بعد' : 'No activity yet' ?>
+            <?php endif; ?>
+          </span>
+        </span>
+      </a>
+      <?php endif; ?>
     </div>
   </section>
 

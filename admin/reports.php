@@ -4,6 +4,7 @@ require_once __DIR__ . '/../lang/strings.php';
 require_once __DIR__ . '/includes/admin_guard.php';
 $activeAdmin = 'reports';
 require_once __DIR__ . '/includes/admin_header.php';
+require_once __DIR__ . '/../includes/specialization_field.php';
 
 $pageWarnings = [];
 $metrics = [
@@ -30,7 +31,7 @@ try {
     $hasTimeTable = $pdo->query("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='case_time_entries'")->fetchColumn();
     if ($hasTimeTable) $metrics['time'] = $pdo->query('SELECT COALESCE(SUM(minutes),0) minutes,COALESCE(SUM(CASE WHEN billable=1 THEN ROUND(minutes*hourly_rate/60,3) ELSE 0 END),0) value FROM case_time_entries')->fetch() ?: $metrics['time'];
 } catch (PDOException $e) { error_log('Admin report time query failed: ' . $e->getMessage()); $pageWarnings[] = 'time'; }
-try { $lawyerPerformance = $pdo->query("SELECT l.id,l.full_name,l.specialization,
+try { $lawyerPerformance = $pdo->query("SELECT l.id,l.full_name,l.specialization,l.specializations,
     (SELECT COUNT(*) FROM cases c WHERE c.lawyer_id=l.id) cases_count,
     (SELECT COUNT(*) FROM consultations co WHERE co.lawyer_id=l.id) consultation_count,
     (SELECT COALESCE(SUM(i.amount),0) FROM invoices i WHERE i.lawyer_id=l.id AND i.status='paid' AND i.is_draft=0) paid_invoices
@@ -74,7 +75,7 @@ $j = fn($a) => h(json_encode($a, JSON_UNESCAPED_UNICODE));
 
   <div class="card"><div class="card-h"><h3><?= h(adm('أداء المحامين', 'Lawyer performance')) ?></h3></div>
     <div class="table-wrap table-cards"><table class="admin-table"><thead><tr><th><?= h(adm('المحامي', 'Lawyer')) ?></th><th><?= h(adm('التخصص', 'Specialization')) ?></th><th><?= h(adm('القضايا', 'Cases')) ?></th><th><?= h(adm('الاستشارات', 'Consultations')) ?></th><th><?= h(adm('الفواتير المحصَّلة', 'Collected invoices')) ?></th></tr></thead><tbody>
-      <?php foreach ($lawyerPerformance as $lawyer): ?><tr><td data-label="<?= h(adm('المحامي', 'Lawyer')) ?>"><b><?= h($lawyer['full_name']) ?></b></td><td data-label="<?= h(adm('التخصص', 'Specialization')) ?>"><?= h($lawyer['specialization'] ?? '') ?></td><td data-label="<?= h(adm('القضايا', 'Cases')) ?>"><?= (int)$lawyer['cases_count'] ?></td><td data-label="<?= h(adm('الاستشارات', 'Consultations')) ?>"><?= (int)$lawyer['consultation_count'] ?></td><td data-label="<?= h(adm('الفواتير المحصَّلة', 'Collected invoices')) ?>"><?= money($lawyer['paid_invoices']) ?></td></tr><?php endforeach; ?>
+      <?php foreach ($lawyerPerformance as $lawyer): ?><tr><td data-label="<?= h(adm('المحامي', 'Lawyer')) ?>"><b><?= h($lawyer['full_name']) ?></b></td><td data-label="<?= h(adm('التخصص', 'Specialization')) ?>"><?= h(lawyer_specialization_display($lawyer)) ?></td><td data-label="<?= h(adm('القضايا', 'Cases')) ?>"><?= (int)$lawyer['cases_count'] ?></td><td data-label="<?= h(adm('الاستشارات', 'Consultations')) ?>"><?= (int)$lawyer['consultation_count'] ?></td><td data-label="<?= h(adm('الفواتير المحصَّلة', 'Collected invoices')) ?>"><?= money($lawyer['paid_invoices']) ?></td></tr><?php endforeach; ?>
       <?php if (!$lawyerPerformance): ?><tr><td colspan="5" class="empty"><?= h(adm('لا توجد بيانات كافية بعد', 'Not enough data yet')) ?></td></tr><?php endif; ?>
     </tbody></table></div></div>
   <p class="field-hint" style="margin-top:16px"><?= h(adm('الأرقام إجمالية من السجلات الحالية؛ قيمة الوقت تقديرية حسب سعر الساعة المسجل لكل إدخال ولا تعني أنها فواتير مدفوعة.', 'Figures are totals from current records; time value is estimated from each entry\'s hourly rate and does not imply invoices were paid.')) ?></p>

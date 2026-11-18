@@ -1,0 +1,19 @@
+{
+  "captured_from": "preview DB mawatheq_test, real MOJ import (cron/legal-library-sync.php --source=moj_decisions)",
+  "items_total": 188,
+  "items_with_full_text": 161,
+  "detail_item_id": 8,
+  "detail_decision_number": "4830153001",
+  "detail_court": "المحكمة التجارية",
+  "detail_hijri_date": "1448-02-17",
+  "viewports": { "desktop": "1440x900", "mobile": "390x844 @2x" },
+  "font": "Cairo (headings) + IBM Plex Sans Arabic (body) — no Tajawal in the project",
+  "files": [
+    "library-hub-desktop.png",
+    "library-hub-mobile.png",
+    "library-search-desktop.png",
+    "library-search-mobile.png",
+    "library-detail-desktop.png",
+    "library-detail-mobile.png"
+  ]
+}

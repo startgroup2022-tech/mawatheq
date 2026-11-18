@@ -340,6 +340,21 @@ $visible = (int)$admin->query(
 )->fetchColumn();
 check('only the in-window, active banner is served to the customer', $visible === 1, "visible=$visible");
 
+// Execution 73's migration ships the account-deletion request queue. The public
+// /account-deletion page and the admin console read these tables, so a package that
+// shipped the page but not the migration would deploy a form that cannot record a
+// request. The check is on the *packaged* result, not the working tree.
+check('the packaged Execution 73 migration created account_deletion_requests',
+    e291_has_table($admin, $scratch, 'account_deletion_requests'));
+check('the packaged Execution 73 migration created account_deletion_events',
+    e291_has_table($admin, $scratch, 'account_deletion_events'));
+check('the request queue carries the identifier hash and the verification gate',
+    e291_has_column($admin, $scratch, 'account_deletion_requests', 'identifier_hash')
+    && e291_has_column($admin, $scratch, 'account_deletion_requests', 'verify_token_hash')
+    && e291_has_column($admin, $scratch, 'account_deletion_requests', 'verification_status'));
+check('the request queue ships empty — no request is invented',
+    (int)$admin->query("SELECT COUNT(*) FROM `$scratch`.account_deletion_requests")->fetchColumn() === 0);
+
 // ---------------------------------------------------------------------------
 echo "\n== 5. the reset flow works against the packaged result ==\n";
 // ---------------------------------------------------------------------------

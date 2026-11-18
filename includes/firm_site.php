@@ -128,7 +128,7 @@ if (!function_exists('firm_site_team')) {
      */
     function firm_site_team(?PDO $pdo, int $firmId): array {
         $stmt = $pdo->prepare(
-            "SELECT l.id, l.full_name, l.specialization, l.bio, l.years_experience, l.photo_path,
+            "SELECT l.id, l.full_name, l.specialization, l.specializations, l.bio, l.years_experience, l.photo_path,
                     l.qualifications, l.social_linkedin, l.social_twitter, l.social_website,
                     l.jurisdiction, m.member_role
              FROM law_firm_members m

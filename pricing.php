@@ -25,7 +25,7 @@ require_once __DIR__ . '/includes/header.php';
         <ul class="price-feats">
           <?php foreach ($feats as $f): ?><li><?= htmlspecialchars(is_rtl() ? $f['feature_ar'] : $f['feature_en']) ?></li><?php endforeach; ?>
         </ul>
-        <a href="/register.php?plan=<?= $plan['id'] ?>" class="btn <?= $plan['is_featured'] ? 'btn-primary' : 'btn-outline' ?> btn-block"><?= t('pricing_choose') ?></a>
+        <a href="/packages.php#plan-<?= (int)$plan['id'] ?>" class="btn <?= $plan['is_featured'] ? 'btn-primary' : 'btn-outline' ?> btn-block"><?= t('pricing_choose') ?></a>
       </div>
       <?php endforeach; ?>
     </div>

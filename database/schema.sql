@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS lawyers (
     phone VARCHAR(30) DEFAULT NULL,
     password_hash VARCHAR(255) NOT NULL,
     specialization VARCHAR(150) DEFAULT NULL,
+    specializations VARCHAR(500) DEFAULT NULL,
     bio TEXT DEFAULT NULL,
     years_experience SMALLINT UNSIGNED DEFAULT 0,
     license_number VARCHAR(100) DEFAULT NULL,
@@ -149,7 +150,34 @@ CREATE TABLE IF NOT EXISTS plans (
     is_featured TINYINT(1) NOT NULL DEFAULT 0,
     sort_order SMALLINT DEFAULT 0,
     status ENUM('active','hidden') NOT NULL DEFAULT 'active',
+    classification ENUM('free','paid','corporate') NOT NULL DEFAULT 'paid',
+    consultation_price DECIMAL(12,3) DEFAULT NULL,
+    billing_cycle ENUM('monthly','yearly','both') NOT NULL DEFAULT 'both',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ------------------------------------------------------------
+-- طلبات شراء الباقات (Execution 63)
+-- An order exists while the customer is on the payment page; the subscription
+-- it produces is created only after the gateway confirms the capture.
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS package_orders (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id INT UNSIGNED NOT NULL,
+    plan_id INT UNSIGNED NOT NULL,
+    billing_cycle ENUM('monthly','yearly') NOT NULL DEFAULT 'monthly',
+    amount DECIMAL(12,3) NOT NULL DEFAULT 0,
+    currency VARCHAR(3) NOT NULL DEFAULT 'SAR',
+    status ENUM('pending','paid','failed','cancelled','refunded') NOT NULL DEFAULT 'pending',
+    payment_reference VARCHAR(100) DEFAULT NULL,
+    payment_gateway VARCHAR(30) DEFAULT NULL,
+    paid_at DATETIME DEFAULT NULL,
+    subscription_id INT UNSIGNED DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_package_order_ref (payment_reference),
+    KEY idx_package_orders_user (user_id, status),
+    KEY idx_package_orders_plan (plan_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ------------------------------------------------------------
@@ -176,6 +204,7 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     ends_at DATE NOT NULL,
     status ENUM('active','expired','cancelled') NOT NULL DEFAULT 'active',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_subscriptions_user_status (user_id, status, ends_at),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (plan_id) REFERENCES plans(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -272,7 +301,15 @@ CREATE TABLE IF NOT EXISTS consultations (
     price DECIMAL(12,3) DEFAULT NULL,
     notes TEXT DEFAULT NULL,
     room_code VARCHAR(64) DEFAULT NULL,
+    -- Consultation payment (Execution 62). A consultation is only confirmed after the
+    -- gateway independently confirms the capture; 'unpaid' keeps free bookings unchanged.
+    payment_status ENUM('unpaid','pending','paid','refunded','failed') NOT NULL DEFAULT 'unpaid',
+    payment_reference VARCHAR(100) DEFAULT NULL,
+    payment_amount DECIMAL(12,3) DEFAULT NULL,
+    payment_currency VARCHAR(3) DEFAULT NULL,
+    payment_gateway VARCHAR(30) DEFAULT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_consultation_payment_ref (payment_reference),
     INDEX idx_consultations_firm (firm_id),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (lawyer_id) REFERENCES lawyers(id) ON DELETE CASCADE,
@@ -732,6 +769,8 @@ PREPARE stmt FROM @s; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 CREATE TABLE IF NOT EXISTS payment_transactions (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     invoice_id INT UNSIGNED DEFAULT NULL,
+    consultation_id INT UNSIGNED DEFAULT NULL,
+    package_order_id INT UNSIGNED DEFAULT NULL,
     gateway VARCHAR(30) NOT NULL DEFAULT 'ngenius',
     gateway_order_ref VARCHAR(100) DEFAULT NULL,
     gateway_transaction_id VARCHAR(120) DEFAULT NULL,
@@ -748,6 +787,8 @@ CREATE TABLE IF NOT EXISTS payment_transactions (
     metadata TEXT DEFAULT NULL,
     raw_payload TEXT DEFAULT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_payment_tx_consultation (consultation_id),
+    INDEX idx_payment_tx_package (package_order_id),
     FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -1281,6 +1322,13 @@ SET @s := (SELECT IF(LOCATE('partially_paid', COLUMN_TYPE)=0,
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 SET @c := (SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='invoices' AND INDEX_NAME='idx_invoices_status_due');
 SET @s := IF(@c=0, 'ALTER TABLE invoices ADD INDEX idx_invoices_status_due (status,due_date)', 'SELECT 1');
+PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+-- A paid booking (consultation) issues its own invoice; this is the link back to it (v73).
+SET @c := (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='invoices' AND COLUMN_NAME='consultation_id');
+SET @s := IF(@c=0, 'ALTER TABLE invoices ADD COLUMN consultation_id INT UNSIGNED NULL DEFAULT NULL', 'SELECT 1');
+PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
+SET @c := (SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='invoices' AND INDEX_NAME='idx_invoices_consultation');
+SET @s := IF(@c=0, 'ALTER TABLE invoices ADD INDEX idx_invoices_consultation (consultation_id)', 'SELECT 1');
 PREPARE st FROM @s; EXECUTE st; DEALLOCATE PREPARE st;
 
 CREATE TABLE IF NOT EXISTS invoice_items (
@@ -2220,3 +2268,172 @@ CREATE TABLE IF NOT EXISTS legacy_chat_migration_log (
     detail VARCHAR(500) DEFAULT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- Execution 73 — account deletion requests (Google Play Data safety).
+-- Folded from database/upgrade_v77.sql so a clean install has the tables the
+-- public /account-deletion page and the admin console depend on.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `account_deletion_requests` (
+  `id` INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `reference` VARCHAR(16) NOT NULL,
+  `account_type` ENUM('client','lawyer') NOT NULL DEFAULT 'client',
+  `account_id` INT(10) UNSIGNED NULL DEFAULT NULL,
+  `identifier` VARCHAR(190) NOT NULL,
+  `identifier_hash` CHAR(64) NOT NULL,
+  `identifier_kind` ENUM('email','phone') NOT NULL DEFAULT 'email',
+  `notify_email` VARCHAR(190) NULL DEFAULT NULL,
+  `status` ENUM('pending','processing','completed','rejected','cancelled') NOT NULL DEFAULT 'pending',
+  `verification_status` ENUM('unverified','verified') NOT NULL DEFAULT 'unverified',
+  `verification_channel` ENUM('email','phone','manual') NOT NULL DEFAULT 'email',
+  `verify_token_hash` CHAR(64) NULL DEFAULT NULL,
+  `verify_expires` DATETIME NULL DEFAULT NULL,
+  `verified_at` DATETIME NULL DEFAULT NULL,
+  `reason` VARCHAR(255) NULL DEFAULT NULL,
+  `ip_hash` CHAR(64) NULL DEFAULT NULL,
+  `user_agent` VARCHAR(255) NULL DEFAULT NULL,
+  `retention_summary` TEXT NULL DEFAULT NULL,
+  `completion_note` VARCHAR(255) NULL DEFAULT NULL,
+  `requested_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `processed_at` DATETIME NULL DEFAULT NULL,
+  `processed_by_admin_id` INT(10) UNSIGNED NULL DEFAULT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_adr_reference` (`reference`),
+  KEY `idx_adr_identifier_hash` (`identifier_hash`),
+  KEY `idx_adr_status` (`status`),
+  KEY `idx_adr_requested_at` (`requested_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `account_deletion_events` (
+  `id` INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `request_id` INT(10) UNSIGNED NOT NULL,
+  `event` VARCHAR(40) NOT NULL,
+  `detail` VARCHAR(500) NULL DEFAULT NULL,
+  `actor` VARCHAR(40) NOT NULL DEFAULT 'system',
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_ade_request` (`request_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- المكتبة القانونية والقضائية (Execution 74) — folded from upgrade_v78.sql
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS `legal_library_sources` (
+  `id` INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `source_key` VARCHAR(40) NOT NULL,
+  `name_ar` VARCHAR(160) NOT NULL,
+  `name_en` VARCHAR(160) NOT NULL,
+  `publisher_ar` VARCHAR(160) NOT NULL DEFAULT '',
+  `publisher_en` VARCHAR(160) NOT NULL DEFAULT '',
+  `base_url` VARCHAR(500) NOT NULL DEFAULT '',
+  `access_method` ENUM('moj_api','public_api','public_list','manual') NOT NULL DEFAULT 'manual',
+  `content_types` VARCHAR(160) NOT NULL DEFAULT '',
+  `redistribution` ENUM('link_only','hosted','unknown') NOT NULL DEFAULT 'link_only',
+  `is_enabled` TINYINT(1) NOT NULL DEFAULT 1,
+  `sync_cursor` VARCHAR(120) NULL DEFAULT NULL,
+  `last_sync_at` DATETIME NULL DEFAULT NULL,
+  `last_sync_status` VARCHAR(20) NULL DEFAULT NULL,
+  `item_count` INT(10) UNSIGNED NOT NULL DEFAULT 0,
+  `notes_ar` TEXT NULL DEFAULT NULL,
+  `notes_en` TEXT NULL DEFAULT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_lls_source_key` (`source_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `legal_library_items` (
+  `id` INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `source_id` INT(10) UNSIGNED NOT NULL,
+  `source_key` VARCHAR(40) NOT NULL,
+  `external_id` VARCHAR(191) NOT NULL DEFAULT '',
+  `item_type` ENUM('judgment','legislation','book','statistics','article') NOT NULL DEFAULT 'judgment',
+  `title` VARCHAR(400) NOT NULL,
+  `summary` TEXT NULL DEFAULT NULL,
+  `court_name` VARCHAR(160) NULL DEFAULT NULL,
+  `city` VARCHAR(120) NULL DEFAULT NULL,
+  `court_type` TINYINT NULL DEFAULT NULL,
+  `case_number` VARCHAR(80) NULL DEFAULT NULL,
+  `decision_number` VARCHAR(80) NULL DEFAULT NULL,
+  `hijri_year` SMALLINT NULL DEFAULT NULL,
+  `gregorian_year` SMALLINT NULL DEFAULT NULL,
+  `decision_date` DATE NULL DEFAULT NULL,
+  `category` VARCHAR(160) NULL DEFAULT NULL,
+  `body` LONGTEXT NULL DEFAULT NULL,
+  `source_url` VARCHAR(500) NOT NULL DEFAULT '',
+  `file_url` VARCHAR(500) NULL DEFAULT NULL,
+  `file_type` VARCHAR(16) NULL DEFAULT NULL,
+  `file_size_kb` INT(10) UNSIGNED NULL DEFAULT NULL,
+  `page_count` INT(10) UNSIGNED NULL DEFAULT NULL,
+  `publisher` VARCHAR(200) NULL DEFAULT NULL,
+  `published_at` DATE NULL DEFAULT NULL,
+  `source_updated_at` DATETIME NULL DEFAULT NULL,
+  `lang` VARCHAR(5) NOT NULL DEFAULT 'ar',
+  `redistribution` ENUM('link_only','hosted','unknown') NOT NULL DEFAULT 'link_only',
+  `hosted_path` VARCHAR(500) NULL DEFAULT NULL,
+  `decision_title` VARCHAR(400) NULL DEFAULT NULL,
+  `title_is_derived` TINYINT(1) NOT NULL DEFAULT 0,
+  `judgment_facts` LONGTEXT NULL DEFAULT NULL,
+  `judgment_reasons` LONGTEXT NULL DEFAULT NULL,
+  `judgment_ruling` LONGTEXT NULL DEFAULT NULL,
+  `judgment_narration` LONGTEXT NULL DEFAULT NULL,
+  `detail_fetched_at` DATETIME NULL DEFAULT NULL,
+  `imported_at` DATETIME NULL DEFAULT NULL,
+  `hijri_date` VARCHAR(20) NULL DEFAULT NULL,
+  `title_norm` VARCHAR(400) NULL DEFAULT NULL,
+  `summary_norm` TEXT NULL DEFAULT NULL,
+  `is_published` TINYINT(1) NOT NULL DEFAULT 1,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_lli_source_external` (`source_key`, `external_id`),
+  KEY `idx_lli_type` (`item_type`),
+  KEY `idx_lli_source` (`source_id`),
+  KEY `idx_lli_court` (`court_name`),
+  KEY `idx_lli_city` (`city`),
+  KEY `idx_lli_year` (`hijri_year`),
+  KEY `idx_lli_date` (`decision_date`),
+  KEY `idx_lli_category` (`category`),
+  KEY `idx_lli_published` (`is_published`),
+  KEY `idx_ll_title_norm` (`title_norm`),
+  KEY `idx_ll_detail_pending` (`source_key`, `detail_fetched_at`),
+  FULLTEXT KEY `ft_lli_text` (`title`, `summary`, `body`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `legal_library_sync_runs` (
+  `id` INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `source_key` VARCHAR(40) NOT NULL,
+  `status` ENUM('running','ok','partial','error') NOT NULL DEFAULT 'running',
+  `items_seen` INT(10) UNSIGNED NOT NULL DEFAULT 0,
+  `items_new` INT(10) UNSIGNED NOT NULL DEFAULT 0,
+  `items_updated` INT(10) UNSIGNED NOT NULL DEFAULT 0,
+  `items_skipped` INT(10) UNSIGNED NOT NULL DEFAULT 0,
+  `error_message` TEXT NULL DEFAULT NULL,
+  `started_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `finished_at` DATETIME NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_llsr_source` (`source_key`),
+  KEY `idx_llsr_started` (`started_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `legal_library_favorites` (
+  `id` INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `user_id` INT(10) UNSIGNED NOT NULL,
+  `item_id` INT(10) UNSIGNED NOT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_llf_user_item` (`user_id`, `item_id`),
+  KEY `idx_llf_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO `legal_library_sources`
+  (`source_key`, `name_ar`, `name_en`, `publisher_ar`, `publisher_en`, `base_url`, `access_method`, `content_types`, `redistribution`, `is_enabled`, `notes_ar`, `notes_en`)
+VALUES
+  ('moj_decisions', 'القرارات والأحكام القضائية — وزارة العدل', 'Judicial decisions — Ministry of Justice', 'وزارة العدل السعودية', 'Saudi Ministry of Justice', 'https://laws.moj.gov.sa/ar/JudicialDecisionsList/0', 'moj_api', 'judgment', 'link_only', 1, 'بوابة قانونية رسمية تنشر الأحكام للقراءة العامة. تتيح البيانات للعامة لكنها ليست تصريحاً بإعادة النشر، ولم يتأكّد وجود ترخيص إعادة استخدام؛ لذلك تُخزَّن البيانات الوصفية والرابط الرسمي فقط.', 'Official legal portal that publishes judgments for public reading. Public availability is not a re-publication licence and no re-use licence was confirmed, so only metadata and the official link are stored.'),
+  ('moj_legislation', 'الأنظمة والتشريعات — وزارة العدل', 'Legislations & regulations — Ministry of Justice', 'وزارة العدل السعودية', 'Saudi Ministry of Justice', 'https://laws.moj.gov.sa/ar/legislations-regulations', 'moj_api', 'legislation', 'link_only', 1, 'الأنظمة واللوائح والمراسيم المتاحة عبر البوابة القانونية الرسمية. تتيح البيانات للعامة لكنها ليست تصريحاً بإعادة النشر، ولم يتأكّد وجود ترخيص إعادة استخدام؛ لذلك تُخزَّن البيانات الوصفية والملخص والرابط الرسمي فقط.', 'Statutes, regulations and royal orders from the official legal portal. Public availability is not a re-publication licence and no re-use licence was confirmed, so only metadata, the summary and the official link are stored.'),
+  ('mashortich_books', 'مجموعات الأحكام القضائية (PDF)', 'Judicial rulings collections (PDF)', 'مشورتك — مصدر ثالث', 'Mashortich (third-party)', 'https://www.mashortich.com/', 'public_list', 'book', 'link_only', 1, 'أربع عشرة مجموعة PDF منشورة علناً. لم تُنسخ الملفات إلى مواثيق؛ تُعرض البيانات الوصفية وروابط التنزيل الرسمية فقط، ويُتحقّق من استجابة الرابط قبل عرضه.', 'Fourteen publicly published PDF collections. Files are NOT copied to Mawatheq; only metadata and the official download link are shown, and the link is verified before it is displayed.'),
+  ('bog_open_data', 'البيانات المفتوحة — ديوان المظالم', 'Open data — Board of Grievances', 'ديوان المظالم', 'Board of Grievances', 'https://www.bog.gov.sa/EServices/OpenData/Pages/default.aspx', 'public_api', 'statistics', 'unknown', 0, 'مصدر حكومي للبيانات المفتوحة وواجهة API. معطّل افتراضياً: يتطلب مراجعة شروط إعادة النشر قبل التفعيل، ولم يكن متاحاً للفحص من بيئة التطوير.', 'Government open-data source with an API. Disabled by default: requires a terms review before enabling, and was not reachable from the build environment.'),
+  ('bog_almusaid', 'المساعد القضائي — ديوان المظالم', 'Judicial assistant — Board of Grievances', 'ديوان المظالم', 'Board of Grievances', 'https://almusaid.bog.gov.sa/', 'public_api', 'judgment', 'unknown', 0, 'خدمة بحث قضائي تتطلب تسجيل دخول موحّد (SSO). معطّلة افتراضياً لعدم وجود وصول برمجي عام مصرّح به.', 'Judicial search service gated behind SSO login. Disabled by default — no authorized public programmatic access.');
