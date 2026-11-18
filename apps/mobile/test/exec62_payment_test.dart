@@ -52,6 +52,24 @@ void main() {
       expect(r.paymentRequired, isTrue);
       expect(r.paymentUrl, isNull);
       expect(r.unconfirmed, isTrue);
+      expect(r.paymentError, 'gateway_disabled');
+    });
+
+    test('the structured failure code survives so the UI can name the real cause', () {
+      final r = BookingResult.fromJson({
+        'ok': true,
+        'consultation_id': 9,
+        'payment_required': true,
+        'payment_url': null,
+        'payment_error': 'unsupported_currency',
+        'unconfirmed': true,
+      });
+      expect(r.paymentError, 'unsupported_currency');
+    });
+
+    test('an absent payment_error is null, not an empty string', () {
+      final r = BookingResult.fromJson({'ok': true, 'consultation_id': 4});
+      expect(r.paymentError, isNull);
     });
 
     test('a free booking is never flagged unconfirmed', () {

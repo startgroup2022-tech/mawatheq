@@ -47,11 +47,22 @@ check('ngenius.php requires gateway/contract.php, so any ngenius consumer has th
 
 // Load the closure the return page uses, in a fresh process, and assert the functions are
 // defined — this is the exact "Call to undefined function" that used to happen.
+//
+// The probe must sign in as a REAL active client, not a hardcoded id: auth_guard.php exits
+// (redirect to /login.php) when the session's user_id is not an active, verified account, so a
+// hardcoded `1` returns an empty body on any database whose first user is not id 1 — which is
+// every fresh install, because the seed scripts create ids 5+. That made this check fail for a
+// reason unrelated to the code under test.
+$probeUser = (int)$pdo->query(
+    "SELECT id FROM users WHERE status='active' AND email_verified=1 ORDER BY id LIMIT 1"
+)->fetchColumn();
+check('an active verified client exists to drive the return-page closure', $probeUser > 0);
+
 $probeScript = tempnam(sys_get_temp_dir(), 'gwd68') . '.php';
 file_put_contents($probeScript, '<?php
 session_start();
 require ' . var_export(__DIR__ . '/../config/config.php', true) . ';
-$_SESSION["user_id"] = 1; $_SESSION["user_name"] = "x";
+$_SESSION["user_id"] = ' . $probeUser . '; $_SESSION["user_name"] = "x";
 require ' . var_export(__DIR__ . '/../includes/auth_guard.php', true) . ';
 require ' . var_export(__DIR__ . '/../includes/consultation_payment.php', true) . ';
 echo (function_exists("gateway_normalize_state") && function_exists("gateway_is_paid_state")) ? "OK" : "MISSING";

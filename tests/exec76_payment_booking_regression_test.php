@@ -72,6 +72,20 @@ foreach (['badTokenRequest', 'realmNameNotAvailable'] as $code) {
     check("$code: classified as permanent (no retry offered)", strpos($msg, 'المحاولة مجدداً') === false);
 }
 
+/* ------------------------------- 2c. the retry path carries the reason ---- */
+echo "\n== 2c. the consultation retry path keeps the gateway's reason ==\n";
+// consultations.php was the page that produced the exact production message the owner
+// reported («تعذّر بدء عملية الدفع الإلكتروني...») from a hardcoded string, discarding the
+// structured reason. The retry endpoint must pass the code through, and the page must
+// render the sentence that matches it.
+$retrySrc = file_get_contents(__DIR__ . '/../consultation-pay.php');
+check('consultation-pay.php forwards the structured error code', strpos($retrySrc, '&code=') !== false || strpos($retrySrc, "'&code=") !== false);
+check('consultation-pay.php reads the error code from the result', strpos($retrySrc, "\$started['error']") !== false);
+
+$listSrc = file_get_contents(__DIR__ . '/../consultations.php');
+check('consultations.php renders via gateway_diag_customer_message()', strpos($listSrc, 'gateway_diag_customer_message') !== false);
+check('consultations.php reads the ?code= parameter', strpos($listSrc, "\$_GET['code']") !== false);
+
 /* ------------------------------------------ 3. the booking page answers 200 ---- */
 echo "\n== 3. booking.php renders for an unknown lawyer instead of dying ==\n";
 

@@ -331,6 +331,29 @@ class _PlanCard extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 14),
+          // The plan's own marketing benefits (from `plan_features`), exactly as the
+          // website lists them — so the app and the site describe a plan identically.
+          for (final f in plan.features)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 3),
+                    child: Icon(Icons.check_circle,
+                        size: 15, color: AppColors.teal),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      f.label(rtl),
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           // Only the limits the plan actually defines are listed; a null limit
           // means "unlimited", which is stated rather than shown as a number.
           _limit(context, rtl ? 'استفسارات المساعد' : 'Assistant queries',

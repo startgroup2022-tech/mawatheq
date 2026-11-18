@@ -61,6 +61,11 @@ function json74(string $body): array {
     return is_array($d) ? $d : [];
 }
 
+// The redistribution gate reads MAWATHEQ_LL_CAPTURE_BODY from the environment. A shell
+// that exported it (e.g. a manual enrich run) would otherwise flip this suite's
+// expectations, so start from the documented default rather than the ambient value.
+putenv('MAWATHEQ_LL_CAPTURE_BODY');
+
 $suffix = sprintf('%08d', random_int(10000000, 99999999));
 $created = ['items' => []];
 
@@ -301,6 +306,56 @@ if ($userId > 0) {
     check('a seeded user exists to test favorites', false);
 }
 
+/* ================================================================ SECTION 6 */
+
+section('6. A list refresh must not blank the reader-facing body (Execution 68)');
+
+// The MOJ import runs in two phases: a list refresh that carries no detail, and a detail
+// enrich pass. The list mapper maps `body` to NULL, so a refresh that ran over an
+// already-enriched row used to erase the ruling the reader lands on while leaving
+// `judgment_ruling` intact — the row stayed in the register and its detail page opened to
+// nothing. This pins the guard that stops it.
+putenv('MAWATHEQ_LL_CAPTURE_BODY=1');
+$srcRefresh = seed_source($pdo, 'exec74_refresh', 'hosted');
+$refreshSource = legal_library_source('exec74_refresh');
+
+$refreshRow = [
+    'id' => 'exec74-refresh-' . $suffix,
+    'judgementNumber' => 'R-' . $suffix,
+    'courtName' => 'المحكمة التجارية',
+    'city' => 'الرياض',
+    'hijriYear' => 1448,
+    'judgementDate' => '1448-02-01',
+];
+$refreshDetail = [
+    'title' => 'القضية رقم ' . $suffix . ' لعام 1448هـ',
+    'judgmentDate' => '2026-07-15T00:00:00',
+    'judgmentTextofRulling' => '<p>نص الحكم الكامل ' . $suffix . '</p>',
+];
+
+$mapped = legal_library_map_moj_judgement($refreshRow, $refreshSource, $refreshDetail);
+legal_library_upsert_item($pdo, $mapped);
+$refreshId = (int)$pdo->query("SELECT id FROM legal_library_items WHERE external_id = '" . $refreshRow['id'] . "'")->fetchColumn();
+$created['items'][] = $refreshId;
+
+$afterEnrich = $pdo->query("SELECT body, decision_date, title FROM legal_library_items WHERE id = $refreshId")->fetch(PDO::FETCH_ASSOC);
+check('the detail pass stores a non-empty body', ($afterEnrich['body'] ?? '') !== '' && str_contains((string)$afterEnrich['body'], $suffix));
+check('the source Gregorian date is preferred over a conversion', ($afterEnrich['decision_date'] ?? '') === '2026-07-15');
+
+// Now the plain list refresh: no detail. The body and the source title must survive.
+$listMapped = legal_library_map_moj_judgement($refreshRow, $refreshSource, null);
+check('the list mapper alone maps no body (this is the trap)', ($listMapped['body'] ?? null) === null);
+legal_library_upsert_item($pdo, $listMapped);
+$afterRefresh = $pdo->query("SELECT body, decision_date, title FROM legal_library_items WHERE id = $refreshId")->fetch(PDO::FETCH_ASSOC);
+check('a list refresh does NOT blank the reader-facing body', ($afterRefresh['body'] ?? '') !== '' && str_contains((string)$afterRefresh['body'], $suffix));
+check('a list refresh keeps the source title', ($afterRefresh['title'] ?? '') === $refreshDetail['title']);
+check('a list refresh keeps the Gregorian decision date', ($afterRefresh['decision_date'] ?? '') === '2026-07-15');
+
+// The Hijri conversion must work without ext-intl (absent on most shared cPanel hosts).
+$conv = legal_library_hijri_to_gregorian('1448-02-01');
+check('the Hijri->Gregorian conversion works without ext-intl', is_string($conv) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $conv) === 1);
+putenv('MAWATHEQ_LL_CAPTURE_BODY');
+
 /* ================================================================ CLEANUP */
 
 section('Cleanup');
@@ -310,7 +365,7 @@ if ($in !== '') {
     $pdo->exec("DELETE FROM legal_library_favorites WHERE item_id IN ($in)");
     $pdo->exec("DELETE FROM legal_library_items WHERE id IN ($in)");
 }
-$pdo->exec("DELETE FROM legal_library_sources WHERE source_key IN ('exec74_hosted','exec74_link')");
+$pdo->exec("DELETE FROM legal_library_sources WHERE source_key IN ('exec74_hosted','exec74_link','exec74_refresh')");
 @unlink(LEGAL_LIBRARY_DIR . $hostedFileName);
 echo "  removed seeded rows\n";
 

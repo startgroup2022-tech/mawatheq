@@ -268,6 +268,7 @@ class BookingResult {
     this.paymentRequired = false,
     this.paymentUrl,
     this.unconfirmed = false,
+    this.paymentError,
   });
 
   final int consultationId;
@@ -278,13 +279,20 @@ class BookingResult {
   /// booking exists yet is not confirmed. The UI must say so rather than show success.
   final bool unconfirmed;
 
+  /// The structured gateway failure code when payment could not start (e.g.
+  /// `no_enabled_gateway`, `unsupported_currency`, `token_failed`). The app maps it to a
+  /// sentence that matches the real cause instead of one generic "could not start payment".
+  final String? paymentError;
+
   factory BookingResult.fromJson(Map<String, dynamic> json) {
     final rawUrl = json['payment_url'];
+    final rawErr = json['payment_error'];
     return BookingResult(
       consultationId: Json(json).intg('consultation_id'),
       paymentRequired: json['payment_required'] == true,
       paymentUrl: (rawUrl is String && rawUrl.isNotEmpty) ? rawUrl : null,
       unconfirmed: json['unconfirmed'] == true,
+      paymentError: (rawErr is String && rawErr.isNotEmpty) ? rawErr : null,
     );
   }
 }
@@ -1143,6 +1151,21 @@ class AiStatus {
   }
 }
 
+/// A marketing benefit of a plan, from `plan_features` (same rows the website shows).
+class PlanFeature {
+  const PlanFeature({required this.ar, required this.en});
+
+  final String ar;
+  final String en;
+
+  String label(bool rtl) => rtl ? ar : (en.isNotEmpty ? en : ar);
+
+  factory PlanFeature.fromJson(Map<String, dynamic> map) => PlanFeature(
+        ar: (map['ar'] ?? '').toString(),
+        en: (map['en'] ?? '').toString(),
+      );
+}
+
 /// A published plan from `GET /api/v1/plans.php`.
 ///
 /// Every price and limit is the value stored in the `plans` table, so the app can
@@ -1161,6 +1184,7 @@ class Plan {
     this.consultationsIncluded,
     this.isCorporate = false,
     this.isFeatured = false,
+    this.features = const [],
   });
 
   final int id;
@@ -1179,6 +1203,10 @@ class Plan {
   final bool isCorporate;
   final bool isFeatured;
 
+  /// The plan's marketing benefits, read from the same `plan_features` table the
+  /// website renders. Empty on an older server that does not send them yet.
+  final List<PlanFeature> features;
+
   String get displayName => nameAr.isNotEmpty ? nameAr : nameEn;
   bool get isFree => priceMonthly <= 0;
 
@@ -1186,6 +1214,13 @@ class Plan {
     final j = Json(map);
     int? nullableInt(String key) =>
         j.raw[key] == null ? null : j.intg(key);
+    final rawFeatures = j.raw['features'];
+    final features = rawFeatures is List
+        ? rawFeatures
+            .whereType<Map>()
+            .map((f) => PlanFeature.fromJson(Map<String, dynamic>.from(f)))
+            .toList()
+        : <PlanFeature>[];
     return Plan(
       id: j.intg('id'),
       nameAr: j.str('name_ar'),
@@ -1199,6 +1234,7 @@ class Plan {
       consultationsIncluded: nullableInt('consultations_included'),
       isCorporate: j.boolean('is_corporate'),
       isFeatured: j.boolean('is_featured'),
+      features: features,
     );
   }
 }

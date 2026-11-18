@@ -47,7 +47,23 @@ $extraPageAssets = ['<link rel="stylesheet" href="/assets/css/journey.css">'];
   <p style="margin-bottom:20px"><?= t('feat4_body') ?></p>
 
   <?php if (isset($_GET['payment_error'])): ?>
-    <div class="form-alert error"><?= is_rtl() ? 'تعذّر بدء الدفع الإلكتروني حالياً. لم يتم خصم أي مبلغ. حاول مجدداً لاحقاً.' : 'Online payment could not be started. No amount was charged. Please try again later.' ?><?php $ref = preg_replace('/[^A-Fa-f0-9]/', '', (string)($_GET['ref'] ?? '')); if ($ref !== '') echo ' ' . (is_rtl() ? 'الرقم المرجعي:' : 'Reference:') . ' ' . htmlspecialchars(strtoupper(substr($ref, 0, 8))); ?></div>
+    <?php
+    // Show the sentence that matches the actual failure. A permanent fault (gateway off,
+    // currency mismatch, bad credentials) must point at support, not invite a retry loop that
+    // can never succeed — so the message is chosen by the structured code, not hardcoded.
+    $payErrCode = trim((string)($_GET['code'] ?? ''));
+    $payRef = strtoupper(preg_replace('/[^A-Fa-f0-9]/', '', (string)($_GET['ref'] ?? '')));
+    $payRef = $payRef !== '' ? substr($payRef, 0, 8) : '';
+    if ($payErrCode !== '' && function_exists('gateway_diag_customer_message')) {
+        $payErrMsg = gateway_diag_customer_message($payErrCode, $payRef, is_rtl());
+    } else {
+        $payErrMsg = is_rtl()
+            ? 'تعذّر بدء الدفع الإلكتروني حالياً. لم يتم خصم أي مبلغ. حاول مجدداً لاحقاً.'
+            : 'Online payment could not be started. No amount was charged. Please try again later.';
+        if ($payRef !== '') $payErrMsg .= ' ' . (is_rtl() ? 'الرقم المرجعي:' : 'Reference:') . ' ' . $payRef;
+    }
+    ?>
+    <div class="form-alert error"><?= htmlspecialchars($payErrMsg) ?></div>
   <?php endif; ?>
 
   <?php if ($myBookings): ?>

@@ -760,11 +760,12 @@ class _JourneyBookingScreenState extends State<_JourneyBookingScreen> {
         }
       } else if (booking.paymentRequired && booking.unconfirmed) {
         // The booking was saved but the gateway could not be reached, so it is NOT confirmed.
-        // Saying "booked" here is exactly the defect this execution fixes.
+        // Saying "booked" here is exactly the defect this execution fixes. The sentence is
+        // chosen by the server's structured failure code so a permanent fault (gateway off,
+        // currency mismatch) tells the customer to contact us instead of retrying forever.
         setState(() {
           _submitting = false;
-          _error = 'تم حفظ الطلب لكن تعذّر بدء الدفع، لذلك لم يُؤكَّد الموعد بعد. '
-              'يمكنك إكمال الدفع من صفحة الاستشارات.';
+          _error = _paymentFailureMessage(booking.paymentError);
         });
         return;
       }
@@ -791,6 +792,29 @@ class _JourneyBookingScreenState extends State<_JourneyBookingScreen> {
         _error = e.message;
       });
     }
+  }
+
+  /// The sentence to show when the booking was saved but the gateway could not start the
+  /// payment. Mirrors the website's `gateway_diag_customer_message`: a permanent fault
+  /// (gateway off, currency mismatch, bad credentials) tells the customer to contact us —
+  /// pressing Pay again can never fix it — while a transient fault offers a retry.
+  String _paymentFailureMessage(String? code) {
+    const permanent = {
+      'unsupported_currency',
+      'no_enabled_gateway',
+      'gateway_disabled',
+      'migration_required',
+      'zero_amount',
+      'badTokenRequest',
+      'realmNameNotAvailable',
+      'outletNotAvailable',
+    };
+    if (code != null && permanent.contains(code)) {
+      return 'تم حفظ الطلب، لكن الدفع الإلكتروني غير متاح حالياً ولم يُؤكَّد الموعد بعد. '
+          'لم يتم خصم أي مبلغ. تواصل معنا لإتمام الحجز.';
+    }
+    return 'تم حفظ الطلب لكن تعذّر بدء الدفع، لذلك لم يُؤكَّد الموعد بعد. '
+        'لم يتم خصم أي مبلغ. يمكنك إكمال الدفع من صفحة الاستشارات.';
   }
 
   /// The chosen date and slot as one local wall-clock instant, which is what both

@@ -56,6 +56,11 @@ function http68(string $method, string $path): array {
     return [$code, $body];
 }
 
+// The redistribution gate reads MAWATHEQ_LL_CAPTURE_BODY from the environment. A shell
+// that exported it (e.g. a manual enrich run) would otherwise flip this suite's
+// expectations, so start from the documented default rather than the ambient value.
+putenv('MAWATHEQ_LL_CAPTURE_BODY');
+
 $suffix = sprintf('%08d', random_int(10000000, 99999999));
 $created = ['items' => []];
 

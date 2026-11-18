@@ -339,6 +339,35 @@ void main() {
       expect(plan.consultationsIncluded, 5);
       expect(plan.isFree, isFalse);
     });
+
+    test('reads the plan_features benefit list the website also shows', () {
+      final plan = Plan.fromJson(const {
+        'id': 2,
+        'name_ar': 'احترافية',
+        'price_monthly': '149.000',
+        'price_yearly': '1490.000',
+        'features': [
+          {'ar': 'بنك بنود العقود', 'en': 'Clause bank'},
+          {'ar': 'مستشار مخصص', 'en': 'Dedicated advisor'},
+        ],
+      });
+
+      expect(plan.features.length, 2);
+      expect(plan.features.first.ar, 'بنك بنود العقود');
+      expect(plan.features.first.label(true), 'بنك بنود العقود');
+      expect(plan.features.first.label(false), 'Clause bank');
+    });
+
+    test('a plan with no features list is empty, not an error (older server)', () {
+      final plan = Plan.fromJson(const {
+        'id': 1,
+        'name_ar': 'أساسية',
+        'price_monthly': '0.000',
+        'price_yearly': '0.000',
+      });
+
+      expect(plan.features, isEmpty);
+    });
   });
 
   group('AiStatus', () {

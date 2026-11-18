@@ -26,12 +26,20 @@
   --ll-shadow-hover: 0 2px 4px rgba(15,31,51,.05), 0 18px 40px -16px rgba(15,31,51,.24);
   --ll-radius: 16px;
   --ll-radius-sm: 11px;
+  /* The Arabic library reads in Tajawal; the English mode keeps IBM Plex Sans. Declared
+     as a token so every library surface — hub, search, item, the app's web views — resolves
+     the same family instead of each element naming a font. */
+  --ll-font: 'Tajawal', 'IBM Plex Sans Arabic', sans-serif;
+  --ll-font-head: 'Tajawal', 'IBM Plex Sans Arabic', sans-serif;
+  font-family: var(--ll-font);
   background:
     radial-gradient(1200px 380px at 100% -60px, rgba(43,168,196,.10), transparent 60%),
     radial-gradient(900px 340px at 0% -40px, rgba(245,166,35,.07), transparent 55%),
     var(--bg, #F6F8FA);
 }
-body.lang-en .ll-page { --ll-body: 'IBM Plex Sans', sans-serif; }
+body.lang-en .ll-page { --ll-font: 'IBM Plex Sans', sans-serif; --ll-font-head: 'IBM Plex Sans', sans-serif; }
+.ll-page h1, .ll-page h2, .ll-page h3, .ll-page h4, .ll-page h5 { font-family: var(--ll-font-head); }
+.ll-page input, .ll-page select, .ll-page textarea, .ll-page button { font-family: var(--ll-font); }
 
 /* ---------------------------------------------------------------- icons --- */
 .ll-ico { width: 20px; height: 20px; display: inline-block; vertical-align: middle; flex: none; }

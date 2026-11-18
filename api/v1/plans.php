@@ -16,4 +16,21 @@ $plans = $pdo->query(
      FROM plans WHERE status='active' ORDER BY sort_order, price_monthly"
 )->fetchAll();
 
-api_json(['ok' => true, 'plans' => $plans]);
+// The marketing benefits are stored in `plan_features`, the same table the website and
+// the admin console read. The app showed only the numeric limits, so a plan's real
+// selling points (clause bank, dedicated advisor, ...) were invisible there while the
+// website listed them. Attach them per plan so both surfaces describe a plan identically.
+// The field is additive: a client that ignores `features` keeps working unchanged.
+$featureRows = $pdo->query(
+    'SELECT plan_id, feature_ar, feature_en FROM plan_features ORDER BY plan_id, sort_order, id'
+)->fetchAll();
+$byPlan = [];
+foreach ($featureRows as $f) {
+    $byPlan[(int)$f['plan_id']][] = ['ar' => (string)$f['feature_ar'], 'en' => (string)$f['feature_en']];
+}
+foreach ($plans as &$plan) {
+    $plan['features'] = $byPlan[(int)$plan['id']] ?? [];
+}
+unset($plan);
+
+api_json(['ok' => true, 'plans' => $plans, 'currency' => currency_code()]);

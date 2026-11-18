@@ -202,23 +202,54 @@ function legal_library_hijri_to_gregorian(?string $hijri): ?string {
     if (!preg_match('/^(\d{4})-(\d{1,2})-(\d{1,2})$/', trim($hijri), $m)) return null;
     [$y, $mo, $d] = [(int)$m[1], (int)$m[2], (int)$m[3]];
     if ($y < 1300 || $y > 1600 || $mo < 1 || $mo > 12 || $d < 1 || $d > 30) return null;
-    if (!class_exists('IntlCalendar')) return null;
-    try {
-        // The Umm al-Qura calendar must be named in the locale; passing it as the
-        // first argument silently yields a Gregorian calendar (a wrong date that
-        // looks plausible). The locale needs a real language tag.
-        $cal = IntlCalendar::createInstance(null, 'en_US@calendar=islamic-umalqura');
-        $cal->clear();
-        // setDateTime takes (year, month, day, hour, minute, second); month is
-        // 0-based, and the 6-arg IntlCalendar::set() form is deprecated in PHP 8.4.
-        $cal->setDateTime($y, $mo - 1, $d, 12, 0, 0);
-        $ms = $cal->getTime();
-        $g = new DateTime('@' . (int)($ms / 1000));
-        $g->setTimezone(new DateTimeZone('Asia/Riyadh'));
-        return $g->format('Y-m-d');
-    } catch (Throwable $e) {
-        return null;
+    if (class_exists('IntlCalendar')) {
+        try {
+            // The Umm al-Qura calendar must be named in the locale; passing it as the
+            // first argument silently yields a Gregorian calendar (a wrong date that
+            // looks plausible). The locale needs a real language tag.
+            $cal = IntlCalendar::createInstance(null, 'en_US@calendar=islamic-umalqura');
+            $cal->clear();
+            // setDateTime takes (year, month, day, hour, minute, second); month is
+            // 0-based, and the 6-arg IntlCalendar::set() form is deprecated in PHP 8.4.
+            $cal->setDateTime($y, $mo - 1, $d, 12, 0, 0);
+            $ms = $cal->getTime();
+            $g = new DateTime('@' . (int)($ms / 1000));
+            $g->setTimezone(new DateTimeZone('Asia/Riyadh'));
+            return $g->format('Y-m-d');
+        } catch (Throwable $e) {
+            // fall through to the tabular conversion
+        }
     }
+    // The `intl` extension is frequently absent on shared cPanel hosting (the same reason
+    // legal_library_hijri_now_year() carries its own tabular maths). A missing extension must
+    // not silently drop the Gregorian date from every imported judgment, so convert with the
+    // standard tabular (Kuwaiti) algorithm instead. It is accurate to within a day, which is
+    // enough for a displayed decision date; a caller that needs the exact day should prefer the
+    // source's own Gregorian field (the MOJ detail endpoint publishes judgmentDate verbatim).
+    $jdn = legal_library_hijri_to_jdn($y, $mo, $d);
+    if ($jdn === null) return null;
+    return legal_library_jdn_to_gregorian($jdn);
+}
+
+/** Hijri (tabular, Kuwaiti algorithm) -> Julian Day Number. */
+function legal_library_hijri_to_jdn(int $y, int $m, int $d): ?int {
+    if ($m < 1 || $m > 12 || $d < 1 || $d > 30) return null;
+    return intdiv(11 * $y + 3, 30) + 354 * $y + 30 * $m - intdiv($m - 1, 2) + $d + 1948440 - 385;
+}
+
+/** Julian Day Number -> Gregorian Y-m-d. */
+function legal_library_jdn_to_gregorian(int $jdn): ?string {
+    $l = $jdn + 68569;
+    $n = intdiv(4 * $l, 146097);
+    $l -= intdiv(146097 * $n + 3, 4);
+    $i = intdiv(4000 * ($l + 1), 1461001);
+    $l = $l - intdiv(1461 * $i, 4) + 31;
+    $j = intdiv(80 * $l, 2447);
+    $day = $l - intdiv(2447 * $j, 80);
+    $l = intdiv($j, 11);
+    $month = $j + 2 - 12 * $l;
+    $year = 100 * ($n - 49) + $i + $l;
+    return sprintf('%04d-%02d-%02d', $year, $month, $day);
 }
 
 /** The Gregorian year of a Hijri date, for the year facet. */
@@ -366,18 +397,29 @@ function legal_library_upsert_item(PDO $pdo, array $it): string {
         $vals[$c] = $it[$c] ?? null;
         $present[$c] = array_key_exists($c, $it);
     }
-    // Detail-only columns. A plain list refresh (no detail fetched) must not erase a
-    // detail already captured, so these are only written when this run carried detail.
-    $detailCols = ['decision_title','title_is_derived','judgment_facts','judgment_reasons',
-                   'judgment_ruling','judgment_narration','detail_fetched_at'];
+    // Detail-produced columns. A detail fetch is the only thing that can produce the source's
+    // own title and its prose, so a plain list refresh (a run that carried no detail) must never
+    // blank a value a previous detail fetch stored. `body` belongs here for exactly that reason:
+    // the list mapper maps body to NULL, so without the guard a list refresh erased the ruling
+    // the reader sees while leaving judgment_ruling intact — the row still appeared in the
+    // register and its detail page opened to nothing.
+    $detailCols = ['title','decision_title','title_is_derived','summary','summary_norm','body',
+                   'judgment_facts','judgment_reasons','judgment_ruling','judgment_narration',
+                   'decision_date','gregorian_year','published_at','detail_fetched_at'];
     $hasDetail = !empty($it['detail_fetched_at']);
     // Never let a re-sync blank a field the source did not send this time.
     if ($existing) {
+        // Guard the detail columns only when the stored row actually HAS detail to protect; a
+        // row that was never enriched still takes the list's title (the only one we have yet).
+        $existingHasDetail = (bool)$pdo->query(
+            'SELECT detail_fetched_at FROM legal_library_items WHERE id = ' . (int)$existing
+        )->fetchColumn();
+        $skipDetailCols = !$hasDetail && $existingHasDetail;
         $set = [];
         $params = [];
         foreach ($vals as $c => $v) {
             if ($c === 'source_key' || $c === 'external_id') continue;
-            if (in_array($c, $detailCols, true) && !$hasDetail) continue;
+            if ($skipDetailCols && in_array($c, $detailCols, true)) continue;
             // A partial caller (a field it did not provide) must not blank a stored
             // value. A full mapper row sets every key, including explicit nulls, so
             // it still updates and clears fields as intended.
@@ -543,6 +585,18 @@ function legal_library_map_moj_judgement(array $row, array $source, ?array $deta
 
     $sourceUrl = 'https://laws.moj.gov.sa/ar/JudicialDecisionsList/1/' . rawurlencode((string)$row['id']);
 
+    // The decision's Gregorian date. The detail endpoint publishes it verbatim
+    // (`judgmentDate`, an ISO timestamp), so prefer it: it is the authority's own value and
+    // needs no conversion. Only when the source gives none do we convert the Hijri date, and
+    // that conversion (tabular) can differ from Umm al-Qura by a day or two — acceptable for a
+    // display date, which is why the source's own value always wins.
+    $gregorian = null;
+    if ($detail) {
+        $srcGreg = trim((string)($detail['judgmentDate'] ?? ''));
+        if (preg_match('/^(\d{4}-\d{2}-\d{2})/', $srcGreg, $gm)) $gregorian = $gm[1];
+    }
+    if ($gregorian === null) $gregorian = legal_library_hijri_to_gregorian($hijri);
+
     return [
         'source_id'       => (int)$source['id'],
         'source_key'      => $source['source_key'],
@@ -559,8 +613,8 @@ function legal_library_map_moj_judgement(array $row, array $source, ?array $deta
         'decision_number' => $num !== '' ? $num : null,
         'hijri_year'      => $hijriYear,
         'hijri_date'      => $hijri !== '' ? $hijri : null,
-        'gregorian_year'  => legal_library_gregorian_year_of($hijri),
-        'decision_date'   => legal_library_hijri_to_gregorian($hijri),
+        'gregorian_year'  => $gregorian ? (int)substr($gregorian, 0, 4) : null,
+        'decision_date'   => $gregorian,
         'category'        => $court !== '' ? $court : null,
         'body'            => $body,
         'judgment_facts'  => $facts,
@@ -574,7 +628,7 @@ function legal_library_map_moj_judgement(array $row, array $source, ?array $deta
         'file_size_kb'    => null,
         'page_count'      => null,
         'publisher'       => $source['publisher_ar'] ?? null,
-        'published_at'    => legal_library_hijri_to_gregorian($hijri),
+        'published_at'    => $gregorian,
         'source_updated_at' => null,
         'lang'            => 'ar',
         'redistribution'  => $source['redistribution'],
@@ -670,13 +724,17 @@ function legal_library_enrich_moj_details(PDO $pdo, array $source, array $opts =
     $pauseMs = (int)($opts['pause_ms'] ?? 4000);
     // A source switched to `hosted` may already hold rows that were fetched while it
     // was `link_only`, so their detail timestamp is set but the text was never kept.
-    // `refetch` re-visits those rows so the newly permitted text is captured.
+    // `refetch` re-visits those rows so the newly permitted text is captured. `body IS NULL`
+    // is the other half: `body` is the column the reader lands on, so any row whose body is
+    // empty is unfinished regardless of what the other sections hold — a list refresh used to
+    // leave exactly that state (body blanked, judgment_ruling intact) and the refetch must
+    // repair it rather than skip it.
     $refetch = !empty($opts['refetch']);
     $headers = ['Origin: https://laws.moj.gov.sa', 'Referer: https://laws.moj.gov.sa/'];
     $counts = ['seen' => 0, 'enriched' => 0, 'blocked' => 0, 'failed' => 0];
 
     $where = $refetch
-        ? "source_key = ? AND (detail_fetched_at IS NULL OR (body IS NULL AND judgment_ruling IS NULL))"
+        ? "source_key = ? AND (detail_fetched_at IS NULL OR body IS NULL OR decision_date IS NULL)"
         : "source_key = ? AND detail_fetched_at IS NULL";
     $st = $pdo->prepare(
         "SELECT id, external_id, decision_number, court_name, city, hijri_year, decision_date, source_url

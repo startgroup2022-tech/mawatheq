@@ -48,8 +48,13 @@ if (!empty($started['ok']) && !empty($started['redirect_url'])) {
 }
 
 // The gateway could not be reached. Return to the list with an honest banner; the booking
-// stays pending and unpaid, which is the truth. The correlation id (when present) lets
-// support find the exact gateway failure behind the generic message.
+// stays pending and unpaid, which is the truth. The structured failure code travels with the
+// redirect so the page can show the right sentence — a permanent fault (gateway off, currency
+// mismatch, bad credentials) must tell the customer to contact us, not to "try again later",
+// which would loop them forever. The correlation id lets support find the exact failure.
 $corr = (string)($started['correlation_id'] ?? '');
-header('Location: /consultations.php?payment_error=1' . ($corr !== '' ? '&ref=' . urlencode($corr) : ''));
+$code = (string)($started['error'] ?? '');
+header('Location: /consultations.php?payment_error=1'
+    . ($code !== '' ? '&code=' . urlencode($code) : '')
+    . ($corr !== '' ? '&ref=' . urlencode($corr) : ''));
 exit;
