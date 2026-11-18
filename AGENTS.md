@@ -4654,3 +4654,63 @@ only in `body` (`تعويض`) returned 4 rows instead of 77. The body is now mat
 `link_only` row whose body holds `THIS MUST NEVER BE EXPOSED` and asserts a search for it returns
 nothing. When you add a searchable field, add the leak test in the same change: the read gate and
 the search predicate must name the same condition, or one of them silently widens access.
+
+## Execution 68 (final) — the failure message must name the cause, not just exist
+
+### A hardcoded error string is a bug even when the diagnosis system works
+
+Execution 67 built a correlation-id diagnostic system, and `checkout.php` used it. But
+`consultation-pay.php` (the retry path from the consultations list) dropped the structured
+`error` code and redirected to `consultations.php?payment_error=1`, which rendered **one**
+hardcoded sentence for every cause. So a *permanent* fault (gateway off, currency mismatch,
+rejected credentials) read identically to a *transient* one and invited a retry loop that
+could never succeed — and the exact production message the owner reported came from that
+string. The fix is not new diagnostics; it is *passing the code through*:
+`consultation-pay.php` forwards `&code=<code>` and `consultations.php` renders
+`gateway_diag_customer_message($code, $ref)`. `booking.php` and `checkout.php` already did.
+When you add a payment entry point, route it through the helper; do not write a sentence.
+
+### The app and the website must read the same sentence
+
+`BookingResult.paymentError` (Flutter) carries the same code, and the journey screen maps it
+to the same permanent/transient sentences. A client that shows its own generic "could not
+start payment" is the same defect one layer out. The field is additive, so a shipped client
+that ignores it is unaffected — API backward compatibility is preserved.
+
+### Plan benefits are `plan_features`, and the app was not reading them
+
+`api/v1/plans.php` returned only the numeric limits, so the app's pricing screen showed none
+of a plan's real selling points while the website listed them. It now attaches a `features`
+array from the **same** `plan_features` table the website and `admin/plans.php` read — one
+source of truth. The field is additive. `admin/plans.php` is where the rows are managed.
+
+### A "detail-only" column guard that protects the wrong columns blanks the page
+
+`legal_library_upsert_item()` skipped its detail columns on a list refresh so a re-sync could
+not erase detail. But `body` was *not* in that list, and the list mapper maps `body` to NULL —
+so a plain list pass over an enriched row blanked the ruling the reader lands on while leaving
+`judgment_ruling` intact. The row stayed in the register and its page opened to nothing. The
+guard now protects `title`/`summary`/`body` and the date columns, and the enrich `refetch`
+predicate includes `body IS NULL OR decision_date IS NULL` so it repairs such a row.
+
+### `decision_date`: prefer the source's own Gregorian value
+
+The MOJ detail endpoint publishes `judgmentDate` (ISO). Use it verbatim; only convert the Hijri
+date when the source gives none, and convert **without** `ext-intl` (absent on most shared
+cPanel hosts) using the tabular algorithm. A missing `intl` must not silently drop the date
+from every imported judgment.
+
+### A leaked environment variable makes a green suite lie
+
+`exec68_legal_library_realcontent_test` "failed" only because `MAWATHEQ_LL_CAPTURE_BODY=1` had
+been exported in the shell by a manual enrich run, flipping the redistribution gate the suite
+asserts on. The suites now `putenv('MAWATHEQ_LL_CAPTURE_BODY')` to pin the documented default.
+Rule: a test that reads an environment-driven gate must pin it, or an operator's shell export
+turns into a phantom regression.
+
+### The release verification is a download, not a `sha256sum -c` on disk
+
+Every asset in `v2026.11.18-exec68g` was re-downloaded over the public URL and verified. The APK
+carries `com.mawatheq.app` 1.8.8 / code 26 and is **debug-signed** (`CN=Android Debug`), so it is
+not Play-uploadable — say so, do not call it "release-signed". A `+` in an asset name is `%2B` in
+the download URL.
