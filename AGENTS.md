@@ -4893,3 +4893,35 @@ own `<h1>`, so a naive fetch reports a false pass.
 The Arabic PDF suite runs `pdfinfo`/`pdftoppm`/`pdffonts` to prove the producer and that the amount
 really draws ink. Without `poppler-utils` the font section SKIPs and the ink section returns `-1`,
 which reads like a rendering regression. `sudo apt-get install -y poppler-utils` (and GD for PHP).
+
+### A subscription that never expires is a permanent free upgrade
+
+`package_payment_activate()` grants the entitlement every gated feature reads by writing
+`users.plan_id`. Nothing read `subscriptions.ends_at`, so a monthly plan bought once stayed in
+force forever — the customer was never downgraded, never renewed, never billed again. The column
+was written and never consumed, which is the same shape as the `code`/`error` trap above: the
+data existed and nothing used it.
+
+`subscriptions_expire_due()` ends due rows and is run daily by `cron/subscription-expiry.php`.
+Two rules it must keep:
+
+- **Revert only while the user still holds the plan the subscription granted.** The UPDATE is
+  `WHERE id=? AND plan_id=?` (the granted plan). A customer who has since upgraded keeps the
+  higher tier, and a manual console grant is never overwritten by an old row expiring.
+- **Handle an enclosing transaction.** PDO cannot nest `beginTransaction()`, so the sweep uses a
+  savepoint when the caller already owns one. A test that wraps its fixture in a transaction will
+  otherwise die with "There is already an active transaction" before reaching an assertion.
+
+The `ends_at < today` comparison is strict on purpose: a term ending today is still a paid day.
+
+### Booking concurrency is proven, not assumed
+
+`booking_create_locked()` serializes on `GET_LOCK(<lawyer, slot>)` and re-checks availability
+*inside* the lock, immediately before the INSERT. Verified by running two real processes against
+one slot with a 150 ms delay inside the critical section: one row created, the other returned
+`slot_taken`. A `SELECT`-then-`INSERT` without the lock lets both pass the check.
+
+### Suite prerequisites added
+
+`poppler-utils` (for `exec69_pdf_render_test`) and PHP GD. Current full run: **73/73 suites green**,
+Playwright 1032 passed / 12 skipped, Flutter 379 tests.
