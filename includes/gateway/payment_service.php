@@ -118,8 +118,23 @@ function gateway_start_invoice_payment(PDO $pdo, array $invoice, array $options 
 
     if (empty($result['ok'])) {
         log_action($pdo, 'فشل إنشاء عملية دفع (' . $adapter->id() . ')', 'invoice', $invoiceId);
-        $fail = gateway_diag_failure($pdo, 'invoice_payment', 'order', 'order_failed', (string)($result['error'] ?? ''), method_exists($adapter, 'environment') ? $adapter->environment() : null);
-        return ['ok' => false, 'error' => $fail['error'], 'correlation_id' => $fail['correlation_id'], 'gateway' => $adapter->id()];
+        // The adapter already classified the fault (badTokenRequest, outletNotAvailable,
+        // unsupported_currency, connection_failed, ...). Collapsing them all into
+        // 'order_failed' threw that away: the customer always saw the generic retry sentence,
+        // the operator could not tell a wrong API key from a dead network, and a permanent
+        // credential fault was presented as something a retry might fix. Carry the real code.
+        $adapterCode = (string)($result['error'] ?? '');
+        $reason = gateway_diag_reason_code($adapterCode);
+        $fail = gateway_diag_failure(
+            $pdo, 'invoice_payment', 'order', $reason, $adapterCode,
+            method_exists($adapter, 'environment') ? $adapter->environment() : null
+        );
+        return [
+            'ok' => false, 'error' => $fail['error'], 'correlation_id' => $fail['correlation_id'],
+            'gateway' => $adapter->id(),
+            // Detail kept out of the customer-facing message but available to the operator.
+            'detail' => $adapterCode,
+        ];
     }
 
     $pdo->prepare('UPDATE invoices SET gateway=?, gateway_order_ref=? WHERE id=?')

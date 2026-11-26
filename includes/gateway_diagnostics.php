@@ -170,6 +170,47 @@ function gateway_diag_record(PDO $pdo, array $event): void {
 }
 
 /**
+ * Normalise whatever an adapter put in its `error` field into a short, stable code
+ * the diagnostic layer can classify.
+ *
+ * Adapters are inconsistent by design: the N-Genius token path returns `code`
+ * (`badTokenRequest`), the order path returns either the gateway's own error code or a
+ * full Arabic sentence with the HTTP status embedded, and the cURL path returns
+ * `connection_failed: <curl message>`. The customer message must key on the *code*;
+ * the sentence belongs in `detail`, which the admin console shows and the customer does not.
+ */
+function gateway_diag_reason_code(string $raw): string {
+    $raw = trim($raw);
+    if ($raw === '') return 'order_failed';
+
+    // A bare identifier is already a code.
+    if (preg_match('/^[A-Za-z][A-Za-z0-9_]{2,60}$/', $raw)) {
+        return $raw;
+    }
+
+    // `connection_failed: <curl error>` and anything else prefixed with a code.
+    if (preg_match('/^([a-z][a-z0-9_]{2,60}):/i', $raw, $m)) {
+        return strtolower($m[1]);
+    }
+
+    // N-Genius order failures embed the gateway's reason in brackets: "[outletNotAvailable]".
+    if (preg_match('/\[([A-Za-z][A-Za-z0-9_]{2,60})\]/', $raw, $m)) {
+        return $m[1];
+    }
+
+    // A transport failure is the only thing worth offering a retry for.
+    if (preg_match('/HTTP\s*5\d\d|HTTP\s*429|تعذّر الاتصال|Connection|timeout|timed out/i', $raw)) {
+        return 'connection_failed';
+    }
+    // Any other gateway rejection is a configuration/credential fault until proven otherwise;
+    // calling it transient would trap the customer in a retry loop that cannot succeed.
+    if (preg_match('/HTTP\s*4\d\d/', $raw)) {
+        return 'gateway_rejected';
+    }
+    return 'order_failed';
+}
+
+/**
  * Record a failed stage and return the fragments a caller merges into its error array:
  * the machine reason plus the correlation id the customer can quote.
  *
@@ -224,6 +265,16 @@ function gateway_diag_customer_message(string $errorCode, string $corr = '', boo
         'outletNotAvailable' => $rtl
             ? 'الدفع الإلكتروني غير متاح حالياً بسبب خلل في إعداد البوابة. لم يتم خصم أي مبلغ. تواصل معنا لإتمام الاشتراك.'
             : 'Online payment is unavailable right now due to a gateway configuration fault. No amount was charged. Contact us to complete your subscription.',
+        // The gateway answered but refused the order. It is not a transport fault, so a
+        // retry from the customer's side will not help — say the payment is unavailable
+        // rather than inviting a loop.
+        'gateway_rejected' => $rtl
+            ? 'تعذّر إتمام الدفع الإلكتروني حالياً. لم يتم خصم أي مبلغ. تواصل معنا وسنعالج الأمر.'
+            : 'The online payment could not be completed right now. No amount was charged. Contact us and we will resolve it.',
+        // A real transport failure: this one is safe to retry.
+        'connection_failed' => $rtl
+            ? 'تعذّر الوصول إلى بوابة الدفع. لم يتم خصم أي مبلغ. تحقّق من اتصالك ثم يمكنك المحاولة مجدداً أو التواصل معنا.'
+            : 'The payment gateway could not be reached. No amount was charged. Check your connection, then you can retry or contact us.',
     ];
     $transient = $rtl
         ? 'تعذّر بدء عملية الدفع الإلكتروني حالياً. لم يتم خصم أي مبلغ. يمكنك المحاولة مجدداً أو التواصل معنا.'

@@ -193,7 +193,15 @@ check_absent() {
 check_absent "$STAGE/site" '*/config/secrets.php' 'no config/secrets.php in the site package'
 check_absent "$STAGE/site" '*/.git' 'no .git in the site package'
 check_absent "$STAGE/site" '*/tests' 'no tests/ in the site package'
-check_absent "$STAGE/site" '*/docs' 'no docs/ in the site package'
+# Root-level only, like the .md check below: `find -path '*/docs'` matches ANY depth, so a
+# third-party package that legitimately ships its own docs/ (psr/http-message does) aborts
+# the build. What must not ship is the platform's own docs/ directory.
+if [ -e "$STAGE/site/docs" ]; then
+    printf '  ! docs/ in the site package\n'
+    guard_fail=1
+else
+    printf '  ok  no docs/ in the site package\n'
+fi
 check_absent "$STAGE/site" '*/AGENTS.md' 'no AGENTS.md in the site package'
 # Root level only: vendor/ and api/v1/ ship their own README.md legitimately, and `find -path`
 # treats `*` as matching `/`, so a `*.md` pattern would flag them too.
