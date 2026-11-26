@@ -167,8 +167,21 @@ if (!$target) {
     $csrf = $c[1] ?? '';
     check('a CSRF token is available', $csrf !== '');
 
-    $pdo->beginTransaction();
+    // The save is posted to the LIVE admin page, which runs on its own connection and
+    // commits by itself — a transaction on this connection cannot undo it. The old code
+    // wrapped the POST in beginTransaction()/rollBack() anyway, so every run permanently
+    // overwrote the seeded free plan with the fixture numbers (3 staff / 77 clients /
+    // 9000 MB), and the catalogue a customer read drifted from the migration. Restore the
+    // captured row explicitly instead.
     $before = $target;
+    $restore = function () use ($pdo, $before) {
+        $cols = ['max_staff','max_clients','max_active_cases','storage_mb','max_templates',
+                 'feature_calendar','feature_finance','feature_reports','feature_chatbot',
+                 'feature_branding','feature_whatsapp'];
+        $set = implode(',', array_map(fn($c) => "$c=?", $cols));
+        $pdo->prepare("UPDATE plans SET $set WHERE id=?")
+            ->execute(array_merge(array_map(fn($c) => $before[$c], $cols), [(int)$before['id']]));
+    };
     $payload = [
         'csrf_token' => $csrf, 'action' => 'save_plan', 'plan_id' => $target['id'],
         'name_ar' => $target['name_ar'], 'name_en' => $target['name_en'],
@@ -195,7 +208,12 @@ if (!$target) {
     check('feature_reports was switched off', (int)$after['feature_reports'] === 0, (string)$after['feature_reports']);
     check('the price was not disturbed', (string)$after['price_monthly'] === (string)$before['price_monthly'],
         $after['price_monthly'] . ' vs ' . $before['price_monthly']);
-    $pdo->rollBack();
+    $restore();
+    $reverted = $pdo->query('SELECT * FROM plans WHERE id=' . (int)$before['id'])->fetch();
+    check('the fixture left the plan as it found it',
+        (string)$reverted['max_clients'] === (string)$before['max_clients']
+        && (string)$reverted['storage_mb'] === (string)$before['storage_mb'],
+        (string)$reverted['max_clients'] . '/' . (string)$reverted['storage_mb']);
 }
 
 echo "\n== 5. every public surface describes the plan from the same row ==\n";

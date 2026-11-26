@@ -75,6 +75,32 @@ check(
     gateway_diag_reason_code('') === 'order_failed'
 );
 
+// The synthetic `http_<status>` code is what both payment helpers pass when the gateway names
+// no reason. It looks like a bare identifier, so it used to be returned verbatim and fall
+// through the customer-message map to the generic "try again" sentence — a 400 told the
+// customer to retry a rejection that can never clear. That was the exact opaque message the
+// owner reported, and it is the one case where the code, not the sentence, decides.
+check('http_400 -> gateway_rejected (permanent)', gateway_diag_reason_code('http_400') === 'gateway_rejected');
+check('http_401 -> gateway_rejected (permanent)', gateway_diag_reason_code('http_401') === 'gateway_rejected');
+check('http_403 -> gateway_rejected (permanent)', gateway_diag_reason_code('http_403') === 'gateway_rejected');
+check('http_429 -> connection_failed (rate limit clears)', gateway_diag_reason_code('http_429') === 'connection_failed');
+check('http_500 -> connection_failed (worth retrying)', gateway_diag_reason_code('http_500') === 'connection_failed');
+check('http_502 -> connection_failed (worth retrying)', gateway_diag_reason_code('http_502') === 'connection_failed');
+check(
+    'a 4xx customer message never offers a retry',
+    strpos(gateway_diag_customer_message(gateway_diag_reason_code('http_400'), 'R1', true), 'المحاولة مجدداً') === false
+);
+
+// Both helpers used to overwrite the code with 'order_failed' before the classifier saw it,
+// which discarded the status distinction above. Guard the source so it cannot come back.
+foreach (['consultation_payment.php', 'package_payment.php'] as $helper) {
+    $src = file_get_contents(__DIR__ . '/../includes/' . $helper);
+    check("$helper classifies the gateway code instead of flattening it",
+        strpos($src, 'gateway_diag_reason_code(') !== false);
+    check("$helper no longer forces the generic order_failed",
+        !preg_match("/\\\$code = 'order_failed'|\\\\\$\\w+ = 'order_failed'/", $src));
+}
+
 echo "\n== 4. the customer message matches the classification ==\n";
 $permanent = ['badTokenRequest', 'realmNameNotAvailable', 'outletNotAvailable', 'gateway_rejected', 'unsupported_currency'];
 foreach ($permanent as $code) {
@@ -128,6 +154,82 @@ try {
 } catch (Throwable $e) {
     if ($pdo->inTransaction()) $pdo->rollBack();
     echo "  FAIL: probe threw " . get_class($e) . ': ' . $e->getMessage() . "\n";
+    $failed++;
+}
+
+echo "\n== 7. an adapter that names a code but writes an Arabic sentence ==\n";
+// This is the production shape exactly: the N-Genius adapter returns `error` (a sentence for
+// the customer) and `code` (the machine reason). The service classified on `error`, so the
+// sentence never matched a known code, fell through to `order_failed`, and the customer was
+// shown the generic retry sentence — «تعذّر بدء عملية الدفع الإلكتروني حالياً. لم يتم خصم أي
+// مبلغ.» — for a fault no retry could fix. An injected adapter proves the whole chain
+// (service -> classifier -> customer message) rather than reading the source.
+final class Exec69FailingGateway implements PaymentGateway {
+    public function __construct(private string $code, private string $sentence) {}
+    public function id(): string { return 'exec69_fake'; }
+    public function label(): string { return 'Exec69 fake'; }
+    public function isEnabled(): bool { return true; }
+    public function supportsCurrency(?string $currency): bool { return true; }
+    public function environment(): string { return 'sandbox'; }
+    public function settings(): array { return []; }
+    public function createPayment(array $intent): array {
+        return ['ok' => false, 'reference' => null, 'redirect_url' => null, 'state' => 'FAILED',
+                'error' => $this->sentence, 'code' => $this->code, 'raw' => []];
+    }
+    public function verifyPayment(array $payment): array {
+        return ['ok' => false, 'state' => 'PENDING', 'amount' => null, 'currency' => null, 'reference' => null, 'error' => 'x', 'raw' => []];
+    }
+    public function handleWebhook(array $headers, string $rawBody): array {
+        return ['ok' => false, 'event_id' => null, 'event_type' => null, 'reference' => null,
+                'state' => 'PENDING', 'amount' => null, 'currency' => null, 'duplicate' => false, 'error' => 'x', 'raw' => []];
+    }
+    public function supportsRefund(): bool { return false; }
+    public function refundPayment(array $payment, ?float $amount = null): array {
+        return ['ok' => false, 'state' => 'FAILED', 'refund_ref' => null, 'amount' => null, 'error' => 'unsupported'];
+    }
+    public function healthCheck(): array { return ['ok' => true, 'detail' => 'fixture']; }
+}
+
+$cases = [
+    ['unsupported_currency', 'الدفع الإلكتروني غير متاح حالياً لهذه العملة.'],
+    ['badTokenRequest',      'فشل الحصول على رمز دخول من بوابة الدفع (HTTP 401).'],
+];
+try {
+    $pdo->beginTransaction();
+    $u = $pdo->query("SELECT id FROM users ORDER BY id LIMIT 1")->fetchColumn();
+    $l = $pdo->query("SELECT id FROM lawyers ORDER BY id LIMIT 1")->fetchColumn();
+    if (!$u || !$l) throw new RuntimeException('no seeded user/lawyer');
+
+    foreach ($cases as [$code, $sentence]) {
+        GatewayRegistry::register('exec69_fake', fn() => new Exec69FailingGateway($code, $sentence));
+
+        $pdo->prepare("INSERT INTO invoices (invoice_number, user_id, lawyer_id, description, amount, currency, subtotal, status, due_date)
+                       VALUES (?,?,?,?,?,?,?,'unpaid',CURDATE())")
+            ->execute(['EXEC69C-' . bin2hex(random_bytes(4)), $u, $l, 'code-vs-sentence probe', 100, finance_currency(), 100]);
+        $id = (int)$pdo->lastInsertId();
+        $inv = $pdo->query("SELECT i.*, u.full_name, u.email FROM invoices i JOIN users u ON u.id=i.user_id WHERE i.id=$id")->fetch();
+
+        $res = gateway_start_invoice_payment($pdo, $inv, ['gateway' => 'exec69_fake']);
+        check("$code: the service surfaces the machine code, not order_failed",
+            ($res['error'] ?? '') === $code);
+
+        $msg = gateway_diag_customer_message((string)($res['error'] ?? ''), (string)($res['correlation_id'] ?? ''), true);
+        check("$code: the customer is not offered a retry that cannot succeed",
+            strpos($msg, 'المحاولة مجدداً') === false);
+        check("$code: the customer is told no amount was charged",
+            strpos($msg, 'لم يتم خصم') !== false);
+
+        // The correlation id is one per process (it is a per-request reference), so both
+        // iterations share it. Read the newest row — the order the operator view uses.
+        $row = $pdo->prepare('SELECT error_code FROM gateway_diagnostics WHERE correlation_id=? ORDER BY id DESC LIMIT 1');
+        $row->execute([(string)$res['correlation_id']]);
+        check("$code: the diagnostics row records the true code",
+            (string)$row->fetchColumn() === $code);
+    }
+    $pdo->rollBack();
+} catch (Throwable $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
+    echo "  FAIL: adapter probe threw " . get_class($e) . ': ' . $e->getMessage() . "\n";
     $failed++;
 }
 

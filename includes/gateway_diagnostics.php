@@ -183,6 +183,18 @@ function gateway_diag_reason_code(string $raw): string {
     $raw = trim($raw);
     if ($raw === '') return 'order_failed';
 
+    // The synthetic `http_<status>` code carries no reason, only the status. Classify it by
+    // the status before the bare-identifier rule below returns it verbatim: a 4xx is a
+    // rejection the customer cannot retry away, and returning `http_400` unmapped made the
+    // customer message fall through to the generic "try again" sentence — the exact opaque
+    // message this layer exists to replace. 429/5xx are genuinely transient.
+    if (preg_match('/^http_(\d{3})$/i', $raw, $m)) {
+        $status = (int)$m[1];
+        if ($status === 429 || ($status >= 500 && $status <= 599)) return 'connection_failed';
+        if ($status >= 400 && $status <= 499) return 'gateway_rejected';
+        return 'order_failed';
+    }
+
     // A bare identifier is already a code.
     if (preg_match('/^[A-Za-z][A-Za-z0-9_]{2,60}$/', $raw)) {
         return $raw;

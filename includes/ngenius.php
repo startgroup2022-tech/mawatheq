@@ -203,7 +203,11 @@ function ngenius_create_order(
     curl_close($ch);
 
     if ($response === false) {
-        return ['ok' => false, 'order_reference' => null, 'payment_url' => null, 'error' => 'تعذّر الاتصال ببوابة الدفع: ' . $curlError];
+        // `code` is what the caller classifies on. Without it the reason degraded to
+        // `order_failed` and the customer was shown the generic "try again" sentence even
+        // though the gateway had never been reached — the opaque production message.
+        return ['ok' => false, 'order_reference' => null, 'payment_url' => null,
+            'code' => 'connection_failed', 'error' => 'تعذّر الاتصال ببوابة الدفع: ' . $curlError];
     }
     $data = json_decode($response, true);
     // N-Genius documents the hosted page at _links.payment.href. Some responses wrap the

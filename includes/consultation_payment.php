@@ -139,11 +139,12 @@ function consultation_payment_start(PDO $pdo, array $consultation, array $option
     if (empty($order['ok'])) {
         $pdo->prepare("UPDATE consultations SET payment_status='failed' WHERE id=?")
             ->execute([$consultationId]);
-        // Keep the gateway's own reason when it gave one, so a configuration fault is not
-        // reported to the customer as a retryable one. A bare HTTP status stays generic.
-        $code = (string)($order['code'] ?? '');
-        if ($code === '' || strpos($code, 'http_') === 0) $code = 'order_failed';
-        $fail = gateway_diag_failure($pdo, 'consultation_payment', 'order', $code, (string)($order['error'] ?? ''), $env);
+        // Keep the gateway's own reason, including the synthetic `http_<status>` code: the
+        // classifier turns a 4xx into a permanent rejection and a 5xx into a retryable one.
+        // Collapsing both into 'order_failed' here discarded exactly that distinction, so a
+        // 400 told the customer to retry a fault that cannot clear.
+        $reason = gateway_diag_reason_code((string)($order['code'] ?? ''));
+        $fail = gateway_diag_failure($pdo, 'consultation_payment', 'order', $reason, (string)($order['error'] ?? ''), $env);
         return ['ok' => false, 'error' => $fail['error'], 'correlation_id' => $fail['correlation_id'], 'gateway' => 'ngenius'];
     }
 

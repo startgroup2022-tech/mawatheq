@@ -4834,3 +4834,62 @@ Execution 29 records `600` as the production requirement, but on this sandbox Ap
 on the command line still works, which makes it look like an application bug. The sandbox mode is
 `640 openhands:www-data`. If the site 500s after a test touched `secrets.php`, check the mode
 before the code.
+
+## Execution 69 — booking without hours, `<h1>` coverage, and the code-vs-sentence trap
+
+### Classify a gateway failure on `code`, never on `error`
+
+`payment_service.php` chose the customer's sentence by classifying `$result['error']`. That key
+holds an **Arabic sentence written for a human** (`فشل إنشاء طلب الدفع (HTTP 400).`), which matches
+no machine code, so every failure fell through `gateway_diag_reason_code()` to `order_failed` and
+the customer was shown the generic transient line — «تعذّر بدء عملية الدفع الإلكتروني حالياً. لم
+يتم خصم أي مبلغ.» — for faults that a retry can never fix. Three links all had to be repaired,
+because each one alone restores the same symptom:
+
+1. `includes/ngenius.php` `ngenius_create_order()` returned **no `code` at all** on a curl
+   failure, so a dead network was indistinguishable from a rejected credential. It now returns
+   `'code' => 'connection_failed'`.
+2. `includes/gateway/ngenius/gateway.php` dropped the code on token and order failure — it only
+   forwarded `error`. Both branches now forward `code` too.
+3. `includes/gateway/payment_service.php` classified `error`. It now classifies
+   `code ?? error`, and still stores the adapter's own sentence as the diagnostics `detail`.
+
+The contract to preserve: an adapter returns `error` (human, localised) **and** `code`
+(machine). An adapter that only returns `error` still works via the fallback, but a new adapter
+should always populate `code`.
+
+Proven over real HTTP against a closed port (`MAWATHEQ_NGENIUS_BASE_URL=http://127.0.0.1:19999`):
+`pay-invoice.php` renders «تعذّر الوصول إلى بوابة الدفع. لم يتم خصم أي مبلغ… الرقم المرجعي: …»,
+and the `gateway_diagnostics` row records `error_code = connection_failed`. `tests/exec69_payment_diagnostics_test.php`
+section 7 injects a fixture adapter to pin the whole chain, so a future edit that reads `error`
+again fails the suite rather than a customer's payment.
+
+Also note `gateway_correlation_id()` is **one value per process**. A test that drives two failed
+attempts in one process sees a single id; read the newest row (`ORDER BY id DESC`) rather than
+assuming per-attempt uniqueness.
+
+### A lawyer with no published hours is bookable, not closed
+
+The Flutter journey disabled every calendar day cell when the lawyer had no `lawyer_availability`
+rows, which is the **default state of every seeded lawyer** — the customer could never book. The
+website already handled it (free-form time request), so the app was the only broken surface.
+`_BookingCalendar` now takes `hasHours` and treats a day as bookable when hours are absent
+(disabled only for closed weekdays and past dates), `_loadSlots()` offers proposed times instead
+of a dead end, and a month-load `ApiException` falls back to proposed times rather than blanking
+the screen. `tests/mobile exec69_booking_no_hours_test.dart` pins both directions — no-hours days
+bookable, published-grid closed days still inert.
+
+### `pricing.php` had no `<h1>` and no title
+
+The plan catalogue rendered its heading as `<h2>`, so the page a customer uses to choose what to
+buy had no `<h1>` and inherited a generic document title. It is now `<h1>` with `$pageTitle` set
+before `includes/header.php`, and `tests/e2e/accessibility.spec.js` covers it. When auditing
+heading structure over HTTP, log in with a real cookie jar first: `packages.php` and
+`consultation-journey.php` redirect an unauthenticated request to the login page, which has its
+own `<h1>`, so a naive fetch reports a false pass.
+
+### `exec69_pdf_render_test` needs `poppler-utils`
+
+The Arabic PDF suite runs `pdfinfo`/`pdftoppm`/`pdffonts` to prove the producer and that the amount
+really draws ink. Without `poppler-utils` the font section SKIPs and the ink section returns `-1`,
+which reads like a rendering regression. `sudo apt-get install -y poppler-utils` (and GD for PHP).

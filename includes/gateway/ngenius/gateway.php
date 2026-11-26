@@ -48,7 +48,11 @@ final class NGeniusGateway implements PaymentGateway {
             $this->settings['ngenius_realm_name'] ?: ''
         );
         if (empty($tokenResult['ok'])) {
-            return ['ok' => false, 'reference' => null, 'redirect_url' => null, 'state' => 'FAILED', 'error' => $tokenResult['error'], 'raw' => []];
+            // `code` is the machine-readable reason; `error` is an Arabic sentence meant for a
+            // human. The payment service classifies on `code`, so dropping it here made a
+            // permanent credential fault indistinguishable from a transient network blip.
+            return ['ok' => false, 'reference' => null, 'redirect_url' => null, 'state' => 'FAILED',
+                    'error' => $tokenResult['error'], 'code' => $tokenResult['code'] ?? null, 'raw' => []];
         }
         $order = ngenius_create_order(
             $this->settings['ngenius_environment'],
@@ -64,7 +68,8 @@ final class NGeniusGateway implements PaymentGateway {
             $currency
         );
         if (empty($order['ok'])) {
-            return ['ok' => false, 'reference' => null, 'redirect_url' => null, 'state' => 'FAILED', 'error' => $order['error'], 'raw' => []];
+            return ['ok' => false, 'reference' => null, 'redirect_url' => null, 'state' => 'FAILED',
+                    'error' => $order['error'], 'code' => $order['code'] ?? null, 'raw' => []];
         }
         return [
             'ok' => true, 'reference' => $order['order_reference'], 'redirect_url' => $order['payment_url'],

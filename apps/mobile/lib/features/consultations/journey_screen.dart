@@ -504,8 +504,10 @@ class _JourneyBookingScreenState extends State<_JourneyBookingScreen> {
   @override
   void initState() {
     super.initState();
+    // Slots are loaded by _loadMonth() once `hasHours` is known: whether to query the grid
+    // or offer proposed times depends on it, and asking before the month has arrived fired a
+    // request the result of which was then discarded.
     _loadMonth();
-    _loadSlots();
     _loadStaged();
   }
 
@@ -635,7 +637,9 @@ class _JourneyBookingScreenState extends State<_JourneyBookingScreen> {
       // If the currently-selected day has no slots in this month, move the selection to
       // the first bookable day so the customer is not shown an empty time list on open.
       final selIso = _dateParam;
-      if (data.slotsOn(selIso) == 0) {
+      // Without a published grid there is no "first bookable day" to snap to; the day the
+      // customer arrived on stays selected and any future day is acceptable.
+      if (data.hasHours && data.slotsOn(selIso) == 0) {
         final today = DateTime.now();
         final todayIso = _iso(DateTime(today.year, today.month, today.day));
         final firstBookable = data.days.entries
@@ -648,12 +652,15 @@ class _JourneyBookingScreenState extends State<_JourneyBookingScreen> {
           _date = DateTime(
               int.parse(parts[0]), int.parse(parts[1]), int.parse(parts[2]));
           _slot = null;
-          _loadSlots();
         }
       }
+      _loadSlots();
     } on ApiException {
+      // The month call failed, so `hasHours` is unknown. Offer the proposed times rather
+      // than leaving the step with no way forward — the server validates the time anyway.
       if (!mounted) return;
       setState(() => _loadingMonth = false);
+      _loadSlots();
     }
   }
 
@@ -670,12 +677,29 @@ class _JourneyBookingScreenState extends State<_JourneyBookingScreen> {
     await _loadMonth();
   }
 
+  /// Times offered when the lawyer has published no hours. They are proposals, not a
+  /// published grid: the server accepts any future time for such a lawyer and the lawyer
+  /// confirms. Offering nothing made the step unusable.
+  static const _proposedTimes = [
+    '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
+    '12:00', '12:30', '13:00', '13:30', '14:00', '14:30',
+    '15:00', '15:30', '16:00', '16:30', '17:00',
+  ];
+
   Future<void> _loadSlots() async {
     setState(() {
       _loadingSlots = true;
       _slot = null;
       _slots = const [];
     });
+    if (!_monthData.hasHours) {
+      // No grid to query: propose the standard working times for the chosen day.
+      setState(() {
+        _slots = _proposedTimes;
+        _loadingSlots = false;
+      });
+      return;
+    }
     try {
       final slots = await widget.repository.availableSlots(
         lawyerId: widget.lawyer.id,
@@ -914,12 +938,21 @@ class _JourneyBookingScreenState extends State<_JourneyBookingScreen> {
         ),
         const SizedBox(height: 14),
         Text(
-          'الأوقات المتاحة',
+          _monthData.hasHours ? 'الأوقات المتاحة' : 'اقترح وقتاً',
           style: TextStyle(
             fontWeight: FontWeight.w700,
             color: context.tokens.heading,
           ),
         ),
+        if (!_monthData.hasHours)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              'لم ينشر هذا المحامي أوقات دوام، لذا اختر الوقت المناسب لك وسيؤكد الموعد بعد الطلب.',
+              style: TextStyle(
+                  fontSize: 11.5, color: context.tokens.textSubtle, height: 1.6),
+            ),
+          ),
         const SizedBox(height: 8),
         if (_loadingSlots)
           const LoadingSkeleton(count: 2)
@@ -1550,7 +1583,12 @@ class _BookingCalendar extends StatelessWidget {
       final iso = _iso(date);
       final slots = monthData.slotsOn(iso);
       final isPast = iso.compareTo(todayIso) < 0;
-      final bookable = slots > 0 && !isPast;
+      // A lawyer who has not published hours is bookable on request: the customer proposes
+      // a time and the lawyer confirms. Gating on `slots > 0` made every day inert for that
+      // lawyer — the default state of a new account — so the app could not book at all while
+      // the website could. The server already accepts this case (booking_slot_is_bookable()
+      // only enforces the grid when a grid exists).
+      final bookable = !isPast && (monthData.hasHours ? slots > 0 : true);
       final isSelected = iso == selectedIso;
 
       cells.add(

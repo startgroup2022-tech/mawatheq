@@ -575,3 +575,9 @@ html[dir="ltr"] .pro-select{ background-position:right 14px center; }
   .auth-card{ padding:20px 16px; }
   .auth-card h1{ font-size:1.1rem; }
 }
+
+/* A plan card may carry both the operator's marketing copy and the enforced typed limits.
+   The second list continues the first instead of opening a new 20px/26px block. */
+.price-feats.price-feats-limits{ margin-top:0; margin-bottom:20px; padding-top:14px; border-top:1px dashed var(--border); }
+.price-feats.price-feats-limits li{ color:var(--text-muted); }
+.price-feats.price-feats-limits li strong{ color:var(--navy-dark); font-weight:800; }

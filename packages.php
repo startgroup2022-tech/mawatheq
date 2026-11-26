@@ -18,6 +18,7 @@ $activePage = 'subscription';
 require_once __DIR__ . '/includes/app_header.php';
 require_once __DIR__ . '/includes/package_payment.php';
 require_once __DIR__ . '/includes/ai_services.php';
+require_once __DIR__ . '/includes/plan_features.php';
 
 $userId = (int)$_SESSION['user_id'];
 $rtl = is_rtl();
@@ -123,6 +124,23 @@ $classLabel = static function (string $c) use ($rtl): string {
       <ul class="price-feats">
         <?php foreach ($feats as $f): ?><li><?= ui_e($rtl ? $f['feature_ar'] : $f['feature_en']) ?></li><?php endforeach; ?>
       </ul>
+
+      <?php
+      // The plan_features rows are marketing copy the operator writes by hand. The typed
+      // limits and capability flags set in admin/plans.php are what the server actually
+      // enforces (plan_check(), plan_feature_enabled()), and pricing.php already prints
+      // them. Without this block the page a client buys from could advertise a package
+      // whose real ceilings were never shown — the catalogue and the gate disagreed.
+      $benefits = plan_benefit_lines($plan, $rtl);
+      if ($benefits): ?>
+        <ul class="price-feats price-feats-limits">
+          <?php foreach ($benefits as $b): ?>
+            <li class="<?= $b['enabled'] ? '' : 'is-muted' ?>">
+              <?= ui_e($b['label']) ?><?php if ($b['value'] !== ''): ?>: <strong><?= ui_e($b['value']) ?></strong><?php endif; ?>
+            </li>
+          <?php endforeach; ?>
+        </ul>
+      <?php endif; ?>
 
       <?php if ($class === 'corporate'): ?>
         <a href="/contact.php?topic=plan&amp;plan=<?= (int)$plan['id'] ?>" class="btn btn-outline btn-block"><?= $rtl ? 'اطلب عرض سعر' : 'Request a quote' ?></a>

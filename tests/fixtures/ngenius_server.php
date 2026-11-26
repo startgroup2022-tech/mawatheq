@@ -72,6 +72,15 @@ if ($method === 'POST' && preg_match('#^/transactions/outlets/([^/]+)/orders$#',
         echo json_encode(['errors' => [['errorCode' => 'outletNotAvailable']]]);
         exit;
     }
+    // A bare 4xx with no reason at all — the shape the live gateway also produces (it has been
+    // seen answering 400 with no errors[] block). The adapter then falls back to the synthetic
+    // `http_400` code, which is exactly the case that used to reach the customer as the generic
+    // "try again" sentence. Reproduced here so the regression fails in the suite.
+    if (stripos(urldecode($m[1]), 'BARE400') !== false) {
+        http_response_code(400);
+        echo json_encode(['message' => 'Bad Request', 'code' => 400]);
+        exit;
+    }
     $reference = (string)($body['merchantOrderReference'] ?? ('ORD-' . bin2hex(random_bytes(4))));
     $store[$reference] = [
         'amount' => (int)($body['amount']['value'] ?? 0),

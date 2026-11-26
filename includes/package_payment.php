@@ -190,12 +190,12 @@ function package_payment_start(PDO $pdo, array $order, array $options = []): arr
 
     if (empty($gatewayOrder['ok'])) {
         $pdo->prepare("UPDATE package_orders SET status='failed' WHERE id=? AND status='pending'")->execute([$orderId]);
-        // Keep the gateway's own reason when it gave one (a wrong outlet, an unsupported
-        // currency), so the customer is not told to retry a fault that cannot clear. A bare
-        // HTTP status or no code at all stays the generic transient `order_failed`.
-        $code = (string)($gatewayOrder['code'] ?? '');
-        if ($code === '' || strpos($code, 'http_') === 0) $code = 'order_failed';
-        $fail = gateway_diag_failure($pdo, 'package_payment', 'order', $code, (string)($gatewayOrder['error'] ?? ''), $env);
+        // Keep the gateway's own reason (a wrong outlet, an unsupported currency), including
+        // the synthetic `http_<status>` code — the classifier maps a 4xx to a permanent
+        // rejection and a 5xx/429 to a retryable one. Flattening both to `order_failed` is
+        // what told the customer to retry a 400 that can never succeed.
+        $reason = gateway_diag_reason_code((string)($gatewayOrder['code'] ?? ''));
+        $fail = gateway_diag_failure($pdo, 'package_payment', 'order', $reason, (string)($gatewayOrder['error'] ?? ''), $env);
         return ['ok' => false, 'error' => $fail['error'], 'correlation_id' => $fail['correlation_id'], 'gateway' => 'ngenius'];
     }
 

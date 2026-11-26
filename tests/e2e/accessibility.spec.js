@@ -18,6 +18,10 @@ const SURFACES = [
   ['/documents.php', 'client documents', ACCOUNTS.client],
   ['/notification-settings.php', 'client notifications', ACCOUNTS.client],
   ['/ai-assistant.php', 'client assistant', ACCOUNTS.client],
+  // Execution 69: the plan catalogue is where a customer chooses what to buy, so its
+  // heading structure is not cosmetic. It rendered its title as an <h2>, leaving the page
+  // with no <h1> at all.
+  ['/pricing.php', 'public pricing', null],
 ];
 
 // Path -> the login page that must be used before visiting it.

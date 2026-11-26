@@ -18,7 +18,11 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action'] ?? '')==='change_st
         // A priced consultation must be paid before it can be confirmed. Read the row
         // through the tenant scope first, so a guessed id cannot reveal or change another
         // firm's booking, and so the payment state is the one that actually belongs to it.
-        $existing = $pdo->prepare('SELECT price, payment_status FROM consultations WHERE id=? AND ' . $scope['sql']);
+        // The client id and time are read here because the status change must tell the
+        // customer what happened — a lawyer confirming a request used to leave the customer
+        // seeing "pending" on their own screen with no notification at all.
+        $existing = $pdo->prepare('SELECT price, payment_status, user_id, scheduled_at, topic
+                                   FROM consultations WHERE id=? AND ' . $scope['sql']);
         $existing->execute(array_merge([$id], $scope['params']));
         $row = $existing->fetch();
         if ($row && $status === 'confirmed' && consultation_payment_blocks_confirmation($row)) {
@@ -30,6 +34,26 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && ($_POST['action'] ?? '')==='change_st
         $upd->execute(array_merge([$status,$id], $scope['params']));
         if ($upd->rowCount()) {
             log_action($pdo,'تغيير حالة استشارة المحامي إلى '.$status,'consultation',$id);
+            // The customer booked and is waiting; a lawyer's decision is only actionable to
+            // them once it is announced. Cancellation matters most: the slot is released and
+            // the customer must know before they turn up.
+            if ($row && in_array($status, ['confirmed', 'cancelled', 'completed'], true)) {
+                try {
+                    require_once __DIR__ . '/../includes/notifications.php';
+                    $when = (string)($row['scheduled_at'] ?? '');
+                    $topicNote = trim((string)($row['topic'] ?? '') . ($when !== '' ? ' — ' . $when : ''));
+                    $titles = [
+                        'confirmed' => is_rtl() ? 'تم تأكيد موعد استشارتك' : 'Your consultation is confirmed',
+                        'cancelled' => is_rtl() ? 'أُلغي موعد استشارتك' : 'Your consultation was cancelled',
+                        'completed' => is_rtl() ? 'اكتملت استشارتك' : 'Your consultation is complete',
+                    ];
+                    notify($pdo, 'client', (int)$row['user_id'], $titles[$status], $topicNote, '/consultations.php');
+                } catch (Throwable $e) {
+                    // The status change already committed; a notification failure must not
+                    // present the lawyer with an error for work that did happen.
+                    error_log('consultation status notify failed: ' . $e->getMessage());
+                }
+            }
             // Cancelling a booking frees its slot, so the customers waiting on «أبلغني عند
             // توفّر موعد» for this lawyer are told now rather than at the next cron sweep.
             if ($status === 'cancelled') {

@@ -123,17 +123,24 @@ function gateway_start_invoice_payment(PDO $pdo, array $invoice, array $options 
         // 'order_failed' threw that away: the customer always saw the generic retry sentence,
         // the operator could not tell a wrong API key from a dead network, and a permanent
         // credential fault was presented as something a retry might fix. Carry the real code.
-        $adapterCode = (string)($result['error'] ?? '');
+        // `code` is the machine-readable reason; `error` is a sentence for a human. Classify on
+        // the code: an Arabic sentence matches no known code, falls through to `order_failed`,
+        // and the customer is shown the generic retry sentence for a fault no retry can fix.
+        // `error` remains the fallback for adapters that only report a code string, and is
+        // still stored as the detail so the operator keeps the gateway's own wording.
+        $adapterCode = (string)($result['code'] ?? ($result['error'] ?? ''));
+        $adapterDetail = (string)($result['error'] ?? '');
         $reason = gateway_diag_reason_code($adapterCode);
         $fail = gateway_diag_failure(
-            $pdo, 'invoice_payment', 'order', $reason, $adapterCode,
+            $pdo, 'invoice_payment', 'order', $reason,
+            $adapterDetail !== '' ? $adapterDetail : $adapterCode,
             method_exists($adapter, 'environment') ? $adapter->environment() : null
         );
         return [
             'ok' => false, 'error' => $fail['error'], 'correlation_id' => $fail['correlation_id'],
             'gateway' => $adapter->id(),
             // Detail kept out of the customer-facing message but available to the operator.
-            'detail' => $adapterCode,
+            'detail' => $adapterDetail !== '' ? $adapterDetail : $adapterCode,
         ];
     }
 

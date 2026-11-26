@@ -648,6 +648,26 @@ class _RecordingTransport extends http_base.BaseClient {
         default:
           body = _matchJson;
       }
+    } else if (request.url.path.endsWith('/available-slots.php') &&
+        request.url.queryParameters.containsKey('month')) {
+      // A calendar month, not a day: the booking step asks for the whole month first and
+      // only then for one day's times. Answering the month call with a day payload left
+      // `has_hours` false and every day closed, so the fixture described a lawyer who had
+      // published no hours and the appointment step was asserted against the wrong state.
+      final requested = request.url.queryParameters['month']!;
+      final parts = requested.split('-');
+      final dayCount =
+          DateTime(int.parse(parts[0]), int.parse(parts[1]) + 1, 0).day;
+      final days = <String, int>{
+        for (var d = 1; d <= dayCount; d++)
+          '$requested-${d.toString().padLeft(2, '0')}': 4,
+      };
+      body = jsonEncode({
+        'month': requested,
+        'days': days,
+        'working_weekdays': [0, 1, 2, 3, 4, 5, 6],
+        'has_hours': true,
+      });
     } else if (request.url.path.endsWith('/available-slots.php')) {
       body = '{"ok":true,"slots":["10:00","11:00"]}';
     } else if (request.url.path.endsWith('/consultation-attachments.php')) {

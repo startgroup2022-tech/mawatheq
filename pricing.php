@@ -1,10 +1,15 @@
 <?php
+require_once __DIR__ . '/lang/strings.php';
+// The page heading is an <h1>: it is the subject of the document. It was an <h2>, so the
+// page exposed no top-level heading and a screen reader announced the plan names as if they
+// were the page's structure. $pageTitle also gives the tab and the OG title the real name.
+$pageTitle = t('pricing_title');
 require_once __DIR__ . '/includes/header.php';
 require_once __DIR__ . '/includes/plan_features.php';
 ?>
 <section class="section" id="corporate">
   <div class="container">
-    <div class="section-head"><h2><?= t('pricing_title') ?></h2></div>
+    <div class="section-head"><h1><?= t('pricing_title') ?></h1></div>
     <div class="pricing-grid">
       <?php
       $plans = $pdo->query("SELECT * FROM plans WHERE status='active' ORDER BY sort_order")->fetchAll();

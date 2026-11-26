@@ -17,6 +17,7 @@ require_once __DIR__ . '/../includes/ngenius.php';
 require_once __DIR__ . '/../includes/gateway_diagnostics.php';
 require_once __DIR__ . '/../includes/package_payment.php';
 require_once __DIR__ . '/../includes/consultation_payment.php';
+require_once __DIR__ . '/../includes/gateway/ngenius/gateway.php';
 
 $failures = 0; $checks = 0;
 function check(string $label, bool $ok): void {
@@ -99,6 +100,31 @@ $pdo->prepare("UPDATE site_settings SET setting_value=? WHERE setting_key='ngeni
 $probe = gateway_diag_probe($pdo, ['dry_run' => false]);
 check('the probe stops at the order stage', $probe['verdict'] === 'order');
 check('the order stage carries the gateway reason', strpos((string)($probe['stages'][count($probe['stages'])-1]['detail'] ?? ''), 'outletNotAvailable') !== false);
+$pdo->prepare("UPDATE site_settings SET setting_value=? WHERE setting_key='ngenius_outlet_ref'")
+    ->execute(['00000000-0000-0000-0000-0000000000ff']);
+
+// A bare 400 with no reason names no code, so the adapter falls back to the synthetic
+// `http_400`. That code is what reaches the customer when the gateway gives nothing to quote,
+// and it must classify as a PERMANENT rejection — not fall through to "try again", which is
+// the opaque sentence the owner reported. Driven through the REAL adapter, not the classifier
+// alone, so the code path the customer actually hits is the one under test.
+echo "\n== 4b. a bare 400 becomes a permanent customer message ==\n";
+$pdo->prepare("UPDATE site_settings SET setting_value=? WHERE setting_key='ngenius_outlet_ref'")
+    ->execute(['BARE400']);
+$gateway = new NGeniusGateway($pdo);
+$intent = [
+    'amount' => 1.0, 'currency' => 'SAR', 'reference' => 'EXEC67-BARE-' . bin2hex(random_bytes(4)),
+    'customer' => ['email' => 'probe@example.test', 'name' => 'Probe'],
+    'urls' => ['return' => 'http://127.0.0.1/return', 'cancel' => 'http://127.0.0.1/cancel'],
+    'language' => 'ar',
+];
+$failed = $gateway->createPayment($intent);
+check('the adapter reports the failure', empty($failed['ok']));
+$reason = gateway_diag_reason_code((string)($failed['error'] ?? ''));
+check('a bare 400 classifies as a permanent rejection', $reason === 'gateway_rejected');
+$customerMessage = gateway_diag_customer_message($reason, 'REF00000', true);
+check('the customer is told no amount was charged', strpos($customerMessage, 'لم يتم خصم') !== false);
+check('the customer is NOT offered a retry that cannot succeed', strpos($customerMessage, 'المحاولة مجدداً') === false);
 $pdo->prepare("UPDATE site_settings SET setting_value=? WHERE setting_key='ngenius_outlet_ref'")
     ->execute(['00000000-0000-0000-0000-0000000000ff']);
 
