@@ -32,6 +32,34 @@
 
 require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../includes/legal_journey.php';
+require_once __DIR__ . '/../includes/availability.php';
+require_once __DIR__ . '/../includes/consultation_pricing.php';
+
+/**
+ * A date+time the matched lawyer can actually be booked at, `$nth` distinct slot.
+ *
+ * The fixture used to book "+N days at 10:00" and assumed every day worked. It does not:
+ * the matched lawyer publishes hours for some weekdays only, and the booking engine refuses
+ * a time outside them (correctly). Picking real slots keeps the test about the journey
+ * classification rather than about a lawyer's schedule, and it keeps working whatever hours
+ * the seed lawyer happens to publish.
+ */
+function e37_slot(PDO $pdo, int $lawyerId, int $nth = 0): ?array {
+    $seen = 0;
+    for ($d = 1; $d <= 45; $d++) {
+        $date = date('Y-m-d', strtotime("+$d days"));
+        foreach (get_available_slots($pdo, $lawyerId, $date) as $t) {
+            if ($seen++ === $nth) return ['date' => $date, 'time' => substr($t, 0, 5)];
+        }
+    }
+    // A lawyer with no published hours is bookable on request: any upcoming weekday at
+    // 10:00 is accepted. This branch keeps the fixture meaningful for that configuration.
+    $hasHours = (int)$pdo->query("SELECT COUNT(*) FROM lawyer_availability WHERE lawyer_id=" . (int)$lawyerId)->fetchColumn();
+    if ($hasHours === 0) {
+        return ['date' => date('Y-m-d', strtotime('+' . ($nth + 7) . ' days')), 'time' => '10:00'];
+    }
+    return null;
+}
 
 $base = 'http://127.0.0.1:8080';
 $checks = 0;
@@ -268,12 +296,14 @@ $otherType = (int)$pdo->query("SELECT id FROM najiz_case_types WHERE subcategory
     (SELECT id FROM najiz_subcategories WHERE category_id <> $catId) LIMIT 1")->fetchColumn();
 check('a case type from another specialty exists to craft with', $otherType > 0);
 [$csrf, $html] = $bookingCsrf();
-$date = date('Y-m-d', strtotime('+7 days'));
+$slot0 = e37_slot($pdo, $lawyerId, 0);
+check('the matched lawyer has a bookable slot to test with', $slot0 !== null);
+$date = $slot0['date'] ?? date('Y-m-d', strtotime('+7 days'));
 http37('POST', "/booking.php?lawyer_id=$lawyerId", ['jar' => $jar, 'post' => [
     'csrf_token' => $csrf,
     'consultation_type' => 'text',
     'date' => $date,
-    'time' => '10:00',
+    'time' => $slot0['time'] ?? '10:00',
     'topic' => "e37 crafted $suffix",
     'specialty_category_id' => $catId,
     'issue_type_id' => $otherType,
@@ -285,12 +315,12 @@ if ($row) $createdConsultations[] = (int)$row['id'];
 
 // A non-existent specialty id must be dropped, not stored.
 [$csrf, $html] = $bookingCsrf();
-$date2 = date('Y-m-d', strtotime('+8 days'));
+$date2 = e37_slot($pdo, $lawyerId, 1)['date'] ?? date('Y-m-d', strtotime('+8 days'));
 http37('POST', "/booking.php?lawyer_id=$lawyerId", ['jar' => $jar, 'post' => [
     'csrf_token' => $csrf,
     'consultation_type' => 'text',
     'date' => $date2,
-    'time' => '10:00',
+    'time' => e37_slot($pdo, $lawyerId, 1)['time'] ?? '10:00',
     'topic' => "e37 bogus $suffix",
     'specialty_category_id' => 999999,
     'issue_type_id' => 999999,
@@ -308,12 +338,12 @@ section('5. Booking integration');
 
 // A valid web booking persists the journey choice.
 [$csrf, $html] = $bookingCsrf();
-$date3 = date('Y-m-d', strtotime('+9 days'));
+$date3 = e37_slot($pdo, $lawyerId, 2)['date'] ?? date('Y-m-d', strtotime('+9 days'));
 http37('POST', "/booking.php?lawyer_id=$lawyerId", ['jar' => $jar, 'post' => [
     'csrf_token' => $csrf,
     'consultation_type' => 'text',
     'date' => $date3,
-    'time' => '10:00',
+    'time' => e37_slot($pdo, $lawyerId, 2)['time'] ?? '10:00',
     'topic' => "e37 valid $suffix",
     'specialty_category_id' => $catId,
     'issue_type_id' => $typeId,
@@ -362,12 +392,12 @@ section('6. Non-regression');
 
 // A booking with no journey context at all must behave exactly as before.
 [$csrf, $html] = $bookingCsrf();
-$date4 = date('Y-m-d', strtotime('+10 days'));
+$date4 = e37_slot($pdo, $lawyerId, 3)['date'] ?? date('Y-m-d', strtotime('+10 days'));
 http37('POST', "/booking.php?lawyer_id=$lawyerId", ['jar' => $jar, 'post' => [
     'csrf_token' => $csrf,
     'consultation_type' => 'text',
     'date' => $date4,
-    'time' => '10:00',
+    'time' => e37_slot($pdo, $lawyerId, 3)['time'] ?? '10:00',
     'topic' => "e37 nojourney $suffix",
 ]]);
 $row = $pdo->query("SELECT * FROM consultations WHERE topic = 'e37 nojourney $suffix' ORDER BY id DESC LIMIT 1")->fetch();

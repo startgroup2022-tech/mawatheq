@@ -53,7 +53,25 @@ function get_available_slots(PDO $pdo, int $lawyerId, string $date): array {
     return array_values(array_unique($slots));
 }
 
-/** أسماء أيام الأسبوع للعرض (0=الأحد وفق date('w')). */
+/**
+ * Whether a candidate interval is free, expressed against the busy list.
+ * Half-open, so an interval ending exactly when another begins is free.
+ *
+ * Defined here, in the lower-level module, because `get_available_slots()` uses it to build
+ * the grid and this file already requires `availability.php`. Defining it in booking_slots.php
+ * created a cycle: a caller that loaded availability.php first reached the grid code with the
+ * helper undefined, which surfaced as a fatal error in every endpoint that renders lawyer
+ * availability.
+ */
+function booking_interval_is_free(array $busy, int $start, int $end): bool {
+    foreach ($busy as $b) {
+        if ($start < $b['end'] && $b['start'] < $end) return false;
+    }
+    return true;
+}
+
+/**
+ * أسماء أيام الأسبوع للعرض (0=الأحد وفق date('w')). */
 function weekday_names(): array {
     return is_rtl()
         ? [0 => 'الأحد', 1 => 'الإثنين', 2 => 'الثلاثاء', 3 => 'الأربعاء', 4 => 'الخميس', 5 => 'الجمعة', 6 => 'السبت']

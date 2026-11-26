@@ -31,20 +31,30 @@ $reference = (string)($body['orderReference'] ?? '');
 
 // Persist created orders so verification returns the amount that was actually charged (a real
 // gateway behaves this way; a fixed amount would make partial-payment logic untestable).
-$storeFile = sys_get_temp_dir() . '/sadad_fixture_orders.json';
+// The path is supplied by the launcher (`MAWATHEQ_SADAD_FIXTURE_STORE`) so each run owns its
+// own file. A shared default path is what let one run read a stale file written by a different
+// user and verify an order it never created — see the guarded fallback below.
+$storeFile = (string)(getenv('MAWATHEQ_SADAD_FIXTURE_STORE') ?: (sys_get_temp_dir() . '/sadad_fixture_orders.json'));
 $store = is_file($storeFile) ? (json_decode((string)file_get_contents($storeFile), true) ?: []) : [];
 
 // GET /order/{reference}  and  GET /__health
 if ($method === 'GET' && preg_match('#^/order/(.+)$#', $path, $m)) {
     $reference = urldecode($m[1]);
     $stored = $store[$reference] ?? null;
-    $amount = $stored['amount'] ?? 42.50;
+    // An unknown reference is an error, not a 42.50 charge. Silently inventing an amount
+    // made a broken payment look like a valid partial capture: the invoice was credited with
+    // money that was never charged, and the suite reported the paying path as correct.
+    if ($stored === null) {
+        http_response_code(404);
+        echo json_encode(['error' => 'unknown_reference', 'reference' => $reference]);
+        exit;
+    }
     echo json_encode([
         'reference' => $reference,
         'status' => strpos($reference, 'FAIL') !== false ? 'DECLINED'
                    : (strpos($reference, 'PENDING') !== false ? 'PENDING' : 'CAPTURED'),
-        'amount' => $amount,
-        'currency' => $stored['currency'] ?? 'SAR',
+        'amount' => (float)$stored['amount'],
+        'currency' => (string)($stored['currency'] ?? 'SAR'),
         'transaction_id' => 'TXN-' . substr(md5($reference), 0, 12),
     ]);
     exit;

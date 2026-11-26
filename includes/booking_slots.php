@@ -286,11 +286,8 @@ function booking_busy_intervals(PDO $pdo, int $lawyerId, string $date): array {
 /**
  * Whether a candidate interval is free, expressed against the busy list.
  * Half-open, so an interval ending exactly when another begins is free.
+ *
+ * Lives in availability.php, which this file already requires; see the note there for why the
+ * definition cannot sit in this module without creating an include cycle.
  */
-function booking_interval_is_free(array $busy, int $start, int $end): bool {
-    foreach ($busy as $b) {
-        if ($start < $b['end'] && $b['start'] < $end) return false;
-    }
-    return true;
-}
 

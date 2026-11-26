@@ -4793,3 +4793,44 @@ concluding the token is fine because the API answered.
 — `0.0.0.0`, not `127.0.0.1`, or the runtime proxy answers 502 while local curl answers 200.
 Verify over the **public URL**, page by page and asset by asset; a local 200 says nothing
 about what the owner can reach.
+
+## Execution 69 — bookings, plans, and two traps worth keeping
+
+### A conflict check that compares start times double-books
+
+`consultations` has no uniqueness on `(lawyer_id, scheduled_at)`, so overlap was enforced only in
+application code — and that code compared *start minutes*. A 60-minute consultation at 10:00 left
+10:30 in the grid, and a 30-minute one could be dropped inside a longer appointment. Both were
+accepted.
+
+The rule is now half-open intervals: two bookings clash when `start < other_end AND other_start < end`.
+Half-open on purpose — `<=` on either side makes back-to-back appointments impossible, which is a
+different bug and looks like one. `booking_slot_overlap()` is the authoritative test;
+`get_available_slots()` subtracts real busy intervals rather than start labels. Anything that
+checks availability must pass the **duration**, because knowing only the start minute proves only
+that the start minute is free.
+
+### `booking_interval_is_free()` lives in `availability.php`, not `booking_slots.php`
+
+`get_available_slots()` builds the grid and needs it. `booking_slots.php` requires
+`availability.php`, so defining the helper in `booking_slots.php` binds it *after* the file that
+calls it. That is not a warning: the caller reaches the grid with the function undefined and the
+request dies with `Call to undefined function` — every endpoint that renders lawyer availability
+returned 500 (`api/v1/lawyers.php`, the directory search, the journey). It is defined in
+`availability.php`; `booking_slots.php` carries a comment pointing there. Keep it that way.
+
+### A test fixture that spaces bookings 15 minutes apart is now wrong
+
+`tests/exec35_multimodal_consultation_test.php` booked at 10:00, then 10:15, then 10:30 while each
+consultation lasts 30 minutes. Those are genuine overlaps and are now refused — correctly. Any
+fixture that books several consultations for one lawyer must space them by at least the
+consultation's own length. When a previously-green booking fixture starts failing, check the
+spacing before the engine.
+
+### `chmod 600 config/secrets.php` breaks Apache, and `640` is the working mode here
+
+Execution 29 records `600` as the production requirement, but on this sandbox Apache runs as
+`www-data` and the file is owned by `openhands`, so `600` makes **every page a 500** — while PHP
+on the command line still works, which makes it look like an application bug. The sandbox mode is
+`640 openhands:www-data`. If the site 500s after a test touched `secrets.php`, check the mode
+before the code.

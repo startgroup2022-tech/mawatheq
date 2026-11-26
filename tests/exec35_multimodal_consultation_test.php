@@ -203,13 +203,14 @@ check('the two firms are distinct', $A['firmId'] !== $B['firmId']);
 function book(string $token, array $overrides = []): array {
     global $A;
     $date = date('Y-m-d', strtotime('+3 days'));
-    // Each booking takes a different slot. The engine now refuses a second booking of a
-    // time already taken (the same rule the website enforces), so a helper that always
-    // sent 10:00 would collide with itself — and the failure would look like a booking
-    // bug rather than a fixture that reuses one slot. Idempotent retries still pass the
-    // same key and are answered by the replay path before any slot check.
+    // Each booking takes a different, non-overlapping slot. The engine refuses a booking that
+    // overlaps one already held (the same interval rule the website enforces), so the spacing
+    // here must clear a whole consultation, not just differ by a minute: bookings were spaced
+    // 15 minutes apart while each one lasts 30, which is a real overlap and is now refused.
+    // Idempotent retries still pass the same key and are answered by the replay path before
+    // any slot check.
     static $seq = 0;
-    $slot = date('H:i', strtotime('10:00') + ($seq++ * 15 * 60));
+    $slot = date('H:i', strtotime('10:00') + ($seq++ * 60 * 60));
     $body = array_merge([
         'lawyer_id' => $A['lawyerId'],
         'consultation_type' => 'voice',

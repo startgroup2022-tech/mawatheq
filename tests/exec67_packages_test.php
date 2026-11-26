@@ -70,7 +70,12 @@ $payload = plan_normalize_input([
     'billing_cycle' => 'both', 'consultation_price' => '250',
     'is_corporate' => '1', 'is_featured' => '0', 'status' => 'active', 'sort_order' => '0',
 ]);
-$pdo->prepare("INSERT INTO plans ($cols) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")->execute(array_values($payload));
+// plan_normalize_input() also returns the catalogue's capability flags, so the values must
+// be selected in column order rather than passed wholesale — stray keys make the placeholder
+// count disagree with the column list.
+$pdo->prepare("INSERT INTO plans ($cols) VALUES ("
+        . rtrim(str_repeat('?,', count(explode(',', $cols))), ',') . ")")
+    ->execute(array_map(static fn(string $c) => $payload[$c], explode(',', $cols)));
 $planId = (int)$pdo->lastInsertId();
 
 $row = $pdo->prepare('SELECT * FROM plans WHERE id=?'); $row->execute([$planId]);
