@@ -336,3 +336,85 @@ function package_payment_find_by_reference(PDO $pdo, string $orderRef): ?array {
     $row = $stmt->fetch();
     return $row ?: null;
 }
+
+/**
+ * End every subscription whose paid term has passed, and revert the entitlement it granted.
+ *
+ * `package_payment_activate()` writes `users.plan_id`, and nothing ever took it back: a
+ * monthly plan bought once stayed in force forever, because `subscriptions.ends_at` was
+ * written and never read. That silently made every paid tier permanent.
+ *
+ * The sweep is conservative: it only touches a subscription whose `ends_at` is a real date
+ * strictly before today, and it only reverts `users.plan_id` while the user still holds the
+ * plan this subscription granted — a user who has since bought a higher tier keeps it, and
+ * a manual grant from the console is not overwritten by an old row expiring.
+ *
+ * @return array{expired:int, downgraded:int}
+ */
+function subscriptions_expire_due(PDO $pdo, ?string $today = null): array {
+    $today = $today ?: date('Y-m-d');
+    $result = ['expired' => 0, 'downgraded' => 0];
+
+    try {
+        $due = $pdo->prepare(
+            "SELECT id, user_id, plan_id FROM subscriptions
+             WHERE status='active' AND ends_at IS NOT NULL AND ends_at < ?"
+        );
+        $due->execute([$today]);
+        $rows = $due->fetchAll();
+    } catch (Throwable $e) {
+        // A deployment without the table must not crash the cron run.
+        error_log('subscription expiry sweep skipped: ' . $e->getMessage());
+        return $result;
+    }
+
+    $fallback = default_plan_id($pdo);
+    $markExpired = $pdo->prepare("UPDATE subscriptions SET status='expired' WHERE id=? AND status='active'");
+    // Revert only while the user still holds the plan this subscription granted.
+    $revert = $pdo->prepare('UPDATE users SET plan_id=? WHERE id=? AND plan_id=?');
+
+    foreach ($rows as $row) {
+        // PDO cannot nest transactions, and a caller (or a test) may already own one. Use a
+        // savepoint in that case so a single failure rolls back only this subscription.
+        $ownTx = !$pdo->inTransaction();
+        $savepoint = 'subscription_expiry';
+        try {
+            if ($ownTx) $pdo->beginTransaction();
+            else $pdo->exec('SAVEPOINT ' . $savepoint);
+
+            $markExpired->execute([(int)$row['id']]);
+            if ($markExpired->rowCount() !== 1) {
+                if ($ownTx) $pdo->rollBack();
+                else $pdo->exec('ROLLBACK TO SAVEPOINT ' . $savepoint);
+                continue;
+            }
+            $result['expired']++;
+
+            $revert->execute([$fallback, (int)$row['user_id'], (int)$row['plan_id']]);
+            if ($revert->rowCount() === 1) {
+                $result['downgraded']++;
+                if (is_file(__DIR__ . '/notifications.php')) {
+                    require_once __DIR__ . '/notifications.php';
+                    if (function_exists('notify')) {
+                        notify($pdo, 'client', (int)$row['user_id'],
+                            is_rtl() ? 'انتهى اشتراكك في الباقة' : 'Your package subscription has ended',
+                            is_rtl() ? 'يمكنك التجديد من صفحة الباقات في أي وقت.'
+                                     : 'You can renew any time from the pricing page.',
+                            '/packages.php');
+                    }
+                }
+            }
+            if ($ownTx) $pdo->commit();
+            else $pdo->exec('RELEASE SAVEPOINT ' . $savepoint);
+        } catch (Throwable $e) {
+            if ($ownTx) {
+                if ($pdo->inTransaction()) $pdo->rollBack();
+            } else {
+                $pdo->exec('ROLLBACK TO SAVEPOINT ' . $savepoint);
+            }
+            error_log('subscription expiry failed for #' . (int)$row['id'] . ': ' . $e->getMessage());
+        }
+    }
+
+    return $result;
+}
