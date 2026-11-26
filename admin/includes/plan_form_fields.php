@@ -44,4 +44,30 @@
   <label style="display:flex;align-items:center;gap:6px;font-size:.88rem"><input type="checkbox" name="is_corporate" value="1" <?= !empty($plan['is_corporate']) ? 'checked' : '' ?> style="width:18px;height:18px"> باقة مؤسسات</label>
   <label style="display:flex;align-items:center;gap:6px;font-size:.88rem"><input type="checkbox" name="is_featured" value="1" <?= !empty($plan['is_featured']) ? 'checked' : '' ?> style="width:18px;height:18px"> باقة مميزة (تُبرَز بصفحة الأسعار)</label>
 </div>
+<div class="form-section-title">الحدود الفعلية للاستخدام (تُطبَّق تلقائياً — فارغ = غير محدود)</div>
+<?php
+// Rendered from the catalogue so the form cannot drift from what the gates enforce.
+// `consultations_included` and the two AI counters are already rendered above with
+// their own wording, so they are skipped here rather than duplicated.
+$alreadyRendered = ['ai_queries_limit', 'document_analysis_limit', 'consultations_included'];
+$catalogLimits = array_diff_key(plan_limit_catalog(), array_flip($alreadyRendered));
+?>
+<div class="grid-2">
+  <?php foreach ($catalogLimits as $key => $meta): ?>
+    <div class="field">
+      <label><?= htmlspecialchars($meta['label_ar']) ?> (<?= htmlspecialchars($meta['unit_ar']) ?>) — فارغ = غير محدود</label>
+      <input type="number" min="0" name="<?= htmlspecialchars($key) ?>" value="<?= htmlspecialchars((string)($plan[$key] ?? '')) ?>">
+    </div>
+  <?php endforeach; ?>
+</div>
+
+<div class="form-section-title">المزايا المتاحة في الباقة</div>
+<div style="display:flex;flex-wrap:wrap;gap:16px;margin:4px 0 14px">
+  <?php foreach (plan_feature_catalog() as $key => $meta): ?>
+    <label style="display:flex;align-items:center;gap:6px;font-size:.88rem;min-height:44px">
+      <input type="checkbox" name="<?= htmlspecialchars($key) ?>" value="1" <?= !empty($plan[$key]) ? 'checked' : '' ?> style="width:20px;height:20px">
+      <?= htmlspecialchars($meta['label_ar']) ?>
+    </label>
+  <?php endforeach; ?>
+</div>
 <input type="hidden" name="sort_order" value="<?= (int)($plan['sort_order'] ?? 0) ?>">

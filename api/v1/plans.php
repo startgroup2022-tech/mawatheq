@@ -7,14 +7,42 @@
  * يقرأ من جدول plans المُصدَّر في schema.sql — لا توجد أسعار مكتوبة في التطبيق.
  */
 require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/../../includes/plan_features.php';
+
+// The catalogue decides which columns describe a plan. Listing them here by hand is how
+// the app previously shipped a package with five unadvertised limits and six capability
+// flags it never showed: the API selected the two AI counters and stopped.
+$limitKeys = array_keys(plan_limit_catalog());
+$featureKeys = array_keys(plan_feature_catalog());
+$select = array_merge(
+    ['id', 'name_ar', 'name_en', 'description_ar', 'description_en',
+     'price_monthly', 'price_yearly', 'classification', 'billing_cycle',
+     'consultation_price', 'is_corporate', 'is_featured', 'sort_order'],
+    $limitKeys,
+    $featureKeys
+);
 
 $plans = $pdo->query(
-    "SELECT id, name_ar, name_en, description_ar, description_en,
-            price_monthly, price_yearly, ai_queries_limit,
-            document_analysis_limit, consultations_included,
-            is_corporate, is_featured, sort_order
+    'SELECT ' . implode(',', array_map(fn($c) => "`$c`", $select)) . "
      FROM plans WHERE status='active' ORDER BY sort_order, price_monthly"
 )->fetchAll();
+
+// Typed values, so a client does not have to know that a NULL column means "unlimited"
+// while `0` means "not included at all". `limits` and `features` are additive fields:
+// a client that ignores them keeps working against the flat columns above.
+foreach ($plans as &$plan) {
+    $limits = [];
+    foreach ($limitKeys as $k) {
+        $limits[$k] = $plan[$k] === null ? null : (int)$plan[$k];
+    }
+    $features = [];
+    foreach ($featureKeys as $k) {
+        $features[$k] = (int)($plan[$k] ?? 0) === 1;
+    }
+    $plan['limits'] = $limits;
+    $plan['capabilities'] = $features;
+}
+unset($plan);
 
 // The marketing benefits are stored in `plan_features`, the same table the website and
 // the admin console read. The app showed only the numeric limits, so a plan's real

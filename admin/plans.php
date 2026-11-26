@@ -17,14 +17,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $data = plan_normalize_input($_POST);
         $error = plan_validation_error($data);
         if ($error === null) {
-            $cols = 'name_ar,name_en,description_ar,description_en,price_monthly,price_yearly,ai_queries_limit,document_analysis_limit,consultations_included,classification,billing_cycle,consultation_price,is_corporate,is_featured,status,sort_order';
+            // The column list is derived from the catalogue, never hand-written: a limit
+            // added there is persisted here automatically, and one removed there cannot
+            // linger as a stale write to a column that no longer exists.
+            $columns = array_keys($data);
+            $placeholders = implode(',', array_fill(0, count($columns), '?'));
+            $assignments = implode(',', array_map(fn($c) => "`$c`=?", $columns));
             if ($planId) {
-                $pdo->prepare("UPDATE plans SET name_ar=?,name_en=?,description_ar=?,description_en=?,price_monthly=?,price_yearly=?,ai_queries_limit=?,document_analysis_limit=?,consultations_included=?,classification=?,billing_cycle=?,consultation_price=?,is_corporate=?,is_featured=?,status=?,sort_order=? WHERE id=?")
+                $pdo->prepare("UPDATE plans SET $assignments WHERE id=?")
                     ->execute(array_merge(array_values($data), [$planId]));
                 log_action($pdo, "تعديل باقة '" . $data['name_ar'] . "'", 'plan', $planId);
                 $success = 'تم تحديث الباقة بنجاح. الحدود والمزايا الجديدة سارية فوراً على جميع المشتركين الحاليين بهذه الباقة.';
             } else {
-                $pdo->prepare("INSERT INTO plans ($cols) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+                $pdo->prepare("INSERT INTO plans (" . implode(',', $columns) . ") VALUES ($placeholders)")
                     ->execute(array_values($data));
                 log_action($pdo, "إضافة باقة جديدة '" . $data['name_ar'] . "'", 'plan', (int)$pdo->lastInsertId());
                 $success = 'تمت إضافة الباقة بنجاح.';

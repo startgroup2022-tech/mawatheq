@@ -9,6 +9,10 @@
  * here, not inline in the page, so they are one source and can be tested directly.
  */
 
+// The catalogue owns which columns a plan carries and how each is parsed. Requiring it
+// here means a caller of this file cannot normalise a plan without it.
+require_once __DIR__ . '/plan_features.php';
+
 /**
  * Normalise a posted plan payload into exactly the columns the plans table stores.
  *
@@ -19,7 +23,7 @@
  * @return array<string,mixed>
  */
 function plan_normalize_input(array $post): array {
-    return [
+    $data = [
         'name_ar' => trim((string)($post['name_ar'] ?? '')),
         'name_en' => trim((string)($post['name_en'] ?? '')),
         'description_ar' => trim((string)($post['description_ar'] ?? '')),
@@ -37,6 +41,14 @@ function plan_normalize_input(array $post): array {
         'status' => in_array($post['status'] ?? '', ['active', 'hidden'], true) ? $post['status'] : 'active',
         'sort_order' => (int)($post['sort_order'] ?? 0),
     ];
+
+    // The usage limits and capability flags belong to the plan catalogue, which owns how
+    // each one is measured. Merging them here rather than listing them again in the page
+    // means a limit added to the catalogue is persisted by every writer of this form.
+    // Excluded: the two AI counters already normalised above with their own semantics.
+    $catalog = plan_normalize_catalog_input($post);
+    unset($catalog['ai_queries_limit'], $catalog['document_analysis_limit'], $catalog['consultations_included']);
+    return array_merge($data, $catalog);
 }
 
 /**

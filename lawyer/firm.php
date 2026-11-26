@@ -5,6 +5,7 @@ require_once __DIR__ . '/includes/lawyer_guard.php';
 require_once __DIR__ . '/../includes/csrf.php';
 require_once __DIR__ . '/../includes/audit_log.php';
 require_once __DIR__ . '/../includes/tenant.php';
+require_once __DIR__ . '/../includes/plan_features.php';
 require_once __DIR__ . '/../includes/specialization_field.php';
 $lawyerId = (int)$_SESSION['lawyer_id'];
 $error = null; $success = null;
@@ -76,12 +77,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $already = $pdo->prepare('SELECT firm_id FROM law_firm_members WHERE lawyer_id=? LIMIT 1'); $already->execute([(int)$target['id']]);
                 if ($already->fetch()) $error = is_rtl() ? 'المحامي عضو في مكتب آخر أو في هذا المكتب.' : 'This lawyer already belongs to a firm.';
                 else {
+                    // The plan's `max_staff` is only a promise if the invite path honours it.
+                    // Checked before the INSERT so a refusal leaves no half-added member.
+                    $staffCheck = plan_check(
+                        $pdo,
+                        plan_for_firm($pdo, (int)$membership['id'], $lawyerId),
+                        ['firm_id' => (int)$membership['id']],
+                        'max_staff'
+                    );
+                    if (!$staffCheck['allowed']) {
+                        $error = $staffCheck['message'];
+                    } else {
                     $pdo->prepare('INSERT INTO law_firm_members (firm_id,lawyer_id,member_role) VALUES (?,?,?)')->execute([(int)$membership['id'],(int)$target['id'],$role]);
                     $memberRecordId = (int)$pdo->lastInsertId();
                     // Pull the new member's solo records into the firm so their history stays visible.
                     tenant_adopt_lawyer_data($pdo, (int)$membership['id'], (int)$target['id']);
                     log_action($pdo,'إضافة عضو إلى المكتب بدور '.$role,'law_firm_member',$memberRecordId);
                     $success = is_rtl() ? 'تمت إضافة عضو المكتب.' : 'Firm member added.';
+                    }
                 }
             }
         }
