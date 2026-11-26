@@ -168,20 +168,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $scheduledAt = $date . ' ' . $time . ':00';
 
-    // Authoritative slot check. Stricter than "is it in the free list": it also refuses a
-    // past time and a time outside the lawyer's published hours, so a crafted request cannot
-    // book 03:00 on a Sunday. The same check runs again inside the lock, immediately before
-    // the INSERT, which is what removes the double-booking race.
-    $slotCheck = booking_slot_is_bookable($pdo, $lawyerId, $scheduledAt);
-    if (!$slotCheck['ok']) {
-        if ($slotCheck['error'] === 'in_past') api_error('this time is in the past', 409);
-        api_error('this time slot is no longer available', 409);
-    }
-
     // The one authoritative price. The stored price and the gateway amount are the same number.
     $pricing = consultation_pricing_for_lawyer($pdo, $lawyer);
     $durationMinutes = (int)$pricing['duration_minutes'];
     $payable = (float)$pricing['payable'];
+
+    // Authoritative slot check. Stricter than "is it in the free list": it also refuses a
+    // past time and a time outside the lawyer's published hours, so a crafted request cannot
+    // book 03:00 on a Sunday. It runs *after* pricing so the check covers the interval the
+    // consultation actually occupies — checking before the length is known would only prove
+    // that the start minute is free, which is the start-time comparison this platform was
+    // already getting wrong. The same check runs again inside the lock, immediately before
+    // the INSERT, which is what removes the double-booking race.
+    $slotCheck = booking_slot_is_bookable($pdo, $lawyerId, $scheduledAt, null, $durationMinutes);
+    if (!$slotCheck['ok']) {
+        if ($slotCheck['error'] === 'in_past') api_error('this time is in the past', 409);
+        api_error('this time slot is no longer available', 409);
+    }
 
     // Tag the booking with the lawyer's firm. A firm-scoped lawyer is authorized by
     // consultations.firm_id, and upgrade_v42.sql only backfilled the rows that existed when
@@ -215,7 +218,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ->execute([$auth['id'], $lawyerId, $firmId, $type, $scheduledAt, $durationMinutes, $topic, $payable, $idempotencyKey !== '' ? $idempotencyKey : null, $choice['najiz_case_type_id']]);
             }
             return (int)$pdo->lastInsertId();
-        });
+        }, $durationMinutes);
         if (!$created['ok']) {
             // Lost the race for this slot, or the lock timed out under load.
             api_error($created['error'] === 'slot_taken'

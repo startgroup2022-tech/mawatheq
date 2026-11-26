@@ -14,13 +14,22 @@ function get_available_slots(PDO $pdo, int $lawyerId, string $date): array {
     $windows = $stmt->fetchAll();
     if (empty($windows)) return [];
 
-    // الأوقات المحجوزة مسبقاً في هذا اليوم (باستثناء الملغاة)
+    // الأوقات المحجوزة في هذا اليوم كفواصل زمنية حقيقية (بداية/نهاية)، لا كأوقات بداية فقط.
+    // Comparing start times alone offered a slot that a longer consultation already covered:
+    // a 60-minute booking at 10:00 left 10:30 in the list. A slot is free only when the whole
+    // interval the customer would occupy is clear of every booked interval.
+    $busy = [];
     $bookedStmt = $pdo->prepare("
-        SELECT TIME(scheduled_at) AS t FROM consultations
+        SELECT scheduled_at, COALESCE(NULLIF(duration_minutes, 0), ?) AS duration_minutes
+        FROM consultations
         WHERE lawyer_id = ? AND DATE(scheduled_at) = ? AND status != 'cancelled'
     ");
-    $bookedStmt->execute([$lawyerId, $date]);
-    $booked = array_map(fn($r) => substr($r['t'], 0, 5), $bookedStmt->fetchAll());
+    $bookedStmt->execute([CONSULTATION_DEFAULT_MINUTES, $lawyerId, $date]);
+    foreach ($bookedStmt->fetchAll() as $row) {
+        $bStart = strtotime((string)$row['scheduled_at']);
+        if ($bStart === false) continue;
+        $busy[] = ['start' => $bStart, 'end' => $bStart + ((int)$row['duration_minutes']) * 60];
+    }
 
     $slots = [];
     foreach ($windows as $w) {
@@ -30,7 +39,11 @@ function get_available_slots(PDO $pdo, int $lawyerId, string $date): array {
         while ($cursor < $end) {
             $timeLabel = date('H:i', $cursor);
             $isPast = $isToday && $timeLabel <= substr($nowTime, 0, 5);
-            if (!in_array($timeLabel, $booked, true) && !$isPast) {
+            $slotEnd = $cursor + $slotMinutes * 60;
+            // A candidate that would run past the end of the working window is not offered.
+            $fits = $slotEnd <= $end;
+            $free = booking_interval_is_free($busy, $cursor, $slotEnd);
+            if (!$isPast && $fits && $free) {
                 $slots[] = $timeLabel;
             }
             $cursor += $slotMinutes * 60;

@@ -199,7 +199,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             return (int)$pdo->lastInsertId();
         };
 
-        $created = booking_create_locked($pdo, $lawyerId, $scheduledAt, $insertFn);
+        $created = booking_create_locked($pdo, $lawyerId, $scheduledAt, $insertFn, $durationMinutes);
         if (!$created['ok']) {
             $error = $created['error'] === 'slot_taken'
                 ? (is_rtl() ? 'هذا الموعد لم يعد متاحاً، يرجى اختيار وقت آخر.' : 'This slot is no longer available, please pick another.')
