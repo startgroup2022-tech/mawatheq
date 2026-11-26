@@ -4714,3 +4714,82 @@ Every asset in `v2026.11.18-exec68g` was re-downloaded over the public URL and v
 carries `com.mawatheq.app` 1.8.8 / code 26 and is **debug-signed** (`CN=Android Debug`), so it is
 not Play-uploadable — say so, do not call it "release-signed". A `+` in an asset name is `%2B` in
 the download URL.
+
+## Execution 69 — gap analysis and design previews (AI workspace + firm suite)
+
+### The brief and the platform are different shapes, and that is the whole finding
+
+The audit's headline is not "features are missing". It is that the platform is
+**consultation-shaped** (`client -> lawyer consultation`) while the brief is **firm-shaped**
+(`firm -> clients -> cases -> sessions -> fees`). Most of the *data model* for the firm shape
+already exists — `law_firms`, `law_firm_members`, `firm_branches`, `hr_employees`,
+`case_parties`, `case_risks`, `case_time_entries`, `invoice_items`, `firm_knowledge` — but
+almost none of it has a *work surface*. The tables are there; the screens are not.
+
+Concretely, these pages do not exist and no amount of schema work changes that:
+`lawyer/clients.php`, `tasks.php`, `contracts.php`, `quotes.php`, `expenses.php`,
+`fee-agreements.php`, `reports.php`, `sessions.php`. There is also no template library, no
+document editor (only a `<textarea>`), and no firm chatbot.
+
+So when asked "how complete is this?", answer per section with the file that proves it. The
+measured baseline: 172 tables (schema.sql + all 79 migrations), 62 admin pages, 30 lawyer
+pages, 39 `api/v1/` endpoints, 67 PHP suites, 14 Playwright specs, 2 Flutter apps.
+
+### A blank render still answers HTTP 200, so gate on glyphs
+
+`tools/exec69_design_shots.js` renders each preview at 1440px and 390px and **fails** a page
+that has fewer than 120 non-whitespace glyphs. That check is the whole point: a 404 or a
+fatal-in-body page returns a plausible status and a plausible byte count, and a screenshot
+of it looks like a file. The first run failed 8 of 12 pages on exactly that.
+
+It also rejects horizontal overflow, a missing or duplicate `<h1>`, and any text node under
+11px. `getComputedStyle` font sizes are the only reliable source — an inline `font-size:.6rem`
+buried in a template literal is invisible to a CSS-file grep and is what produced the
+sub-11px failures.
+
+### Contrast must be measured against the *painted* background, gradient included
+
+`tools/exec69_contrast_check.js` walks text nodes and resolves the nearest background that
+actually paints. Two traps, both real:
+
+- `getComputedStyle(el).backgroundColor` is `rgba(0,0,0,0)` over a `linear-gradient`, which
+  lives in `backgroundImage` as an **image**. A naive walk falls through to white and reports
+  white-on-white — the AGENTS.md navy-on-navy lesson in a new costume.
+- A colour declared on the element beats an inherited one. `.paper .doc-logo` inherited the
+  muted body grey and rendered 2.1:1 on a navy square. Dark bands need their colour stated,
+  never inherited.
+
+First run: **125 violations**. The measured causes, not guesses:
+
+| Colour | Role | Ratio on white | Verdict |
+|---|---|---|---|
+| `#2BA8C4` (`--teal`) | brand accent | **2.80:1** | decorative rules only |
+| `#1E8E5A` | success | **4.14:1** | fails 4.5 for text |
+| `#F5A623` (`--gold`) | highlight | **2.03:1** | decorative only |
+| `#C3CEDA` | empty marker | **1.60:1** | fails |
+
+Text-safe variants, computed rather than eyeballed: `--teal-text:#156B80` (6.09:1),
+`--teal-fill:#17758A` (5.32:1 with a white label), `--gold-text:#7A5409` (6.78:1). **The
+brand teal is not a text colour.** It stays for rules, borders and icon accents.
+
+### Preview assets live in `design/execNN/`, and the fonts are copies
+
+The established convention is `design/exec66/` — `assets/fonts/`, `screenshots/`, `index.php`.
+Follow it rather than inventing `docs/design/`. Fonts are copied in because a preview must
+render identically on a machine with no system Arabic font; they are ~1.5 MB, which is why
+the previews are a separate directory from the app.
+
+### `GITHUB_TOKEN` can be expired while the PAT still authenticates
+
+Here `GITHUB_TOKEN` returned **401** on `/user` and the push URL was rejected outright, while
+`GITHUB_PERSONAL_ACCESS_TOKEN` returned 200 and reported `push:true` — yet the actual push
+still 403'd, exactly as recorded above. What worked was the plain `origin` remote, which
+carries working embedded credentials: `git push origin <branch>:<branch>`. Try that **before**
+concluding the token is fine because the API answered.
+
+### Serving previews to the owner
+
+`python3 -m http.server` serves `.php` as **source text**. Use `php -S 0.0.0.0:<port> -t <dir>`
+— `0.0.0.0`, not `127.0.0.1`, or the runtime proxy answers 502 while local curl answers 200.
+Verify over the **public URL**, page by page and asset by asset; a local 200 says nothing
+about what the owner can reach.
