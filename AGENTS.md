@@ -4925,3 +4925,24 @@ one slot with a 150 ms delay inside the critical section: one row created, the o
 
 `poppler-utils` (for `exec69_pdf_render_test`) and PHP GD. Current full run: **73/73 suites green**,
 Playwright 1032 passed / 12 skipped, Flutter 379 tests.
+
+### Pushing: the credential helper works, an embedded token does not
+
+`GITHUB_TOKEN` is **not** injected in this sandbox, so the documented
+`https://x-access-token:$GITHUB_TOKEN@…` form pushes an empty username and fails with
+`Invalid username or token`. `GITHUB_PERSONAL_ACCESS_TOKEN` authenticates to the REST API and
+reports `permissions.push: true`, but git rejects it the same way — the documented trap.
+
+What works: the git credential helper already holds a valid token.
+
+```bash
+git push origin feature/ai-workspace-firm-suite   # helper supplies the credential
+```
+
+Confirm non-destructively with `--dry-run` first. Check availability with
+`for v in GITHUB_TOKEN GITHUB_PERSONAL_ACCESS_TOKEN OH_GIT_CREDENTIAL_ACCESS_TOKEN_GITHUB; do
+[ -n "${!v}" ] && echo "$v set" || echo "$v empty"; done` — the first is empty here.
+
+Branch topology (verified 2026-11-11): `feature/ai-workspace-firm-suite` is a strict descendant
+of PR #10's head (`exec56-lawyer-platform`), 10 commits ahead and losing nothing. PR #10 stays the
+single PR; do not open another.
