@@ -55,6 +55,14 @@ if ! ss -lnt 2>/dev/null | grep -q ':11434 '; then
     fi
 fi
 
+# The N-Genius fixture backs exec68_payment_message_http_probe (and any payment suite that
+# drives the real token/order path). The vhost points MAWATHEQ_NGENIUS_BASE_URL here.
+if ! ss -lnt 2>/dev/null | grep -q ':11443 '; then
+    nohup php -S 127.0.0.1:11443 tests/fixtures/ngenius_server.php >/tmp/ngenius-fixture.log 2>&1 &
+    sleep 1
+    printf 'note: started the N-Genius fixture on 11443\n'
+fi
+
 if ! curl -s -o /dev/null -m 5 http://127.0.0.1:8080/index.php; then
     printf 'ERROR: no app on 127.0.0.1:8080. Run: bash tests/setup_test_env.sh\n' >&2
     exit 2

@@ -4946,3 +4946,81 @@ Confirm non-destructively with `--dry-run` first. Check availability with
 Branch topology (verified 2026-11-11): `feature/ai-workspace-firm-suite` is a strict descendant
 of PR #10's head (`exec56-lawyer-platform`), 10 commits ahead and losing nothing. PR #10 stays the
 single PR; do not open another.
+
+## Execution 68 — the payment failure the customer reads
+
+### The generic message was a fall-through, not a gateway fault
+
+The owner's report — «تعذّر بدء عملية الدفع الإلكتروني حالياً. لم يتم خصم أي مبلغ.» — is
+`gateway_diag_customer_message()`'s last line. It renders for any code the map does not
+name. So the message never said *what* failed, and it invited a retry that could not
+succeed. Diagnosing "which code reached it" needs the recorded row, not the sentence:
+
+```bash
+sudo mariadb mawatheq_test -e "SELECT id,operation,stage,error_code,detail \
+  FROM gateway_diagnostics ORDER BY id DESC LIMIT 10;"
+```
+
+### The real defect: the token stage flattened a permanent fault into the retryable bucket
+
+`package_payment.php` and `consultation_payment.php` both did:
+
+```php
+if ($code === '' || strpos($code, 'http_') === 0 || $code === 'connection_failed') $code = 'token_failed';
+```
+
+That maps **every** `http_*` — including `http_401`/`http_403`, a rejected credential — into
+`token_failed`, which is the "unknown, try again" bucket. A misconfigured API key was
+therefore presented as a transient blip, forever. The order stage already classified
+correctly via `gateway_diag_reason_code()`; the token stage now does the same:
+
+```php
+$code = $code === '' ? 'token_failed' : gateway_diag_reason_code($code);
+```
+
+Resulting classification, which `tests/exec68_gateway_message_coverage_test.php` pins:
+
+| raw outcome | code | customer sees |
+|---|---|---|
+| `http_401`, `http_403` | `gateway_rejected` | permanent, "contact us" |
+| `http_500`, `http_429`, `connection_failed` | `connection_failed` | retryable |
+| `''` (no code at all) | `token_failed` | retryable |
+| `badTokenRequest`, `realmNameNotAvailable`, `outletNotAvailable` | verbatim | permanent |
+
+**Keep `token_failed`/`order_failed` retryable.** They are the genuinely-unknown buckets, and
+a retry is honest for them. Do not "fix" a generic message by mapping them to a permanent
+sentence — that would tell a customer to stop trying when the next attempt would have worked.
+Fix the *classification* upstream instead.
+
+### The diagnostics loop is closed in both directions
+
+`gateway_diag_find($pdo, $ref)` backs `admin/gateways.php?ref=<8 hex>`. The customer banner
+carries that reference (`consultations.php` reads `?code=` and `?ref=`), so the operator can
+enter the exact value the customer quotes. Both halves are asserted over real HTTP by
+`tests/exec68_payment_message_http_probe.php` and `tests/exec68_gateway_diagnostics_console_probe.php`.
+
+Two gotchas those probes encode:
+
+- **`UPDATE site_settings ... WHERE setting_key=?` matches nothing on an unconfigured
+  database.** The probe silently kept defaults and reported a false failure until it was
+  changed to an upsert that snapshots and restores the prior value (deleting a row that did
+  not exist rather than writing a guessed default).
+- The currency mismatch that *was* recorded on production
+  (`unsupported_currency: site currency SAR != outlet BHD`) is surfaced proactively on
+  `admin/gateways.php` before a customer hits it. `ngenius_currency` is optional and
+  defaults to SAR, so a *missing* row is not a mismatch — only a row that disagrees with
+  `site_currency` is.
+
+### Local payment verification needs three things
+
+1. `MAWATHEQ_NGENIUS_BASE_URL` must reach PHP. `tests/setup_test_env.sh` writes it as a
+   `SetEnv` in both vhosts; `tests/run_all_tests.sh` starts the fixture on `:11443` if it is
+   down. Without the vhost `SetEnv`, a shell-only export is invisible to Apache/mod_php.
+2. `tests/fixtures/ngenius_server.php` rejects a non-empty `realmName`
+   (`realmNameNotAvailable`), matching the live Saudi outlet — send an empty realm.
+3. Seeded QA accounts use **`Test-Password-2026`**, not the passwords named in the older
+   docs. `tests/seed_phase6.php` is what creates them; run it before any HTTP probe that
+   logs in.
+
+A green payment suite proves the *client speaks the gateway's schema* against the fixture.
+It does not prove a live merchant account settles money — say so in any delivery report.

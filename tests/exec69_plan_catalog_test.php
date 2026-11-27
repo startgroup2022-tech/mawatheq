@@ -273,7 +273,7 @@ echo "\n== 7. the advertised ceilings are enforced at the write paths ==\n";
 // A limit that only the display understands is marketing, not a limit. These assertions
 // read the write-path source, because the behaviour itself is exercised end to end in
 // tests/exec69_plan_enforcement_probe.php (which needs a lawyer session).
-foreach (['max_staff' => 'lawyer/firm.php', 'max_active_cases' => 'lawyer/cases.php'] as $limit => $file) {
+foreach (['max_staff' => 'lawyer/firm.php', 'max_active_cases' => 'lawyer/cases.php', 'max_templates' => 'lawyer/templates.php'] as $limit => $file) {
     $src = file_get_contents(__DIR__ . '/../' . $file);
     check("$file gates on $limit", strpos($src, "plan_check(") !== false && strpos($src, "'$limit'") !== false, $file);
 }
@@ -286,6 +286,15 @@ check('the staff INSERT is inside the allowed branch',
     (bool)preg_match('/if \(!\$staffCheck\[.allowed.\]\)\s*\{.*?\}\s*else\s*\{.*?INSERT INTO law_firm_members/s', $firmSrc));
 check('the case INSERT is inside the allowed branch',
     (bool)preg_match('/if \(!\$caseCheck\[.allowed.\]\)\s*\{.*?\}\s*else\s*\{.*?INSERT INTO cases/s', $casesSrc));
+
+// The template library is the third write path that consumes a plan ceiling, and it has
+// two ways to add a row: a blank template and a copy of a platform one. Both must gate,
+// and both must gate before the write.
+$tplSrc = file_get_contents(__DIR__ . '/../lawyer/templates.php');
+check('the template create gate rejects before template_save()',
+    (bool)preg_match('/if \(!\$tplCheck\[.allowed.\]\)\s*\{.*?\}\s*else\s*\{.*?template_save\(/s', $tplSrc));
+check('copying a template also checks max_templates',
+    (bool)preg_match('/template_can_use\(\$src, \$firmTier\).*?plan_check\(.*?max_templates/s', $tplSrc));
 
 echo "\n{$checks} checks, {$failures} failure(s)\n";
 @unlink($jar);

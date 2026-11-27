@@ -35,6 +35,9 @@ function admin_route_roles(): array {
         // migration, not by this console, so `editor` is safe here.
         'legal-library.php' => ['super_admin', 'editor'],
         'classification.php' => ['super_admin', 'editor'],
+        // Firm chatbots and template-library usage. Oversight only: the operator can stop a
+        // bot, not author one, so `support` (who already reads leads) is the right role.
+        'firm-chatbots.php' => ['super_admin', 'support'],
         'ai-knowledge.php' => ['super_admin', 'editor'],
         'ai-orchestration.php' => ['super_admin'],
         'ai-operations.php' => ['super_admin'],

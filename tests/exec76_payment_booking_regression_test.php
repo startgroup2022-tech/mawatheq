@@ -42,6 +42,19 @@ foreach ($permanent as $code) {
     check("$code: keeps the reference", strpos($msg, 'ABCD1234') !== false);
 }
 
+// `token_failed`/`order_failed` are the *unknown* buckets: the gateway gave no identifiable
+// reason, so offering a retry is honest. What was NOT honest is the token stage collapsing a
+// 4xx (rejected credentials) into that bucket — that is asserted in section 1b below.
+// 1b. the token stage classifies like the order stage: a rejected credential is permanent.
+foreach (['http_401' => 'gateway_rejected', 'http_403' => 'gateway_rejected',
+          'http_500' => 'connection_failed', 'http_429' => 'connection_failed'] as $raw => $want) {
+    $got = gateway_diag_reason_code($raw);
+    check("token stage maps $raw to $want", $got === $want, $got);
+}
+$credMsg = gateway_diag_customer_message(gateway_diag_reason_code('http_401'), 'EF567890', true);
+check('a rejected token credential does NOT invite a retry',
+    strpos($credMsg, 'المحاولة مجدداً') === false, $credMsg);
+
 $transient = ['token_failed', 'order_failed', 'something_unmapped'];
 foreach ($transient as $code) {
     $msg = gateway_diag_customer_message($code, 'EF567890', true);

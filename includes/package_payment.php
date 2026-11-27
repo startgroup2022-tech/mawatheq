@@ -157,7 +157,10 @@ function package_payment_start(PDO $pdo, array $order, array $options = []): arr
         // Carry the gateway's own reason (badTokenRequest, realmNameNotAvailable, ...) when it
         // gave one, so the customer message can classify a rejected credential as permanent.
         $code = (string)($tokenResult['code'] ?? '');
-        if ($code === '' || strpos($code, 'http_') === 0 || $code === 'connection_failed') $code = 'token_failed';
+        // Classify the way the order stage does, so a rejected credential (a 4xx on the
+        // token endpoint) stays permanent instead of collapsing into the retryable
+        // `token_failed` bucket. Only a genuinely unexplained failure keeps that code.
+        $code = $code === '' ? 'token_failed' : gateway_diag_reason_code($code);
         return gateway_diag_failure($pdo, 'package_payment', 'token', $code, (string)($tokenResult['error'] ?? ''), $env);
     }
 

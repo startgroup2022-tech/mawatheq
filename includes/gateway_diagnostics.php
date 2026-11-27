@@ -283,6 +283,10 @@ function gateway_diag_customer_message(string $errorCode, string $corr = '', boo
         'gateway_rejected' => $rtl
             ? 'تعذّر إتمام الدفع الإلكتروني حالياً. لم يتم خصم أي مبلغ. تواصل معنا وسنعالج الأمر.'
             : 'The online payment could not be completed right now. No amount was charged. Contact us and we will resolve it.',
+        // The diagnostics probe's own "gateway is off" code; same meaning as gateway_disabled.
+        'not_enabled' => $rtl
+            ? 'الدفع الإلكتروني غير مفعّل حالياً. لم يتم خصم أي مبلغ. تواصل معنا لإتمام الاشتراك.'
+            : 'Online payment is not enabled right now. No amount was charged. Contact us to complete your subscription.',
         // A real transport failure: this one is safe to retry.
         'connection_failed' => $rtl
             ? 'تعذّر الوصول إلى بوابة الدفع. لم يتم خصم أي مبلغ. تحقّق من اتصالك ثم يمكنك المحاولة مجدداً أو التواصل معنا.'

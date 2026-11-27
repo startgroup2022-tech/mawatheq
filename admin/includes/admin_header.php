@@ -56,6 +56,7 @@ $adminNavGroups = [
         'ai-workflows' => ['i' => 'check', 'ar' => 'سير عمل الوكلاء والموافقات', 'en' => 'Agent workflows', 'href' => '/admin/ai-workflows.php', 'badge' => 'wf'],
         'articles' => ['i' => 'book', 'ar' => 'مركز المعرفة', 'en' => 'Articles', 'href' => '/admin/articles.php'],
         'banners' => ['i' => 'image', 'ar' => 'بانرات الصفحة الرئيسية', 'en' => 'Home banners', 'href' => '/admin/banners.php'],
+        'firm-chatbots' => ['i' => 'inbox', 'ar' => 'روبوتات المكاتب والنماذج', 'en' => 'Firm chatbots & templates', 'href' => '/admin/firm-chatbots.php'],
         'laws' => ['i' => 'landmark', 'ar' => 'مكتبة الأنظمة', 'en' => 'Law library', 'href' => '/admin/laws.php'],
         'legal-library' => ['i' => 'book', 'ar' => 'المكتبة القانونية والقضائية', 'en' => 'Legal library', 'href' => '/admin/legal-library.php'],
     ]],

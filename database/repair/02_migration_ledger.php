@@ -77,7 +77,7 @@ $report = [
     'database' => null,
     'ledger_present' => false,
     'files' => [],
-    'summary' => ['total' => 0, 'verified' => 0, 'partial' => 0, 'missing' => 0, 'unknown' => 0],
+    'summary' => ['total' => 0, 'verified' => 0, 'partial' => 0, 'missing' => 0, 'data_only' => 0, 'unknown' => 0],
     'actions' => ['newly_recorded' => 0, 'drift_noted' => 0, 'unchanged' => 0],
     'blocking' => [],
 ];
@@ -179,13 +179,16 @@ foreach ($files as $file) {
     // repeat the original mistake in a quieter form.
     $action = 'none';
     if (!$verifyOnly) {
-        if ($res['state'] === 'verified') {
+        // `data_only` is recorded too: the file parsed and declared no schema object, so
+        // there is nothing that could be partially applied. Leaving it unrecorded made a
+        // pure seed look like a migration the operator had skipped.
+        if ($res['state'] === 'verified' || $res['state'] === 'data_only') {
             if (!$wasRecorded) {
-                $insertNew->execute([$name, $diskSum, $req->guarded, 'verified', $res['total'], $res['present'], $diskSum]);
+                $insertNew->execute([$name, $diskSum, $req->guarded, $res['state'], $res['total'], $res['present'], $diskSum]);
                 $report['actions']['newly_recorded']++;
                 $action = 'RECORDED';
             } else {
-                $updateVerified->execute(['verified', $res['total'], $res['present'], $diskSum, $name]);
+                $updateVerified->execute([$res['state'], $res['total'], $res['present'], $diskSum, $name]);
                 if ($drift) {
                     $report['actions']['drift_noted']++;
                     $action = 'drift';
@@ -230,8 +233,8 @@ foreach ($files as $file) {
 }
 
 $s = $report['summary'];
-out(sprintf("\n  files on disk: %d | verified: %d | partial: %d | missing: %d | unknown: %d\n",
-    $s['total'], $s['verified'], $s['partial'], $s['missing'], $s['unknown']), $asJson);
+out(sprintf("\n  files on disk: %d | verified: %d | data_only: %d | partial: %d | missing: %d | unknown: %d\n",
+    $s['total'], $s['verified'], $s['data_only'], $s['partial'], $s['missing'], $s['unknown']), $asJson);
 out(sprintf("  newly recorded: %d | drift noted: %d | already current: %d\n",
     $report['actions']['newly_recorded'], $report['actions']['drift_noted'], $report['actions']['unchanged']), $asJson);
 

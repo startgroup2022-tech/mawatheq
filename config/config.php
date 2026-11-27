@@ -151,7 +151,12 @@ $requestPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
   // SAML endpoints are exempt because the IdP POSTs to them from its own origin and cannot
   // carry our CSRF token. Authenticity there is the XML signature (verified in sso/acs.php),
   // not a session token — the same reasoning as the payment webhooks above.
-  $csrfExemptPaths = ['/ngenius-webhook.php', '/sadad-webhook.php', '/sso/acs.php', '/sso/sls.php'];
+  // Webhooks authenticate with their own secret/signature; SAML endpoints are called by
+  // the IdP. `/api/firm-chat.php` is the public firm-site chatbot: the visitor is an
+  // anonymous stranger with no session, so a session CSRF token cannot exist. It is
+  // protected instead by the unguessable 32-hex bot public key, a strict per-key rate
+  // limit, and by never reading a client, case or document row.
+  $csrfExemptPaths = ['/ngenius-webhook.php', '/sadad-webhook.php', '/sso/acs.php', '/sso/sls.php', '/api/firm-chat.php'];
 
 $isBearerApi = strpos($requestPath, '/api/v1/') === 0;
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && !$isBearerApi && !in_array($requestPath, $csrfExemptPaths, true)) {
