@@ -5024,3 +5024,42 @@ Two gotchas those probes encode:
 
 A green payment suite proves the *client speaks the gateway's schema* against the fixture.
 It does not prove a live merchant account settles money — say so in any delivery report.
+
+## Recovering the test environment after a sandbox reset (verified 2026-11-27)
+
+A reset here removes the packages, the Playwright browsers and some `/tmp` state, and each
+loss surfaces as a *different, misleading* test failure. `bash tests/setup_test_env.sh`
+restores most of it in one idempotent pass. What it does **not** fix, and what each symptom
+actually means:
+
+- **Every `*_http_probe.php` and HTTP page returns 500 at once.** `setup_test_env.sh` writes
+  `config/secrets.php` as `root:www-data 640`. If you then `chown openhands` and `chmod 600`
+  it to satisfy the production `600` rule, **Apache can no longer read it** and every page
+  dies — while the CLI suites keep passing, because they read it as the owner. Keep it
+  `openhands:www-data 640` locally; `600` is a *deployment* rule for a file owned by the
+  hosting user, not a rule for a file Apache must read on the same box. Symptom shape:
+  46 suites pass, 34 HTTP suites fail, `index.php` 500.
+- **`exec69_pdf_render_test` fails with `Temporary files directory "/tmp/mawatheq-mpdf/mpdf"
+  is not writable`, or "mPDF is the producer" / `ink=-1`.** Two separate causes: the dir was
+  created by a root-run suite (`sudo rm -rf /tmp/mawatheq-mpdf`), and the ink checks need
+  `pdftoppm` from **poppler-utils**, which the setup script does not install. `ink=-1` means
+  the rasterizer is missing, not that the PDF is blank.
+- **`execution29_1_release_smoke_test` fails `BUILD FAILED: zip is not installed`.** The
+  script lists `zip` in its apt line but the package can genuinely be absent after a reset;
+  `tools/build_release.sh` needs the real `zip` binary (it is not a Python `zipfile` build).
+- **`executive09_features_test` fails "antiword or catdoc is available"** — install
+  `antiword catdoc`. Pre-existing and documented; the check is honest about it.
+- **All 1044 Playwright tests fail with `browserType.launch: Executable doesn't exist .../
+  chrome-headless-shell`.** The browsers are gone, not the app. `npx playwright install
+  chromium` (~120 MB). A mass failure with an identical launch error is never a code
+  regression.
+- **An orphaned `apt-get` holds `/var/lib/dpkg/lock-frontend`.** A backgrounded install that
+  the runtime suspended shows state `TN` in `ps -o stat`. Kill that specific PID, run
+  `sudo dpkg --configure -a`, then install. Do not delete the lock file.
+- **`/tmp/rel68final`-style build dirs survive but `stage/` inside them does not** — rebuild
+  rather than resuming a half-finished build.
+
+Run order that works: `setup_test_env.sh` → fix `secrets.php` to `openhands:www-data 640` →
+install `poppler-utils antiword catdoc zip` → `rm -rf /tmp/mawatheq-mpdf` →
+`npx playwright install chromium` → clear `auth_rate_limits` → `sg www-data -c 'bash
+tests/run_all_tests.sh'`. That yields **80/80 suites**, Playwright **1032**, Flutter **379**.
