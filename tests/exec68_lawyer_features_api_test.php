@@ -112,7 +112,12 @@ if ($paid) {
     $tierB = $s2 === 200 ? ($d2['template']['can_use'] ?? null) : null;
     ok($s1 === 200 && $s2 === 200, "both firms can read the paid template's metadata");
     // The gate must agree with the firm's own tier, whichever way the seed happens to be.
-    $expectA = in_array($tierA, ['paid', 'enterprise'], true);
+    // The vocabulary is the `plans.classification` enum: free | paid | corporate — there is
+    // no 'enterprise'. Asking for it made this check assert that a corporate firm (rank 3)
+    // was refused a paid template (rank 2), i.e. that the rank comparison was broken. It
+    // reported a false failure on a correct gate for as long as the seed gave firm A the
+    // corporate plan.
+    $expectA = in_array($tierA, ['paid', 'corporate'], true);
     ok(($d1['template']['can_use'] ?? null) === $expectA, "firm A (tier $tierA) can_use=" . var_export($d1['template']['can_use'] ?? null, true) . " matches its tier");
     if (($d2['template']['plan_tier'] ?? '') === 'paid' && ($d2['template']['can_use'] ?? null) === false) {
         ok(true, "firm B is correctly refused a paid template it did not buy");
