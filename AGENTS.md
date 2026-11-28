@@ -5100,3 +5100,55 @@ rotation: a blob encrypted under a foreign key must report `wrong_key` and still
 
 Suite totals after this execution: **86 PHP suites, 0 failures**; Flutter **387**;
 Playwright **1032 passed / 12 skipped** across 14 specs × 6 viewports.
+
+## Execution 77 — the workspace survives a partial deploy; the execution number
+
+### Number an execution from the tags, not from the PR body
+
+The PR #10 body is **not** in chronological order (the newest section is often in the
+middle), so reading its last paragraph tells you nothing about which execution is
+current. Execution 71 and 76 are both shipped tags, and 76 is an ancestor of HEAD.
+Two checks settle it before you write a single line:
+
+```bash
+git tag | sort -V | tail -5
+git merge-base --is-ancestor v2026.11.16-exec76 HEAD && echo "76 is done"
+```
+
+A branch named after an already-tagged execution had to be renamed and force-deleted
+from the remote; get the number right first.
+
+### A doc comment is not a guarantee — check the control flow
+
+`lawyer_workspace_screen.dart` said *"Each tab loads independently so one failing
+endpoint does not blank the whole screen"* directly above five sequential `await`s in
+one `try`. Production 404s four of the five endpoints, so the promise was inverted in
+exactly the deployment it was written for. The fix is `_guard()` — a typed helper that
+resolves either way — plus a `_sectionError` per tab and an `_allFailed` gate for the
+full-screen state. When a comment claims resilience, read the code underneath it.
+
+### A failed section must not render its empty state
+
+An empty list and an unknown list are different facts. A tab whose request failed now
+says «تعذّر تحميل هذا القسم»; rendering the empty state instead tells the lawyer they
+have no clients when the truth is that the app does not know. Same rule as
+`_allFailed` on the home screen (Execution 39).
+
+### A hypothesis you disproved belongs in the report
+
+The web pages (`templates.php`, `chatbot.php`, `subscription.php`, `firm.php`) were
+suspected of the same blanking. Hiding their tables in the scratch DB and re-rendering
+showed **complete** pages that degrade correctly — the helpers guard themselves. Nothing
+was changed. Recording the negative result stops the next person from "fixing" a working
+path on the strength of a plausible guess.
+
+### `/api/firm-chat.php` takes `key` + `action`, not `public_key`
+
+A call with `public_key` returns `{"ok":false,"error":"not_found"}`, which reads like a
+dead endpoint. The real contract is `{"key":..., "action":"start"|"send"|"contact"}`
+plus `visitor`/`conversation` from the `start` response. With no AI provider configured
+it still answers from the firm profile and offers booking — that degradation is correct,
+not a failure.
+
+Suite totals after this execution: **86 PHP suites, 0 failures**; Flutter **391**;
+Playwright **1032 passed / 12 skipped / 0 failed**.
