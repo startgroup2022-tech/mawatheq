@@ -122,6 +122,12 @@ function gateway_diag_reason(string $code): array {
         // sentence as a genuinely wrong API key and had no reason to look at the key at all.
         'secret_unreadable'    => ['ar' => 'مفتاح الحساب مخزَّن لكن تعذّر فك تشفيره — مفتاح MAWATHEQ_ENCRYPTION_KEY الحالي يختلف عن المفتاح الذي شُفّر به. أعد إدخال مفتاح الحساب في لوحة التحكم.',
                                    'en' => 'The API key is stored but cannot be decrypted — MAWATHEQ_ENCRYPTION_KEY differs from the key that encrypted it. Re-enter the API key in the console.'],
+        // The order came back 2xx/3xx with a reference but no `_links.payment.href`, so there
+        // is no hosted page to send the customer to. Permanent: the same request produces the
+        // same body. Before this entry the code fell to `order_failed` and the customer read
+        // the generic "try again" sentence for a fault a retry cannot clear.
+        'payment_link_missing' => ['ar' => 'قبلت البوابة إنشاء الطلب لكنها لم تُرجع رابط صفحة الدفع (_links.payment.href) — راجع إعدادات المنفذ وواجهة الدفع مع مزوّد البوابة. العميل لم يُخصم منه شيء.',
+                                   'en' => 'The gateway accepted the order but returned no hosted-payment link (_links.payment.href) — check the outlet and checkout settings with the gateway provider. The customer was not charged.'],
     ];
     return $map[$code] ?? ['ar' => 'سبب غير مصنّف (' . $code . ').', 'en' => 'Unclassified reason (' . $code . ').'];
 }
@@ -217,7 +223,14 @@ function gateway_diag_reason_code(string $raw): string {
         $status = (int)$m[1];
         if ($status === 429 || ($status >= 500 && $status <= 599)) return 'connection_failed';
         if ($status >= 400 && $status <= 499) return 'gateway_rejected';
-        return 'order_failed';
+        // A 2xx/3xx is not a success here: ngenius_create_order() synthesises `http_<status>`
+        // precisely when the order was NOT usable — the body had no `_links.payment.href`, so
+        // there is no hosted page to send the customer to. It must not fall through to
+        // `order_failed`: that is the catch-all the customer-message map leaves on the generic
+        // "retry or contact us" sentence, which is how the opaque production message
+        // («تعذّر بدء عملية الدفع الإلكتروني حالياً») was produced for a fault a retry cannot
+        // clear. Naming it also makes it distinguishable from a transport blip in the console.
+        return 'payment_link_missing';
     }
 
     // A bare identifier is already a code.
@@ -290,6 +303,11 @@ function gateway_diag_customer_message(string $errorCode, string $corr = '', boo
         'migration_required' => $rtl
             ? 'الدفع الإلكتروني غير متاح حالياً. لم يتم خصم أي مبلغ. تواصل معنا.'
             : 'Online payment is not available right now. No amount was charged. Contact us.',
+        // The gateway accepted the order but returned no hosted page. Permanent: retrying from
+        // the customer's side cannot fix it, so the sentence must not invite a retry loop.
+        'payment_link_missing' => $rtl
+            ? 'تعذّر تجهيز صفحة الدفع الإلكتروني من البوابة. لم يتم خصم أي مبلغ. تواصل معنا لإتمام الاشتراك.'
+            : 'The gateway could not prepare an online payment page. No amount was charged. Contact us to complete your subscription.',
         'zero_amount' => $rtl
             ? 'تعذّر بدء عملية الدفع: مبلغ الطلب غير صالح. لم يتم خصم أي مبلغ. تواصل معنا.'
             : 'Payment could not start: the order amount is not valid. No amount was charged. Contact us.',
