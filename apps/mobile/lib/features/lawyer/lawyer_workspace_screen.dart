@@ -34,8 +34,15 @@ class _LawyerWorkspaceScreenState extends State<LawyerWorkspaceScreen> {
   FirmChatbot? _chatbot;
   SubscriptionInfo? _subscription;
 
+  // Per-section failure, so a tab can say "could not load" without claiming the list is
+  // empty and without taking the other four tabs down with it.
+  String? _firmError;
+  String? _clientsError;
+  String? _templatesError;
+  String? _chatbotError;
+  String? _subscriptionError;
+
   bool _loading = true;
-  String? _error;
 
   @override
   void initState() {
@@ -43,36 +50,61 @@ class _LawyerWorkspaceScreenState extends State<LawyerWorkspaceScreen> {
     _load();
   }
 
+  /// Loads the five sections concurrently and independently.
+  ///
+  /// They are separate endpoints with separate permissions, and in a partial deployment
+  /// some of them 404 while others answer. Awaited in sequence inside one `try`, the
+  /// first failure discarded four successful responses and replaced the whole screen with
+  /// an error — a lawyer with a firm, clients and a plan was shown nothing.
   Future<void> _load() async {
     setState(() {
       _loading = true;
-      _error = null;
+      _firmError = _clientsError = _templatesError = _chatbotError = _subscriptionError = null;
     });
+
+    await Future.wait([
+      _guard(_repo.firm(withMembers: true), (v) => _firm = v, (e) => _firmError = e),
+      _guard(_repo.lawyerClients(), (v) => _clients = v, (e) => _clientsError = e),
+      _guard(_repo.legalTemplates(), (v) => _templates = v, (e) => _templatesError = e),
+      _guard(_repo.firmChatbot(), (v) => _chatbot = v, (e) => _chatbotError = e),
+      _guard(_repo.subscription(), (v) => _subscription = v, (e) => _subscriptionError = e),
+    ]);
+
+    if (!mounted) return;
+    setState(() => _loading = false);
+  }
+
+  /// Resolves to completion either way, so `Future.wait` never rethrows and one rejected
+  /// endpoint cannot cancel the four that succeeded.
+  static Future<void> _guard<T>(
+    Future<T> future,
+    void Function(T value) onValue,
+    void Function(String message) onError,
+  ) async {
     try {
-      // Loaded together so the tabs appear at once. A single failure surfaces the message
-      // rather than a half-populated screen.
-      final firm = await _repo.firm(withMembers: true);
-      final clients = await _repo.lawyerClients();
-      final templates = await _repo.legalTemplates();
-      final chatbot = await _repo.firmChatbot();
-      final subscription = await _repo.subscription();
-      if (!mounted) return;
-      setState(() {
-        _firm = firm;
-        _clients = clients;
-        _templates = templates;
-        _chatbot = chatbot;
-        _subscription = subscription;
-        _loading = false;
-      });
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _error = e.message;
-      });
+      onValue(await future);
+    } catch (e) {
+      onError(e is ApiException ? e.message : 'تعذّر تحميل البيانات. تحقّق من الاتصال وأعد المحاولة.');
     }
   }
+
+  /// True when nothing at all could be loaded — the only case that earns a full-screen
+  /// error, because there is no partial content to show.
+  bool get _allFailed =>
+      _firm == null &&
+      _clients.isEmpty &&
+      _templates.isEmpty &&
+      _chatbot == null &&
+      _subscription == null;
+
+  Widget _sectionError(BuildContext context, String message) => _scroll([
+        SizedBox(height: 40),
+        EmptyState(
+          icon: Icons.cloud_off_outlined,
+          title: 'تعذّر تحميل هذا القسم',
+          message: message,
+        ),
+      ]);
 
   @override
   Widget build(BuildContext context) {
@@ -105,8 +137,16 @@ class _LawyerWorkspaceScreenState extends State<LawyerWorkspaceScreen> {
         ),
         body: _loading
             ? const Padding(padding: EdgeInsets.all(16), child: LoadingSkeleton(count: 5))
-            : _error != null
-                ? ErrorState(message: _error!, onRetry: _load)
+            : _allFailed
+                ? ErrorState(
+                    message: _firmError ??
+                        _clientsError ??
+                        _templatesError ??
+                        _chatbotError ??
+                        _subscriptionError ??
+                        'تعذّر تحميل مساحة العمل.',
+                    onRetry: _load,
+                  )
                 : TabBarView(
                     children: [
                       _firmTab(context),
@@ -131,6 +171,7 @@ class _LawyerWorkspaceScreenState extends State<LawyerWorkspaceScreen> {
   // ------------------------------------------------------------------ firm
 
   Widget _firmTab(BuildContext context) {
+    if (_firmError != null) return _sectionError(context, _firmError!);
     final firm = _firm;
     if (firm == null) {
       return _scroll(const [
@@ -207,6 +248,7 @@ class _LawyerWorkspaceScreenState extends State<LawyerWorkspaceScreen> {
   // --------------------------------------------------------------- clients
 
   Widget _clientsTab(BuildContext context) {
+    if (_clientsError != null) return _sectionError(context, _clientsError!);
     if (_clients.isEmpty) {
       return _scroll(const [
         SizedBox(height: 40),
@@ -247,6 +289,7 @@ class _LawyerWorkspaceScreenState extends State<LawyerWorkspaceScreen> {
   // ------------------------------------------------------------- templates
 
   Widget _templatesTab(BuildContext context) {
+    if (_templatesError != null) return _sectionError(context, _templatesError!);
     if (_templates.isEmpty) {
       return _scroll(const [
         SizedBox(height: 40),
@@ -287,6 +330,7 @@ class _LawyerWorkspaceScreenState extends State<LawyerWorkspaceScreen> {
   // --------------------------------------------------------------- chatbot
 
   Widget _chatbotTab(BuildContext context) {
+    if (_chatbotError != null) return _sectionError(context, _chatbotError!);
     final bot = _chatbot;
     if (bot == null || !bot.available) {
       final reason = bot?.reason;
@@ -325,6 +369,7 @@ class _LawyerWorkspaceScreenState extends State<LawyerWorkspaceScreen> {
   // ---------------------------------------------------------- subscription
 
   Widget _subscriptionTab(BuildContext context) {
+    if (_subscriptionError != null) return _sectionError(context, _subscriptionError!);
     final sub = _subscription;
     if (sub == null) {
       return _scroll(const [
