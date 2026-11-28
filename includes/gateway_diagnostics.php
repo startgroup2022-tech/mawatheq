@@ -179,7 +179,18 @@ function gateway_diag_record(PDO $pdo, array $event): void {
                 $event['order_ref'] !== null ? gateway_diag_sanitize((string)$event['order_ref'], 100) : null,
             ]);
     } catch (Throwable $e) {
-        error_log('gateway diagnostics write failed: ' . $e->getMessage());
+        // The customer is still handed this correlation id, so it must remain findable.
+        // Logging only the SQL error loses the stage and reason, and then the reference on
+        // the customer's screen points at nothing. Use the same line shape as the
+        // table-missing branch so one grep finds either case.
+        error_log('gateway_diag[' . (string)($event['correlation_id'] ?? '?') . ']'
+            . ' op=' . (string)($event['operation'] ?? '')
+            . ' stage=' . (string)($event['stage'] ?? '')
+            . ' ok=' . (($event['ok'] ?? null) === null ? '?' : (($event['ok'] ?? false) ? '1' : '0'))
+            . ' code=' . (string)($event['error_code'] ?? '')
+            . ' env=' . (string)($event['environment'] ?? '')
+            . ' detail=' . gateway_diag_sanitize((string)($event['detail'] ?? ''))
+            . ' (write failed: ' . $e->getMessage() . ')');
     }
 }
 
