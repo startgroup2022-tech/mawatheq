@@ -4,6 +4,12 @@
  * أوقات دوامه المسجّلة لذلك اليوم من الأسبوع، مقسّمة لفترات (slots)،
  * مطروحاً منها الأوقات المحجوزة مسبقاً (غير الملغاة).
  */
+// CONSULTATION_DEFAULT_MINUTES is declared here, by the module that owns the length of an
+// appointment. The interval maths below needs it on every call; without this require the
+// function reached line 27 only when a lawyer had published hours, so the "no hours" case
+// returned [] happily and every real calendar returned a fatal 500.
+require_once __DIR__ . '/consultation_pricing.php';
+
 function get_available_slots(PDO $pdo, int $lawyerId, string $date): array {
     $dayOfWeek = (int) date('w', strtotime($date)); // 0=الأحد
     $isToday = $date === date('Y-m-d');
