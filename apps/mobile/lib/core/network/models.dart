@@ -1187,6 +1187,7 @@ class Plan {
     this.features = const [],
     this.priceMonthlyDisplay = '',
     this.priceYearlyDisplay = '',
+    this.currency = '',
   });
 
   final int id;
@@ -1200,6 +1201,19 @@ class Plan {
   /// whatever the currency is; printing it directly showed "149.000 SAR".
   final String priceMonthlyDisplay;
   final String priceYearlyDisplay;
+
+  /// ISO code of the deployment's currency ("SAR"), sent per plan by the API. Empty on a
+  /// server that predates the field, in which case the caller falls back to its own value.
+  final String currency;
+
+  /// Currency label for a price row. Arabic uses the Saudi riyal sign; anything else
+  /// shows the ISO code, which is what an English reader expects. An older server omits
+  /// the field entirely, and the label must still read as a currency rather than empty.
+  String currencyLabel(bool rtl) {
+    final code = currency.isEmpty ? 'SAR' : currency;
+    if (!rtl) return code;
+    return code == 'SAR' ? 'ر.س' : code;
+  }
 
   /// What a price label should read. Falls back to the numeric value on a server that
   /// predates the display fields, so an older deployment still renders a price.
@@ -1246,6 +1260,7 @@ class Plan {
       priceYearly: j.dbl('price_yearly'),
       priceMonthlyDisplay: j.str('price_monthly_display'),
       priceYearlyDisplay: j.str('price_yearly_display'),
+      currency: j.str('currency'),
       aiQueriesLimit: nullableInt('ai_queries_limit'),
       documentAnalysisLimit: nullableInt('document_analysis_limit'),
       consultationsIncluded: nullableInt('consultations_included'),

@@ -318,9 +318,7 @@ class _PlanCard extends StatelessWidget {
               if (price > 0) ...[
                 const SizedBox(width: 4),
                 Text(
-                  rtl
-                      ? 'ر.س / ${yearly ? 'سنوياً' : 'شهرياً'}'
-                      : 'SAR / ${yearly ? 'year' : 'month'}',
+                  '${plan.currencyLabel(rtl)} / ${yearly ? (rtl ? 'سنوياً' : 'year') : (rtl ? 'شهرياً' : 'month')}',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],

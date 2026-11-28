@@ -48,6 +48,11 @@ foreach ($plans as &$plan) {
     $plan['price_yearly_display'] = $plan['price_yearly'] === null ? null : currency_number($plan['price_yearly']);
     $plan['consultation_price_display'] = ($plan['consultation_price'] ?? null) === null
         ? null : currency_number($plan['consultation_price']);
+    // The code travels with each price so a client renders the right symbol without
+    // assuming SAR. The top-level `currency` key states the same thing, but a client that
+    // builds a price label per row (as the Flutter pricing screen did) never read it and
+    // hardcoded "SAR" — correct only by accident on a SAR deployment.
+    $plan['currency'] = currency_code();
 }
 unset($plan);
 
