@@ -183,7 +183,12 @@ another firm's lawyer are both refused the PDF.
 | PHP (`tests/run_all_tests.sh`) | **83 suites, 0 failures** (run twice — before and after the gateway edits) |
 | Flutter `flutter analyze` | No issues found |
 | Flutter `flutter test` | **379 tests passed** |
-| Playwright | see §8 |
+| Playwright | **1032 passed, 12 skipped, 0 failed** (1044 tests, 9.6 min) |
+
+The 12 Playwright skips are the two documented data-dependent guards, not silent passes:
+`consultation-journey.spec.js` skips when no lawyer matches a specialty (the
+`lawyer_specialties` table ships empty by design), and `exec63-journeys.spec.js` skips when
+the seeded client has no consultation. Both are `test.skip(...)` with an explicit reason.
 
 ### Booking race — proved, not assumed
 
