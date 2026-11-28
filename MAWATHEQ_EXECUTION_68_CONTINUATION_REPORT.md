@@ -180,10 +180,40 @@ another firm's lawyer are both refused the PDF.
 
 | Suite | Result |
 |---|---|
-| PHP (`tests/run_all_tests.sh`) | **83 suites, 0 failures** |
+| PHP (`tests/run_all_tests.sh`) | **83 suites, 0 failures** (run twice — before and after the gateway edits) |
 | Flutter `flutter analyze` | No issues found |
 | Flutter `flutter test` | **379 tests passed** |
-| Playwright | see below |
+| Playwright | see §8 |
+
+### Booking race — proved, not assumed
+
+The brief asks for real availability with conflict prevention. `includes/booking_slots.php`
+serialises the final check and the INSERT under a named lock keyed on
+`(lawyer, slot)`. Proved with two independent PDO connections on the same slot, the
+first holding the lock for 700 ms:
+
+```
+c1 ok=true result=A-done
+c2 ok=true result=B-done
+interleaving: A-enter -> A-exit -> B-enter -> B-exit
+SERIALIZED (no overlap): YES
+```
+
+B could not enter until A exited, so the window between "this slot is free" and the
+INSERT is closed.
+
+### Plans → payment chain — proved
+
+`package_order_create()` reads the price from `plans`, never from the form:
+
+```
+monthly: amount=149.000 currency=SAR  (plans row says 149.000)  matches: YES
+yearly : amount=1490.000 (expect 1490)
+hidden plan refused: YES
+free plan activated: YES
+bad cycle refused: YES
+unknown plan refused: YES
+```
 
 ---
 
@@ -227,6 +257,35 @@ when that signer is the upload key.
 - A live N-Genius payment (no merchant outlet here).
 - A production login or a real document upload.
 - Play upload (blocked on the key above).
+
+---
+
+## 8. Delivery status
+
+**The work is committed locally** (`0529b7d` on `feature/ai-workspace-firm-suite`) but
+**could not be pushed from this session.** All three available credentials were tried and
+each fails for a different reason:
+
+| Credential | Result |
+|---|---|
+| `GITHUB_TOKEN` | not present in this environment (empty) |
+| `GITHUB_PERSONAL_ACCESS_TOKEN` | API reports `push: true`, but every write returns `403 Resource not accessible by personal access token` — over git *and* over the REST contents API (probed with a throwaway file) |
+| `OH_GIT_CREDENTIAL_ACCESS_TOKEN_GITHUB` | `401 Invalid username or token` |
+
+The remote branch is still at `c2998e3`, so **PR #10 has not been updated** with this
+pass. Pushing requires a push-capable token in the environment; nothing else here can
+write to the repository.
+
+To finish the delivery once that token is available:
+
+```bash
+git push "https://x-access-token:$GITHUB_TOKEN@github.com/startgroup2022-tech/mawatheq.git" \
+  feature/ai-workspace-firm-suite:feature/ai-workspace-firm-suite
+```
+
+Then append this section to PR #10 — **do not open a second PR, and do not merge**.
+
+No production deploy was performed, and PR #10 was not merged, per the brief.
 
 ---
 
