@@ -149,5 +149,20 @@ $pricing = (string)file_get_contents(__DIR__ . '/../apps/mobile/lib/features/pub
 check('pricing screen prints the label, not a rounded double',
     str_contains($pricing, 'monthlyLabel') && !str_contains($pricing, 'priceMonthly.toStringAsFixed(0)'));
 
+// The token above is a real, unexpired credential. Leaving it in api_tokens means every
+// run of this suite leaves one more valid lawyer token behind — 14 had accumulated by the
+// time this was noticed. Revoke it here; a test that mints a credential owns its removal.
+if ($token !== '') {
+    $revoked = trim((string)shell_exec(
+        'php -r ' . escapeshellarg(
+            'require "' . __DIR__ . '/../config/config.php";'
+            . ' $pdo->prepare("DELETE FROM api_tokens WHERE token = ?")'
+            . '     ->execute([hash("sha256", $argv[1])]);'
+            . ' echo "ok";'
+        ) . ' ' . escapeshellarg($token) . ' 2>/dev/null'
+    ));
+    check('the issued token was revoked after use', $revoked === 'ok', 'cleanup returned: ' . $revoked);
+}
+
 echo "\n{$checks} checks, {$failures} failure(s)\n";
 exit($failures === 0 ? 0 : 1);
