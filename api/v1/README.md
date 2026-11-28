@@ -157,6 +157,23 @@ X-Mawatheq-Signature: sha256=<hex>
 ### الفواتير (يحتاج توكن)
 `GET /api/v1/invoices.php` → قائمة فواتيري (عميل أو محامٍ)، كل فاتورة فيها `is_overdue` محسوبة لحظياً
 
+### مزايا مكتب المحاماة (محامٍ فقط، يحتاج توكن)
+`GET /api/v1/firm.php` → `{ ok, firm, role, can_manage }`. `firm` تساوي `null` لمحامٍ بلا مكتب (وهي حالة صحيحة، لا خطأ). `can_manage` يتبع `firm_site_can_manage()` — أي أن التطبيق لا يعرض إجراءً يرفضه الخادم.
+`GET /api/v1/firm.php?scope=members` → يضيف `members` (الاسم، الدور، التخصص).
+
+`GET /api/v1/clients.php` → موكلو المكتب مع `cases_count` و`consultations_count`. القائمة **مشتقة** من القضايا والاستشارات والفواتير، لا من جدول منفصل، حتى لا تختلف عن لوحة التحكم.
+`GET /api/v1/clients.php?id=7` → موكل واحد مع `cases` و`invoices`؛ موكل مكتب آخر يعيد `404`.
+
+`GET /api/v1/templates.php` → `{ tier, categories, templates }`. كل قالب يحمل `can_use` محسوبة من `template_can_use()` مقابل درجة باقة المكتب، فالمزايا المدفوعة تظهر مقفلة (`can_use: false`) بدل أن تختفي.
+`GET /api/v1/templates.php?id=12` → قالب واحد مع `fields`. التصدير إلى Word/PDF يبقى على الويب لأنه يكتب ملفاً ويُرسله، وليس عملية JSON.
+
+`GET /api/v1/chatbot.php` → إعدادات روبوت المكتب و`stats` المحادثات، أو `available: false` مع `reason` (`no_firm` / `migration_required`).
+`GET /api/v1/chatbot.php?scope=conversations` → محادثات المكتب.
+`GET /api/v1/chatbot.php?id=9` → محادثة واحدة مع رسائلها؛ محادثة مكتب آخر تعيد `404`.
+
+`GET /api/v1/subscription.php` → الباقة الحالية والسعر والدورة، مع `limits` من `plan_usage()` — أي أن الرقم المعروض هو نفسه الذي يُطبَّق. `enforced: false` تعني «بلا حد» (حساب قديم بلا باقة)، وليست صفراً متبقياً.
+
+
 ### المستندات وتحليلها بالذكاء الاصطناعي (عميل فقط، يحتاج توكن)
 `GET /api/v1/documents.php` → قائمة مستنداتي
 `GET /api/v1/documents.php?id=5` → تفاصيل مستند: `document`, `findings` (مخاطر/توصيات), `entities` (تواريخ/مبالغ/أطراف)

@@ -258,6 +258,9 @@ class _PlanCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final price = yearly ? plan.priceYearly : plan.priceMonthly;
+    // The display label comes from the server's currency helper, so a SAR price reads
+    // "149.00" rather than the raw DECIMAL "149.000" or a rounded "149".
+    final priceLabel = yearly ? plan.yearlyLabel : plan.monthlyLabel;
     final featured = plan.isFeatured;
 
     return Container(
@@ -309,7 +312,7 @@ class _PlanCard extends StatelessWidget {
             textBaseline: TextBaseline.alphabetic,
             children: [
               Text(
-                price <= 0 ? (rtl ? 'مجاناً' : 'Free') : price.toStringAsFixed(0),
+                price <= 0 ? (rtl ? 'مجاناً' : 'Free') : priceLabel,
                 style: Theme.of(context).textTheme.headlineMedium,
               ),
               if (price > 0) ...[
@@ -473,12 +476,12 @@ class _ComparisonTable extends StatelessWidget {
                 DataCell(Text(
                   p.priceMonthly <= 0
                       ? (rtl ? 'مجاناً' : 'Free')
-                      : p.priceMonthly.toStringAsFixed(0),
+                      : p.monthlyLabel,
                 )),
                 DataCell(Text(
                   p.priceYearly <= 0
                       ? '—'
-                      : p.priceYearly.toStringAsFixed(0),
+                      : p.yearlyLabel,
                 )),
                 DataCell(Text(cell(p.aiQueriesLimit))),
                 DataCell(Text(cell(p.documentAnalysisLimit))),

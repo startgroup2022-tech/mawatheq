@@ -41,6 +41,13 @@ foreach ($plans as &$plan) {
     }
     $plan['limits'] = $limits;
     $plan['capabilities'] = $features;
+    // DECIMAL(10,3) reads back as "149.000" whatever the currency is. A client that prints
+    // that raw shows three decimals for a 2-decimal currency; these display strings come
+    // from the same helper the website uses, so the app and the site cannot disagree.
+    $plan['price_monthly_display'] = $plan['price_monthly'] === null ? null : currency_number($plan['price_monthly']);
+    $plan['price_yearly_display'] = $plan['price_yearly'] === null ? null : currency_number($plan['price_yearly']);
+    $plan['consultation_price_display'] = ($plan['consultation_price'] ?? null) === null
+        ? null : currency_number($plan['consultation_price']);
 }
 unset($plan);
 

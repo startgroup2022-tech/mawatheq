@@ -1185,6 +1185,8 @@ class Plan {
     this.isCorporate = false,
     this.isFeatured = false,
     this.features = const [],
+    this.priceMonthlyDisplay = '',
+    this.priceYearlyDisplay = '',
   });
 
   final int id;
@@ -1192,6 +1194,19 @@ class Plan {
   final String nameEn;
   final double priceMonthly;
   final double priceYearly;
+
+  /// The price as the server's currency helper formats it ("149.00", "1,490.00").
+  /// `price_monthly` is DECIMAL(10,3), so the numeric field carries three decimals
+  /// whatever the currency is; printing it directly showed "149.000 SAR".
+  final String priceMonthlyDisplay;
+  final String priceYearlyDisplay;
+
+  /// What a price label should read. Falls back to the numeric value on a server that
+  /// predates the display fields, so an older deployment still renders a price.
+  String get monthlyLabel =>
+      priceMonthlyDisplay.isNotEmpty ? priceMonthlyDisplay : priceMonthly.toStringAsFixed(0);
+  String get yearlyLabel =>
+      priceYearlyDisplay.isNotEmpty ? priceYearlyDisplay : priceYearly.toStringAsFixed(0);
   final String descriptionAr;
   final String descriptionEn;
 
@@ -1229,6 +1244,8 @@ class Plan {
       descriptionEn: j.str('description_en'),
       priceMonthly: j.dbl('price_monthly'),
       priceYearly: j.dbl('price_yearly'),
+      priceMonthlyDisplay: j.str('price_monthly_display'),
+      priceYearlyDisplay: j.str('price_yearly_display'),
       aiQueriesLimit: nullableInt('ai_queries_limit'),
       documentAnalysisLimit: nullableInt('document_analysis_limit'),
       consultationsIncluded: nullableInt('consultations_included'),

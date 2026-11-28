@@ -4,6 +4,7 @@ import 'account_models.dart';
 import 'api_client.dart';
 import 'api_exception.dart';
 import 'lawyer_models.dart';
+import 'workspace_models.dart';
 import 'models.dart';
 
 /// Reads and writes through the platform's existing `/api/v1/` endpoints.
@@ -852,6 +853,59 @@ class ApiRepository {
   Future<LawyerDashboard> lawyerDashboard() async {
     final json = await _client.get('/lawyer-dashboard.php');
     return LawyerDashboard.fromJson(json);
+  }
+
+  // ------------------------------------ Execution 68 lawyer workspace features
+
+  /// `GET /api/v1/firm.php` — the lawyer's firm, or null for a solo lawyer.
+  ///
+  /// A solo lawyer is a real state, not an error: `lawyer/firm.php` lets them create a
+  /// firm. The app shows the "no firm" card rather than an empty page.
+  Future<FirmInfo?> firm({bool withMembers = false}) async {
+    final json = await _client.get(
+      '/firm.php',
+      query: withMembers ? {'scope': 'members'} : null,
+    );
+    return FirmInfo.fromJson(json);
+  }
+
+  /// `GET /api/v1/clients.php` — the tenant's clients, derived from cases,
+  /// consultations and invoices. Never a hand-kept list.
+  Future<List<LawyerClient>> lawyerClients({String query = ''}) async {
+    final json = await _client.get(
+      '/clients.php',
+      query: query.isEmpty ? null : {'q': query},
+    );
+    return ((json['clients'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => LawyerClient.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  /// `GET /api/v1/templates.php` — the template catalogue with the tier gate
+  /// already applied server-side (`can_use`).
+  Future<List<LegalTemplate>> legalTemplates({String category = ''}) async {
+    final json = await _client.get(
+      '/templates.php',
+      query: category.isEmpty ? null : {'category': category},
+    );
+    return ((json['templates'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => LegalTemplate.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  /// `GET /api/v1/chatbot.php` — the firm's assistant settings and conversation
+  /// counts. `available: false` carries a reason (`no_firm`, `migration_required`).
+  Future<FirmChatbot> firmChatbot() async {
+    final json = await _client.get('/chatbot.php');
+    return FirmChatbot.fromJson(json);
+  }
+
+  /// `GET /api/v1/subscription.php` — plan, price and the *enforced* limits.
+  Future<SubscriptionInfo> subscription() async {
+    final json = await _client.get('/subscription.php');
+    return SubscriptionInfo.fromJson(json);
   }
 
   // -------------------------------------------------------- lawyer profile

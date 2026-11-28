@@ -7,6 +7,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_tokens.dart';
 import '../../shared/widgets/brand_widgets.dart';
 import 'lawyer_wallet_screen.dart';
+import 'lawyer_workspace_screen.dart';
 
 /// The lawyer's home. Every figure comes from `GET /api/v1/lawyer-dashboard.php`,
 /// which reads the same tables as the web console.
@@ -119,6 +120,25 @@ class _LawyerDashboardScreenState extends State<LawyerDashboardScreen> {
         const SizedBox(height: 8),
         _WalletCard(wallet: d.wallet),
         const SizedBox(height: 18),
+        SectionHeader(
+          title: 'مساحة العمل',
+          actionLabel: 'عرض',
+          onAction: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => LawyerWorkspaceScreen(repository: widget.repository),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        _WorkspaceCard(
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => LawyerWorkspaceScreen(repository: widget.repository),
+            ),
+          ),
+        ),
+        const SizedBox(height: 18),
+
         if (d.activity.isNotEmpty) ...[
           const SectionHeader(title: 'النشاط الأخير'),
           const SizedBox(height: 8),
@@ -307,6 +327,55 @@ class _UpcomingTile extends StatelessWidget {
               ),
             ),
             const Icon(Icons.chevron_left, size: 18),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WorkspaceCard extends StatelessWidget {
+  const _WorkspaceCard({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppRadius.lg),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 44),
+        padding: const EdgeInsets.all(AppSpacing.s4),
+        decoration: BoxDecoration(
+          color: context.tokens.surface,
+          border: Border.all(color: context.tokens.border),
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.business_outlined, color: AppColors.teal),
+            const SizedBox(width: AppSpacing.s3),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'مكتبك وموكلوك',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: context.tokens.heading,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'الأعضاء، الموكلون، القوالب، المساعد الآلي، والاشتراك.',
+                    style: TextStyle(color: context.tokens.textMuted, fontSize: 12.5),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_left, color: context.tokens.textMuted),
           ],
         ),
       ),
