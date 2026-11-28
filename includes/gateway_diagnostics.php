@@ -128,6 +128,11 @@ function gateway_diag_reason(string $code): array {
         // the generic "try again" sentence for a fault a retry cannot clear.
         'payment_link_missing' => ['ar' => 'قبلت البوابة إنشاء الطلب لكنها لم تُرجع رابط صفحة الدفع (_links.payment.href) — راجع إعدادات المنفذ وواجهة الدفع مع مزوّد البوابة. العميل لم يُخصم منه شيء.',
                                    'en' => 'The gateway accepted the order but returned no hosted-payment link (_links.payment.href) — check the outlet and checkout settings with the gateway provider. The customer was not charged.'],
+        // The token endpoint answered 2xx with no access_token in the body. Distinct from a
+        // rejected key and from a missing checkout link, so the operator looks at the token
+        // response rather than the outlet.
+        'token_response_empty' => ['ar' => 'أجابت البوابة على طلب رمز الدخول بنجاح (2xx) لكن دون access_token في الاستجابة — راجع مفتاح الحساب ورد البوابة في سجل الخادم.',
+                                   'en' => 'The gateway answered the access-token request with 2xx but no access_token in the body — check the API key and the gateway response in the server log.'],
     ];
     return $map[$code] ?? ['ar' => 'سبب غير مصنّف (' . $code . ').', 'en' => 'Unclassified reason (' . $code . ').'];
 }
@@ -308,6 +313,9 @@ function gateway_diag_customer_message(string $errorCode, string $corr = '', boo
         'payment_link_missing' => $rtl
             ? 'تعذّر تجهيز صفحة الدفع الإلكتروني من البوابة. لم يتم خصم أي مبلغ. تواصل معنا لإتمام الاشتراك.'
             : 'The gateway could not prepare an online payment page. No amount was charged. Contact us to complete your subscription.',
+        'token_response_empty' => $rtl
+            ? 'تعذّر بدء الدفع الإلكتروني لخلل في استجابة بوابة الدفع. لم يتم خصم أي مبلغ. تواصل معنا لإتمام الاشتراك.'
+            : 'Online payment could not start because the gateway returned an incomplete response. No amount was charged. Contact us to complete your subscription.',
         'zero_amount' => $rtl
             ? 'تعذّر بدء عملية الدفع: مبلغ الطلب غير صالح. لم يتم خصم أي مبلغ. تواصل معنا.'
             : 'Payment could not start: the order amount is not valid. No amount was charged. Contact us.',

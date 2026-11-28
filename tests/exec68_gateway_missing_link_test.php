@@ -86,7 +86,24 @@ foreach ([400, 401, 403, 404, 422] as $status) {
         str_contains($m, 'تواصل') && !str_contains($m, 'المحاولة مجدداً'), 'message: ' . $m);
 }
 
-echo "\n== 6. the operator cause is distinguishable from a transport blip\n";
+echo "\n== 6. the token stage is not mislabelled as an order stage\n";
+// A 2xx from the ORDER endpoint means 'order accepted, no checkout link'. A 2xx from the
+// TOKEN endpoint means something else entirely, so ngenius_get_access_token() names it
+// `token_response_empty`. If it emitted `http_200` instead, the fix above would report a
+// credential fault as a missing checkout page and send the operator to the wrong setting.
+$tok = gateway_diag_reason_code('token_response_empty');
+check('token_response_empty stays its own code', $tok === 'token_response_empty', "got $tok");
+check('token_response_empty is not payment_link_missing', $tok !== 'payment_link_missing');
+$tokMsg = customer_message($tok);
+check('token_response_empty does not show the generic sentence',
+    !str_contains($tokMsg, GENERIC_STEM), $tokMsg);
+check('token_response_empty still says nothing was charged', str_contains($tokMsg, 'لم يتم خصم'));
+$tokOp = (string)(gateway_diag_reason($tok)['ar'] ?? '');
+$linkOp = (string)(gateway_diag_reason('payment_link_missing')['ar'] ?? '');
+check('the token-stage operator cause differs from the order-stage one', $tokOp !== $linkOp,
+    "both say: $tokOp");
+
+echo "\n== 7. the operator cause is distinguishable from a transport blip\n";
 $opMissing = (string)(gateway_diag_reason($code201)['ar'] ?? '');
 $opConn = (string)(gateway_diag_reason('connection_failed')['ar'] ?? '');
 check('the operator cause is not empty', trim($opMissing) !== '');

@@ -110,7 +110,15 @@ function ngenius_get_access_token(string $environment, string $apiKey, string $r
             // ...) so the caller can classify a rejected credential as a PERMANENT fault and
             // stop offering the customer a retry that can never succeed. A transport failure
             // (no HTTP response) is transient and keeps its own code.
-            'code' => $detail !== null ? (string)$detail : ('http_' . $httpCode),
+            //
+            // A 2xx that still carries no access_token is named `token_response_empty`, NOT
+            // `http_<status>`: the 2xx branch of gateway_diag_reason_code() now means
+            // `payment_link_missing`, which is specific to an order without
+            // `_links.payment.href`. Reusing `http_200` here would report a token failure as a
+            // missing checkout page and send the operator to the wrong setting.
+            'code' => $detail !== null
+                ? (string)$detail
+                : (($httpCode >= 200 && $httpCode <= 399) ? 'token_response_empty' : ('http_' . $httpCode)),
             'error' => 'فشل الحصول على رمز دخول من بوابة الدفع (HTTP ' . $httpCode . ').'
                 . ($detail ? ' [' . $detail . ']' : '') . $hint];
     }
