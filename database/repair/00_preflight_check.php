@@ -245,7 +245,10 @@ usort($files, static function (string $a, string $b): int {
     return (int)($ma[1] ?? 0) <=> (int)($mb[1] ?? 0);
 });
 
-$states = ['verified' => 0, 'partial' => 0, 'missing' => 0, 'unknown' => 0];
+// `data_only` is a real state: a seed migration that parses cleanly and declares no schema
+// object. It must be counted here or $states[$res['state']] raises an undefined-key warning
+// on every run of the tool the deployment depends on.
+$states = ['verified' => 0, 'data_only' => 0, 'partial' => 0, 'missing' => 0, 'unknown' => 0];
 $incomplete = [];
 foreach ($files as $file) {
     $name = basename($file);
@@ -287,8 +290,10 @@ foreach ($report['migrations'] as $m) {
     say(sprintf("  %-20s %-8s %d/%d\n", $m['filename'], mawatheq_migration_state_label($m['state']),
         $m['present'], $m['total']), $asJson);
 }
-say(sprintf("\n  verified: %d | partial: %d | missing: %d | unknown: %d\n",
-    $states['verified'], $states['partial'], $states['missing'], $states['unknown']), $asJson);
+say(sprintf("\n  verified: %d | data_only: %d | partial: %d | missing: %d | unknown: %d\n",
+    $states['verified'], $states['data_only'], $states['partial'], $states['missing'], $states['unknown']), $asJson);
+
+$report['counts'] += $states;
 
 if ($states['partial'] > 0) {
     $names = implode(', ', array_keys(array_filter($incomplete, fn($e) => $e['state'] === 'partial')));
