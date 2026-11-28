@@ -59,7 +59,11 @@ check('connection_failed offers a retry', str_contains($transient, 'المحاو
 foreach (['gateway_rejected', 'unsupported_currency',
           'no_enabled_gateway', 'gateway_disabled', 'migration_required', 'zero_amount',
           'badTokenRequest', 'realmNameNotAvailable', 'outletNotAvailable', 'not_enabled',
-          'secret_unreadable', 'payment_link_missing', 'token_response_empty'] as $code) {
+          'secret_unreadable', 'payment_link_missing', 'token_response_empty',
+          // Returned by consultation_payment_verify_and_confirm() when the gateway's order
+          // and our record disagree, or the confirmation was refused. Retrying could charge
+          // the customer twice, so the sentence must point at support.
+          'no_reference', 'confirm_failed', 'verify_failed'] as $code) {
     $m = gateway_diag_customer_message($code, '', true);
     check("$code does NOT offer a retry loop", !str_contains($m, 'المحاولة مجدداً'), $m);
     check("$code points at support", str_contains($m, 'تواصل معنا'), $m);

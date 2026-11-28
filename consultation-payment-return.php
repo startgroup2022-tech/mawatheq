@@ -31,7 +31,19 @@ if (!$consultation) {
     $result = consultation_payment_verify_and_confirm($pdo, $consultationId);
     $state = $result['state'] ?? null;
     $confirmed = !empty($result['confirmed']);
-    if (empty($result['ok'])) $error = $result['error'] ?? 'verify_failed';
+    if (empty($result['ok'])) {
+        // $result['error'] is a machine code (no_reference, confirm_failed,
+        // badTokenRequest, ...), not a sentence. Printing it put a Latin identifier in the
+        // middle of an Arabic page. Translate it through the same map the payment-start
+        // pages use, so the customer gets an actionable sentence and the two surfaces
+        // cannot drift apart.
+        $errorCode = (string)($result['error'] ?? 'verify_failed');
+        $error = function_exists('gateway_diag_customer_message')
+            ? gateway_diag_customer_message($errorCode, '', is_rtl(), 'consultation')
+            : (is_rtl()
+                ? 'تعذّر تأكيد حالة الدفع. تواصل معنا للتأكد من حجزك.'
+                : 'The payment status could not be confirmed. Contact us to verify your booking.');
+    }
 }
 
 require_once __DIR__ . '/includes/app_header.php';

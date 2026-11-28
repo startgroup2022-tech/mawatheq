@@ -343,6 +343,22 @@ function gateway_diag_customer_message(string $errorCode, string $corr = '', boo
         'gateway_rejected' => $rtl
             ? 'تعذّر إتمام الدفع الإلكتروني حالياً. لم يتم خصم أي مبلغ. تواصل معنا وسنعالج الأمر.'
             : 'The online payment could not be completed right now. No amount was charged. Contact us and we will resolve it.',
+        // The gateway reported, and was paid for, an order whose reference we do not hold —
+        // or a confirmation the server refused. Neither is fixable by the customer pressing
+        // pay again: the money and the record disagree, so a retry would charge a second
+        // time. Both must name support rather than fall through to the generic retry
+        // sentence (they are returned in the `error` key by
+        // consultation_payment_verify_and_confirm() and package_payment_verify_and_activate()).
+        'no_reference' => $rtl
+            ? 'تعذّر ربط الدفعة بالحجز تلقائياً. إن كان المبلغ قد خُصم فسنعالج الأمر ونؤكّد الحجز. تواصل معنا مع الرقم المرجعي.'
+            : 'The payment could not be matched to your booking automatically. If the amount was charged we will resolve it and confirm the booking. Contact us with the reference number.',
+        'confirm_failed' => $rtl
+            ? 'تم استلام الدفعة لكن تعذّر تأكيد الحجز تلقائياً. تواصل معنا مع الرقم المرجعي وسنؤكّد حجزك.'
+            : 'The payment was received but the booking could not be confirmed automatically. Contact us with the reference number and we will confirm your booking.',
+        // The verify path's own catch-all when the confirmation call throws.
+        'verify_failed' => $rtl
+            ? 'تعذّر التحقّق من حالة الدفع حالياً. إن كان المبلغ قد خُصم فسيُؤكَّد الحجز تلقائياً، أو تواصل معنا مع الرقم المرجعي.'
+            : 'The payment status could not be verified right now. If the amount was charged the booking will be confirmed automatically, or contact us with the reference number.',
         // The diagnostics probe's own "gateway is off" code; same meaning as gateway_disabled.
         'not_enabled' => $rtl
             ? 'الدفع الإلكتروني غير مفعّل حالياً. لم يتم خصم أي مبلغ. تواصل معنا لإتمام الاشتراك.'
