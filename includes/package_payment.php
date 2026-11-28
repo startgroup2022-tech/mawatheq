@@ -136,7 +136,17 @@ function package_payment_start(PDO $pdo, array $order, array $options = []): arr
 
     $settings = ngenius_settings($pdo);
     $env = (string)($settings['ngenius_environment'] ?? 'sandbox');
-    if (!ngenius_is_enabled($settings)) return gateway_diag_failure($pdo, 'package_payment', 'config', 'no_enabled_gateway', 'N-Genius disabled or outlet/api key missing', $env);
+    if (!ngenius_is_enabled($settings)) {
+        // A stored-but-undecryptable key decrypts to '' and therefore reads as "not
+        // configured". Reporting no_enabled_gateway for it tells the operator to enter a
+        // key that is already there, when the fix is to re-enter it under the current
+        // MAWATHEQ_ENCRYPTION_KEY. Name the real cause.
+        if (ngenius_key_unreadable($settings)) {
+            return gateway_diag_failure($pdo, 'package_payment', 'config', 'secret_unreadable',
+                'the N-Genius API key is stored but cannot be decrypted — MAWATHEQ_ENCRYPTION_KEY differs from the key that encrypted it', $env);
+        }
+        return gateway_diag_failure($pdo, 'package_payment', 'config', 'no_enabled_gateway', 'N-Genius disabled or outlet/api key missing', $env);
+    }
 
     $orderCurrency = strtoupper((string)($order['currency'] ?: currency_code()));
     $currency = ngenius_currency($settings);

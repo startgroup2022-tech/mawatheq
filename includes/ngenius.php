@@ -371,3 +371,21 @@ function ngenius_settings(PDO $pdo): array {
 function ngenius_is_enabled(array $settings): bool {
     return ($settings['ngenius_enabled'] ?? '0') === '1' && !empty($settings['ngenius_outlet_ref']) && !empty($settings['ngenius_api_key']);
 }
+
+/**
+ * True when the API key is stored but cannot be decrypted under the current
+ * MAWATHEQ_ENCRYPTION_KEY — a rotated key, not a missing one.
+ *
+ * `ngenius_is_enabled()` cannot tell the two apart: an unreadable secret decrypts to '',
+ * so both look "not configured". The customer-facing payment path then reported
+ * `no_enabled_gateway` ("no gateway enabled, or the outlet/API key is missing") while the
+ * key was in fact present and the operator only had to re-enter it. The console probe
+ * already distinguished the two; the real payment path did not, so the diagnosis a
+ * customer's reference resolved to named the wrong cause.
+ */
+function ngenius_key_unreadable(array $settings): bool {
+    if (($settings['ngenius_enabled'] ?? '0') !== '1') return false;
+    if (trim((string)($settings['ngenius_outlet_ref'] ?? '')) === '') return false;
+    $status = (string)($settings['_secret_status']['ngenius_api_key'] ?? 'empty');
+    return in_array($status, ['no_key', 'wrong_key', 'corrupt', 'no_openssl'], true);
+}

@@ -80,6 +80,12 @@ function consultation_payment_start(PDO $pdo, array $consultation, array $option
     $settings = ngenius_settings($pdo);
     $env = (string)($settings['ngenius_environment'] ?? 'sandbox');
     if (!ngenius_is_enabled($settings)) {
+        // See package_payment_start(): an unreadable key is not a missing one, and naming
+        // the difference is the whole point of the diagnostics layer.
+        if (ngenius_key_unreadable($settings)) {
+            return gateway_diag_failure($pdo, 'consultation_payment', 'config', 'secret_unreadable',
+                'the N-Genius API key is stored but cannot be decrypted — MAWATHEQ_ENCRYPTION_KEY differs from the key that encrypted it', $env);
+        }
         return gateway_diag_failure($pdo, 'consultation_payment', 'config', 'no_enabled_gateway', 'N-Genius disabled or outlet/api key missing', $env);
     }
     // The consultation price is stored in the site currency (consultations has no currency
