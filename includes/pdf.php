@@ -45,8 +45,17 @@ function mawatheq_pdf_make(array $opts = []): \Mpdf\Mpdf {
     }
 
     $fontDir = mawatheq_pdf_font_dir();
-    $tempDir = sys_get_temp_dir() . '/mawatheq-mpdf';
+    // One temp directory per effective user. A single shared `mawatheq-mpdf` directory
+    // is created 0700 by whoever renders first, so the CLI user's run makes every later
+    // web request fail with a permission error, and vice versa. Keying on the uid keeps
+    // each process isolated without opening the directory to other accounts on the host.
+    $uid = function_exists('posix_geteuid') ? (string)posix_geteuid() : 'shared';
+    $tempDir = sys_get_temp_dir() . '/mawatheq-mpdf-' . $uid;
     if (!is_dir($tempDir)) @mkdir($tempDir, 0700, true);
+    if (!is_writable($tempDir)) {
+        // Never fail silently: mPDF would create it somewhere it cannot clean up.
+        throw new RuntimeException('PDF temp directory is not writable: ' . $tempDir);
+    }
 
     $mpdf = new \Mpdf\Mpdf([
         'mode' => 'utf-8',

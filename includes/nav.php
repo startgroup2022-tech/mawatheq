@@ -108,6 +108,7 @@ if (!function_exists('nav_lawyer')) {
                 'title' => $rtl ? 'العمل القانوني' : 'Legal work',
                 'items' => [
                     'cases'         => ['icon' => 'briefcase', 'label' => $rtl ? 'القضايا' : 'Cases', 'href' => '/lawyer/cases.php'],
+                    'clients'       => ['icon' => 'users', 'label' => $rtl ? 'العملاء' : 'Clients', 'href' => '/lawyer/clients.php'],
                     'consultations' => ['icon' => 'calendar', 'label' => $rtl ? 'الاستشارات' : 'Consultations', 'href' => '/lawyer/consultations.php'],
                     'calendar'      => ['icon' => 'clock', 'label' => $rtl ? 'التقويم والجلسات' : 'Calendar & sessions', 'href' => '/lawyer/calendar.php'],
                     'contact-requests' => ['icon' => 'inbox', 'label' => $rtl ? 'طلبات التواصل' : 'Contact requests', 'href' => '/lawyer/contact-requests.php'],
@@ -129,6 +130,7 @@ if (!function_exists('nav_lawyer')) {
                 'items' => [
                     'invoices' => ['icon' => 'receipt', 'label' => $rtl ? 'الفواتير والمدفوعات' : 'Invoices & payments', 'href' => '/lawyer/invoices.php'],
                     'wallet'   => ['icon' => 'wallet', 'label' => $rtl ? 'المحفظة المالية' : 'Wallet', 'href' => '/lawyer/wallet.php'],
+                    'subscription' => ['icon' => 'check-circle', 'label' => $rtl ? 'الاشتراك والباقة' : 'Subscription & plan', 'href' => '/lawyer/subscription.php'],
                 ],
             ],
         ];

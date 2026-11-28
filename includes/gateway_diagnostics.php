@@ -108,6 +108,15 @@ function gateway_diag_reason(string $code): array {
                                    'en' => 'The gateway rejected the realmName — do not send it; it is derived from the API key.'],
         'outletNotAvailable'   => ['ar' => 'رفضت البوابة رقم المنفذ (Outlet Reference) — تحقق من أنه صحيح ومن نفس البيئة.',
                                    'en' => 'The gateway rejected the outlet reference — check it is correct and belongs to this environment.'],
+        // The three codes below are the ones a live outage actually produces. Without an
+        // entry here they fell through to "unclassified", which is the opaque message this
+        // whole layer exists to replace: an operator saw a correlation id and no cause.
+        'gateway_rejected'     => ['ar' => 'رفضت البوابة الطلب (4xx) — بيانات الاعتماد أو رقم المنفذ أو العملة أو المبلغ غير مطابق للبيئة.',
+                                   'en' => 'The gateway rejected the request (4xx) — credentials, outlet reference, currency or amount do not match this environment.'],
+        'connection_failed'    => ['ar' => 'تعذّر الوصول إلى بوابة الدفع (شبكة أو مهلة أو خطأ 5xx من البوابة) — غالباً عطل مؤقت، ويمكن إعادة المحاولة.',
+                                   'en' => 'The payment gateway could not be reached (network, timeout, or a 5xx from the gateway) — usually transient, so a retry may succeed.'],
+        'timeout'              => ['ar' => 'انتهت مهلة الاتصال ببوابة الدفع قبل الرد — أعد المحاولة، وتحقق من اتصال الخادم بالإنترنت.',
+                                   'en' => 'The connection to the payment gateway timed out before a reply — retry, and check the server can reach the internet.'],
     ];
     return $map[$code] ?? ['ar' => 'سبب غير مصنّف (' . $code . ').', 'en' => 'Unclassified reason (' . $code . ').'];
 }
@@ -291,6 +300,14 @@ function gateway_diag_customer_message(string $errorCode, string $corr = '', boo
         'connection_failed' => $rtl
             ? 'تعذّر الوصول إلى بوابة الدفع. لم يتم خصم أي مبلغ. تحقّق من اتصالك ثم يمكنك المحاولة مجدداً أو التواصل معنا.'
             : 'The payment gateway could not be reached. No amount was charged. Check your connection, then you can retry or contact us.',
+        'timeout' => $rtl
+            ? 'تعذّر الوصول إلى بوابة الدفع. لم يتم خصم أي مبلغ. تحقّق من اتصالك ثم يمكنك المحاولة مجدداً أو التواصل معنا.'
+            : 'The payment gateway could not be reached. No amount was charged. Check your connection, then you can retry or contact us.',
+        // `token_failed` and `order_failed` are deliberately left on the retry sentence.
+        // Both are catch-alls for a failure the classifier could not name
+        // (gateway_diag_reason_code('') -> order_failed; an unexplained token stage ->
+        // token_failed), so a customer whose fault is genuinely transient must not be told
+        // to stop retrying. The *named* codes above carry the permanent messages.
     ];
     $transient = $rtl
         ? 'تعذّر بدء عملية الدفع الإلكتروني حالياً. لم يتم خصم أي مبلغ. يمكنك المحاولة مجدداً أو التواصل معنا.'

@@ -1,0 +1,8 @@
+# Copy to android/key.properties and fill in with the owner's EXISTING upload key.
+# This file is gitignored. Never commit a keystore or its passwords.
+#
+# storeFile may be absolute, or relative to apps/mobile/android/.
+storeFile=/absolute/path/to/mawatheq-upload-key.jks
+storePassword=CHANGE_ME
+keyAlias=upload
+keyPassword=CHANGE_ME
