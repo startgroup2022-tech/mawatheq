@@ -45,7 +45,8 @@ if (!$invoice) {
             $pageError = gateway_diag_customer_message(
                 (string)($started['error'] ?? ''),
                 (string)($started['correlation_id'] ?? ''),
-                is_rtl()
+                is_rtl(),
+                'invoice'
             );
         } else {
             $pageError = is_rtl() ? 'تعذّر بدء عملية الدفع. حاول لاحقاً أو تواصل مع المحامي.' : 'Could not start the payment. Try again later or contact the lawyer.';

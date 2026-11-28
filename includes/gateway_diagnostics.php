@@ -271,8 +271,12 @@ function gateway_diag_failure(PDO $pdo, string $operation, string $stage, string
  * (token/order stage) may clear on its own, so a retry is offered.
  *
  * The correlation id is always appended when present, so every message is traceable.
+ *
+ * `$context` names what the customer was paying for, so the closing clause is honest: a
+ * failed consultation payment must not tell them to "complete your subscription". The
+ * failure sentences are shared; only the noun differs.
  */
-function gateway_diag_customer_message(string $errorCode, string $corr = '', bool $rtl = true): string {
+function gateway_diag_customer_message(string $errorCode, string $corr = '', bool $rtl = true, string $context = 'subscription'): string {
     $permanent = [
         'unsupported_currency' => $rtl
             ? 'الدفع الإلكتروني غير متاح حالياً لهذه العملة. لم يتم خصم أي مبلغ. تواصل معنا لإتمام الاشتراك.'
@@ -335,6 +339,23 @@ function gateway_diag_customer_message(string $errorCode, string $corr = '', boo
         : 'Online payment could not be started right now. No amount was charged. You can retry or contact us.';
 
     $msg = $permanent[$errorCode] ?? $transient;
+
+    // The map above is written for the subscription (checkout) flow. Re-target the closing
+    // clause when the customer is actually paying for a consultation or an invoice, so the
+    // sentence never promises to complete something they were not buying.
+    if ($context !== 'subscription') {
+        $noun = [
+            'consultation' => ['الاستشارة', 'your consultation'],
+            'invoice'      => ['الفاتورة', 'your invoice'],
+        ][$context] ?? null;
+        if ($noun !== null) {
+            [$ar, $en] = $rtl
+                ? [['لإتمام الاشتراك.'], ['لإتمام ' . $noun[0] . '.']]
+                : [['to complete your subscription.'], ['to complete ' . $noun[1] . '.']];
+            $msg = str_replace($ar, $en, $msg);
+        }
+    }
+
     if ($corr !== '') {
         $msg .= ' ' . ($rtl ? 'الرقم المرجعي:' : 'Reference:') . ' ' . $corr;
     }

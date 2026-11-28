@@ -55,7 +55,7 @@ $extraPageAssets = ['<link rel="stylesheet" href="/assets/css/journey.css">'];
     $payRef = strtoupper(preg_replace('/[^A-Fa-f0-9]/', '', (string)($_GET['ref'] ?? '')));
     $payRef = $payRef !== '' ? substr($payRef, 0, 8) : '';
     if ($payErrCode !== '' && function_exists('gateway_diag_customer_message')) {
-        $payErrMsg = gateway_diag_customer_message($payErrCode, $payRef, is_rtl());
+        $payErrMsg = gateway_diag_customer_message($payErrCode, $payRef, is_rtl(), 'consultation');
     } else {
         $payErrMsg = is_rtl()
             ? 'تعذّر بدء الدفع الإلكتروني حالياً. لم يتم خصم أي مبلغ. حاول مجدداً لاحقاً.'

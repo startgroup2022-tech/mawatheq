@@ -290,7 +290,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $error = $prefix . ' ' . gateway_diag_customer_message(
                             (string)($started['error'] ?? ''),
                             (string)($started['correlation_id'] ?? ''),
-                            is_rtl()
+                            is_rtl(),
+                            'consultation'
                         );
                     } else {
                         $error = $prefix . ' ' . (is_rtl()
