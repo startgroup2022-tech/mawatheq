@@ -351,10 +351,19 @@ function ngenius_settings(PDO $pdo): array {
     foreach ($stmt->fetchAll() as $row) {
         if ($row['setting_value'] !== null) $settings[$row['setting_key']] = (string)$row['setting_value'];
     }
+    // Record why a stored secret could not be read, separately from "nothing stored".
+    // A value encrypted under a key the deployment no longer has decrypts to '' — the same
+    // result as an unconfigured gateway — so the operator was told the key was missing when
+    // it was present but unreadable, and no one could see that a rotated
+    // MAWATHEQ_ENCRYPTION_KEY was the cause. The status is a name, never the value.
+    $settings['_secret_status'] = [];
     foreach (['ngenius_api_key','ngenius_webhook_secret'] as $secretKey) {
         if (!isset($settings[$secretKey])) continue;
-        $raw=$settings[$secretKey]; $settings[$secretKey]=secret_decrypt_value($raw);
-        if ($settings[$secretKey]!=='' && strpos((string)$raw,'enc:v1:')!==0 && secret_encryption_key()) secret_store_setting($pdo,$secretKey,$settings[$secretKey]);
+        $raw=$settings[$secretKey];
+        $status = secret_decrypt_status($raw);
+        $settings['_secret_status'][$secretKey] = $status;
+        $settings[$secretKey]=secret_decrypt_value($raw);
+        if ($settings[$secretKey]!=='' && $status==='plaintext' && secret_encryption_key()) secret_store_setting($pdo,$secretKey,$settings[$secretKey]);
     }
     return $settings;
 }

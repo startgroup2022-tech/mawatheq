@@ -115,6 +115,21 @@ $statusLabel = $gateway->isEnabled() ? ($env === 'live' ? '🟢 مفعّلة (إ
         : '⚠️ N-Genius is enabled but not fully configured. Missing: ' . htmlspecialchars(implode(', ', $ngMissing)) . '. Without the Webhook Secret the package/consultation will not activate automatically after payment (the server rejects the gateway notification). Complete it in Settings → Payments.' ?>
     </div>
   <?php endif; ?>
+  <?php
+    // A key that is stored but unreadable is indistinguishable from a missing key once it
+    // has been decrypted to '' — and the operator would be told to enter a key that is
+    // already there. Naming the status is the only place this can be seen, so it belongs on
+    // the page where the key is configured.
+    $ngKeyStatus = (string)($nconfig['_secret_status']['ngenius_api_key'] ?? 'empty');
+    $ngKeyBroken = in_array($ngKeyStatus, ['no_key', 'wrong_key', 'corrupt', 'no_openssl'], true);
+  ?>
+  <?php if ($ngKeyBroken): ?>
+    <div class="form-alert error">
+      <?= is_rtl()
+        ? '⚠️ مفتاح حساب N-Genius مخزَّن لكن تعذّر فك تشفيره (' . htmlspecialchars($ngKeyStatus) . '). السبب الأكثر شيوعاً أن مفتاح MAWATHEQ_ENCRYPTION_KEY تغيّر بعد حفظ المفتاح. أعد إدخال مفتاح الحساب أدناه واحفظه ليُشفَّر من جديد. حتى ذلك الحين سيفشل كل دفع إلكتروني برسالة عامة.'
+        : '⚠️ The N-Genius API key is stored but cannot be decrypted (' . htmlspecialchars($ngKeyStatus) . '). The usual cause is that MAWATHEQ_ENCRYPTION_KEY changed after the key was saved. Re-enter the API key below and save it to re-encrypt it. Until then every online payment fails with a generic message.' ?>
+    </div>
+  <?php endif; ?>
 
   <form method="get" class="dash-card" style="padding:14px 18px">
     <div class="field" style="max-width:420px;margin:0">

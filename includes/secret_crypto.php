@@ -13,6 +13,29 @@ function secret_encrypt_value(string $plain): ?string {
     if($cipher===false)return null;
     return 'enc:v1:'.base64_encode($nonce.$tag.$cipher);
 }
+/**
+ * Why a stored value could not be decrypted.
+ *
+ * `secret_decrypt_value()` returns '' for every failure — no key, a rotated key, a corrupt
+ * blob — so a caller could not tell "nothing stored" from "stored but unreadable". On the
+ * payment path that difference is the whole diagnosis: an API key encrypted under a key the
+ * deployment no longer has reads as an empty string, the gateway call fails with no
+ * credential, and the customer sees the generic "could not start the payment" sentence.
+ *
+ * Returns one of: empty | plaintext | ok | no_key | no_openssl | corrupt | wrong_key.
+ * Never returns the value itself.
+ */
+function secret_decrypt_status(?string $stored): string {
+    if(!$stored)return 'empty';
+    if(strpos($stored,'enc:v1:')!==0)return 'plaintext';
+    if(!secret_encryption_key())return 'no_key';
+    if(!function_exists('openssl_decrypt'))return 'no_openssl';
+    $blob=base64_decode(substr($stored,7),true);
+    if($blob===false||strlen($blob)<29)return 'corrupt';
+    $plain=openssl_decrypt(substr($blob,28),'aes-256-gcm',secret_encryption_key(),OPENSSL_RAW_DATA,substr($blob,0,12),substr($blob,12,16));
+    return is_string($plain)?'ok':'wrong_key';
+}
+
 function secret_decrypt_value(?string $stored): string {
     if(!$stored)return '';
     if(strpos($stored,'enc:v1:')!==0)return $stored;

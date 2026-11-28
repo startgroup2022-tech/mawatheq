@@ -58,7 +58,8 @@ $transient = gateway_diag_customer_message('connection_failed', '', true);
 check('connection_failed offers a retry', str_contains($transient, 'المحاولة مجدداً'));
 foreach (['gateway_rejected', 'unsupported_currency',
           'no_enabled_gateway', 'gateway_disabled', 'migration_required', 'zero_amount',
-          'badTokenRequest', 'realmNameNotAvailable', 'outletNotAvailable', 'not_enabled'] as $code) {
+          'badTokenRequest', 'realmNameNotAvailable', 'outletNotAvailable', 'not_enabled',
+          'secret_unreadable'] as $code) {
     $m = gateway_diag_customer_message($code, '', true);
     check("$code does NOT offer a retry loop", !str_contains($m, 'المحاولة مجدداً'), $m);
     check("$code points at support", str_contains($m, 'تواصل معنا'), $m);
@@ -70,7 +71,7 @@ check('an unmapped code still says no amount was charged', str_contains($unknown
 check('an unmapped code still carries the reference', str_contains($unknown, 'DEADBEEF'));
 
 echo "\n== 4. English mirrors Arabic ==\n";
-foreach (['gateway_rejected', 'not_enabled', 'outletNotAvailable'] as $code) {
+foreach (['gateway_rejected', 'not_enabled', 'outletNotAvailable', 'secret_unreadable'] as $code) {
     $en = gateway_diag_customer_message($code, 'B7A81366', false);
     check("$code: English says no amount was charged",
         stripos($en, 'No amount was charged') !== false, $en);

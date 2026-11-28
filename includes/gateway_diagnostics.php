@@ -117,6 +117,11 @@ function gateway_diag_reason(string $code): array {
                                    'en' => 'The payment gateway could not be reached (network, timeout, or a 5xx from the gateway) — usually transient, so a retry may succeed.'],
         'timeout'              => ['ar' => 'انتهت مهلة الاتصال ببوابة الدفع قبل الرد — أعد المحاولة، وتحقق من اتصال الخادم بالإنترنت.',
                                    'en' => 'The connection to the payment gateway timed out before a reply — retry, and check the server can reach the internet.'],
+        // The credential exists but cannot be read, because MAWATHEQ_ENCRYPTION_KEY is not the
+        // key that encrypted it. Without this entry the operator saw the same "token failed"
+        // sentence as a genuinely wrong API key and had no reason to look at the key at all.
+        'secret_unreadable'    => ['ar' => 'مفتاح الحساب مخزَّن لكن تعذّر فك تشفيره — مفتاح MAWATHEQ_ENCRYPTION_KEY الحالي يختلف عن المفتاح الذي شُفّر به. أعد إدخال مفتاح الحساب في لوحة التحكم.',
+                                   'en' => 'The API key is stored but cannot be decrypted — MAWATHEQ_ENCRYPTION_KEY differs from the key that encrypted it. Re-enter the API key in the console.'],
     ];
     return $map[$code] ?? ['ar' => 'سبب غير مصنّف (' . $code . ').', 'en' => 'Unclassified reason (' . $code . ').'];
 }
@@ -286,6 +291,11 @@ function gateway_diag_customer_message(string $errorCode, string $corr = '', boo
         'outletNotAvailable' => $rtl
             ? 'الدفع الإلكتروني غير متاح حالياً بسبب خلل في إعداد البوابة. لم يتم خصم أي مبلغ. تواصل معنا لإتمام الاشتراك.'
             : 'Online payment is unavailable right now due to a gateway configuration fault. No amount was charged. Contact us to complete your subscription.',
+        // A stored-but-unreadable credential is an operator fault, not a customer one, so it
+        // must not invite a retry that can never succeed.
+        'secret_unreadable' => $rtl
+            ? 'الدفع الإلكتروني غير متاح حالياً بسبب خلل في إعداد البوابة. لم يتم خصم أي مبلغ. تواصل معنا لإتمام الاشتراك.'
+            : 'Online payment is unavailable right now due to a gateway configuration fault. No amount was charged. Contact us to complete your subscription.',
         // The gateway answered but refused the order. It is not a transport fault, so a
         // retry from the customer's side will not help — say the payment is unavailable
         // rather than inviting a loop.
@@ -397,14 +407,30 @@ function gateway_diag_probe(PDO $pdo, array $options = []): array {
             'stages' => $stages, 'order_reference' => $orderRef];
     };
 
+    // A secret that is present but unreadable is a different fault from one that was never
+    // entered, and only the first is fixable by re-entering the key in the console. Naming
+    // the status here is what turns an opaque token failure into an actionable cause.
+    $keyStatus = (string)($settings['_secret_status']['ngenius_api_key'] ?? 'empty');
+    $keyUnreadable = in_array($keyStatus, ['no_key', 'wrong_key', 'corrupt', 'no_openssl'], true);
+
     if (!ngenius_is_enabled($settings)) {
+        if ($keyUnreadable && (string)($settings['ngenius_outlet_ref'] ?? '') !== ''
+            && ($settings['ngenius_enabled'] ?? '0') === '1') {
+            $record('config', false, null, 'secret_unreadable',
+                'the API key is stored but cannot be decrypted (' . $keyStatus . '). '
+                . 'MAWATHEQ_ENCRYPTION_KEY differs from the key used to save it — '
+                . 're-enter the API key in the console to re-encrypt it under the current key.');
+            return $result(false, 'config');
+        }
         $record('config', false, null, 'not_enabled',
-            'N-Genius is switched off, or the outlet reference / API key is missing.');
+            'N-Genius is switched off, or the outlet reference / API key is missing.'
+            . ($keyUnreadable ? ' (stored API key is unreadable: ' . $keyStatus . ')' : ''));
         return $result(false, 'config');
     }
     $record('config', true, null, null,
         'enabled; environment=' . $configuredEnv . '; currency=' . $currency
-        . '; outlet_set=' . ($outlet !== '' ? 'yes' : 'no') . '; key_set=' . ($hasKey ? 'yes' : 'no'));
+        . '; outlet_set=' . ($outlet !== '' ? 'yes' : 'no') . '; key_set=' . ($hasKey ? 'yes' : 'no')
+        . '; key_status=' . $keyStatus);
 
     // A real package order is denominated in the SITE currency and package_payment_start()
     // refuses it when that differs from the outlet currency. This probe charges in the
@@ -422,7 +448,15 @@ function gateway_diag_probe(PDO $pdo, array $options = []): array {
 
     $token = ngenius_get_access_token($configuredEnv, (string)$settings['ngenius_api_key'], (string)($settings['ngenius_realm_name'] ?? ''));
     if (empty($token['ok'])) {
-        $record('token', false, null, 'token_failed', (string)($token['error'] ?? 'no access token'));
+        // Keep the reason the gateway named (badTokenRequest, realmNameNotAvailable,
+        // http_401, connection_failed, ...). Flattening every token failure to
+        // `token_failed` threw away exactly the distinction that tells a rejected
+        // credential from a transport fault, and is why the probe could not answer
+        // "why did the payment fail".
+        $code = (string)($token['code'] ?? '');
+        $record('token', false, null,
+            $code !== '' ? gateway_diag_reason_code($code) : 'token_failed',
+            (string)($token['error'] ?? 'no access token') . ($code !== '' ? ' [code=' . $code . ']' : ''));
         return $result(false, 'token');
     }
     $record('token', true, 200, null, 'access token issued');
@@ -444,7 +478,10 @@ function gateway_diag_probe(PDO $pdo, array $options = []): array {
         $reference, 'en', $currency, 'SA'
     );
     if (empty($order['ok'])) {
-        $record('order', false, null, 'order_failed', (string)($order['error'] ?? 'order rejected'));
+        $code = (string)($order['code'] ?? '');
+        $record('order', false, null,
+            $code !== '' ? gateway_diag_reason_code($code) : 'order_failed',
+            (string)($order['error'] ?? 'order rejected') . ($code !== '' ? ' [code=' . $code . ']' : ''));
         return $result(false, 'order');
     }
     $record('order', true, null, null,

@@ -5063,3 +5063,40 @@ Run order that works: `setup_test_env.sh` → fix `secrets.php` to `openhands:ww
 install `poppler-utils antiword catdoc zip` → `rm -rf /tmp/mawatheq-mpdf` →
 `npx playwright install chromium` → clear `auth_rate_limits` → `sg www-data -c 'bash
 tests/run_all_tests.sh'`. That yields **80/80 suites**, Playwright **1032**, Flutter **379**.
+
+## Execution 68 — the payment diagnostic must name the cause, not just the reference
+
+A production customer saw «تعذّر بدء عملية الدفع الإلكتروني حالياً. لم يتم خصم أي مبلغ.»
+That sentence is the **transient** fall-through in `gateway_diag_customer_message()`. It is
+shown whenever the recorded error code is one the classifier cannot name, so it told the
+customer "retry" and told the operator nothing. Two defects produced it:
+
+- **`gateway_diag_probe()` discarded the gateway's own reason.** It recorded a hardcoded
+  `token_failed` / `order_failed` for every token and order failure, while
+  `ngenius_get_access_token()` / `ngenius_create_order()` carefully return `code`
+  (`badTokenRequest`, `realmNameNotAvailable`, `http_401`, `connection_failed`, ...). The
+  probe exists to answer "why did the payment fail" and was throwing the answer away. It now
+  passes the code through `gateway_diag_reason_code()` and keeps the raw code in `detail`.
+  **When adding a stage to the probe, record the reason it carries — never a constant.**
+
+- **A stored-but-unreadable secret was indistinguishable from a missing one.**
+  `secret_decrypt_value()` returns `''` for every failure (no key, rotated key, corrupt
+  blob), so an API key encrypted under a `MAWATHEQ_ENCRYPTION_KEY` the deployment no longer
+  has reads exactly like an unconfigured gateway. The operator was told to enter a key that
+  was already there. `secret_decrypt_status()` now returns a *name*
+  (`empty|plaintext|ok|no_key|no_openssl|corrupt|wrong_key`), surfaced as the new
+  `secret_unreadable` code and as a red banner on `admin/gateways.php` — the page where the
+  key is entered. The `secret_decrypt_value()` contract is unchanged for its 11 callers.
+
+To find the cause of a live payment failure on a server, run `php tools/gateway_doctor.php`
+(or press the probe on `/admin/gateways.php`). `secret_unreadable` ⇒ the encryption key
+changed; `badTokenRequest` ⇒ the key itself; `unsupported_currency` ⇒ site vs outlet currency.
+**Never conclude "the gateway is down" from the customer's sentence alone — that sentence is
+what the system shows when it does not know.**
+
+`tests/exec68_gateway_diagnosis_test.php` (33 checks) pins all of it, including a real
+rotation: a blob encrypted under a foreign key must report `wrong_key` and still decrypt to
+`''`, so the fix cannot be mistaken for having weakened the existing contract.
+
+Suite totals after this execution: **86 PHP suites, 0 failures**; Flutter **387**;
+Playwright **1032 passed / 12 skipped** across 14 specs × 6 viewports.
