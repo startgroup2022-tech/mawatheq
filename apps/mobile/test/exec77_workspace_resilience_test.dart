@@ -1,4 +1,4 @@
-// Execution 71 — the lawyer workspace survives a partially deployed backend.
+// Execution 77 — the lawyer workspace survives a partially deployed backend.
 //
 // `exec68_lawyer_workspace_test.dart` serves all five endpoints successfully, so it
 // cannot see this defect: `_load()` awaited them in sequence inside one try, and a
