@@ -121,9 +121,21 @@ class SessionUser {
   /// `permissions`) at the top level, next to `profile`, which holds the user's own
   /// record. Read the top level first and fall back to `profile` so an older server
   /// that nested them still works.
-  factory SessionUser.fromJson(Map<String, dynamic> map) {
+  ///
+  /// The two login endpoints nest the account under a different key each — the
+  /// client endpoint sends `user`, the lawyer endpoint sends `lawyer` — and
+  /// **neither sends a top-level `type`**. Without [defaultType] the `type` field
+  /// fell back to `'client'` for both, so a lawyer signing in was handed a session
+  /// the app believed was a client and was routed into the customer shell. The
+  /// caller knows which endpoint it called, so it passes the type explicitly; the
+  /// value is still only a display/routing hint, because every protected endpoint
+  /// re-derives the role from the token server-side.
+  factory SessionUser.fromJson(Map<String, dynamic> map, {String? defaultType}) {
     final json = Json(map);
-    final profile = json.object('profile') ?? json;
+    final profile = json.object('profile') ??
+        json.object('user') ??
+        json.object('lawyer') ??
+        json;
 
     // The API may nest permissions, or send them flat.
     final perms = <String>[];
@@ -157,7 +169,7 @@ class SessionUser {
     }
 
     return SessionUser(
-      type: json.str('type', fallback: 'client'),
+      type: json.str('type', fallback: defaultType ?? 'client'),
       id: profile.intg('id'),
       name: profile.str('full_name', fallback: profile.str('name')),
       email: profile.str('email'),
@@ -241,6 +253,46 @@ class DocumentSummary {
       documentType: j.str('document_type', fallback: 'general'),
       caseTitle: j.str('case_title'),
       createdAt: j.str('created_at'),
+    );
+  }
+}
+
+/// The outcome of `POST /api/v1/consultations.php`.
+///
+/// A priced consultation must be paid before it is confirmed, so the booking response
+/// carries the hosted payment URL the app opens in a web view. When the lawyer has no rate
+/// `paymentRequired` is false and the flow is exactly the old request-and-confirm one.
+class BookingResult {
+  const BookingResult({
+    required this.consultationId,
+    this.paymentRequired = false,
+    this.paymentUrl,
+    this.unconfirmed = false,
+    this.paymentError,
+  });
+
+  final int consultationId;
+  final bool paymentRequired;
+  final String? paymentUrl;
+
+  /// True when the booking needs payment but the gateway could not be reached, so the
+  /// booking exists yet is not confirmed. The UI must say so rather than show success.
+  final bool unconfirmed;
+
+  /// The structured gateway failure code when payment could not start (e.g.
+  /// `no_enabled_gateway`, `unsupported_currency`, `token_failed`). The app maps it to a
+  /// sentence that matches the real cause instead of one generic "could not start payment".
+  final String? paymentError;
+
+  factory BookingResult.fromJson(Map<String, dynamic> json) {
+    final rawUrl = json['payment_url'];
+    final rawErr = json['payment_error'];
+    return BookingResult(
+      consultationId: Json(json).intg('consultation_id'),
+      paymentRequired: json['payment_required'] == true,
+      paymentUrl: (rawUrl is String && rawUrl.isNotEmpty) ? rawUrl : null,
+      unconfirmed: json['unconfirmed'] == true,
+      paymentError: (rawErr is String && rawErr.isNotEmpty) ? rawErr : null,
     );
   }
 }
@@ -353,42 +405,190 @@ class AppNotification {
   }
 }
 
-/// A lawyer from the public directory `GET /api/v1/lawyers.php`.
+/// One lawyer as the customer sees them.
+///
+/// The journey's `lawyers` and `lawyer` actions both return this shape, so the fields
+/// the API already sends — experience, photo, bio, the server-formatted fee and the
+/// real availability summary — are carried here rather than dropped at the boundary.
+/// Dropping them is how the directory card came to show a name and a rating while the
+/// customer asked for a specialty, professional information and availability.
 class LawyerProfile {
   const LawyerProfile({
     required this.id,
     required this.name,
     this.specialization = '',
+    this.specializations = const <String>[],
     this.jurisdiction = '',
+    this.city = '',
+    this.countryCode = '',
+    this.location = '',
     this.rating = 0,
     this.hourlyRate = 0,
+    this.yearsExperience = 0,
+    this.bio = '',
+    this.photoPath = '',
+    this.feeDisplay = '',
+    this.consultationPrice = 0,
+    this.durationMinutes = 30,
+    this.hasPublishedHours = false,
+    this.nextSlotCount = 0,
+    this.modeChips = const <String>[],
+    this.languages = const <String>[],
+    this.officeAddress = '',
+    this.offersRemote = true,
+    this.offersInOffice = false,
+    this.ratingCount = 0,
+    this.ratingAverage,
   });
 
   final int id;
   final String name;
   final String specialization;
+
+  /// Every area of law the lawyer declared, in the server's canonical order.
+  ///
+  /// A lawyer may practise more than one. `specialization` keeps the primary value for
+  /// callers written against the older single field; this list is the full set. When the
+  /// server sends none (an older deployment, or a lawyer who declared nothing) the getter
+  /// below falls back to the single value, so a card never loses a specialization it used
+  /// to show.
+  final List<String> specializations;
   final String jurisdiction;
+
+  /// The label a card shows: the joined list, or the single value when the list is empty.
+  String get specializationLabel {
+    if (specializations.isNotEmpty) return specializations.join(' · ');
+    return specialization;
+  }
+
+  /// The city the lawyer practises in, and its ISO country code. Both are optional
+  /// and may be empty on a lawyer whose row predates the country/city migration.
+  final String city;
+  final String countryCode;
+
+  /// The server's combined "city، country" label (`location`), already formatted and
+  /// direction-correct, so the app never assembles the two parts itself.
+  final String location;
+
   final double rating;
   final double hourlyRate;
+  final int yearsExperience;
+  final String bio;
+
+  /// The server's stored path for the lawyer's photo, or '' when they have none.
+  /// The app resolves it against the API host; it is never a full URL from the server.
+  final String photoPath;
+
+  /// The fee already formatted with the tenant's currency by the backend
+  /// (`fee_display`). The app never formats money itself, so this is shown verbatim.
+  /// This is the ONE authoritative payable amount (the flat consultation price), not
+  /// an hourly rate — the card must advertise exactly what the gateway will charge.
+  final String feeDisplay;
+
+  /// The same payable amount as a number, for comparisons. Zero means no price set.
+  final double consultationPrice;
+
+  /// How long the consultation runs, in minutes (30 today). Shown beside the price so
+  /// "500 ر.س" is never mistaken for an hourly meter.
+  final int durationMinutes;
+
+  /// Whether the lawyer has published working hours at all. A lawyer with none has no
+  /// bookable slot, which the customer should see before opening the booking form.
+  final bool hasPublishedHours;
+
+  /// How many open slots the server found in the coming days.
+  final int nextSlotCount;
+
+  /// The consultation modes the lawyer offers, as ready-to-show Arabic labels
+  /// ("عن بُعد" / "في المكتب"). The server builds these from the lawyer's own
+  /// `offers_remote` / `offers_in_office` columns, so the app never re-derives the
+  /// vocabulary and a card cannot disagree with the website.
+  final List<String> modeChips;
+
+  /// The languages the lawyer consults in, as display labels.
+  final List<String> languages;
+
+  /// The office address, shown only when the lawyer accepts in-person visits.
+  final String officeAddress;
+
+  final bool offersRemote;
+  final bool offersInOffice;
+
+  /// Verified-rating summary. `ratingCount` is 0 for a lawyer nobody has rated yet,
+  /// so a card can say "no ratings yet" instead of showing a fake zero.
+  final int ratingCount;
+  final double? ratingAverage;
+
+  bool get hasVerifiedRating => ratingCount > 0 && (ratingAverage ?? 0) > 0;
+
+  bool get hasPhoto => photoPath.isNotEmpty;
+  bool get hasAvailability => nextSlotCount > 0;
+
+  /// Absolute photo URL, or null when the lawyer has no photo. Resolved against the
+  /// site root exactly like a banner image, so the server never has to know which host
+  /// the app was built for.
+  String? photoUrl(String siteBase) {
+    if (photoPath.isEmpty) return null;
+    final base = siteBase.endsWith('/')
+        ? siteBase.substring(0, siteBase.length - 1)
+        : siteBase;
+    final path = photoPath.startsWith('/') ? photoPath : '/$photoPath';
+    return '$base$path';
+  }
 
   factory LawyerProfile.fromJson(Map<String, dynamic> map) {
     final j = Json(map);
+    // `availability` is a nested object on the journey responses; read its fields
+    // defensively so a lawyer without the key is simply reported as having no slots.
+    final availability = map['availability'];
+    final av = availability is Map
+        ? Json(Map<String, dynamic>.from(availability))
+        : const Json({});
     return LawyerProfile(
       id: j.intg('id'),
       name: j.str('full_name', fallback: j.str('name')),
       specialization: j.str('specialization'),
+      specializations: (map['specializations'] is List)
+          ? (map['specializations'] as List).whereType<String>().toList()
+          : const <String>[],
       jurisdiction: j.str('jurisdiction'),
+      city: j.str('city'),
+      countryCode: j.str('country_code'),
+      location: j.str('location'),
       rating: j.dbl('rating'),
       hourlyRate: j.dbl('hourly_rate'),
+      yearsExperience: j.intg('years_experience'),
+      bio: j.str('bio'),
+      photoPath: j.str('photo_path'),
+      feeDisplay: j.str('fee_display'),
+      consultationPrice: j.object('pricing')?.dbl('total') ?? j.dbl('hourly_rate'),
+      durationMinutes: j.intg('duration_minutes', fallback: 30),
+      hasPublishedHours: av.boolean('has_published_hours'),
+      nextSlotCount: av.intg('slot_count', fallback: j.intg('slot_count')),
+      modeChips: (map['mode_chips'] is List)
+          ? (map['mode_chips'] as List).whereType<String>().toList()
+          : const <String>[],
+      languages: (map['languages'] is List)
+          ? (map['languages'] as List).whereType<String>().toList()
+          : const <String>[],
+      officeAddress: j.str('office_address'),
+      offersRemote: map['offers_remote'] is bool ? map['offers_remote'] as bool : j.boolean('offers_remote', fallback: true),
+      offersInOffice: j.boolean('offers_in_office'),
+      ratingCount: j.intg('rating_count'),
+      ratingAverage: map['rating_average'] == null ? null : j.dbl('rating_average'),
     );
   }
 }
 
-/// A home-screen slider banner, from `GET /api/v1/banners.php`.
+/// A home-screen slider slide.
 ///
-/// Every field is operator-supplied through `/admin/banners.php`; nothing is
-/// synthesized on the client. An empty list is the normal state of a fresh install,
-/// and the home screen shows its empty state rather than inventing a promotion.
+/// An operator banner comes from `GET /api/v1/banners.php` and every field is
+/// operator-supplied through `/admin/banners.php`. When the server sends none — the
+/// normal state of a fresh install, since `home_banners` ships empty on purpose —
+/// the home screen falls back to the built-in Mawatheq slides in
+/// `shared/widgets/home_slides.dart`, which are a description of the product rather
+/// than a fabricated promotion. The optional `eyebrow`/`iconKey`/`gradientKey`
+/// fields are client-only and empty for an operator banner.
 class HomeBanner {
   const HomeBanner({
     required this.id,
@@ -401,6 +601,11 @@ class HomeBanner {
     this.altEn = '',
     this.linkType = 'none',
     this.linkTarget,
+    this.eyebrowAr = '',
+    this.eyebrowEn = '',
+    this.iconKey = '',
+    this.gradientKey = '',
+    this.assetImage = '',
   });
 
   final int id;
@@ -408,6 +613,37 @@ class HomeBanner {
   final String titleEn;
   final String subtitleAr;
   final String subtitleEn;
+
+  /// A short label above the title, e.g. "مواثيق". Client-only: the server never
+  /// sends it, and it is empty for an operator banner.
+  final String eyebrowAr;
+  final String eyebrowEn;
+
+  /// The icon that illustrates a built-in slide, resolved through
+  /// `specialty_icons.dart` (`family`, `commercial`, ...). Client-only.
+  final String iconKey;
+
+  /// Which brand gradient a built-in slide paints, one of the keys understood by
+  /// the carousel (`navy`, `teal`, `gold`, `deep`). Client-only.
+  final String gradientKey;
+
+  /// A bundled photograph for a built-in slide, e.g.
+  /// `assets/images/banners/banner_library.jpg`. Client-only.
+  ///
+  /// Built-in slides ship a real photo rather than a flat gradient because a plain
+  /// coloured card is what the owner read as "not a real slider". The photo is an
+  /// app asset, so it renders offline and cannot be a broken remote URL. A gradient
+  /// remains the fallback for an operator banner whose upload is missing.
+  final String assetImage;
+
+  /// True for a slide Mawatheq ships itself rather than one an operator uploaded.
+  /// A built-in slide has no server image path; it draws a bundled photo or a
+  /// branded gradient instead.
+  bool get isPromo =>
+      imagePath.isEmpty && (iconKey.isNotEmpty || assetImage.isNotEmpty);
+
+  String eyebrow(bool isRtl) =>
+      isRtl ? eyebrowAr : (eyebrowEn.isEmpty ? eyebrowAr : eyebrowEn);
 
   /// Relative to the site root, e.g. `uploads/banners/ab12.jpg`. The client resolves
   /// it against [AppConfig.siteBase] so the server does not have to know which host
@@ -460,6 +696,396 @@ class HomeBanner {
       altEn: j.str('alt_en'),
       linkType: j.str('link_type', fallback: 'none'),
       linkTarget: target.isEmpty ? null : target,
+    );
+  }
+}
+
+/// A source in the legal & judicial library (`GET /api/v1/legal-library.php?action=home`).
+///
+/// `redistribution` is the load-bearing field: `hosted` means the platform may store
+/// and show the text; `link_only` means only metadata and the official URL are kept.
+/// The app never assembles a download of a `link_only` item itself — it opens the
+/// server-provided `download_url`.
+class LegalLibrarySource {
+  const LegalLibrarySource({
+    required this.key,
+    required this.nameAr,
+    required this.nameEn,
+    this.publisherAr = '',
+    this.publisherEn = '',
+    this.itemCount = 0,
+    this.redistribution = 'link_only',
+  });
+
+  final String key;
+  final String nameAr;
+  final String nameEn;
+  final String publisherAr;
+  final String publisherEn;
+  final int itemCount;
+  final String redistribution;
+
+  bool get isHosted => redistribution == 'hosted';
+
+  String name(bool isRtl) => isRtl ? nameAr : (nameEn.isEmpty ? nameAr : nameEn);
+  String publisher(bool isRtl) =>
+      isRtl ? publisherAr : (publisherEn.isEmpty ? publisherAr : publisherEn);
+
+  factory LegalLibrarySource.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return LegalLibrarySource(
+      key: j.str('key', fallback: j.str('source_key')),
+      nameAr: j.str('name_ar'),
+      nameEn: j.str('name_en'),
+      publisherAr: j.str('publisher_ar'),
+      publisherEn: j.str('publisher_en'),
+      itemCount: j.intg('item_count'),
+      redistribution: j.str('redistribution', fallback: 'link_only'),
+    );
+  }
+}
+
+/// One item from the library (`action=search` / `action=item`).
+class LegalLibraryItem {
+  const LegalLibraryItem({
+    required this.id,
+    required this.type,
+    required this.typeLabel,
+    required this.title,
+    this.decisionTitle = '',
+    this.titleIsDerived = false,
+    this.summary = '',
+    this.courtName = '',
+    this.city = '',
+    this.caseNumber = '',
+    this.decisionNumber = '',
+    this.hijriYear,
+    this.gregorianYear,
+    this.decisionDate = '',
+    this.category = '',
+    this.sourceKey = '',
+    this.sourceName = '',
+    this.publisher = '',
+    this.sourceUrl,
+    this.fileUrl,
+    this.fileType = '',
+    this.fileSizeKb,
+    this.canReadHere = false,
+    this.canDownload = false,
+    this.downloadUrl,
+    this.downloadIsExternal = false,
+    this.redistribution = 'link_only',
+    this.body,
+    this.sections,
+    this.isFavorite = false,
+  });
+
+  final int id;
+  final String type;
+  final String typeLabel;
+  final String title;
+  final String decisionTitle;
+  final bool titleIsDerived;
+  final String summary;
+  final String courtName;
+  final String city;
+  final String caseNumber;
+  final String decisionNumber;
+  final int? hijriYear;
+  final int? gregorianYear;
+  final String decisionDate;
+  final String category;
+  final String sourceKey;
+  final String sourceName;
+  final String publisher;
+  final String? sourceUrl;
+  final String? fileUrl;
+  final String fileType;
+  final int? fileSizeKb;
+  final bool canReadHere;
+  final bool canDownload;
+  final String? downloadUrl;
+  final bool downloadIsExternal;
+  final String redistribution;
+
+  /// Present only for a hosted source and only on the item action.
+  final String? body;
+
+  /// The structured sections (facts/reasons/ruling/narration), same gate as [body].
+  final LegalLibrarySections? sections;
+  final bool isFavorite;
+
+  factory LegalLibraryItem.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    int? nullableInt(String key) {
+      final v = map[key];
+      if (v == null) return null;
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      return int.tryParse(v.toString());
+    }
+
+    final body = j.str('body');
+    final downloadUrl = j.str('download_url');
+    final sourceUrl = j.str('source_url');
+    final fileUrl = j.str('file_url');
+    final sectionsRaw = map['sections'];
+    return LegalLibraryItem(
+      id: j.intg('id'),
+      type: j.str('type', fallback: j.str('item_type')),
+      typeLabel: j.str('type_label'),
+      title: j.str('title'),
+      decisionTitle: j.str('decision_title'),
+      titleIsDerived: j.boolean('title_is_derived'),
+      summary: j.str('summary'),
+      courtName: j.str('court_name'),
+      city: j.str('city'),
+      caseNumber: j.str('case_number'),
+      decisionNumber: j.str('decision_number'),
+      hijriYear: nullableInt('hijri_year'),
+      gregorianYear: nullableInt('gregorian_year'),
+      decisionDate: j.str('decision_date'),
+      category: j.str('category'),
+      sourceKey: j.str('source_key'),
+      sourceName: j.str('source_name'),
+      publisher: j.str('publisher'),
+      sourceUrl: sourceUrl.isEmpty ? null : sourceUrl,
+      fileUrl: fileUrl.isEmpty ? null : fileUrl,
+      fileType: j.str('file_type'),
+      fileSizeKb: nullableInt('file_size_kb'),
+      canReadHere: j.boolean('can_read_here'),
+      canDownload: j.boolean('can_download'),
+      downloadUrl: downloadUrl.isEmpty ? null : downloadUrl,
+      downloadIsExternal: j.boolean('download_is_external'),
+      redistribution: j.str('redistribution', fallback: 'link_only'),
+      body: body.isEmpty ? null : body,
+      sections: sectionsRaw is Map
+          ? LegalLibrarySections.fromJson(Map<String, dynamic>.from(sectionsRaw))
+          : null,
+      isFavorite: j.boolean('is_favorite'),
+    );
+  }
+}
+
+/// The structured judgement sections the source published. Each is optional.
+class LegalLibrarySections {
+  const LegalLibrarySections({this.facts, this.reasons, this.ruling, this.narration});
+
+  final String? facts;
+  final String? reasons;
+  final String? ruling;
+  final String? narration;
+
+  bool get isEmpty =>
+      (facts == null || facts!.isEmpty) &&
+      (reasons == null || reasons!.isEmpty) &&
+      (ruling == null || ruling!.isEmpty) &&
+      (narration == null || narration!.isEmpty);
+
+  factory LegalLibrarySections.fromJson(Map<String, dynamic> map) {
+    String? s(String k) {
+      final v = map[k];
+      return (v is String && v.isNotEmpty) ? v : null;
+    }
+
+    return LegalLibrarySections(
+      facts: s('facts'),
+      reasons: s('reasons'),
+      ruling: s('ruling'),
+      narration: s('narration'),
+    );
+  }
+}
+
+/// One browse bucket (court / region / year) with its count.
+class LegalLibraryBrowseItem {
+  const LegalLibraryBrowseItem({required this.name, required this.count});
+
+  final String name;
+  final int count;
+
+  factory LegalLibraryBrowseItem.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return LegalLibraryBrowseItem(
+      name: j.str('name'),
+      count: j.intg('n'),
+    );
+  }
+}
+
+/// The browse vocabulary from `action=home` → `browse`.
+class LegalLibraryBrowse {
+  const LegalLibraryBrowse({this.courts = const [], this.cities = const [], this.years = const []});
+
+  final List<LegalLibraryBrowseItem> courts;
+  final List<LegalLibraryBrowseItem> cities;
+  final List<LegalLibraryBrowseItem> years;
+
+  factory LegalLibraryBrowse.fromJson(Map<String, dynamic> map) {
+    List<LegalLibraryBrowseItem> parse(String key) => (map[key] is List)
+        ? (map[key] as List)
+            .whereType<Map>()
+            .map((e) => LegalLibraryBrowseItem.fromJson(Map<String, dynamic>.from(e)))
+            .toList()
+        : const [];
+    return LegalLibraryBrowse(courts: parse('courts'), cities: parse('cities'), years: parse('years'));
+  }
+}
+
+/// The library hub payload (`action=home`).
+class LegalLibraryHome {
+  const LegalLibraryHome({
+    required this.total,
+    required this.enabledSources,
+    required this.sources,
+    required this.types,
+    required this.latest,
+    this.courts = 0,
+    this.files = 0,
+    this.browse = const LegalLibraryBrowse(),
+  });
+
+  final int total;
+  final int enabledSources;
+  final List<LegalLibrarySource> sources;
+  final List<LegalLibraryType> types;
+  final List<LegalLibraryItem> latest;
+  final int courts;
+  final int files;
+  final LegalLibraryBrowse browse;
+
+  factory LegalLibraryHome.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return LegalLibraryHome(
+      total: j.intg('total'),
+      enabledSources: j.intg('enabled_sources'),
+      sources: j
+          .list('sources')
+          .map((e) => LegalLibrarySource.fromJson(e.raw))
+          .toList(),
+      types: j.list('types').map((e) => LegalLibraryType.fromJson(e.raw)).toList(),
+      // `latest` now carries the full public item. Older payloads (or the app talking
+      // to an older server) only had {id,title}; the item parser tolerates that.
+      latest: j
+          .list('latest')
+          .map((e) => LegalLibraryItem.fromJson(Map<String, dynamic>.from(e.raw)))
+          .toList(),
+      courts: j.intg('courts'),
+      files: j.intg('files'),
+      browse: map['browse'] is Map
+          ? LegalLibraryBrowse.fromJson(Map<String, dynamic>.from(map['browse']))
+          : const LegalLibraryBrowse(),
+    );
+  }
+}
+
+/// A content type with its count (`action=home` → `types`).
+class LegalLibraryType {
+  const LegalLibraryType({
+    required this.key,
+    required this.nameAr,
+    required this.nameEn,
+    this.count = 0,
+  });
+
+  final String key;
+  final String nameAr;
+  final String nameEn;
+  final int count;
+
+  String name(bool isRtl) => isRtl ? nameAr : (nameEn.isEmpty ? nameAr : nameEn);
+
+  /// A stable bilingual label for a bare type key (used where only the key is known).
+  static String labelFor(String key, bool isRtl) {
+    const ar = {
+      'judgment': 'حكم قضائي',
+      'legislation': 'نظام / تشريع',
+      'book': 'مجموعة قانونية',
+      'statistics': 'إحصاء',
+      'article': 'مقال',
+    };
+    const en = {
+      'judgment': 'Judgement',
+      'legislation': 'Statute',
+      'book': 'Collection',
+      'statistics': 'Statistics',
+      'article': 'Article',
+    };
+    return (isRtl ? ar : en)[key] ?? key;
+  }
+
+  factory LegalLibraryType.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return LegalLibraryType(
+      key: j.str('key'),
+      nameAr: j.str('name_ar'),
+      nameEn: j.str('name_en'),
+      count: j.intg('count'),
+    );
+  }
+}
+
+/// A page of search results (`action=search`).
+class LegalLibraryPage {
+  const LegalLibraryPage({
+    required this.total,
+    required this.page,
+    required this.pages,
+    required this.perPage,
+    required this.items,
+  });
+
+  final int total;
+  final int page;
+  final int pages;
+  final int perPage;
+  final List<LegalLibraryItem> items;
+
+  factory LegalLibraryPage.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return LegalLibraryPage(
+      total: j.intg('total'),
+      page: j.intg('page', fallback: 1),
+      pages: j.intg('pages'),
+      perPage: j.intg('per_page', fallback: 20),
+      items: j
+          .list('items')
+          .map((e) => LegalLibraryItem.fromJson(e.raw))
+          .toList(),
+    );
+  }
+}
+
+/// The filter vocabulary, from the data actually imported (`action=facets`).
+class LegalLibraryFacets {
+  const LegalLibraryFacets({
+    this.sources = const [],
+    this.courts = const [],
+    this.cities = const [],
+    this.years = const [],
+    this.categories = const [],
+    this.types = const [],
+  });
+
+  final List<LegalLibrarySource> sources;
+  final List<String> courts;
+  final List<String> cities;
+  final List<int> years;
+  final List<String> categories;
+  final List<String> types;
+
+  factory LegalLibraryFacets.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return LegalLibraryFacets(
+      sources: j.list('sources').map((e) => LegalLibrarySource.fromJson(e.raw)).toList(),
+      courts: j.strList('courts'),
+      cities: j.strList('cities'),
+      years: (map['years'] as List? ?? const [])
+          .map((e) => e is int ? e : int.tryParse('$e') ?? 0)
+          .where((e) => e > 0)
+          .toList(),
+      categories: j.strList('categories'),
+      types: j.strList('types'),
     );
   }
 }
@@ -525,6 +1151,21 @@ class AiStatus {
   }
 }
 
+/// A marketing benefit of a plan, from `plan_features` (same rows the website shows).
+class PlanFeature {
+  const PlanFeature({required this.ar, required this.en});
+
+  final String ar;
+  final String en;
+
+  String label(bool rtl) => rtl ? ar : (en.isNotEmpty ? en : ar);
+
+  factory PlanFeature.fromJson(Map<String, dynamic> map) => PlanFeature(
+        ar: (map['ar'] ?? '').toString(),
+        en: (map['en'] ?? '').toString(),
+      );
+}
+
 /// A published plan from `GET /api/v1/plans.php`.
 ///
 /// Every price and limit is the value stored in the `plans` table, so the app can
@@ -543,6 +1184,10 @@ class Plan {
     this.consultationsIncluded,
     this.isCorporate = false,
     this.isFeatured = false,
+    this.features = const [],
+    this.priceMonthlyDisplay = '',
+    this.priceYearlyDisplay = '',
+    this.currency = '',
   });
 
   final int id;
@@ -550,6 +1195,32 @@ class Plan {
   final String nameEn;
   final double priceMonthly;
   final double priceYearly;
+
+  /// The price as the server's currency helper formats it ("149.00", "1,490.00").
+  /// `price_monthly` is DECIMAL(10,3), so the numeric field carries three decimals
+  /// whatever the currency is; printing it directly showed "149.000 SAR".
+  final String priceMonthlyDisplay;
+  final String priceYearlyDisplay;
+
+  /// ISO code of the deployment's currency ("SAR"), sent per plan by the API. Empty on a
+  /// server that predates the field, in which case the caller falls back to its own value.
+  final String currency;
+
+  /// Currency label for a price row. Arabic uses the Saudi riyal sign; anything else
+  /// shows the ISO code, which is what an English reader expects. An older server omits
+  /// the field entirely, and the label must still read as a currency rather than empty.
+  String currencyLabel(bool rtl) {
+    final code = currency.isEmpty ? 'SAR' : currency;
+    if (!rtl) return code;
+    return code == 'SAR' ? 'ر.س' : code;
+  }
+
+  /// What a price label should read. Falls back to the numeric value on a server that
+  /// predates the display fields, so an older deployment still renders a price.
+  String get monthlyLabel =>
+      priceMonthlyDisplay.isNotEmpty ? priceMonthlyDisplay : priceMonthly.toStringAsFixed(0);
+  String get yearlyLabel =>
+      priceYearlyDisplay.isNotEmpty ? priceYearlyDisplay : priceYearly.toStringAsFixed(0);
   final String descriptionAr;
   final String descriptionEn;
 
@@ -561,6 +1232,10 @@ class Plan {
   final bool isCorporate;
   final bool isFeatured;
 
+  /// The plan's marketing benefits, read from the same `plan_features` table the
+  /// website renders. Empty on an older server that does not send them yet.
+  final List<PlanFeature> features;
+
   String get displayName => nameAr.isNotEmpty ? nameAr : nameEn;
   bool get isFree => priceMonthly <= 0;
 
@@ -568,6 +1243,13 @@ class Plan {
     final j = Json(map);
     int? nullableInt(String key) =>
         j.raw[key] == null ? null : j.intg(key);
+    final rawFeatures = j.raw['features'];
+    final features = rawFeatures is List
+        ? rawFeatures
+            .whereType<Map>()
+            .map((f) => PlanFeature.fromJson(Map<String, dynamic>.from(f)))
+            .toList()
+        : <PlanFeature>[];
     return Plan(
       id: j.intg('id'),
       nameAr: j.str('name_ar'),
@@ -576,11 +1258,15 @@ class Plan {
       descriptionEn: j.str('description_en'),
       priceMonthly: j.dbl('price_monthly'),
       priceYearly: j.dbl('price_yearly'),
+      priceMonthlyDisplay: j.str('price_monthly_display'),
+      priceYearlyDisplay: j.str('price_yearly_display'),
+      currency: j.str('currency'),
       aiQueriesLimit: nullableInt('ai_queries_limit'),
       documentAnalysisLimit: nullableInt('document_analysis_limit'),
       consultationsIncluded: nullableInt('consultations_included'),
       isCorporate: j.boolean('is_corporate'),
       isFeatured: j.boolean('is_featured'),
+      features: features,
     );
   }
 }
@@ -710,24 +1396,411 @@ class JourneyIssueType {
 }
 
 /// The result of the journey's lawyer lookup: the matches plus, when there are
-/// none, a customer-appropriate alternative sentence instead of an empty screen.
+/// none, the server's customer-appropriate alternative.
+///
+/// `alternative` arrives as a JSON **object** (`reason`/`suggest`/`specialties`), not
+/// a string. It was previously read with `Json.str`, which calls `.toString()` on
+/// whatever it finds — so a no-match response produced the raw Dart map
+/// (`{reason: ..., suggest: ..., specialties: [...]}`) and the customer saw that
+/// under "لا يوجد محامٍ متاح". The map is now parsed field by field, and no caller
+/// renders it: the empty state shows one message and two buttons. The fields are
+/// kept because the shape is part of the API contract and dropping them would make
+/// the next `alternative` consumer re-derive them.
+class JourneyAlternative {
+  const JourneyAlternative({
+    this.reason = '',
+    this.suggest = '',
+    this.specialties = const [],
+  });
+
+  final String reason;
+  final String suggest;
+  final List<JourneySpecialty> specialties;
+
+  /// True when the server sent a usable alternative. A null/absent `alternative`
+  /// yields an all-empty instance, which is the honest "nothing to say" state.
+  bool get isPresent => reason.isNotEmpty || suggest.isNotEmpty;
+
+  factory JourneyAlternative.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return JourneyAlternative(
+      reason: j.str('reason'),
+      suggest: j.str('suggest'),
+      specialties: j
+          .list('specialties')
+          .map((e) => JourneySpecialty.fromJson(e.asMap))
+          .toList(),
+    );
+  }
+}
+
 class JourneyMatch {
   const JourneyMatch({
     this.lawyers = const [],
     this.matched = false,
-    this.alternative = '',
+    this.alternative,
+    this.count = 0,
+    this.filteredOut = false,
   });
 
   final List<LawyerProfile> lawyers;
   final bool matched;
-  final String alternative;
+
+  /// The server's own count of matching lawyers. The journey shows it so the
+  /// customer sees the result of a filter, and the app never recounts the list.
+  final int count;
+
+  /// True when the specialty does have lawyers but the active filters excluded
+  /// them all — the copy differs from "this specialty has no lawyer at all".
+  final bool filteredOut;
+
+  /// Null when lawyers were found, or when the server sent no alternative object.
+  final JourneyAlternative? alternative;
 
   factory JourneyMatch.fromJson(Map<String, dynamic> map) {
     final j = Json(map);
+    // `alternative` is an object on a no-match response and null otherwise. Guard the
+    // type explicitly: a string or list here must not become a stringified map.
+    final rawAlt = map['alternative'];
     return JourneyMatch(
       lawyers: j.list('lawyers').map((e) => LawyerProfile.fromJson(e.asMap)).toList(),
       matched: j.boolean('matched'),
-      alternative: j.str('alternative'),
+      count: j.intg('count'),
+      filteredOut: j.boolean('filtered_out'),
+      alternative: rawAlt is Map
+          ? JourneyAlternative.fromJson(Map<String, dynamic>.from(rawAlt))
+          : null,
+    );
+  }
+}
+
+/// One professional booking filter's vocabulary, from `?action=filters`.
+///
+/// The countries and their cities and the experience bands all come from the server,
+/// so the options the app renders are exactly the values the backend accepts — an
+/// option the app invented would be silently ignored by the filter.
+class JourneyFilterOptions {
+  const JourneyFilterOptions({
+    this.countries = const [],
+    this.cities = const {},
+    this.experience = const [],
+    this.specializations = const [],
+    this.languages = const [],
+    this.modes = const [],
+  });
+
+  final List<JourneyFilterCountry> countries;
+
+  /// Country code → its cities, in the server's display order.
+  final Map<String, List<String>> cities;
+
+  final List<JourneyFilterBand> experience;
+
+  /// The specialization vocabulary the lawyer records use, so the filter offers
+  /// exactly the values a stored lawyer can match.
+  final List<String> specializations;
+
+  /// Spoken-language choices (`key` + display label) built from the same catalogue the
+  /// server validates against, so a rendered option is never one the backend rejects.
+  final List<JourneyFilterBand> languages;
+
+  /// Consultation-mode choices (`remote` / `office`) with their labels.
+  final List<JourneyFilterBand> modes;
+
+  factory JourneyFilterOptions.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    final cityMap = <String, List<String>>{};
+    final rawCities = map['cities'];
+    if (rawCities is Map) {
+      rawCities.forEach((key, value) {
+        if (value is List) {
+          cityMap['$key'] = value.whereType<String>().toList();
+        }
+      });
+    }
+    return JourneyFilterOptions(
+      countries: j.list('countries').map((e) => JourneyFilterCountry.fromJson(e.asMap)).toList(),
+      cities: cityMap,
+      experience: j.list('experience').map((e) => JourneyFilterBand.fromJson(e.asMap)).toList(),
+      specializations: (map['specializations'] is List)
+          ? (map['specializations'] as List).whereType<String>().toList()
+          : const [],
+      languages: j.list('languages').map((e) => JourneyFilterBand.fromJson(e.asMap)).toList(),
+      modes: j.list('modes').map((e) => JourneyFilterBand.fromJson(e.asMap)).toList(),
+    );
+  }
+}
+
+class JourneyFilterCountry {
+  const JourneyFilterCountry({required this.code, required this.name});
+  final String code;
+  final String name;
+
+  factory JourneyFilterCountry.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return JourneyFilterCountry(code: j.str('code'), name: j.str('name'));
+  }
+}
+
+class JourneyFilterBand {
+  const JourneyFilterBand({required this.key, required this.label});
+  final String key;
+  final String label;
+
+  factory JourneyFilterBand.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return JourneyFilterBand(key: j.str('key'), label: j.str('label'));
+  }
+}
+
+/// The active booking filters, as the journey screen holds them. Sent to the server
+/// as query parameters; an empty field is omitted so the server applies no filter.
+class JourneyFilters {
+  const JourneyFilters({
+    this.specialization = '',
+    this.country = '',
+    this.city = '',
+    this.experience = '',
+    this.minFee = '',
+    this.maxFee = '',
+    this.availableOnly = false,
+    this.query = '',
+    this.language = '',
+    this.mode = '',
+  });
+
+  final String specialization;
+  final String country;
+  final String city;
+  final String experience;
+  final String minFee;
+  final String maxFee;
+  final bool availableOnly;
+  final String query;
+
+  /// Spoken language (`ar` / `en`) and consultation mode (`remote` / `office`).
+  final String language;
+  final String mode;
+
+  bool get isEmpty =>
+      specialization.isEmpty &&
+      country.isEmpty &&
+      city.isEmpty &&
+      experience.isEmpty &&
+      minFee.isEmpty &&
+      maxFee.isEmpty &&
+      !availableOnly &&
+      query.isEmpty &&
+      language.isEmpty &&
+      mode.isEmpty;
+
+  JourneyFilters copyWith({
+    String? specialization,
+    String? country,
+    String? city,
+    String? experience,
+    String? minFee,
+    String? maxFee,
+    bool? availableOnly,
+    String? query,
+    String? language,
+    String? mode,
+  }) {
+    return JourneyFilters(
+      specialization: specialization ?? this.specialization,
+      country: country ?? this.country,
+      city: city ?? this.city,
+      experience: experience ?? this.experience,
+      minFee: minFee ?? this.minFee,
+      maxFee: maxFee ?? this.maxFee,
+      availableOnly: availableOnly ?? this.availableOnly,
+      query: query ?? this.query,
+      language: language ?? this.language,
+      mode: mode ?? this.mode,
+    );
+  }
+
+  Map<String, dynamic> toQuery() => {
+        if (specialization.isNotEmpty) 'specialization': specialization,
+        if (country.isNotEmpty) 'country': country,
+        if (city.isNotEmpty) 'city': city,
+        if (experience.isNotEmpty) 'experience': experience,
+        if (minFee.isNotEmpty) 'min_fee': minFee,
+        if (maxFee.isNotEmpty) 'max_fee': maxFee,
+        if (availableOnly) 'available_only': '1',
+        if (query.isNotEmpty) 'q': query,
+        if (language.isNotEmpty) 'language': language,
+        if (mode.isNotEmpty) 'mode': mode,
+      };
+}
+
+/// One "notify me when a slot opens" subscription, from
+/// `GET /api/v1/availability-alerts.php`.
+class AvailabilityAlert {
+  const AvailabilityAlert({
+    required this.id,
+    required this.lawyerId,
+    this.lawyerName = '',
+    this.status = 'active',
+    this.createdAt = '',
+    this.notifiedAt = '',
+  });
+
+  final int id;
+  final int lawyerId;
+  final String lawyerName;
+  final String status;
+  final String createdAt;
+  final String notifiedAt;
+
+  bool get isActive => status == 'active';
+
+  factory AvailabilityAlert.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return AvailabilityAlert(
+      id: j.intg('id'),
+      lawyerId: j.intg('lawyer_id'),
+      lawyerName: j.str('lawyer_name'),
+      status: j.str('status', fallback: 'active'),
+      createdAt: j.str('created_at'),
+      notifiedAt: j.str('notified_at'),
+    );
+  }
+}
+
+/// The public rating summary + reviews for one lawyer, from
+/// `GET /api/v1/lawyer-reviews.php?lawyer_id=N`.
+class LawyerReviewSummary {
+  const LawyerReviewSummary({
+    this.average,
+    this.count = 0,
+    this.distribution = const <int, int>{},
+    this.reviews = const <LawyerReview>[],
+  });
+
+  final double? average;
+  final int count;
+  final Map<int, int> distribution;
+  final List<LawyerReview> reviews;
+
+  bool get hasReviews => count > 0;
+
+  factory LawyerReviewSummary.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    final summary = j.object('summary') ?? const Json(<String, dynamic>{});
+    final dist = <int, int>{};
+    final rawDist = summary.raw['distribution'];
+    if (rawDist is Map) {
+      rawDist.forEach((k, v) {
+        final star = int.tryParse('$k');
+        if (star != null && v is num) dist[star] = v.toInt();
+      });
+    }
+    return LawyerReviewSummary(
+      average: summary.raw['average'] == null ? null : summary.dbl('average'),
+      count: summary.intg('count'),
+      distribution: dist,
+      reviews: j.list('reviews').map((e) => LawyerReview.fromJson(e.asMap)).toList(),
+    );
+  }
+}
+
+/// One published review. Only the reviewer's first name is ever sent by the server.
+class LawyerReview {
+  const LawyerReview({
+    required this.id,
+    required this.rating,
+    this.comment = '',
+    this.displayName = '',
+    this.createdAt = '',
+  });
+
+  final int id;
+  final int rating;
+  final String comment;
+  final String displayName;
+  final String createdAt;
+
+  factory LawyerReview.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return LawyerReview(
+      id: j.intg('id'),
+      rating: j.intg('rating'),
+      comment: j.str('comment'),
+      displayName: j.str('display_name', fallback: j.str('client_name')),
+      createdAt: j.str('created_at'),
+    );
+  }
+}
+
+/// A completed consultation the client has not yet rated, from
+/// `GET /api/v1/lawyer-reviews.php?reviewable=1`.
+class ReviewableConsultation {
+  const ReviewableConsultation({
+    required this.id,
+    required this.lawyerId,
+    this.lawyerName = '',
+    this.topic = '',
+    this.scheduledAt = '',
+    this.photoPath = '',
+  });
+
+  final int id;
+  final int lawyerId;
+  final String lawyerName;
+  final String topic;
+  final String scheduledAt;
+  final String photoPath;
+
+  factory ReviewableConsultation.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return ReviewableConsultation(
+      id: j.intg('id'),
+      lawyerId: j.intg('lawyer_id'),
+      lawyerName: j.str('lawyer_name'),
+      topic: j.str('topic'),
+      scheduledAt: j.str('scheduled_at'),
+      photoPath: j.str('photo_path'),
+    );
+  }
+}
+
+/// One notification channel and its state, from
+/// `GET /api/v1/notification-preferences.php`. `locked` marks a channel the customer
+/// cannot turn off (the in-app bell), so the UI disables it rather than pretending.
+class NotificationChannel {
+  const NotificationChannel({
+    required this.key,
+    required this.enabled,
+    this.locked = false,
+    this.labelAr = '',
+    this.labelEn = '',
+    this.descriptionAr = '',
+    this.descriptionEn = '',
+  });
+
+  final String key;
+  final bool enabled;
+  final bool locked;
+  final String labelAr;
+  final String labelEn;
+  final String descriptionAr;
+  final String descriptionEn;
+
+  String label({bool rtl = true}) => rtl ? (labelAr.isNotEmpty ? labelAr : labelEn) : labelEn;
+  String description({bool rtl = true}) =>
+      rtl ? (descriptionAr.isNotEmpty ? descriptionAr : descriptionEn) : descriptionEn;
+
+  factory NotificationChannel.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    return NotificationChannel(
+      key: j.str('key'),
+      enabled: j.boolean('enabled'),
+      locked: j.boolean('locked'),
+      labelAr: j.str('label_ar'),
+      labelEn: j.str('label_en'),
+      descriptionAr: j.str('description_ar'),
+      descriptionEn: j.str('description_en'),
     );
   }
 }
@@ -825,6 +1898,55 @@ class JourneyStagedAttachments {
       documentMb: limits?.intg('document_mb') ?? 0,
       audioMb: limits?.intg('audio_mb') ?? 0,
       videoMb: limits?.intg('video_mb') ?? 0,
+    );
+  }
+}
+
+/// A real availability calendar for one lawyer and one month.
+///
+/// `days` maps `YYYY-MM-DD` to the number of open 30-minute slots on that day (0 = none).
+/// It is computed server-side from the lawyer's own published hours and existing bookings
+/// (`get_month_availability`), so the app draws the days the customer can actually book —
+/// it never guesses which days are free. `workingWeekdays` (0=Sunday) is the lawyer's
+/// published week, used only to explain an empty month.
+class MonthAvailability {
+  const MonthAvailability({
+    required this.month,
+    this.days = const {},
+    this.workingWeekdays = const [],
+    this.hasHours = false,
+  });
+
+  final String month;
+  final Map<String, int> days;
+  final List<int> workingWeekdays;
+  final bool hasHours;
+
+  /// Open slot count for one `YYYY-MM-DD`, or 0 when the day is not in the map.
+  int slotsOn(String isoDate) => days[isoDate] ?? 0;
+
+  bool get isEmpty => days.isEmpty;
+
+  factory MonthAvailability.fromJson(Map<String, dynamic> map) {
+    final j = Json(map);
+    final rawDays = j.object('days')?.asMap ?? const <String, dynamic>{};
+    final days = <String, int>{};
+    rawDays.forEach((k, v) {
+      final n = v is int ? v : int.tryParse(v?.toString() ?? '');
+      if (n != null) days[k] = n;
+    });
+    final rawWeek = map['working_weekdays'];
+    final week = rawWeek is List
+        ? rawWeek
+            .map((e) => e is int ? e : int.tryParse(e.toString()) ?? -1)
+            .where((e) => e >= 0 && e <= 6)
+            .toList()
+        : <int>[];
+    return MonthAvailability(
+      month: j.str('month'),
+      days: days,
+      workingWeekdays: week,
+      hasHours: j.boolean('has_hours'),
     );
   }
 }

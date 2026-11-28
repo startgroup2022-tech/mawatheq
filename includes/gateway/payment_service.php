@@ -17,6 +17,7 @@
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/../finance.php';
 require_once __DIR__ . '/../audit_log.php';
+require_once __DIR__ . '/../gateway_diagnostics.php';
 
 /** Build a stable, unique gateway reference for an invoice payment attempt. */
 function gateway_new_reference(string $gatewayId, int $invoiceId): string {
@@ -72,9 +73,9 @@ function gateway_start_invoice_payment(PDO $pdo, array $invoice, array $options 
     } else {
         $adapter = gateway_for_new_payment($pdo, $invoice);
     }
-    if (!$adapter) return ['ok' => false, 'error' => 'no_enabled_gateway'];
-    if (!$adapter->isEnabled()) return ['ok' => false, 'error' => 'gateway_disabled'];
-    if (!$adapter->supportsCurrency($invoice['currency'] ?? null)) return ['ok' => false, 'error' => 'unsupported_currency'];
+    if (!$adapter) return gateway_diag_failure($pdo, 'invoice_payment', 'config', 'no_enabled_gateway', 'no gateway enabled for this invoice');
+    if (!$adapter->isEnabled()) return gateway_diag_failure($pdo, 'invoice_payment', 'config', 'gateway_disabled', $adapter->id() . ' is disabled');
+    if (!$adapter->supportsCurrency($invoice['currency'] ?? null)) return gateway_diag_failure($pdo, 'invoice_payment', 'config', 'unsupported_currency', 'invoice currency ' . (string)($invoice['currency'] ?? '') . ' not supported by ' . $adapter->id());
 
     $invoiceId = (int)$invoice['id'];
     $reference = gateway_new_reference($adapter->id(), $invoiceId);
@@ -117,7 +118,30 @@ function gateway_start_invoice_payment(PDO $pdo, array $invoice, array $options 
 
     if (empty($result['ok'])) {
         log_action($pdo, 'فشل إنشاء عملية دفع (' . $adapter->id() . ')', 'invoice', $invoiceId);
-        return ['ok' => false, 'error' => $result['error'] ?? 'gateway_error', 'gateway' => $adapter->id()];
+        // The adapter already classified the fault (badTokenRequest, outletNotAvailable,
+        // unsupported_currency, connection_failed, ...). Collapsing them all into
+        // 'order_failed' threw that away: the customer always saw the generic retry sentence,
+        // the operator could not tell a wrong API key from a dead network, and a permanent
+        // credential fault was presented as something a retry might fix. Carry the real code.
+        // `code` is the machine-readable reason; `error` is a sentence for a human. Classify on
+        // the code: an Arabic sentence matches no known code, falls through to `order_failed`,
+        // and the customer is shown the generic retry sentence for a fault no retry can fix.
+        // `error` remains the fallback for adapters that only report a code string, and is
+        // still stored as the detail so the operator keeps the gateway's own wording.
+        $adapterCode = (string)($result['code'] ?? ($result['error'] ?? ''));
+        $adapterDetail = (string)($result['error'] ?? '');
+        $reason = gateway_diag_reason_code($adapterCode);
+        $fail = gateway_diag_failure(
+            $pdo, 'invoice_payment', 'order', $reason,
+            $adapterDetail !== '' ? $adapterDetail : $adapterCode,
+            method_exists($adapter, 'environment') ? $adapter->environment() : null
+        );
+        return [
+            'ok' => false, 'error' => $fail['error'], 'correlation_id' => $fail['correlation_id'],
+            'gateway' => $adapter->id(),
+            // Detail kept out of the customer-facing message but available to the operator.
+            'detail' => $adapterDetail !== '' ? $adapterDetail : $adapterCode,
+        ];
     }
 
     $pdo->prepare('UPDATE invoices SET gateway=?, gateway_order_ref=? WHERE id=?')

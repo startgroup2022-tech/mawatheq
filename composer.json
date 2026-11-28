@@ -5,6 +5,7 @@
     "license": "proprietary",
     "require": {
         "php": ">=8.4",
+        "mpdf/mpdf": "^8.3",
         "onelogin/php-saml": "^4.3"
     },
     "config": {

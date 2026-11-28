@@ -39,6 +39,15 @@ test.describe('lawyer workspace', () => {
     await expect(page.locator('h1')).toContainText('مرحباً');
   });
 
+  test('dashboard tags the panel readiness for bookings', async ({ page }) => {
+    // The seeded owner has no price and no published hours, so the panel is not ready and
+    // the readiness card (plus the "not ready" attention row) must be visible. This is the
+    // signal the operator uses to tell a half-set-up account from a bookable one.
+    await page.goto('/lawyer/dashboard.php');
+    await expect(page.getByText('جاهزية لوحتك للحجز')).toBeVisible();
+    await expect(page.getByText('لوحتك غير جاهزة لاستقبال الحجوزات')).toBeVisible();
+  });
+
   test('workspace can be switched to English', async ({ page }) => {
     await page.goto('/lawyer/dashboard.php');
     await page.locator('a.lang-switch').first().click();

@@ -5,6 +5,7 @@ require_once __DIR__ . '/includes/lawyer_guard.php';
 require_once __DIR__ . '/../includes/notifications.php';
 require_once __DIR__ . '/../includes/audit_log.php';
 require_once __DIR__ . '/../includes/tenant.php';
+require_once __DIR__ . '/../includes/plan_features.php';
 require_once __DIR__ . '/../includes/najiz_selector.php';
 $lawyerId = $_SESSION['lawyer_id'];
 $firmId = tenant_write_firm_id($pdo);
@@ -36,6 +37,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'creat
         $error = is_rtl() ? 'لا يوجد عميل مسجّل بهذا البريد الإلكتروني. يجب أن ينشئ العميل حساباً أولاً.' : 'No registered client found with this email. The client must create an account first.';
     } else {
         $najizTypeId = najiz_valid_case_type($pdo, $_POST['najiz_case_type_id'] ?? 0);
+        // `max_active_cases` is the ceiling the pricing page advertises, so the create path
+        // is where it must hold. Checked before any write; a refused create notifies nobody
+        // and creates nothing.
+        $caseScope = ['firm_id' => $firmId, 'lawyer_id' => $lawyerId];
+        $caseCheck = plan_check(
+            $pdo,
+            $firmId !== null ? plan_for_firm($pdo, (int)$firmId, $lawyerId) : plan_for_firm($pdo, 0, $lawyerId),
+            $caseScope,
+            'max_active_cases'
+        );
+        if (!$caseCheck['allowed']) {
+            $error = $caseCheck['message'];
+        } else {
         $pdo->prepare('INSERT INTO cases (lawyer_id, firm_id, user_id, title, case_type, description, najiz_case_type_id) VALUES (?,?,?,?,?,?,?)')
             ->execute([$lawyerId, $firmId, $client['id'], $_POST['title'], $_POST['case_type'], $_POST['description'], $najizTypeId]);
         $caseId = (int)$pdo->lastInsertId();
@@ -59,6 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'creat
             'client_id' => (int)$client['id'], 'lawyer_id' => (int)$lawyerId,
         ]);
         header('Location: /lawyer/cases.php'); exit;
+        }
     }
 }
 

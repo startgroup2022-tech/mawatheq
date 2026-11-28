@@ -22,7 +22,7 @@ if (!$invoice) {
 } else {
     // لا نثق بمعاملات الرابط فقط — نستعلم عن الحالة الحقيقية مباشرة من بوابة الدفع
     $settings = ngenius_settings($pdo);
-    $tokenResult = ngenius_get_access_token($settings['ngenius_environment'], $settings['ngenius_api_key'], $settings['ngenius_realm_name'] ?: 'ni');
+    $tokenResult = ngenius_get_access_token($settings['ngenius_environment'], $settings['ngenius_api_key'], $settings['ngenius_realm_name'] ?: '');
 
     if (!$tokenResult['ok']) {
         $resultError = $tokenResult['error'];

@@ -27,11 +27,20 @@ function check(string $label, bool $ok): void {
 function section(string $t): void { echo "\n== $t ==\n"; }
 
 // ---- start the fixture SADAD server on an ephemeral port ---------------------
+// Each run gets its own orders file. A shared /tmp path is writable only by whoever created it
+// first, so a later run (or a different user) read a stale file — the fixture then answered
+// with a reference it had never created, and the "amount charged" checks measured history
+// instead of this run.
+$fixtureStore = tempnam(sys_get_temp_dir(), 'sadad_orders_');
+file_put_contents($fixtureStore, '{}');
+register_shutdown_function(static function () use ($fixtureStore): void { if (is_file($fixtureStore)) @unlink($fixtureStore); });
+
 $port = 0;
 $server = null;
 for ($try = 0; $try < 5; $try++) {
     $candidate = random_int(20000, 40000);
-    $cmd = escapeshellarg(PHP_BINARY) . ' -S 127.0.0.1:' . $candidate . ' ' . escapeshellarg(__DIR__ . '/fixtures/sadad_server.php') . ' > /dev/null 2>&1';
+    $cmd = 'MAWATHEQ_SADAD_FIXTURE_STORE=' . escapeshellarg($fixtureStore) . ' '
+        . escapeshellarg(PHP_BINARY) . ' -S 127.0.0.1:' . $candidate . ' ' . escapeshellarg(__DIR__ . '/fixtures/sadad_server.php') . ' > /dev/null 2>&1';
     $proc = proc_open($cmd, [], $pipes);
     usleep(400000);
     $probe = @file_get_contents('http://127.0.0.1:' . $candidate . '/__health');
@@ -138,6 +147,13 @@ try {
 
     // ================= Verification / states =================
     section('Verification and states');
+    // A real gateway only knows about orders it was asked to create, and the fixture now says
+    // so instead of answering every reference with a made-up 42.50. Create each order first,
+    // which is also what production does — the state mapping is then checked on a real order.
+    foreach (['REF-PAID' => 100.0, 'REF-FAIL-1' => 100.0, 'REF-PENDING-1' => 100.0] as $r => $amt) {
+        $created = $svc->createPayment(['amount' => $amt, 'currency' => 'SAR', 'reference' => $r, 'customer' => [], 'urls' => []]);
+        check("fixture created the order $r to verify", !empty($created['ok']));
+    }
     $vPaid = $svc->verifyPayment('REF-PAID');
     check('verify maps CAPTURED to PAID', gateway_is_paid_state($vPaid['state'] ?? ''));
     $vFail = $svc->verifyPayment('REF-FAIL-1');
@@ -263,9 +279,11 @@ try {
     $rowPart = $pdo->query("SELECT * FROM invoices WHERE id=$invPart")->fetch();
     // A gateway that confirms only half the invoice (real gateways may part-capture).
     $halfRef = 'REF-HALF-' . $suffix;
-    $store = is_file(sys_get_temp_dir() . '/sadad_fixture_orders.json') ? (json_decode((string)file_get_contents(sys_get_temp_dir() . '/sadad_fixture_orders.json'), true) ?: []) : [];
+    // Seed the fixture with a half-capture the gateway will confirm: a real partial capture
+    // reports only the amount actually taken.
+    $store = is_file($fixtureStore) ? (json_decode((string)file_get_contents($fixtureStore), true) ?: []) : [];
     $store[$halfRef] = ['amount' => 200.0, 'currency' => 'SAR'];
-    file_put_contents(sys_get_temp_dir() . '/sadad_fixture_orders.json', json_encode($store));
+    file_put_contents($fixtureStore, json_encode($store));
     $pdo->prepare('UPDATE invoices SET gateway=\'sadad\', gateway_order_ref=? WHERE id=?')->execute([$halfRef, $invPart]);
     $rowPart = $pdo->query("SELECT * FROM invoices WHERE id=$invPart")->fetch();
     $settlePart = gateway_verify_and_settle($pdo, $rowPart, 'sadad', ['reference' => $halfRef, 'source' => 'return']);

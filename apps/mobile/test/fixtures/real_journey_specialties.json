@@ -1,0 +1,55 @@
+{
+  "ok": true,
+  "specialties": [
+    {
+      "id": 1,
+      "name": "الأحوال الشخصية",
+      "description": "شؤون الأسرة: الزواج والطلاق والنفقة والحضانة والميراث.",
+      "icon_key": "family",
+      "lawyer_count": 0
+    },
+    {
+      "id": 2,
+      "name": "الدعاوى التجارية",
+      "description": "النزاعات التجارية والشركات والعقود والأوراق التجارية والإفلاس.",
+      "icon_key": "commercial",
+      "lawyer_count": 0
+    },
+    {
+      "id": 3,
+      "name": "الدعاوى العمالية",
+      "description": "نزاعات العمل: حقوق وواجبات العامل وصاحب العمل ومستحقات نهاية الخدمة.",
+      "icon_key": "labor",
+      "lawyer_count": 0
+    },
+    {
+      "id": 4,
+      "name": "الدعاوى الجزائية",
+      "description": "القضايا الجزائية والمطالبات المالية الناشئة عن الجرائم.",
+      "icon_key": "criminal",
+      "lawyer_count": 0
+    },
+    {
+      "id": 5,
+      "name": "الدعاوى العامة",
+      "description": "الدعاوى المدنية والعقارية والعقود والتحكيم.",
+      "icon_key": "general",
+      "lawyer_count": 0
+    },
+    {
+      "id": 6,
+      "name": "دعاوى التنفيذ",
+      "description": "تنفيذ الأحكام والسندات التنفيذية والمنازعات المتعلقة بها.",
+      "icon_key": "enforcement",
+      "lawyer_count": 0
+    },
+    {
+      "id": 7,
+      "name": "الدعاوى المتعلقة بالإنهاءات",
+      "description": "إنهاءات الأوقاف والمواريث والصكوك والولايات.",
+      "icon_key": "endowments",
+      "lawyer_count": 0
+    }
+  ],
+  "ready": true
+}

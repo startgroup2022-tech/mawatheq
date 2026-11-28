@@ -40,6 +40,10 @@ define('MAX_UPLOAD_SIZE_MB', 15);
 define('UPLOAD_DIR', __DIR__ . '/../uploads/documents/');
 define('EVIDENCE_UPLOAD_DIR', __DIR__ . '/../uploads/evidence/');
 define('LAWYER_PHOTO_DIR', __DIR__ . '/../uploads/lawyer-photos/');
+// Legal-library hosted files (Execution 74). Only used for a source whose
+// redistribution decision is `hosted`; a `link_only` source never writes here and
+// its download button points at the official URL instead.
+define('LEGAL_LIBRARY_DIR', __DIR__ . '/../uploads/legal-library/');
 
 error_reporting(E_ALL);
 ini_set('display_errors', '0');
@@ -147,7 +151,12 @@ $requestPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
   // SAML endpoints are exempt because the IdP POSTs to them from its own origin and cannot
   // carry our CSRF token. Authenticity there is the XML signature (verified in sso/acs.php),
   // not a session token — the same reasoning as the payment webhooks above.
-  $csrfExemptPaths = ['/ngenius-webhook.php', '/sadad-webhook.php', '/sso/acs.php', '/sso/sls.php'];
+  // Webhooks authenticate with their own secret/signature; SAML endpoints are called by
+  // the IdP. `/api/firm-chat.php` is the public firm-site chatbot: the visitor is an
+  // anonymous stranger with no session, so a session CSRF token cannot exist. It is
+  // protected instead by the unguessable 32-hex bot public key, a strict per-key rate
+  // limit, and by never reading a client, case or document row.
+  $csrfExemptPaths = ['/ngenius-webhook.php', '/sadad-webhook.php', '/sso/acs.php', '/sso/sls.php', '/api/firm-chat.php'];
 
 $isBearerApi = strpos($requestPath, '/api/v1/') === 0;
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && !$isBearerApi && !in_array($requestPath, $csrfExemptPaths, true)) {
@@ -201,5 +210,27 @@ if (is_file(__DIR__ . '/../includes/affiliate_tracking.php')) {
         affiliate_track_request($pdo);
     } catch (Throwable $affiliateTrackError) {
         error_log('Affiliate tracking failed: ' . $affiliateTrackError->getMessage());
+    }
+}
+
+/**
+ * Append a content-derived version to a same-origin asset URL.
+ *
+ * Static assets are served with long cache lifetimes, and there is no build step that
+ * renames them. After a stylesheet fix the browser therefore kept serving the old bytes
+ * and the site looked unchanged — the "we deployed but nothing moved" report. The file's
+ * mtime is the version, so any edit changes the URL and the browser fetches it once.
+ *
+ * Fails soft: if the file cannot be stat-ed (a partial upload, a read-permission problem)
+ * the plain path is returned. A missing version only costs a cache revalidation; a fatal
+ * here would cost the page.
+ */
+if (!function_exists('asset_url')) {
+    function asset_url(string $path): string {
+        $path = '/' . ltrim($path, '/');
+        $absolute = __DIR__ . '/..' . $path;
+        $mtime = @filemtime($absolute);
+        if ($mtime === false) return $path;
+        return $path . (str_contains($path, '?') ? '&' : '?') . 'v=' . $mtime;
     }
 }

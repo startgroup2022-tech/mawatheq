@@ -50,7 +50,9 @@ if (!function_exists('nav_client')) {
                 'title' => $rtl ? 'خدماتي' : 'My services',
                 'items' => [
                     'consultations' => ['icon' => 'calendar', 'label' => $rtl ? 'استشاراتي' : 'My consultations', 'href' => '/consultations.php'],
+                    'favorites'     => ['icon' => 'check-circle', 'label' => $rtl ? 'المحامون المفضّلون' : 'Favourite lawyers', 'href' => '/favorites.php'],
                     'my-cases'      => ['icon' => 'briefcase', 'label' => $rtl ? 'قضاياي' : 'My cases', 'href' => '/my-cases.php'],
+                    'case-hearings' => ['icon' => 'clock', 'label' => $rtl ? 'مواعيد قضاياي' : 'Case schedule', 'href' => '/case-hearings.php'],
                     'case-tasks'    => ['icon' => 'check', 'label' => $rtl ? 'مهامي' : 'My tasks', 'href' => '/case-tasks.php'],
                     'documents'     => ['icon' => 'file', 'label' => $rtl ? 'مستنداتي' : 'My documents', 'href' => '/documents.php'],
                     'draft-reviews' => ['icon' => 'edit', 'label' => $rtl ? 'مراجعة المسودات' : 'Draft reviews', 'href' => '/draft-reviews.php'],
@@ -70,6 +72,7 @@ if (!function_exists('nav_client')) {
                 'title' => $rtl ? 'المعرفة' : 'Knowledge',
                 'items' => [
                     'laws' => ['icon' => 'book', 'label' => $rtl ? 'مكتبة الأنظمة' : 'Laws library', 'href' => '/laws.php'],
+                    'legal-library' => ['icon' => 'landmark', 'label' => $rtl ? 'المكتبة القانونية والقضائية' : 'Legal & judicial library', 'href' => '/legal-library.php'],
                 ],
             ],
             [
@@ -82,6 +85,7 @@ if (!function_exists('nav_client')) {
                 'title' => $rtl ? 'الحساب' : 'Account',
                 'items' => [
                     'profile' => ['icon' => 'user', 'label' => $rtl ? 'الملف الشخصي' : 'Profile', 'href' => '/account.php'],
+                    'notification-settings' => ['icon' => 'bell', 'label' => $rtl ? 'إعدادات الإشعارات' : 'Notification settings', 'href' => '/notification-settings.php'],
                 ],
             ],
         ];
@@ -104,15 +108,19 @@ if (!function_exists('nav_lawyer')) {
                 'title' => $rtl ? 'العمل القانوني' : 'Legal work',
                 'items' => [
                     'cases'         => ['icon' => 'briefcase', 'label' => $rtl ? 'القضايا' : 'Cases', 'href' => '/lawyer/cases.php'],
+                    'clients'       => ['icon' => 'users', 'label' => $rtl ? 'العملاء' : 'Clients', 'href' => '/lawyer/clients.php'],
                     'consultations' => ['icon' => 'calendar', 'label' => $rtl ? 'الاستشارات' : 'Consultations', 'href' => '/lawyer/consultations.php'],
                     'calendar'      => ['icon' => 'clock', 'label' => $rtl ? 'التقويم والجلسات' : 'Calendar & sessions', 'href' => '/lawyer/calendar.php'],
+                    'contact-requests' => ['icon' => 'inbox', 'label' => $rtl ? 'طلبات التواصل' : 'Contact requests', 'href' => '/lawyer/contact-requests.php'],
                     'specialties'   => ['icon' => 'check-circle', 'label' => $rtl ? 'تخصصاتي' : 'My specialties', 'href' => '/lawyer/specialties.php'],
+                    'legal-library' => ['icon' => 'landmark', 'label' => $rtl ? 'المكتبة القانونية والقضائية' : 'Legal & judicial library', 'href' => '/legal-library.php'],
                 ],
             ],
             [
                 'title' => $rtl ? 'الصياغة والذكاء الاصطناعي' : 'Drafting & AI',
                 'items' => [
                     'drafting'     => ['icon' => 'edit', 'label' => $rtl ? 'الصياغة الذكية' : 'AI drafting', 'href' => '/lawyer/drafting.php'],
+                    'templates'    => ['icon' => 'file-text', 'label' => $rtl ? 'مكتبة النماذج' : 'Template library', 'href' => '/lawyer/templates.php'],
                       'ai-copilot'   => ['icon' => 'spark', 'label' => $rtl ? 'مساعد القضية' : 'Case copilot', 'href' => '/lawyer/ai-copilot.php'],
                     'availability' => ['icon' => 'clock', 'label' => $rtl ? 'أوقات الدوام' : 'Availability', 'href' => '/lawyer/availability.php'],
                 ],
@@ -121,6 +129,8 @@ if (!function_exists('nav_lawyer')) {
                 'title' => $rtl ? 'المالية' : 'Billing',
                 'items' => [
                     'invoices' => ['icon' => 'receipt', 'label' => $rtl ? 'الفواتير والمدفوعات' : 'Invoices & payments', 'href' => '/lawyer/invoices.php'],
+                    'wallet'   => ['icon' => 'wallet', 'label' => $rtl ? 'المحفظة المالية' : 'Wallet', 'href' => '/lawyer/wallet.php'],
+                    'subscription' => ['icon' => 'check-circle', 'label' => $rtl ? 'الاشتراك والباقة' : 'Subscription & plan', 'href' => '/lawyer/subscription.php'],
                 ],
             ],
         ];
@@ -141,6 +151,7 @@ if (!function_exists('nav_lawyer')) {
             $firmItems['branches'] = ['icon' => 'landmark', 'label' => $rtl ? 'الفروع والصلاحيات' : 'Branches & access', 'href' => '/lawyer/branches.php'];
             $firmItems['domains'] = ['icon' => 'external', 'label' => $rtl ? 'النطاقات المخصصة' : 'Custom domains', 'href' => '/lawyer/domains.php'];
             $firmItems['sso'] = ['icon' => 'shield', 'label' => $rtl ? 'الدخول الموحّد' : 'Single sign-on', 'href' => '/lawyer/sso.php'];
+            $firmItems['chatbot'] = ['icon' => 'inbox', 'label' => $rtl ? 'روبوت المحادثة' : 'Chat assistant', 'href' => '/lawyer/chatbot.php'];
         }
         $groups[] = [
             'title' => $rtl ? 'المكتب القانوني' : 'Law firm',
@@ -149,7 +160,8 @@ if (!function_exists('nav_lawyer')) {
         $groups[] = [
             'title' => $rtl ? 'الحساب' : 'Account',
             'items' => [
-                'profile' => ['icon' => 'user', 'label' => $rtl ? 'الملف الشخصي' : 'Profile', 'href' => '/lawyer/profile.php'],
+                'profile'  => ['icon' => 'user', 'label' => $rtl ? 'الملف الشخصي' : 'Profile', 'href' => '/lawyer/profile.php'],
+                'settings' => ['icon' => 'settings', 'label' => $rtl ? 'الإعدادات' : 'Settings', 'href' => '/lawyer/settings.php'],
             ],
         ];
         return ['groups' => $groups, 'active' => $active];

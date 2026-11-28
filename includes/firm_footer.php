@@ -39,5 +39,22 @@ if (!empty($firm['social_json'])) { $social = json_decode((string)$firm['social_
   </div>
 </footer>
 <script src="/assets/js/main.js"></script>
+<?php
+// The firm's public chat assistant. Rendered only when it would actually answer: the bot
+// exists, is enabled, the firm site is public and the plan carries `feature_chatbot`.
+// The endpoint re-checks all of it, so this is a convenience, not the gate.
+require_once __DIR__ . '/firm_chatbot.php';
+$__chatBot = firm_chatbot_for_firm($pdo, (int)$firm['id']);
+if ($__chatBot) {
+    // firm_chatbot_for_firm() does not join the firm, so supply the published flag the
+    // gate needs from the row this page already holds.
+    $__chatBot['firm_is_public'] = (int)($firm['is_public'] ?? 0);
+}
+if ($__chatBot && firm_chatbot_enabled($pdo, $__chatBot)):
+?>
+<script src="/assets/js/firm-chat-widget.js"
+        data-key="<?= htmlspecialchars((string)$__chatBot['public_key']) ?>"
+        data-name="<?= htmlspecialchars(is_rtl() ? (string)$__chatBot['display_name_ar'] : ((string)$__chatBot['display_name_en'] ?: (string)$__chatBot['display_name_ar'])) ?>"></script>
+<?php endif; ?>
 </body>
 </html>

@@ -73,15 +73,34 @@ ApiErrorKind kindForStatus(int status) {
 }
 
 /// Extracts `error` from the standard envelope, falling back to a safe message.
-String messageFromBody(String body, int status) {
+///
+/// [authAttempt] marks a request that *establishes* a session (sign-in, password
+/// reset) rather than one that uses an existing token. It changes only the 401
+/// fallback: on a sign-in there is no session to expire, so answering "session
+/// expired" is always wrong. That is exactly what a lawyer saw when their password
+/// was simply incorrect — the endpoint's English `invalid email or password` was
+/// replaced by the status fallback below, which is written for a protected call.
+String messageFromBody(String body, int status, {bool authAttempt = false}) {
   try {
     final decoded = jsonDecode(body);
     if (decoded is Map && decoded['error'] is String) {
       final msg = (decoded['error'] as String).trim();
-      if (msg.isNotEmpty) return localizeServerMessage(msg, status);
+      if (msg.isNotEmpty) {
+        if (authAttempt) {
+          // On a sign-in, prefer Arabic over the server's raw English. An
+          // unrecognised code still passes through so the reset screens keep
+          // switching on values such as `invalid_token`.
+          return authErrorText(msg) ??
+              (_containsArabic(msg) ? msg : 'البريد الإلكتروني أو كلمة المرور غير صحيحة.');
+        }
+        return localizeServerMessage(msg, status);
+      }
     }
   } catch (_) {
     // Body was not JSON (an HTML error page, for instance).
+  }
+  if (authAttempt && status == 401) {
+    return 'البريد الإلكتروني أو كلمة المرور غير صحيحة.';
   }
   return fallbackMessageForStatus(status);
 }
@@ -134,3 +153,41 @@ bool _containsArabic(String value) {
 /// True for a single `lower_snake` token — a machine code, not prose.
 bool _isMachineCode(String value) =>
     RegExp(r'^[a-z][a-z0-9_]*$').hasMatch(value);
+
+/// Arabic text for a **sign-in** response, or `null` when the value is not
+/// something this table recognises.
+///
+/// `api/v1/auth/lawyer-login.php` and `login.php` answer with a stable code rather
+/// than prose so the app can say the right thing in the user's language:
+///
+/// * `invalid_credentials` — the generic wrong-email-or-password answer. It stays
+///   deliberately generic so the form cannot be used to discover which addresses
+///   exist; only the password-verified states below are ever named.
+/// * `email_not_verified`, `pending_approval`, `account_suspended`,
+///   `account_not_approved` — reported only after the password already matched, so
+///   naming the state leaks nothing. These must not be shown as a wrong password,
+///   which is what made an approved-but-pending lawyer believe sign-in was broken.
+///
+/// An unrecognised `lower_snake` code is passed through, because the reset screens
+/// switch on values such as `invalid_token`. Unrecognised **prose** returns `null`
+/// so the caller can substitute Arabic — a sign-in must never surface the server's
+/// raw English (`invalid email or password`) to an Arabic-first app.
+String? authErrorText(String code) {
+  final msg = code.trim();
+  switch (msg) {
+    case 'invalid_credentials':
+      return 'البريد الإلكتروني أو كلمة المرور غير صحيحة.';
+    case 'email_not_verified':
+      return 'لم يتم تأكيد بريدك الإلكتروني بعد. افتح رابط التأكيد الذي أرسلناه '
+          'إلى بريدك، ثم حاول مرة أخرى.';
+    case 'pending_approval':
+      return 'تم تأكيد بريدك، وحسابك الآن قيد المراجعة من إدارة مواثيق. '
+          'ستتمكن من الدخول مباشرة بعد اعتماده.';
+    case 'account_suspended':
+      return 'حسابك موقوف حالياً. يرجى التواصل مع دعم مواثيق لإعادة تفعيله.';
+    case 'account_not_approved':
+      return 'حسابك غير معتمد بعد. يرجى التواصل مع دعم مواثيق.';
+    default:
+      return _isMachineCode(msg) ? msg : null;
+  }
+}

@@ -82,7 +82,10 @@ $allVerified = true;
 $notVerified = [];
 foreach (e291_upgrade_files() as $f) {
     $r = e291_measure($admin, $scratch, $f);
-    if ($r['state'] !== 'verified') {
+    // `data_only` is a complete outcome for a seed: the file parsed and made no schema
+    // claim, so there is nothing that could be half-applied. Everything else must be
+    // `verified` — a partial or unreadable file is still a failure.
+    if ($r['state'] !== 'verified' && $r['state'] !== 'data_only') {
         $allVerified = false;
         $notVerified[] = basename($f) . "={$r['state']}({$r['present']}/{$r['total']})";
     }
@@ -97,9 +100,11 @@ check('the ledger report says every migration is verified',
     $run['output']);
 
 $admin->exec("USE `$scratch`");
-$recordedVerified = (int)$admin->query("SELECT COUNT(*) FROM schema_migrations WHERE state='verified'")->fetchColumn();
+// Only `verified` and `data_only` are recorded at all, so this asserts the complement:
+// nothing in the ledger is partial, missing or unreadable.
+$recordedVerified = (int)$admin->query("SELECT COUNT(*) FROM schema_migrations WHERE state IN ('verified','data_only')")->fetchColumn();
 $totalRecorded = (int)$admin->query('SELECT COUNT(*) FROM schema_migrations')->fetchColumn();
-check('every recorded migration is in state verified', $recordedVerified === $totalRecorded && $totalRecorded > 0,
+check('every recorded migration is verified or data_only', $recordedVerified === $totalRecorded && $totalRecorded > 0,
     "verified=$recordedVerified total=$totalRecorded");
 
 // ---------------------------------------------------------------------------

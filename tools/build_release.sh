@@ -125,12 +125,15 @@ printf '  removed %s root-level .md file(s) from the site package\n' "$removed_d
     || fail "database/upgrade_v56.sql is missing from the migration package"
 [ -f "$STAGE/migrations/database/upgrade_v57.sql" ] \
     || fail "database/upgrade_v57.sql is missing from the migration package"
-# upgrade_v64.sql is the last migration in the chain. It carries the home-banner table
-# (Execution 38); a package that stops earlier deploys the app's slider against a table
-# that does not exist — the same failure the v57 guard above exists to prevent. Assert
-# the current head, not a remembered one.
-[ -f "$STAGE/migrations/database/upgrade_v64.sql" ] \
-    || fail "database/upgrade_v64.sql is missing from the migration package"
+# upgrade_v83.sql is the last migration in the chain. It seeds the platform legal
+# template catalogue (firm_id IS NULL) that v81's document_templates table left empty,
+# so the template library is useful on a fresh install instead of an empty grid.
+# Assert the current head, not a remembered one — this assertion moves with each
+# execution, and a stale expectation fails the next build for the wrong reason.
+for v in 81 82 83; do
+    [ -f "$STAGE/migrations/database/upgrade_v$v.sql" ] \
+        || fail "database/upgrade_v$v.sql is missing from the migration package"
+done
 
 # --- modes and timestamps --------------------------------------------------
 step "normalizing file modes and timestamps"
@@ -148,6 +151,11 @@ stamp_tree() {
 }
 normalize() {
     local dir="$1"
+    # Clear setuid/setgid/sticky first. `chmod 755` does NOT clear the setgid bit on a
+    # directory that carries one, so a source tree whose directories are 2755 (the mode
+    # a setgid parent such as the checked-out vendor/ leaves behind) produced 2755 in the
+    # package and the "every packaged file is 644 or 755" guard could never be satisfied.
+    find "$dir" -exec chmod a-s {} + 2>/dev/null
     find "$dir" -type d -exec chmod 755 {} +
     find "$dir" -type f -exec chmod 644 {} +
     # Restore any executable bit that the ref actually tracks, so a script stays a script.
@@ -180,7 +188,15 @@ check_absent() {
 check_absent "$STAGE/site" '*/config/secrets.php' 'no config/secrets.php in the site package'
 check_absent "$STAGE/site" '*/.git' 'no .git in the site package'
 check_absent "$STAGE/site" '*/tests' 'no tests/ in the site package'
-check_absent "$STAGE/site" '*/docs' 'no docs/ in the site package'
+# Root-level only, like the .md check below: `find -path '*/docs'` matches ANY depth, so a
+# third-party package that legitimately ships its own docs/ (psr/http-message does) aborts
+# the build. What must not ship is the platform's own docs/ directory.
+if [ -e "$STAGE/site/docs" ]; then
+    printf '  ! docs/ in the site package\n'
+    guard_fail=1
+else
+    printf '  ok  no docs/ in the site package\n'
+fi
 check_absent "$STAGE/site" '*/AGENTS.md' 'no AGENTS.md in the site package'
 # Root level only: vendor/ and api/v1/ ship their own README.md legitimately, and `find -path`
 # treats `*` as matching `/`, so a `*.md` pattern would flag them too.

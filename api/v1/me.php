@@ -30,9 +30,15 @@ if ($auth['type'] === 'client') {
 }
 
 $lawyerId = (int)$auth['id'];
-$stmt = $pdo->prepare('SELECT id, full_name, email, phone, specialization, years_experience, hourly_rate, rating, bio, photo_path, jurisdiction FROM lawyers WHERE id=?');
+require_once __DIR__ . '/../../includes/specialization_field.php';
+$stmt = $pdo->prepare('SELECT id, full_name, email, phone, specialization, specializations, years_experience, hourly_rate, rating, bio, photo_path, jurisdiction FROM lawyers WHERE id=?');
 $stmt->execute([$lawyerId]);
 $profile = $stmt->fetch();
+if ($profile) {
+    // `specializations` is the full declared list; `specialization` stays the primary
+    // value so a client written against the older field keeps working.
+    $profile['specializations'] = lawyer_specialization_list($profile);
+}
 
 $ctx = tenant_context_for_lawyer($pdo, $lawyerId);
 $firmName = null;

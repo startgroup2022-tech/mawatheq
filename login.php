@@ -5,11 +5,18 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && !csrf_is_valid($_POST['c
 }
 require_once __DIR__ . '/lang/strings.php';
 require_once __DIR__ . '/includes/auth_security.php';
+require_once __DIR__ . '/includes/redirect.php';
 $error = null;
 // Unverified email is not a credential failure; keep it on its own channel so the
 // client is told exactly what to do instead of a generic "sign-in failed".
 $notice = null;
 $showResend = false;
+
+// Where to send the client after a successful sign-in. A deep link such as
+// /checkout.php?order_id=12 must survive the login round trip, or the customer loses the
+// package they were buying. Only a local path is accepted — never an absolute URL — so a
+// crafted link cannot turn the login page into an open redirect.
+$next = safe_local_path($_POST['next'] ?? ($_GET['next'] ?? ''));
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $emailInput = $_POST['email'] ?? '';
@@ -35,7 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['user_name'] = $user['full_name'];
                 require_once __DIR__ . '/includes/audit_log.php';
                 log_action($pdo, 'تسجيل دخول العميل', 'client', (int)$user['id']);
-                header('Location: /ai-assistant.php');
+                header('Location: ' . ($next !== '' ? $next : '/ai-assistant.php'));
                 exit;
             }
         } else {
@@ -52,7 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <link rel="icon" href="/assets/img/logo.webp">
 <title><?= t('nav_login') ?> — <?= SITE_NAME_AR ?></title>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/css/style.css">
+<link rel="stylesheet" href="<?= asset_url('/assets/css/style.css') ?>">
 </head>
 <body>
 <div class="auth-wrap">
@@ -64,12 +71,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <?php if ($error): ?><div class="form-alert error"><?= $error === strip_tags($error) ? htmlspecialchars($error) : $error ?></div><?php endif; ?>
     <?php if ($showResend): ?><a class="btn btn-outline btn-block" href="/resend-verification.php?as=client"><?= is_rtl() ? 'إعادة إرسال رابط التأكيد' : 'Resend confirmation link' ?></a><?php endif; ?>
     <form method="post"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
+      <?php if ($next !== ''): ?><input type="hidden" name="next" value="<?= htmlspecialchars($next) ?>"><?php endif; ?>
       <div class="field"><label for="email"><?= is_rtl() ? 'البريد الإلكتروني' : 'Email' ?></label><input id="email" type="email" name="email" required></div>
       <div class="field"><label for="loginPassword"><?= is_rtl() ? 'كلمة المرور' : 'Password' ?></label><div class="password-input"><input type="password" name="password" id="loginPassword" autocomplete="current-password" required><button type="button" class="password-toggle" data-password-toggle="loginPassword"><?= is_rtl() ? 'إظهار' : 'Show' ?></button></div></div>
       <div class="auth-inline-link"><a href="/forgot-password.php?as=client"><?= is_rtl() ? 'نسيت كلمة المرور؟' : 'Forgot password?' ?></a></div>
       <button class="btn btn-primary btn-block" type="submit"><?= t('nav_login') ?></button>
     </form>
-    <div class="muted-link"><?= is_rtl() ? 'ليس لديك حساب؟' : "Don't have an account?" ?> <a href="/register.php" style="color:var(--teal);font-weight:700"><?= t('nav_get_started') ?></a></div>
+    <div class="muted-link"><?= is_rtl() ? 'ليس لديك حساب؟' : "Don't have an account?" ?> <a href="/register.php<?= $next !== '' ? '?next=' . rawurlencode($next) : '' ?>" style="color:var(--teal);font-weight:700"><?= t('nav_get_started') ?></a></div>
     <div class="auth-switch">
       <span><?= is_rtl() ? 'هل أنت محامٍ؟' : 'Are you a lawyer?' ?></span>
       <a href="/lawyer-login.php"><?= is_rtl() ? 'دخول المحامين' : 'Lawyer sign in' ?></a>

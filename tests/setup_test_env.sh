@@ -139,6 +139,9 @@ for port in 12000 8080; do
         AllowOverride All
         Require all granted
     </Directory>
+    # Point N-Genius at the local fixture so the payment suites exercise the real
+    # token/order path without a live merchant account. Harmless for every other suite.
+    SetEnv MAWATHEQ_NGENIUS_BASE_URL http://127.0.0.1:11443
     ErrorLog /tmp/apache-$port-error.log
     CustomLog /tmp/apache-$port-access.log combined
 </VirtualHost>

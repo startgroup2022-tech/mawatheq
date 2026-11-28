@@ -9,8 +9,16 @@
 // Run with:
 //   flutter test tool/screenshots/capture_screenshots.dart --update-goldens
 // The PNGs land in tool/screenshots/goldens/.
+//
+// Google Play store-listing mode: the default surface is 1080x2280, whose aspect
+// ratio (2.11:1) exceeds Play's 2:1 ceiling, so the goldens cannot be uploaded as
+// store screenshots as-is. With MAWATHEQ_STORE_SHOTS=1 the same screens render at
+// 1080x1920 (9:16, within Play's limits) into goldens_store/, leaving the existing
+// goldens untouched:
+//   MAWATHEQ_STORE_SHOTS=1 flutter test tool/screenshots/capture_screenshots.dart --update-goldens
 
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -25,6 +33,10 @@ import 'package:mawatheq_mobile/core/network/models.dart';
 import 'package:mawatheq_mobile/core/storage/token_storage.dart';
 import 'package:mawatheq_mobile/core/theme/app_theme.dart';
 import 'package:mawatheq_mobile/core/theme/theme_controller.dart';
+import 'package:mawatheq_mobile/features/account/privacy_screen.dart';
+import 'package:mawatheq_mobile/features/account/support_appointments_screen.dart';
+import 'package:mawatheq_mobile/features/account/support_center_screen.dart';
+import 'package:mawatheq_mobile/features/account/transactions_screen.dart';
 import 'package:mawatheq_mobile/features/consultations/consultations_screen.dart';
 import 'package:mawatheq_mobile/features/consultations/journey_screen.dart';
 import 'package:mawatheq_mobile/features/home/home_shell.dart';
@@ -62,6 +74,11 @@ class _MemoryTokenStore implements TokenStore {
   @override
   Future<String?> readDeviceLabel() async => null;
   @override
+  Future<void> saveBiometricEnabled(bool enabled) async {}
+  @override
+  Future<bool> readBiometricEnabled() async => false;
+
+  @override
   Future<void> clear() async => token = null;
 }
 
@@ -82,12 +99,13 @@ const _banners = [
 ];
 
 const _specialties = [
-  {'id': 1, 'name': 'الأحوال الشخصية', 'icon_key': 'family', 'lawyer_count': 4},
-  {'id': 2, 'name': 'القضايا التجارية', 'icon_key': 'commercial', 'lawyer_count': 3},
-  {'id': 3, 'name': 'القضايا العمالية', 'icon_key': 'labor', 'lawyer_count': 2},
-  {'id': 4, 'name': 'العقارات والملكية', 'icon_key': 'property', 'lawyer_count': 5},
-  {'id': 5, 'name': 'القضايا الجزائية', 'icon_key': 'criminal', 'lawyer_count': 1},
-  {'id': 6, 'name': 'الملكية الفكرية', 'icon_key': 'ip', 'lawyer_count': 0},
+  {'id': 1, 'name': 'الأحوال الشخصية', 'description': 'شؤون الأسرة: الزواج والطلاق والنفقة والحضانة والميراث.', 'icon_key': 'family', 'lawyer_count': 0},
+  {'id': 2, 'name': 'الدعاوى التجارية', 'description': 'النزاعات التجارية والشركات والعقود والأوراق التجارية والإفلاس.', 'icon_key': 'commercial', 'lawyer_count': 0},
+  {'id': 3, 'name': 'الدعاوى العمالية', 'description': 'نزاعات العمل: حقوق وواجبات العامل وصاحب العمل ومستحقات نهاية الخدمة.', 'icon_key': 'labor', 'lawyer_count': 0},
+  {'id': 4, 'name': 'الدعاوى الجزائية', 'description': 'القضايا الجزائية والمطالبات المالية الناشئة عن الجرائم.', 'icon_key': 'criminal', 'lawyer_count': 0},
+  {'id': 5, 'name': 'الدعاوى العامة', 'description': 'الدعاوى المدنية والعقارية والعقود والتحكيم.', 'icon_key': 'general', 'lawyer_count': 0},
+  {'id': 6, 'name': 'دعاوى التنفيذ', 'description': 'تنفيذ الأحكام والسندات التنفيذية والمنازعات المتعلقة بها.', 'icon_key': 'enforcement', 'lawyer_count': 0},
+  {'id': 7, 'name': 'الدعاوى المتعلقة بالإنهاءات', 'description': 'إنهاءات الأوقاف والمواريث والصكوك والولايات.', 'icon_key': 'endowments', 'lawyer_count': 0},
 ];
 
 const _issueTypes = [
@@ -137,6 +155,70 @@ const _lawyers = [
     'hourly_rate': 300.0,
   },
 ];
+
+/// The production state while the taxonomy import has not been run: no operator
+/// banners and no server specialties. Everything else is the normal fixture.
+Future<(int, Object)> _apiNoBanners(Uri uri) async {
+  final p = uri.path;
+  if (p.endsWith('/banners.php')) {
+    return (200, {'ok': true, 'banners': <Object>[]});
+  }
+  if (p.endsWith('/journey.php') &&
+      uri.queryParameters['action'] == 'specialties') {
+    return (200, {'ok': true, 'specialties': <Object>[], 'ready': true});
+  }
+  return _api(uri);
+}
+
+/// The production state *after* MAWATHEQ_LEGAL_CLASSIFICATIONS_IMPORT.sql: still no
+/// operator banners, so the built-in slides carry the carousel, and the seven real
+/// categories now arrive from the server. `_specialties` holds the names and
+/// descriptions the import actually writes.
+Future<(int, Object)> _apiImportedTaxonomy(Uri uri) async {
+  final p = uri.path;
+  if (p.endsWith('/banners.php')) {
+    return (200, {'ok': true, 'banners': <Object>[]});
+  }
+  if (p.endsWith('/journey.php') &&
+      uri.queryParameters['action'] == 'specialties') {
+    return (200, {'ok': true, 'specialties': _specialties, 'ready': true});
+  }
+  return _api(uri);
+}
+
+/// The lawyer-availability empty state: the specialty has no lawyer, so the API
+/// returns an empty list plus the `alternative` object the old screen echoed. The
+/// captured screen must show none of it — only the message and the two buttons.
+Future<(int, Object)> _apiNoLawyer(Uri uri) async {
+  final p = uri.path;
+  if (p.endsWith('/banners.php')) {
+    return (200, {'ok': true, 'banners': _banners});
+  }
+  if (p.endsWith('/lawyers.php')) {
+    return (200, {'ok': true, 'lawyers': <Object>[]});
+  }
+  if (p.endsWith('/journey.php')) {
+    switch (uri.queryParameters['action']) {
+      case 'specialties':
+        return (200, {'ok': true, 'specialties': _specialties, 'ready': true});
+      case 'issue-types':
+        return (200, {'ok': true, 'issue_types': _issueTypes});
+      case 'lawyers':
+        return (200, {
+          'ok': true,
+          'matched': false,
+          'lawyers': <Object>[],
+          'alternative': {
+            'reason': 'لا يوجد حاليًا محامٍ متاح في هذا التخصص.',
+            'suggest': 'يمكنك اختيار تخصص آخر أو إرسال طلبك وسنرشّح لك محاميًا مناسبًا.',
+            'specialties': <Object>[],
+          },
+        });
+    }
+    return (200, {'ok': true});
+  }
+  return _api(uri);
+}
 
 Future<(int, Object)> _api(Uri uri) async {
   final p = uri.path;
@@ -214,6 +296,160 @@ Future<(int, Object)> _api(Uri uri) async {
       'type': 'client',
       'role': 'client',
       'permissions': [],
+    });
+  }
+  // Execution 65 account surfaces.
+  if (p.endsWith('/support.php')) {
+    switch (uri.queryParameters['action']) {
+      case 'settings':
+        return (200, {
+          'ok': true,
+          'channels': [
+            {'key': 'email', 'type': 'email', 'value': 'info@mawatheq.com'},
+            {'key': 'whatsapp', 'type': 'whatsapp', 'value': '966501453765'},
+            {'key': 'tickets', 'type': 'tickets', 'value': ''},
+            {'key': 'appointments', 'type': 'appointments', 'value': ''},
+          ],
+          'hours': 'الأحد – الخميس، 9 صباحاً – 5 مساءً',
+          'whatsapp_url': 'https://wa.me/966501453765',
+        });
+      case 'tickets':
+        return (200, {
+          'ok': true,
+          'tickets': [
+            {
+              'id': 11,
+              'ticket_number': 'TKT-2026-000111',
+              'subject': 'استفسار عن تجديد الاشتراك',
+              'status': 'answered',
+              'priority': 'normal',
+              'category_ar': 'الفواتير والدفع',
+              'category_en': 'Billing and payments',
+              'updated_at': '2026-11-04 10:30',
+              'unread_for_customer': 1,
+            },
+            {
+              'id': 12,
+              'ticket_number': 'TKT-2026-000112',
+              'subject': 'مشكلة في رفع مستند',
+              'status': 'open',
+              'priority': 'normal',
+              'category_ar': 'المستندات',
+              'category_en': 'Documents',
+              'updated_at': '2026-11-03 09:10',
+              'unread_for_customer': 0,
+            },
+          ],
+        });
+      case 'slots':
+        return (200, {
+          'ok': true,
+          'slots': [
+            {
+              'id': 21,
+              'starts_at': '2026-11-10 04:32',
+              'ends_at': '2026-11-10 05:02',
+              'remaining': 2,
+              'note': '',
+            },
+            {
+              'id': 22,
+              'starts_at': '2026-11-11 04:32',
+              'ends_at': '2026-11-11 05:02',
+              'remaining': 0,
+              'note': '',
+            },
+          ],
+        });
+      case 'appointments':
+        return (200, {
+          'ok': true,
+          'appointments': [
+            {
+              'id': 31,
+              'reference': 'SUP-2026-822193',
+              'subject': 'طلب موعد تجريبي',
+              'status': 'pending',
+              'starts_at': '2026-11-10 04:32',
+              'admin_note': '',
+            },
+          ],
+        });
+    }
+    return (200, {'ok': true});
+  }
+  if (p.endsWith('/privacy.php')) {
+    switch (uri.queryParameters['action']) {
+      case 'info':
+        return (200, {
+          'ok': true,
+          'privacy_url': 'https://mawatheq.com/privacy.php',
+          'terms_url': 'https://mawatheq.com/terms.php',
+          'account_url': 'https://mawatheq.com/account.php',
+          'deletion': {
+            'deletes': ['الاسم', 'البريد الإلكتروني', 'الجوال'],
+            'keeps': ['الفواتير الصادرة', 'الاستشارات المكتملة'],
+          },
+        });
+      case 'consents':
+        return (200, {
+          'ok': true,
+          'consents': [
+            {
+              'key': 'analytics',
+              'label_ar': 'تحليلات الاستخدام',
+              'label_en': 'Usage analytics',
+              'granted': true,
+            },
+            {
+              'key': 'product_updates',
+              'label_ar': 'تحديثات المنتج والعروض',
+              'label_en': 'Product updates',
+              'granted': false,
+            },
+          ],
+        });
+    }
+    return (200, {'ok': true});
+  }
+  if (p.endsWith('/transactions.php')) {
+    return (200, {
+      'ok': true,
+      'transactions': [
+        {
+          'id': 51,
+          'type': 'invoice',
+          'status': 'paid',
+          'amount': '350.00',
+          'currency': 'SAR',
+          'date': '2026-11-01',
+          'reference': 'INV-2026-0051',
+          'title': 'فاتورة استشارة قانونية',
+          'subtitle': 'المحامي عبدالله الحربي',
+          'link': '',
+        },
+        {
+          'id': 52,
+          'type': 'refund',
+          'status': 'refunded',
+          'amount': '75.00',
+          'currency': 'SAR',
+          'date': '2026-10-28',
+          'reference': 'REF-2026-0052',
+          'title': 'مبلغ مسترد',
+          'subtitle': '',
+          'link': '',
+        },
+      ],
+      'summary': {
+        'count': 2,
+        'paid': '350.00 ر.س',
+        'pending': '0.00 ر.س',
+        'refunded': '75.00 ر.س',
+        'currency': 'SAR',
+      },
+      'types': ['consultation', 'package', 'invoice', 'invoice_payment', 'refund'],
+      'statuses': ['paid', 'pending', 'failed', 'refunded', 'unpaid'],
     });
   }
   return (200, {'ok': true, 'cases': [], 'documents': [], 'notifications': []});
@@ -301,6 +537,12 @@ Future<void> _settle(WidgetTester tester) async {
 /// The assertion is the point: `matchesGoldenFile` is happy to write a picture of a
 /// blank screen, so without this a broken screen would produce a green test and a
 /// useless image. `expect` before `expectLater` makes a blank screen a failure.
+///
+/// When [storeShots] is true the harness renders at Play's maximum 2:1 surface
+/// (1080x1920) and writes to `goldens_store/` instead of `goldens/`, so the
+/// checked-in widget-test goldens are not disturbed.
+final bool storeShots = Platform.environment['MAWATHEQ_STORE_SHOTS'] == '1';
+
 Future<void> _shot(
   WidgetTester tester,
   String file,
@@ -315,7 +557,7 @@ Future<void> _shot(
   }
   await expectLater(
     find.byType(MaterialApp),
-    matchesGoldenFile('goldens/$file'),
+    matchesGoldenFile('${storeShots ? 'goldens_store' : 'goldens'}/$file'),
   );
 }
 
@@ -338,7 +580,9 @@ void main() {
   setUp(() {
     final binding = TestWidgetsFlutterBinding.ensureInitialized();
     final view = binding.platformDispatcher.views.first;
-    view.physicalSize = const Size(1080, 2280);
+    view.physicalSize = storeShots
+        ? const Size(1080, 1920)
+        : const Size(1080, 2280);
     view.devicePixelRatio = 3.0;
     binding.platformDispatcher.accessibilityFeaturesTestValue =
         const FakeAccessibilityFeatures(disableAnimations: true);
@@ -364,6 +608,49 @@ void main() {
       'اختر تخصصك القانوني',
       'الأحوال الشخصية',
       'زائر',
+    ]);
+  });
+
+  testWidgets('guest home fresh install (built-in slider)', (tester) async {
+    // The production state: `home_banners` is empty, so the built-in Mawatheq
+    // slides carry the carousel. This is the shot that proves the home is not just
+    // two static cards.
+    final t = _FakeTransport(_apiNoBanners);
+    await tester.pumpWidget(_app(
+      auth: await _auth(t),
+      repo: _repo(t),
+      home: HomeShell(repository: _repo(t)),
+    ));
+    await _settle(tester);
+    await _shot(tester, '10_guest_home_fresh_slider.png', <String>[
+      'استشارتك القانونية بخطوات بسيطة',
+      'احجز استشارة',
+      'اسأل المساعد الذكي',
+      'اختر تخصصك القانوني',
+    ]);
+  });
+
+  testWidgets('guest home with the imported taxonomy', (tester) async {
+    // The state production reaches after MAWATHEQ_LEGAL_CLASSIFICATIONS_IMPORT.sql:
+    // still no operator banners, so the built-in slider carries the carousel, and the
+    // seven real categories now come from the server. The names below are the ones the
+    // import writes, not invented placeholders — a screenshot of fake data would prove
+    // nothing about the delivery.
+    final t = _FakeTransport(_apiImportedTaxonomy);
+    await tester.pumpWidget(_app(
+      auth: await _auth(t),
+      repo: _repo(t),
+      home: HomeShell(repository: _repo(t)),
+    ));
+    await _settle(tester);
+    await _shot(tester, '11_guest_home_imported_taxonomy.png', <String>[
+      'استشارتك القانونية بخطوات بسيطة',
+      'احجز استشارة',
+      'اسأل المساعد الذكي',
+      'اختر تخصصك القانوني',
+      'الدعاوى العمالية',
+      'دعاوى التنفيذ',
+      'الدعاوى المتعلقة بالإنهاءات',
     ]);
   });
 
@@ -497,6 +784,115 @@ void main() {
     await _shot(tester, '09_consultations.png', <String>[
       'عقد إيجار تجاري',
       'المحامي عبدالله الحربي',
+    ]);
+  });
+
+  // The empty state the owner reported: one message and exactly two working
+  // buttons, with no server field, code or second paragraph on screen. Captured
+  // from both surfaces that can reach it.
+  testWidgets('journey — no lawyer available', (tester) async {
+    final t = _FakeTransport(_apiNoLawyer);
+    await tester.pumpWidget(_app(
+      auth: await _auth(t, signedIn: true),
+      repo: _repo(t),
+      home: ConsultationJourneyScreen(
+        repository: _repo(t),
+        initialSpecialty: const JourneySpecialty(
+          id: 4,
+          name: 'الدعاوى الجزائية',
+          iconKey: 'criminal',
+          lawyerCount: 0,
+        ),
+      ),
+    ));
+    await _settle(tester);
+    await tester.tap(find.text('طلاق أو خلع'));
+    await _settle(tester);
+    await _shot(tester, '12_journey_no_lawyer.png', <String>[
+      'لا يوجد محامي متاح',
+      'المساعد الذكي',
+      'تواصل معنا',
+    ]);
+  });
+
+  testWidgets('directory — no lawyer available', (tester) async {
+    final t = _FakeTransport(_apiNoLawyer);
+    await tester.pumpWidget(_app(
+      auth: await _auth(t),
+      repo: _repo(t),
+      home: PublicLawyersScreen(repository: _repo(t)),
+    ));
+    await _settle(tester);
+    await _shot(tester, '13_directory_no_lawyer.png', <String>[
+      'لا يوجد محامي متاح',
+      'المساعد الذكي',
+      'تواصل معنا',
+    ]);
+  });
+
+  // Execution 65 — customer account surfaces.
+  testWidgets('support centre', (tester) async {
+    final t = _FakeTransport(_api);
+    await tester.pumpWidget(_app(
+      auth: await _auth(t, signedIn: true),
+      repo: _repo(t),
+      home: SupportCenterScreen(repository: _repo(t)),
+    ));
+    await _settle(tester);
+    await _shot(tester, '14_support_center.png', <String>[
+      'مركز الدعم',
+      'قنوات التواصل',
+      'info@mawatheq.com',
+      'استفسار عن تجديد الاشتراك',
+      'TKT-2026-000111',
+    ]);
+  });
+
+  testWidgets('support appointments', (tester) async {
+    final t = _FakeTransport(_api);
+    await tester.pumpWidget(_app(
+      auth: await _auth(t, signedIn: true),
+      repo: _repo(t),
+      home: SupportAppointmentsScreen(repository: _repo(t)),
+    ));
+    await _settle(tester);
+    await _shot(tester, '15_support_appointments.png', <String>[
+      'مواعيد الدعم',
+      'المواعيد المتاحة',
+      '2026-11-10 04:32',
+      'المتبقّي: 2',
+    ]);
+  });
+
+  testWidgets('privacy & consent', (tester) async {
+    final t = _FakeTransport(_api);
+    await tester.pumpWidget(_app(
+      auth: await _auth(t, signedIn: true),
+      repo: _repo(t),
+      home: PrivacyScreen(repository: _repo(t)),
+    ));
+    await _settle(tester);
+    await _shot(tester, '16_privacy_consent.png', <String>[
+      'الخصوصية والموافقات',
+      'سياسة الخصوصية',
+      'تحليلات الاستخدام',
+      'عند حذف الحساب',
+    ]);
+  });
+
+  testWidgets('transaction history', (tester) async {
+    final t = _FakeTransport(_api);
+    await tester.pumpWidget(_app(
+      auth: await _auth(t, signedIn: true),
+      repo: _repo(t),
+      home: TransactionsScreen(repository: _repo(t)),
+    ));
+    await _settle(tester);
+    await _shot(tester, '17_transactions.png', <String>[
+      'سجل العمليات',
+      'فاتورة استشارة قانونية',
+      '350.00 SAR',
+      '+75.00 SAR',
     ]);
   });
 }

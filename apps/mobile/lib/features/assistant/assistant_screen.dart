@@ -15,12 +15,21 @@ import '../../shared/widgets/brand_widgets.dart';
 ///  * When the laws library supplied a statutory reference, it is shown under the
 ///    answer. When it did not, no reference is invented.
 class AssistantScreen extends StatefulWidget {
-  const AssistantScreen({super.key, this.repository});
+  const AssistantScreen({super.key, this.repository, this.embedded = false});
 
   /// The shared repository. Falls back to the default client so an embedding
   /// that does not inject it still works, while a caller that needs to control
   /// the network edge can supply one instead.
   final ApiRepository? repository;
+
+  /// True when this screen is a bottom-nav tab inside [HomeShell], which already
+  /// supplies the `Scaffold` and the app bar.
+  ///
+  /// False (the default) when it is pushed as a route — the home action and the
+  /// journey's no-lawyer state both do that. Without this, a pushed assistant had
+  /// no `Scaffold`, so the `TextField` threw "No Material widget found" and the
+  /// screen arrived with no app bar and no way back.
+  final bool embedded;
 
   @override
   State<AssistantScreen> createState() => _AssistantScreenState();
@@ -134,6 +143,15 @@ class _AssistantScreenState extends State<AssistantScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final body = _buildBody(context);
+    if (widget.embedded) return body;
+    return Scaffold(
+      appBar: const BrandAppBar(subtitle: 'المساعد الذكي'),
+      body: body,
+    );
+  }
+
+  Widget _buildBody(BuildContext context) {
     if (_checking) {
       return const Center(
         child: Column(

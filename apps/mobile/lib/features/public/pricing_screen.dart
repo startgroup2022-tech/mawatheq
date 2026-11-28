@@ -258,6 +258,9 @@ class _PlanCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final price = yearly ? plan.priceYearly : plan.priceMonthly;
+    // The display label comes from the server's currency helper, so a SAR price reads
+    // "149.00" rather than the raw DECIMAL "149.000" or a rounded "149".
+    final priceLabel = yearly ? plan.yearlyLabel : plan.monthlyLabel;
     final featured = plan.isFeatured;
 
     return Container(
@@ -309,15 +312,13 @@ class _PlanCard extends StatelessWidget {
             textBaseline: TextBaseline.alphabetic,
             children: [
               Text(
-                price <= 0 ? (rtl ? 'مجاناً' : 'Free') : price.toStringAsFixed(0),
+                price <= 0 ? (rtl ? 'مجاناً' : 'Free') : priceLabel,
                 style: Theme.of(context).textTheme.headlineMedium,
               ),
               if (price > 0) ...[
                 const SizedBox(width: 4),
                 Text(
-                  rtl
-                      ? 'ر.س / ${yearly ? 'سنوياً' : 'شهرياً'}'
-                      : 'SAR / ${yearly ? 'year' : 'month'}',
+                  '${plan.currencyLabel(rtl)} / ${yearly ? (rtl ? 'سنوياً' : 'year') : (rtl ? 'شهرياً' : 'month')}',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
@@ -331,6 +332,29 @@ class _PlanCard extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 14),
+          // The plan's own marketing benefits (from `plan_features`), exactly as the
+          // website lists them — so the app and the site describe a plan identically.
+          for (final f in plan.features)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 3),
+                    child: Icon(Icons.check_circle,
+                        size: 15, color: AppColors.teal),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      f.label(rtl),
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           // Only the limits the plan actually defines are listed; a null limit
           // means "unlimited", which is stated rather than shown as a number.
           _limit(context, rtl ? 'استفسارات المساعد' : 'Assistant queries',
@@ -450,12 +474,12 @@ class _ComparisonTable extends StatelessWidget {
                 DataCell(Text(
                   p.priceMonthly <= 0
                       ? (rtl ? 'مجاناً' : 'Free')
-                      : p.priceMonthly.toStringAsFixed(0),
+                      : p.monthlyLabel,
                 )),
                 DataCell(Text(
                   p.priceYearly <= 0
                       ? '—'
-                      : p.priceYearly.toStringAsFixed(0),
+                      : p.yearlyLabel,
                 )),
                 DataCell(Text(cell(p.aiQueriesLimit))),
                 DataCell(Text(cell(p.documentAnalysisLimit))),

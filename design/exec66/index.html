@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>مواثيق — حزمة مراجعة التصميم (Execution 66)</title>
+<style>
+  @font-face{font-family:'Cairo';font-weight:400;src:url('assets/fonts/Cairo-Regular.ttf') format('truetype')}
+  @font-face{font-family:'Cairo';font-weight:800;src:url('assets/fonts/Cairo-ExtraBold.ttf') format('truetype')}
+  @font-face{font-family:'IBM Plex Sans Arabic';font-weight:400;src:url('assets/fonts/IBMPlexSansArabic-Regular.ttf') format('truetype')}
+  @font-face{font-family:'IBM Plex Sans Arabic';font-weight:700;src:url('assets/fonts/IBMPlexSansArabic-Bold.ttf') format('truetype')}
+  :root{--navy:#1E3A5F;--navy-dark:#0F1F33;--teal:#2BA8C4;--gold:#F5A623;
+        --bg:#F6F8FA;--surface:#fff;--border:#E3E9EF;--text:#16232F;--muted:#5C6B7A;--subtle:#8296A6;
+        --success:#1E8E5A;--danger:#C7492A;--info-bg:#EAF6F9;--danger-bg:#FBEAE5;--success-bg:#E6F4ED;
+        --r:14px;--sh:0 2px 8px rgba(15,31,51,.05)}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font-family:'IBM Plex Sans Arabic',system-ui,sans-serif;line-height:1.65;font-size:15px}
+  h1,h2,h3{font-family:'Cairo',sans-serif;color:var(--navy-dark);margin:0;line-height:1.3}
+  a{color:var(--navy);text-decoration:none}
+  .wrap{max-width:1400px;margin:0 auto;padding:32px 24px 80px}
+  header{background:linear-gradient(135deg,var(--navy) 0%,#07334D 52%,var(--teal) 100%);color:#fff;
+         padding:44px 24px 40px;margin:-32px -24px 32px}
+  header h1{color:#fff;font-size:30px}
+  header p{color:#CFE3F2;margin-top:8px;max-width:80ch}
+  .badge{display:inline-flex;align-items:center;gap:7px;background:rgba(255,255,255,.14);
+         padding:6px 14px;border-radius:999px;font-size:13px;font-weight:700;margin-bottom:14px}
+  .stop{background:#FFF3E0;border:2px solid var(--gold);border-radius:var(--r);padding:18px 20px;margin-bottom:28px}
+  .stop b{color:#8A5A00}
+  section{margin-bottom:44px}
+  section>h2{font-size:22px;padding-bottom:10px;border-bottom:2px solid var(--border);margin-bottom:18px;
+             display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  section>h2 .n{width:30px;height:30px;border-radius:9px;background:var(--info-bg);color:var(--teal);
+                display:inline-flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;flex:none}
+  .lead{color:var(--muted);margin-bottom:16px;max-width:95ch}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px}
+  .shot{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;box-shadow:var(--sh)}
+  .shot img{width:100%;display:block;background:#fff;border-bottom:1px solid var(--border)}
+  .shot .cap{padding:11px 14px;font-size:13px;font-weight:700;color:var(--navy-dark)}
+  .shot .sub{padding:0 14px 12px;font-size:12px;color:var(--subtle)}
+  .phonegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:18px}
+  .phone{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;box-shadow:var(--sh)}
+  .phone img{width:100%;display:block;border-bottom:1px solid var(--border)}
+  .phone .cap{padding:11px 14px;font-size:13px;font-weight:700;color:var(--navy-dark)}
+  table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);
+        border-radius:var(--r);overflow:hidden;font-size:14px}
+  th,td{text-align:start;padding:12px 15px;border-bottom:1px solid var(--border);vertical-align:top}
+  th{background:#F8FAFC;font-weight:800;color:var(--navy-dark)}
+  tr:last-child td{border-bottom:none}
+  code{background:#F1F5F9;padding:2px 7px;border-radius:5px;font-size:12.5px;direction:ltr;display:inline-block}
+  .tag-before{color:var(--danger);font-weight:700}
+  .tag-after{color:var(--success);font-weight:700}
+  .links{display:flex;gap:12px;flex-wrap:wrap;margin-top:14px}
+  .links a{background:var(--surface);border:1.5px solid var(--border);border-radius:10px;
+           padding:10px 16px;font-weight:700;font-size:14px;box-shadow:var(--sh)}
+  .links a:hover{border-color:var(--teal)}
+  .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700}
+  .pill.ok{background:var(--success-bg);color:var(--success)}
+  .pill.no{background:var(--danger-bg);color:var(--danger)}
+  .note{background:var(--info-bg);border-radius:var(--r);padding:14px 18px;color:#155F73;font-size:14px;margin:16px 0}
+  footer{border-top:1px solid var(--border);padding-top:22px;color:var(--subtle);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="badge">● المرحلة (أ) — تصميم للمراجعة</span>
+  <h1>إعادة تصميم تجربة الحجز والمواعيد</h1>
+  <p>الموقع + تطبيق الجوال. هذه الصور من تصميم مقترح جديد، وليست لقطات من الواجهة الحالية. لم يُطبَّق أي تغيير على التطبيق بعد.</p>
+</header>
+
+<div class="stop">
+  <b>⏸ توقّف مقصود للمراجعة.</b>
+  <p style="margin-top:8px">هذه الحزمة لا تتضمّن أي كود تنفيذي. راجع التصاميم، ثم أجب على الأسئلة الأربعة في نهاية الصفحة لأبدأ التنفيذ. حتى ذلك الحين لن ألمس واجهة الموقع أو التطبيق.</p>
+</div>
+
+<section>
+  <h2><span class="n">0</span> الواجهة الحالية — قبل</h2>
+  <p class="lead">لقطات من التطبيق الحالي على قاعدة بيانات مُهاجرة بالكامل، لعرض ما هو قائم فعلاً. الأرقام المقيسة في جدول المقارنة أدناه مأخوذة من هذه الصفحات.</p>
+  <div class="grid">
+    <div class="shot"><img src="screenshots/before/01-browse-lawyers_1366.png" alt="تصفح المحامين — حالي"><div class="cap">تصفح المحامين</div><div class="sub">قائمة عمودية، لا فلاتر مرئية</div></div>
+    <div class="shot"><img src="screenshots/before/02-journey-specialty_1366.png" alt="اختيار التخصص — حالي"><div class="cap">اختيار التخصص</div><div class="sub">5 خطوات تظهر هنا…</div></div>
+    <div class="shot"><img src="screenshots/before/03-journey-lawyers_1366.png" alt="مقارنة المحامين — حالي"><div class="cap">مقارنة المحامين</div><div class="sub">شبكة 3 أعمدة ثابتة 342px</div></div>
+    <div class="shot"><img src="screenshots/before/04-booking-form_1920.png" alt="نموذج الحجز — حالي"><div class="cap">نموذج الحجز</div><div class="sub"><span class="tag-before">الزر عند y=1146px — أسفل الشاشة</span></div></div>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">1</span> جدول المقارنة</h2>
+  <p class="lead">كل رقم «قبل» مقيس فعلياً من التطبيق المحلي بـ Playwright — لا تقدير.</p>
+  <table>
+    <thead><tr><th style="width:26%">البند</th><th style="width:37%">الوضع الحالي (مقيس)</th><th style="width:37%">التصميم المقترح</th></tr></thead>
+    <tbody>
+      <tr><td>زر الحجز</td><td><span class="tag-before">y=1146px</span> في شاشة 1080px — لا يُرى دون تمرير</td><td><span class="tag-after">ملخّص ثابت</span> على سطح المكتب، وشريط سفلي ثابت على الجوال</td></tr>
+      <tr><td>مؤشّر التقدّم</td><td><span class="tag-before">0 عناصر</span> في نموذج الحجز</td><td><span class="tag-after">شريط 5–6 خطوات</span> في كل شاشة</td></tr>
+      <tr><td>اختيار الموعد</td><td><span class="tag-before">input[type=date]</span> — لا يُظهر الأيام المتاحة</td><td><span class="tag-after">تقويم تفاعلي</span> يميّز المتاح والمحجوز والإجازة</td></tr>
+      <tr><td>عرض الحقول</td><td><span class="tag-before">1190px</span> لكل حقل بلا شبكة</td><td><span class="tag-after">شبكة متجاوبة</span> بعمود ملخّص</td></tr>
+      <tr><td>شبكة المقارنة</td><td><span class="tag-before">342px×3 ثابتة</span> — تترك 47% فارغة عند 1920px</td><td><span class="tag-after">auto-fill</span> يتمدّد بحسب العرض</td></tr>
+      <tr><td>بطاقة المحامي</td><td><span class="tag-before">اسم، تخصص، تقييم، سعر/ساعة</span></td><td><span class="tag-after">+ خبرة، مدينة، عدد التقييمات، أقرب مواعيد، مدة</span></td></tr>
+      <tr><td>هدف لمس</td><td><span class="tag-before">20×24px</span> لمربع «متوفر فقط»</td><td><span class="tag-after">≥44px</span> لكل عنصر تفاعلي</td></tr>
+      <tr><td>حالة فشل الدفع</td><td><span class="tag-before">تنبيه نصّي فقط</span></td><td><span class="tag-after">سبب + مرجع + عدّاد + إعادة محاولة</span></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2><span class="n">2</span> الرحلة (أ) — المحامي أولاً</h2>
+  <p class="lead">6 شاشات على سطح المكتب 1366px. لاحظ مؤشّر التقدّم أعلى كل شاشة، وعمود الملخّص الثابت على اليسار، والزر الظاهر دائماً.</p>
+  <div class="grid">
+    <div class="shot"><img src="screenshots/website/website-01-journey-a_stage1_1366x900.png" alt="اختيار المحامي"><div class="cap">1 · اختيار المحامي</div><div class="sub">بحث + 5 فلاتر + بطاقات مقارنة</div></div>
+    <div class="shot"><img src="screenshots/website/website-01-journey-a_stage2_1366x900.png" alt="نوع الاستشارة"><div class="cap">2 · نوع الاستشارة</div><div class="sub">فيديو / صوتي / نصي بالمدة والسعر</div></div>
+    <div class="shot"><img src="screenshots/website/website-01-journey-a_stage3_1366x900.png" alt="التقويم والأوقات"><div class="cap">3 · التقويم والأوقات</div><div class="sub">توفر فعلي + حجز مؤقت</div></div>
+    <div class="shot"><img src="screenshots/website/website-01-journey-a_stage4_1366x900.png" alt="المراجعة"><div class="cap">4 · المراجعة</div><div class="sub">موضوع + مرفقات + ملخّص كامل</div></div>
+    <div class="shot"><img src="screenshots/website/website-01-journey-a_stage5_1366x900.png" alt="الدفع"><div class="cap">5 · الدفع</div><div class="sub">ن-جينيوس + عدّاد الحجز المؤقت</div></div>
+    <div class="shot"><img src="screenshots/website/website-01-journey-a_stage6_1366x900.png" alt="التأكيد"><div class="cap">6 · التأكيد</div><div class="sub">رقم حجز + فاتورة + عملية</div></div>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">3</span> الرحلة (ب) — الخدمة أولاً</h2>
+  <p class="lead">نفس المحرّك، نقطة بداية مختلفة. بعد اختيار المحامي تدخل الرحلة (ب) مسار (أ) حرفياً.</p>
+  <div class="grid">
+    <div class="shot"><img src="screenshots/website/website-02-journey-b_stage1_1366x900.png" alt="اختيار التخصص"><div class="cap">1 · التخصص</div><div class="sub">عدد محامين حقيقي لكل تخصص</div></div>
+    <div class="shot"><img src="screenshots/website/website-02-journey-b_stage2_1366x900.png" alt="نوع الخدمة"><div class="cap">2 · نوع الخدمة</div><div class="sub">يحدّد نوع الخدمة قبل المحامي</div></div>
+    <div class="shot"><img src="screenshots/website/website-02-journey-b_stage3_1366x900.png" alt="الموعد المفضل"><div class="cap">3 · الموعد المفضّل</div><div class="sub">فترة صباحية/مسائية</div></div>
+    <div class="shot"><img src="screenshots/website/website-02-journey-b_stage4_1366x900.png" alt="المحامون المطابقون"><div class="cap">4 · المحامون المطابقون</div><div class="sub">مطابقون للوقت المختار</div></div>
+    <div class="shot"><img src="screenshots/website/website-02-journey-b_stage5_1366x900.png" alt="المراجعة والدفع"><div class="cap">5 · المراجعة والدفع</div><div class="sub">نفس خطوة الدفع</div></div>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">4</span> الحالات — تحميل، فراغ، خطأ، فشل دفع</h2>
+  <p class="lead">الفرق بين «الفلاتر ضيّقة» و«لا يوجد محامٍ في التخصص» مقصود: لكل منهما رسالة وحلول مختلفة.</p>
+  <div class="grid">
+    <div class="shot"><img src="screenshots/website/website-03-states_stage1_1366x900.png" alt="تحميل"><div class="cap">تحميل — هيكل عظمي</div><div class="sub">بأبعاد المحتوى النهائي</div></div>
+    <div class="shot"><img src="screenshots/website/website-03-states_stage2_1366x900.png" alt="لا نتائج"><div class="cap">لا نتائج للفلاتر</div><div class="sub">الفلاتر المسبِّبة + 3 حلول</div></div>
+    <div class="shot"><img src="screenshots/website/website-03-states_stage3_1366x900.png" alt="لا يوجد محام"><div class="cap">لا يوجد محامٍ في التخصص</div><div class="sub">لا نعرض تخصصاً آخر كبديل</div></div>
+    <div class="shot"><img src="screenshots/website/website-03-states_stage4_1366x900.png" alt="فشل دفع"><div class="cap">فشل الدفع</div><div class="sub">سبب + مرجع + إعادة محاولة</div></div>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">5</span> تطبيق الجوال — تصميم فقط</h2>
+  <p class="lead">ثماني شاشات عند 1080×2280، مرسومة من <b>نفس</b> متغيّرات العلامة وخطوط التطبيق الفعلية. الشريط السفلي الثابت هو ما يعالج مشكلة «الزر خارج الشاشة» على الجوال.</p>
+  <div class="phonegrid">
+    <div class="phone"><img src="screenshots/app/d5_01_lawyers.png" alt="اختيار المحامي — تطبيق"><div class="cap">اختيار المحامي</div></div>
+    <div class="phone"><img src="screenshots/app/d5_07_specialty.png" alt="التخصص — تطبيق"><div class="cap">التخصص (رحلة ب)</div></div>
+    <div class="phone"><img src="screenshots/app/d5_02_type.png" alt="نوع الاستشارة — تطبيق"><div class="cap">نوع الاستشارة</div></div>
+    <div class="phone"><img src="screenshots/app/d5_03_schedule.png" alt="التقويم — تطبيق"><div class="cap">التقويم والأوقات</div></div>
+    <div class="phone"><img src="screenshots/app/d5_04_review.png" alt="المراجعة — تطبيق"><div class="cap">المراجعة</div></div>
+    <div class="phone"><img src="screenshots/app/d5_05_payment.png" alt="الدفع — تطبيق"><div class="cap">الدفع</div></div>
+    <div class="phone"><img src="screenshots/app/d5_06_confirmed.png" alt="التأكيد — تطبيق"><div class="cap">التأكيد</div></div>
+    <div class="phone"><img src="screenshots/app/d5_08_failed.png" alt="فشل الدفع — تطبيق"><div class="cap">فشل الدفع</div></div>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">6</span> الجوال (الموقع) والإنجليزية</h2>
+  <p class="lead">نفس مكوّنات سطح المكتب في وضع الجوال، والنسخة الإنجليزية بالاتجاه LTR من نفس المصدر.</p>
+  <div class="grid">
+    <div class="shot"><img src="screenshots/website/website-04-mobile_stage1_1366x900.png" alt="الجوال"><div class="cap">الموقع على الجوال (390px)</div><div class="sub">شريط سفلي ثابت</div></div>
+    <div class="shot"><img src="screenshots/website-ltr/website-01-journey-a_stage1_ltr.png" alt="English LTR"><div class="cap">English — LTR</div><div class="sub">نفس التخطيط، اتجاه معاكس</div></div>
+    <div class="shot"><img src="screenshots/website-ltr/website-01-journey-a_stage3_ltr.png" alt="English calendar"><div class="cap">English — التقويم</div><div class="sub">مثبّت بـ dir=ltr</div></div>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">7</span> قرارات تحتاج موافقتك</h2>
+  <table>
+    <thead><tr><th style="width:8%">#</th><th style="width:34%">السؤال</th><th style="width:29%">الوضع الحالي</th><th style="width:29%">افتراض التصميم</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><b>مدة الاستشارة والسعر</b></td><td>يُخزَّن <code>price = hourly_rate</code> — سعر ساعة كامل، والعرض يقول «/ساعة»</td><td>سعر ثابت للاستشارة (30 دقيقة). <b>يحتاج تأكيدك</b></td></tr>
+      <tr><td>2</td><td><b>الحجز المؤقت</b></td><td>غير موجود</td><td>حجز 15 دقيقة مع تحرير تلقائي</td></tr>
+      <tr><td>3</td><td><b>مدد متعددة</b></td><td><code>slot_minutes = 30</code> فقط</td><td>30 دقيقة حالياً</td></tr>
+      <tr><td>4</td><td><b>التقييمات</b></td><td><code>lawyers.rating</code> رقم مخزّن</td><td>«موثق» من استشارات مكتملة — <b>يجب أن يكون صحيحاً</b></td></tr>
+      <tr><td>5</td><td><b>الإلغاء المجاني</b></td><td>غير مذكور في الواجهة</td><td>حتى 24 ساعة قبل الموعد</td></tr>
+    </tbody>
+  </table>
+  <div class="note">
+    <b>لن أفترض أي إجابة.</b> أخبرني بالقيم الصحيحة أو وافق على الافتراضات المذكورة، وسأبدأ التنفيذ فوراً.
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">8</span> ما لن يتغيّر</h2>
+  <table>
+    <thead><tr><th style="width:44%">المكوّن</th><th style="width:56%">القاعدة</th></tr></thead>
+    <tbody>
+      <tr><td><code>get_available_slots()</code></td><td>منطق التوفر سليم — يُعاد استخدامه <b>كما هو</b></td></tr>
+      <tr><td>معالج <code>POST</code> في <code>booking.php</code></td><td>التحقق من التخصص ونوع القضية واشتقاق <code>firm_id</code> — لا يُغيَّر</td></tr>
+      <tr><td>دفع ن-جينيوس</td><td><span class="pill ok">لا تأكيد بلا دفع مُتحقَّق منه على الخادم</span></td></tr>
+      <tr><td>عزل المستأجرين والتصنيف الداخلي</td><td>لا يُكشف للعميل — لا يُمسّ</td></tr>
+      <tr><td>الشعار والألوان والخطوط</td><td>التصميم يستخدم <b>نفس</b> متغيّرات <code>enterprise.css</code> ونفس خطوط التطبيق</td></tr>
+    </tbody>
+  </table>
+  <div class="links">
+    <a href="UX-AUDIT-AR.md">التدقيق الكامل بالأرقام</a>
+    <a href="DESIGN-REVIEW-AR.md">مستند مراجعة التصميم</a>
+    <a href="website-01-journey-a.html?stage=1">الرحلة (أ) تفاعلياً</a>
+    <a href="website-02-journey-b.html?stage=1">الرحلة (ب) تفاعلياً</a>
+    <a href="website-03-states.html?stage=1">الحالات تفاعلياً</a>
+    <a href="website-01-journey-a.html?stage=1&amp;dir=ltr">English (LTR)</a>
+  </div>
+</section>
+
+<footer>
+  <p><b>التحقق:</b> 75/75 فحص تخطيط ناجح على 360 · 390 · 768 · 1366 · 1920 — لا فيض أفقي، لا نص مقصوص، لا هدف لمس أصغر من 24px، لا نص أقل من 11px. الاتجاه RTL على كل الكتل الرئيسية، والأرقام معزولة LTR. الخطوط مُحمَّلة من ملفات المشروع.</p>
+  <p style="margin-top:10px">Execution 66 · المرحلة (أ) · لا يوجد كود تنفيذي في هذه الحزمة · PR #10 لم يُدمج · الإنتاج لم يُلمس.</p>
+</footer>
+
+</div>
+</body>
+</html>

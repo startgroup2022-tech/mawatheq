@@ -106,7 +106,43 @@
 .journey-empty h3{ margin:10px 0 6px; color:var(--navy-dark); }
 .journey-empty p{ margin:0 auto 14px; max-width:520px; }
 
+/* ---- professional booking filters ---- */
+/* The filter row reuses `.journey-search`; these rules only size the extra controls
+   and keep the dependent select and the checkbox aligned with the inputs. */
+.journey-search .field{ min-width:0; }
+.journey-search .select-wrap,
+.journey-search .pro-select,
+.journey-search input[type="number"],
+.journey-search input[type="search"]{ width:100%; }
+.journey-search .pro-select{
+  min-height:44px; border:1px solid var(--border); border-radius:10px;
+  padding:10px 14px; background:#fff; font:inherit; color:var(--text);
+}
+.journey-search input[type="number"]{
+  min-height:44px; border:1px solid var(--border); border-radius:10px;
+  padding:10px 14px; background:#fff; font:inherit; color:var(--text);
+}
+.journey-search .field > label{ display:block; margin:0 0 6px; font-size:.82rem; font-weight:700; color:var(--text-muted); }
+.journey-avail-field{ flex:0 0 auto; }
+.journey-check{
+  display:inline-flex; align-items:center; gap:8px; min-height:44px; padding:0 14px;
+  border:1px solid var(--border); border-radius:10px; background:#fff;
+  font-size:.86rem; font-weight:600; color:var(--text); cursor:pointer; white-space:nowrap;
+}
+.journey-check input[type="checkbox"]{ width:20px; height:20px; accent-color:var(--teal); cursor:pointer; }
+.journey-filter-actions{ display:flex; gap:10px; align-items:center; flex:0 0 auto; }
+.journey-filter-actions .btn{ min-height:44px; }
+.journey-result-count{
+  margin:-6px 0 16px; font-size:.9rem; color:var(--text-muted);
+}
+.journey-result-count strong{ color:var(--navy-dark); }
+.compare-head .sub.loc{ margin-top:4px; }
+
 @media (max-width:640px){
   .compare-facts{ grid-template-columns:1fr; }
   .specialty-grid{ grid-template-columns:1fr; }
+  .journey-search .field{ flex:1 1 100%; min-width:0; }
+  .journey-search .field[style]{ max-width:none !important; }
+  .journey-filter-actions{ flex:1 1 100%; }
+  .journey-filter-actions .btn{ flex:1; }
 }

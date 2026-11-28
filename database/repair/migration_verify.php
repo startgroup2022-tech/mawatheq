@@ -19,7 +19,10 @@
  *   verified      every requirement the file declares is present
  *   partial       at least one present, at least one absent — MySQL abandoned the file part
  *                 way through, which is the documented production failure
- *   missing       none present (or the file has no requirement that can be observed)
+ *   missing       none present
+ *   data_only     the file parses cleanly and declares no schema object at all — a seed or
+ *                 a value rewrite. There is nothing structural to observe, but that is a
+ *                 property of the file, not a gap in the verifier, so it is not `unknown`.
  *   unknown       the file could not be parsed, so no claim can be made either way
  *
  * `unknown` is deliberately not a synonym for `applied`. A file we cannot read is a file we
@@ -360,8 +363,10 @@ function mawatheq_verify_requirements(PDO $pdo, MigrationRequirements $req, stri
         $state = 'unknown';
     } elseif ($total === 0) {
         // A data-only migration (settings seed, value rewrite). Nothing structural to
-        // observe; we cannot prove it ran, so it is not called verified from schema alone.
-        $state = 'unknown';
+        // observe, so it cannot be called `verified` from the schema alone — but the file
+        // parsed and made no schema claim, which is materially different from a file we
+        // could not read. Conflating the two made every seed fail a deploy gate.
+        $state = 'data_only';
     } elseif (count($missing) === 0) {
         $state = 'verified';
     } elseif ($present > 0) {
@@ -386,6 +391,7 @@ function mawatheq_migration_state_label(string $state): string
         'verified' => 'verified',
         'partial'  => 'PARTIAL',
         'missing'  => 'missing',
+        'data_only' => 'data_only',
         'unknown'  => 'unknown',
         default    => 'unknown',
     };

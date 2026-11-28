@@ -216,6 +216,71 @@ if (!function_exists('ai_copilot_ai_settings')) {
     }
 }
 
+if (!function_exists('ai_copilot_library_context')) {
+    /**
+     * Retrieve legal-library passages relevant to this case and render them for the prompt.
+     *
+     * The query is built from the case's own text plus the task kind, so `research` pulls
+     * statute-shaped material while `hearing_prep` pulls procedural material. Nothing here
+     * decides access: `knowledge_retrieve()` already scopes by tenant, case and the additive
+     * ACL layer, and returns `[]` when the actor may see nothing. This function only formats.
+     *
+     * It must never make the copilot fail: a missing `knowledge_sources` table, a broken
+     * embedding index or a semantic-search error all degrade to "no library passages", which
+     * the prompt states plainly rather than pretending the library was consulted.
+     *
+     * @return array{text:string,sources:array<int,array{id:int,name:string}>}
+     */
+    function ai_copilot_library_context(PDO $pdo, array $case, string $kind, int $lawyerId, bool $isArabic): array {
+        $empty = ['text' => '', 'sources' => []];
+        if (!function_exists('knowledge_retrieve')) return $empty;
+
+        $kindHint = match ($kind) {
+            'research' => 'سابقة قضائية نظام مادة حكم محكمة عليا مبدأ',
+            'hearing_prep' => 'إجراءات جلسة مرافعة بينة إثبات مذكرة',
+            'document_analysis' => 'مستند عقد بينة إثبات',
+            'draft' => 'صيغة عقد مذكرة لائحة نظام',
+            default => 'نظام مادة حكم مبدأ قضائي',
+        };
+        $query = trim(implode(' ', array_filter([
+            (string)($case['title'] ?? ''),
+            (string)($case['case_type'] ?? ''),
+            $kindHint,
+        ])));
+        if ($query === '') return $empty;
+
+        try {
+            $rows = knowledge_retrieve($pdo, $query, 'case_copilot', 'lawyer', $lawyerId, (int)$case['id'], false, 4);
+        } catch (Throwable $e) {
+            error_log('ai_copilot library retrieval failed: ' . $e->getMessage());
+            return $empty;
+        }
+        if (!$rows) return $empty;
+
+        $lines = [];
+        $sources = [];
+        foreach ($rows as $i => $row) {
+            $name = trim((string)($row['source_name'] ?? ''));
+            $chunk = trim((string)($row['chunk_text'] ?? ''));
+            if ($chunk === '') continue;
+            // Keep each passage short enough that four of them still leave room for the
+            // case facts inside the model's context window.
+            if (mb_strlen($chunk, 'UTF-8') > 1200) {
+                $chunk = mb_substr($chunk, 0, 1200, 'UTF-8') . '…';
+            }
+            $sources[] = ['id' => (int)($row['id'] ?? 0), 'name' => $name];
+            $lines[] = sprintf("[%d] %s\n%s", $i + 1, $name !== '' ? $name : ($isArabic ? 'مصدر' : 'Source'), $chunk);
+        }
+        if (!$lines) return $empty;
+
+        $heading = $isArabic
+            ? 'مقتطفات من المكتبة القانونية والقضائية (مرجعية — استشهد بها ولا تخترع غيرها):'
+            : 'Passages from the legal and judicial library (reference — cite these, invent no others):';
+
+        return ['text' => $heading . "\n\n" . implode("\n\n", $lines), 'sources' => $sources];
+    }
+}
+
 if (!function_exists('ai_copilot_run')) {
     /**
      * Execute one copilot task for a case.
@@ -268,6 +333,20 @@ if (!function_exists('ai_copilot_run')) {
             : 'You are a legal assistant inside a Saudi law firm. Use only the facts supplied. Clearly separate established facts from suggestions. Never invent statutes or article numbers.');
 
         $contextText = ai_copilot_context_text($case, $verified, $isArabic);
+
+        // ---- retrieved side: the legal/judicial library, not just the case file ----
+        // Before this the copilot reasoned over the case's own columns only, so it could
+        // not cite a statute, a judgment or a firm precedent. `knowledge_retrieve()` is
+        // the platform's one tenant-scoped, ACL-enforced reader; using it here means the
+        // assistant sees exactly what the signed-in lawyer may see and nothing more.
+        $library = ai_copilot_library_context($pdo, $case, $kind, $lawyerId, $isArabic);
+        if ($library['text'] !== '') {
+            $contextText .= "\n\n" . $library['text'];
+            // Record what was actually retrieved on the deterministic side of the run, so a
+            // reviewer can see which passages grounded the answer without trusting the model.
+            $verified['library_sources'] = $library['sources'];
+        }
+
         $prompt = ai_copilot_prompt($kind, $contextText, $isArabic, $extra);
 
         $res = ai_resilient_gateway_call(
