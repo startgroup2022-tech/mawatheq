@@ -455,6 +455,7 @@ $statusLabel = $gateway->isEnabled() ? ($env === 'live' ? '🟢 مفعّلة (إ
             <th><?= is_rtl() ? 'المرحلة' : 'Stage' ?></th>
             <th>HTTP</th>
             <th><?= is_rtl() ? 'السبب' : 'Reason' ?></th>
+            <th><?= is_rtl() ? 'الشرح' : 'Explanation' ?></th>
             <th><?= is_rtl() ? 'التفاصيل' : 'Detail' ?></th>
             <th><?= is_rtl() ? 'التوقيت' : 'Time' ?></th>
           </tr></thead>
@@ -466,6 +467,15 @@ $statusLabel = $gateway->isEnabled() ? ($env === 'live' ? '🟢 مفعّلة (إ
                 <td><?= htmlspecialchars((string)$r['stage']) ?></td>
                 <td><?= $r['http_status'] !== null ? (int)$r['http_status'] : '—' ?></td>
                 <td><?= htmlspecialchars((string)($r['error_code'] ?? '—')) ?></td>
+                <td style="max-width:360px"><?php
+                  // The reference lookup explains a code in words; this list showed only the
+                  // machine code, so an operator had to memorise what `badTokenRequest` means
+                  // before they could read their own failure log.
+                  $why = function_exists('gateway_diag_reason')
+                      ? gateway_diag_reason((string)($r['error_code'] ?? ''))
+                      : [];
+                  echo htmlspecialchars(is_rtl() ? (string)($why['ar'] ?? '') : (string)($why['en'] ?? ''));
+                ?></td>
                 <td style="max-width:320px;word-break:break-word"><?= htmlspecialchars((string)($r['detail'] ?? '')) ?></td>
                 <td style="white-space:nowrap"><?= htmlspecialchars((string)$r['created_at']) ?></td>
               </tr>
